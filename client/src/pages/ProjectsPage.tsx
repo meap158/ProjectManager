@@ -1,0 +1,500 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
+import { CARD_STATUS_LABELS, type LanguageStats, type ProjectSummary } from '../../../shared/types';
+import { api } from '../api';
+import { AddProjectDialog } from '../components/AddProjectDialog';
+import { LanguageBar, MonthlyCommits } from '../components/charts';
+import { BytesTile, StatTile } from '../components/StatTile';
+import { formatBytes, formatCompact, formatDate, formatNumber, formatRelative } from '../format';
+
+const POLL_MS = 1000;
+const STALE_AFTER_MS = 90 * 86_400_000;
+
+/** Commits in the last `days` days, from the per-day map. */
+function recentCommits(project: ProjectSummary, days: number): number {
+  const since = Date.now() - days * 86_400_000;
+  return Object.entries(project.git?.dailyCommits ?? {}).reduce(
+    (sum, [day, n]) => (Date.parse(day) >= since ? sum + n : sum),
+    0,
+  );
+}
+
+export function ProjectsPage() {
+  const navigate = useNavigate();
+  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  // Clock for staleness checks, refreshed on every load (see attention below).
+  const [now, setNow] = useState(0);
+
+  // Only sets state in promise callbacks, so effects may call it directly.
+  const load = useCallback(
+    () =>
+      api.listProjects().then(
+        (next) => {
+          setProjects(next);
+          setNow(Date.now());
+          setError(null);
+        },
+        (e: Error) => setError(e.message),
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Keep polling while any project is still being scanned.
+  const scanning = projects?.some((p) => p.scan.status === 'scanning') ?? false;
+  useEffect(() => {
+    if (!scanning) return;
+    const timer = setTimeout(load, POLL_MS);
+    return () => clearTimeout(timer);
+  }, [scanning, projects, load]);
+
+  const totals = (projects ?? []).reduce(
+    (t, p) => ({
+      code: t.code + (p.code?.code ?? 0),
+      bytes: t.bytes + (p.disk?.bytes ?? 0),
+      commits30: t.commits30 + recentCommits(p, 30),
+      open: t.open + p.cardCounts.backlog + p.cardCounts.todo,
+      active: t.active + p.cardCounts.in_progress + p.cardCounts.review,
+    }),
+    { code: 0, bytes: 0, commits30: 0, open: 0, active: 0 },
+  );
+
+  // Portfolio rollups: languages summed across projects, commit days merged.
+  const portfolioLanguages = useMemo(() => {
+    const byName = new Map<string, LanguageStats>();
+    for (const p of projects ?? []) {
+      for (const l of p.code?.languages ?? []) {
+        const acc = byName.get(l.name) ?? {
+          name: l.name,
+          files: 0,
+          bytes: 0,
+          code: 0,
+          comments: 0,
+          blanks: 0,
+          complexity: 0,
+        };
+        acc.files += l.files;
+        acc.bytes += l.bytes;
+        acc.code += l.code;
+        acc.comments += l.comments;
+        acc.blanks += l.blanks;
+        acc.complexity += l.complexity;
+        byName.set(l.name, acc);
+      }
+    }
+    return [...byName.values()].sort((a, b) => b.code - a.code);
+  }, [projects]);
+
+  const portfolioDaily = useMemo(() => {
+    const merged: Record<string, number> = {};
+    for (const p of projects ?? []) {
+      for (const [day, n] of Object.entries(p.git?.dailyCommits ?? {})) {
+        merged[day] = (merged[day] ?? 0) + n;
+      }
+    }
+    return merged;
+  }, [projects]);
+
+  // What needs attention: missing folders, failed scans, repos untouched for 90+ days.
+  const attention = useMemo(() => {
+    const items: { project: ProjectSummary; kind: string; detail: string }[] = [];
+    for (const p of projects ?? []) {
+      if (p.missing) {
+        items.push({ project: p, kind: 'Folder missing', detail: p.path });
+      } else if (p.scan.status === 'error') {
+        items.push({ project: p, kind: 'Scan failed', detail: p.scan.error ?? 'Unknown error' });
+      } else if (
+        p.git?.isRepo &&
+        p.git.lastCommitAt &&
+        now - Date.parse(p.git.lastCommitAt) > STALE_AFTER_MS
+      ) {
+        items.push({
+          project: p,
+          kind: 'Stale',
+          detail: `No commits for over 90 days (last ${formatRelative(p.git.lastCommitAt)})`,
+        });
+      }
+    }
+    return items;
+  }, [projects, now]);
+
+  return (
+    <main className="page">
+      <div className="page-header">
+        <div>
+          <h1>Dashboard</h1>
+          <div className="subtitle">
+            Everything across your tracked folders: totals, rankings and projects.
+          </div>
+        </div>
+        <button className="btn btn-primary" onClick={() => setAdding(true)}>
+          ＋ Add project
+        </button>
+      </div>
+
+      {error && <div className="error-banner">{error}</div>}
+
+      {projects === null && !error && (
+        <div className="grid grid-cards" aria-busy="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="skeleton" style={{ height: 150 }} />
+          ))}
+        </div>
+      )}
+
+      {projects?.length === 0 && (
+        <div className="panel empty">
+          <h2>Track your first project</h2>
+          <p style={{ margin: 0, maxWidth: 440 }}>
+            Add a folder on this computer to see its lines of code, languages, size on disk, commit
+            activity, and a board for planning upcoming features.
+          </p>
+          <button className="btn btn-primary" onClick={() => setAdding(true)}>
+            ＋ Add project
+          </button>
+        </div>
+      )}
+
+      {projects && projects.length > 0 && (
+        <>
+          <section className="stats" aria-label="Portfolio summary">
+            <StatTile label="Projects" value={projects.length} />
+            <StatTile label="Lines of code" value={totals.code} />
+            <BytesTile label="Size on disk" bytes={totals.bytes} />
+            <StatTile label="Commits (30 days)" value={totals.commits30} />
+            <StatTile label="Planned cards" value={totals.open} hint="Backlog + To do" />
+            <StatTile label="In flight" value={totals.active} hint="In progress + Review" />
+          </section>
+
+          {attention.length > 0 && (
+            <section className="panel" aria-label="Needs attention">
+              <div className="panel-header">
+                <h2>Needs attention</h2>
+                <span className="meta">
+                  {attention.length} project{attention.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <ul className="list">
+                {attention.map(({ project: p, kind, detail }) => (
+                  <li key={p.id}>
+                    <span
+                      className={`badge${kind === 'Stale' ? '' : ' badge-danger'}`}
+                      style={{ flex: 'none' }}
+                    >
+                      {kind}
+                    </span>
+                    <Link to={`/projects/${p.id}`} className="truncate" style={{ flex: 1 }}>
+                      {p.name}
+                    </Link>
+                    <span className="faint truncate" style={{ flex: 2 }} title={detail}>
+                      {detail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <section className="grid grid-2">
+            <div className="panel">
+              <div className="panel-header">
+                <h2>Languages across all projects</h2>
+                <span className="meta">by lines of code</span>
+              </div>
+              {portfolioLanguages.length === 0 ? (
+                <p className="faint">Waiting for the first scan…</p>
+              ) : (
+                <LanguageBar languages={portfolioLanguages} />
+              )}
+            </div>
+            <div className="panel">
+              <div className="panel-header">
+                <h2>Commits per month · all projects</h2>
+                <span className="meta">Last 12 months</span>
+              </div>
+              <MonthlyCommits dailyCommits={portfolioDaily} />
+            </div>
+          </section>
+
+          <RankingsTable projects={projects} />
+
+          <section className="grid grid-cards" aria-label="Tracked projects">
+            {projects.map((p) => (
+              <ProjectCard key={p.id} project={p} />
+            ))}
+          </section>
+        </>
+      )}
+
+      <AddProjectDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        onAdded={(project) => {
+          setAdding(false);
+          navigate(`/projects/${project.id}`);
+        }}
+        onAddedMany={(result) => {
+          setAdding(false);
+          load();
+          if (result.added.length === 1) navigate(`/projects/${result.added[0]!.id}`);
+        }}
+      />
+    </main>
+  );
+}
+
+/** Portfolio rankings: every project in one sortable table. Column clicks follow the
+    KDP sorter rule — a new column starts from its natural direction, clicking the
+    active column reverses it. */
+type RankKey = 'project' | 'lines' | 'commits30' | 'lastCommit' | 'planned' | 'flight';
+type RankDir = 'asc' | 'desc';
+
+const RANK_DEFAULT_DIR: Record<RankKey, RankDir> = {
+  project: 'asc',
+  lines: 'desc',
+  commits30: 'desc',
+  lastCommit: 'desc',
+  planned: 'desc',
+  flight: 'desc',
+};
+const RANK_COLUMNS: { key: RankKey; label: string; numeric: boolean }[] = [
+  { key: 'project', label: 'Project', numeric: false },
+  { key: 'lines', label: 'Lines', numeric: true },
+  { key: 'commits30', label: 'Commits 30d', numeric: true },
+  { key: 'lastCommit', label: 'Last commit', numeric: false },
+  { key: 'planned', label: 'Planned', numeric: true },
+  { key: 'flight', label: 'In flight', numeric: true },
+];
+
+function rankValue(p: ProjectSummary, key: RankKey): number | string {
+  switch (key) {
+    case 'project':
+      return p.name.toLowerCase();
+    case 'lines':
+      return p.code?.code ?? -1;
+    case 'commits30':
+      return recentCommits(p, 30);
+    case 'lastCommit':
+      return p.git?.lastCommitAt ? Date.parse(p.git.lastCommitAt) : 0;
+    case 'planned':
+      return p.cardCounts.backlog + p.cardCounts.todo;
+    case 'flight':
+      return p.cardCounts.in_progress + p.cardCounts.review;
+  }
+}
+
+function RankingsTable({ projects }: { projects: ProjectSummary[] }) {
+  const [sortKey, setSortKey] = useState<RankKey>(() => {
+    try {
+      const saved = localStorage.getItem('pm-rank-sort');
+      const parsed: unknown = saved ? JSON.parse(saved) : null;
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        RANK_COLUMNS.some((c) => c.key === (parsed as { key: string }).key) &&
+        ((parsed as { dir: string }).dir === 'asc' || (parsed as { dir: string }).dir === 'desc')
+      ) {
+        return (parsed as { key: RankKey }).key;
+      }
+    } catch {
+      // Fall through to the default.
+    }
+    return 'lines';
+  });
+  const [sortDir, setSortDir] = useState<RankDir>(() => {
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem('pm-rank-sort') ?? 'null');
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        ((parsed as { dir: string }).dir === 'asc' || (parsed as { dir: string }).dir === 'desc')
+      ) {
+        return (parsed as { dir: RankDir }).dir;
+      }
+    } catch {
+      // Fall through to the default.
+    }
+    return 'desc';
+  });
+
+  function choose(key: RankKey) {
+    let next: { key: RankKey; dir: RankDir };
+    if (key === sortKey) {
+      next = { key, dir: sortDir === 'asc' ? 'desc' : 'asc' };
+    } else {
+      next = { key, dir: RANK_DEFAULT_DIR[key] };
+    }
+    setSortKey(next.key);
+    setSortDir(next.dir);
+    try {
+      localStorage.setItem('pm-rank-sort', JSON.stringify(next));
+    } catch {
+      // Sorting still works for the session.
+    }
+  }
+
+  const rows = useMemo(() => {
+    const flip = sortDir === RANK_DEFAULT_DIR[sortKey] ? 1 : -1;
+    return [...projects].sort((a, b) => {
+      const va = rankValue(a, sortKey);
+      const vb = rankValue(b, sortKey);
+      const cmp = typeof va === 'string' ? va.localeCompare(vb as string) : va - (vb as number);
+      return flip * cmp || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+  }, [projects, sortKey, sortDir]);
+
+  const topLines = Math.max(1, ...projects.map((p) => p.code?.code ?? 0));
+
+  return (
+    <section className="panel" aria-label="Project rankings">
+      <div className="panel-header">
+        <h2>Rankings</h2>
+        <span className="meta">click a column to sort · click again to reverse</span>
+      </div>
+      <div className="table-wrap">
+        <table className="table rank-table">
+          <thead>
+            <tr>
+              <th aria-label="Rank">
+                <span className="faint">#</span>
+              </th>
+              {RANK_COLUMNS.map((col) => (
+                <th
+                  key={col.key}
+                  aria-sort={
+                    sortKey === col.key
+                      ? sortDir === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : undefined
+                  }
+                  className={col.numeric ? 'r' : undefined}
+                >
+                  <button
+                    type="button"
+                    className={`rank-head${sortKey === col.key ? ' is-active' : ''}`}
+                    onClick={() => choose(col.key)}
+                    title={sortKey === col.key ? 'Reverse the order' : `Sort by ${col.label}`}
+                  >
+                    {col.label}
+                    <span aria-hidden="true" className="rank-arrow">
+                      {sortKey === col.key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                    </span>
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p, i) => (
+              <tr key={p.id}>
+                <td className="faint num">{i + 1}</td>
+                <td>
+                  <Link to={`/projects/${p.id}`} title={p.path}>
+                    {p.name}
+                  </Link>
+                  {p.missing && <span className="badge badge-danger">missing</span>}
+                </td>
+                <td className="r num">
+                  <span className="rank-bar" aria-hidden="true">
+                    <span
+                      style={{ width: `${(((p.code?.code ?? 0) / topLines) * 100).toFixed(1)}%` }}
+                    />
+                  </span>{' '}
+                  {p.code ? formatCompact(p.code.code) : '—'}
+                </td>
+                <td className="r num">{p.git ? formatNumber(recentCommits(p, 30)) : '—'}</td>
+                <td title={formatDate(p.git?.lastCommitAt ?? null)}>
+                  {p.git?.lastCommitAt ? formatRelative(p.git.lastCommitAt) : '—'}
+                </td>
+                <td className="r num">{p.cardCounts.backlog + p.cardCounts.todo}</td>
+                <td className="r num">{p.cardCounts.in_progress + p.cardCounts.review}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ProjectCard({ project: p }: { project: ProjectSummary }) {
+  const flight = p.cardCounts.in_progress + p.cardCounts.review;
+  return (
+    <Link to={`/projects/${p.id}`} className="project-card">
+      <div>
+        <div
+          style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <h2 className="truncate">{p.name}</h2>
+          {p.missing ? (
+            <span className="badge badge-danger">Folder missing</span>
+          ) : p.scan.status === 'scanning' ? (
+            <span className="badge">
+              <span className="spinner" style={{ width: 10, height: 10 }} /> Scanning
+            </span>
+          ) : p.git?.branch ? (
+            <span className="badge mono">⎇ {p.git.branch}</span>
+          ) : null}
+        </div>
+        <div className="path truncate" title={p.path}>
+          {p.path}
+        </div>
+      </div>
+
+      {p.code ? (
+        <LanguageBar languages={p.code.languages} showLegend={false} />
+      ) : (
+        <div className="langbar skeleton" />
+      )}
+
+      <div className="figures">
+        <div>
+          <b>{p.code ? formatCompact(p.code.code) : '—'}</b>
+          <span>lines</span>
+        </div>
+        <div>
+          <b>{p.code ? formatCompact(p.code.totalFiles) : '—'}</b>
+          <span>files</span>
+        </div>
+        <div>
+          <b>{p.disk ? formatBytes(p.disk.bytes) : '—'}</b>
+          <span>on disk</span>
+        </div>
+        <div>
+          <b>{p.git?.isRepo ? formatCompact(p.git.totalCommits) : '—'}</b>
+          <span>commits</span>
+        </div>
+      </div>
+
+      <div
+        className="board-strip faint"
+        style={{ fontSize: 12.5, justifyContent: 'space-between' }}
+      >
+        <span>
+          {p.code?.languages[0]?.name ?? 'No code yet'}
+          {' · '}
+          {p.git?.lastCommitAt ? `last commit ${formatRelative(p.git.lastCommitAt)}` : 'no commits'}
+        </span>
+        <span>
+          {flight > 0 && (
+            <span
+              className="badge"
+              title={`${CARD_STATUS_LABELS.in_progress} + ${CARD_STATUS_LABELS.review}`}
+            >
+              {flight} in flight
+            </span>
+          )}{' '}
+          {p.cardCounts.backlog + p.cardCounts.todo > 0 && (
+            <span className="badge">{p.cardCounts.backlog + p.cardCounts.todo} planned</span>
+          )}
+        </span>
+      </div>
+    </Link>
+  );
+}

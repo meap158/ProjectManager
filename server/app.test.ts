@@ -1,0 +1,127 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Card, ProjectDetail } from '../shared/types.js';
+import { createApp } from './app.js';
+import { openDb } from './db.js';
+
+const HOST = { host: 'localhost:5180' };
+
+function setup() {
+  const app = createApp(openDb(':memory:'));
+  const call = (
+    method: string,
+    url: string,
+    body?: unknown,
+    headers: Record<string, string> = {},
+  ) =>
+    app.request(`/api${url}`, {
+      method,
+      headers: {
+        ...HOST,
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        ...headers,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  return { call };
+}
+
+async function waitForScan(
+  call: ReturnType<typeof setup>['call'],
+  id: number,
+): Promise<ProjectDetail> {
+  for (let i = 0; i < 200; i++) {
+    const project = (await (await call('GET', `/projects/${id}`)).json()) as ProjectDetail;
+    if (project.scan.status !== 'scanning') return project;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error('scan did not finish');
+}
+
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
+    cwd,
+    stdio: 'pipe',
+  });
+
+let dir: string;
+beforeAll(() => {
+  dir = mkdtempSync(path.join(os.tmpdir(), 'pm-test-'));
+  writeFileSync(path.join(dir, 'index.ts'), 'export const a = 1;\n// note\nif (a) {}\n');
+  git(dir, 'init', '-q');
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-q', '-m', 'Initial commit');
+});
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+describe('security guards', () => {
+  it('rejects foreign Host headers (DNS rebinding)', async () => {
+    const { call } = setup();
+    const res = await call('GET', '/projects', undefined, { host: 'evil.example:5180' });
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects non-JSON writes (cross-site form posts)', async () => {
+    const { call } = setup();
+    const res = await call('POST', '/projects', undefined, { 'content-type': 'text/plain' });
+    expect(res.status).toBe(415);
+  });
+});
+
+describe('projects and cards', () => {
+  it('tracks a folder, scans it, and auto-moves cards from commit messages', async () => {
+    const { call } = setup();
+
+    expect((await call('POST', '/projects', { path: 'relative/path' })).status).toBe(400);
+    expect((await call('POST', '/projects', { path: path.join(dir, 'nope') })).status).toBe(400);
+
+    const created = await call('POST', '/projects', { path: dir });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as ProjectDetail;
+    expect((await call('POST', '/projects', { path: dir })).status).toBe(409);
+
+    const project = await waitForScan(call, id);
+    expect(project.code).toMatchObject({ code: 2, comments: 1, complexity: 1 });
+    expect(project.code!.languages[0]!.name).toBe('TypeScript');
+    expect(project.git).toMatchObject({ isRepo: true, totalCommits: 1 });
+    expect(project.disk!.files).toBeGreaterThan(1); // Includes .git internals.
+    expect(project.disk!.gitBytes).toBeGreaterThan(0);
+
+    const cardRes = await call('POST', `/projects/${id}/cards`, { title: 'Dark mode' });
+    expect(cardRes.status).toBe(201);
+    const card = (await cardRes.json()) as Card;
+    expect(card).toMatchObject({ status: 'backlog', key: `PM-${card.id}` });
+
+    // Commit dates have one-second resolution; make sure the commit is newer than the card.
+    await new Promise((r) => setTimeout(r, 1100));
+    writeFileSync(path.join(dir, 'theme.ts'), 'export const dark = true;\n');
+    git(dir, 'add', '.');
+    git(dir, 'commit', '-q', '-m', `Add theme toggle\n\nFixes ${card.key}`);
+
+    await call('POST', `/projects/${id}/scan`, {});
+    const rescanned = await waitForScan(call, id);
+    expect(rescanned.scan.moves).toEqual([
+      expect.objectContaining({ cardId: card.id, from: 'backlog', to: 'done' }),
+    ]);
+    const cards = (await (await call('GET', `/projects/${id}/cards`)).json()) as Card[];
+    expect(cards[0]).toMatchObject({ status: 'done' });
+    expect(cards[0]!.closedAt).not.toBeNull();
+
+    // Moving the card back by hand must stick: the same commit isn't applied twice.
+    await call('PATCH', `/cards/${card.id}`, { status: 'todo' });
+    await call('POST', `/projects/${id}/scan`, {});
+    expect((await waitForScan(call, id)).scan.moves).toEqual([]);
+
+    expect((await call('DELETE', `/projects/${id}`)).status).toBe(204);
+    expect((await call('GET', `/projects/${id}`)).status).toBe(404);
+  }, 30_000);
+
+  it('validates card input', async () => {
+    const { call } = setup();
+    expect((await call('POST', '/projects/999/cards', { title: 'x' })).status).toBe(404);
+    expect((await call('PATCH', '/cards/1', { status: 'nope' })).status).toBe(400);
+  });
+});

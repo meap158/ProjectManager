@@ -1,0 +1,373 @@
+import { useEffect, useRef, useState } from 'react';
+import { NavLink, useNavigate } from 'react-router';
+import type { ProjectSummary } from '../../../shared/types';
+import { api } from '../api';
+import { formatCompact, formatRelative } from '../format';
+import { AddProjectDialog } from './AddProjectDialog';
+
+// Sorter modelled on the KDP Publishing Pipeline Library sorter: each mode has
+// a natural direction, re-selecting the active mode flips it, switching modes
+// restarts from the new mode's natural direction, and the label always names
+// the active direction (never "A–Z" while sorting Z–A).
+type SortMode = 'name' | 'recent' | 'lines';
+type SortDirection = 'asc' | 'desc';
+
+const SORT_MODES: SortMode[] = ['name', 'recent', 'lines'];
+const SORT_DEFAULT_DIRECTION: Record<SortMode, SortDirection> = {
+  name: 'asc',
+  recent: 'desc',
+  lines: 'desc',
+};
+
+function sortOptionLabel(mode: SortMode, direction: SortDirection): string {
+  if (mode === 'name') return direction === 'asc' ? 'A–Z' : 'Z–A';
+  if (mode === 'recent') return direction === 'desc' ? 'Newest first' : 'Oldest first';
+  return direction === 'desc' ? 'Most code' : 'Least code';
+}
+
+function readSortPreference<T extends string>(key: string, choices: T[], fallback: T): T {
+  try {
+    const value = localStorage.getItem(key) as T | null;
+    return value && choices.includes(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function lastCommitTime(p: ProjectSummary): number {
+  return p.git?.lastCommitAt ? Date.parse(p.git.lastCommitAt) : 0;
+}
+
+function recentCommits(projects: ProjectSummary[], days: number): number {
+  const since = Date.now() - days * 86_400_000;
+  return projects.reduce(
+    (sum, p) =>
+      sum +
+      Object.entries(p.git?.dailyCommits ?? {}).reduce(
+        (s, [day, n]) => (Date.parse(day) >= since ? s + n : s),
+        0,
+      ),
+    0,
+  );
+}
+
+/** Left sidebar: every tracked project with at-a-glance status. */
+export function ProjectSidebar() {
+  const navigate = useNavigate();
+  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const [query, setQuery] = useState('');
+  const [sortMode, setSortMode] = useState<SortMode>(() =>
+    readSortPreference('pm-sidebar-sort', SORT_MODES, 'name'),
+  );
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() =>
+    readSortPreference('pm-sidebar-sort-direction', ['asc', 'desc'] as SortDirection[], 'asc'),
+  );
+  const [sortOpen, setSortOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const sorterRef = useRef<HTMLDivElement>(null);
+
+  function chooseSort(mode: SortMode) {
+    // Re-selecting the active mode flips it; switching modes starts from that
+    // mode's natural direction instead of inheriting the previous one.
+    if (mode === sortMode) {
+      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortMode(mode);
+      setSortDirection(SORT_DEFAULT_DIRECTION[mode]);
+    }
+  }
+
+  // Persist the sorter; close the menu on outside click / Escape.
+  useEffect(() => {
+    try {
+      localStorage.setItem('pm-sidebar-sort', sortMode);
+      localStorage.setItem('pm-sidebar-sort-direction', sortDirection);
+    } catch {
+      // Private browsing etc: sorting still works for the session.
+    }
+  }, [sortMode, sortDirection]);
+
+  useEffect(() => {
+    if (!sortOpen) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!sorterRef.current?.contains(e.target as Node)) setSortOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setSortOpen(false);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [sortOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function load() {
+      try {
+        const list = await api.listProjects();
+        if (!cancelled) setProjects(list);
+        const scanning = list.some((p) => p.scan.status === 'scanning');
+        timer = setTimeout(load, scanning ? 2000 : 10000);
+      } catch {
+        timer = setTimeout(load, 10000);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  // Comparators are written once in their natural direction and negated for
+  // the reverse, so a flip can never disagree with the forward ordering.
+  const flip = sortDirection === SORT_DEFAULT_DIRECTION[sortMode] ? 1 : -1;
+  const visible = (projects ?? [])
+    .filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
+    .slice()
+    .sort((a, b) => {
+      if (sortMode === 'recent') return flip * (lastCommitTime(b) - lastCommitTime(a));
+      if (sortMode === 'lines') return flip * ((b.code?.code ?? -1) - (a.code?.code ?? -1));
+      return flip * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+
+  const totalsLines = (projects ?? []).reduce((s, p) => s + (p.code?.code ?? 0), 0);
+  const totalsCommits = recentCommits(projects ?? [], 30);
+  const totalsFlight = (projects ?? []).reduce(
+    (s, p) => s + p.cardCounts.in_progress + p.cardCounts.review,
+    0,
+  );
+
+  return (
+    <aside className="sidebar" aria-label="Tracked projects">
+      <NavLink
+        to="/"
+        end
+        className={({ isActive }) => `sidebar-home${isActive ? ' is-active' : ''}`}
+      >
+        <span aria-hidden="true" className="sidebar-home-icon">
+          ▦
+        </span>
+        <span className="sidebar-home-text">
+          <b>All projects</b>
+          <span className="faint">Portfolio overview</span>
+        </span>
+      </NavLink>
+      <div className="sidebar-top">
+        <input
+          className="input"
+          type="search"
+          placeholder="Filter projects…"
+          aria-label="Filter projects"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="sidebar-row">
+          <div className="sorter" ref={sorterRef}>
+            <button
+              type="button"
+              className="btn btn-sm sorter-trigger"
+              aria-haspopup="menu"
+              aria-expanded={sortOpen}
+              aria-label="Sort projects"
+              title={
+                sortOpen
+                  ? 'Close sort options'
+                  : `Sorted ${sortOptionLabel(sortMode, sortDirection)} — change sort`
+              }
+              onClick={() => setSortOpen((o) => !o)}
+            >
+              <span className="truncate">⇅ {sortOptionLabel(sortMode, sortDirection)}</span>
+            </button>
+            {sortOpen && (
+              <div className="sorter-menu" role="menu" aria-label="Sort projects">
+                {SORT_MODES.map((mode) => {
+                  const active = mode === sortMode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      className={`sorter-option${active ? ' selected' : ''}`}
+                      title={
+                        active
+                          ? 'Click again to reverse the order'
+                          : `Sort by ${sortOptionLabel(mode, SORT_DEFAULT_DIRECTION[mode])}`
+                      }
+                      onClick={() => chooseSort(mode)}
+                    >
+                      <span>
+                        {active
+                          ? sortOptionLabel(mode, sortDirection)
+                          : sortOptionLabel(mode, SORT_DEFAULT_DIRECTION[mode])}
+                      </span>
+                      {active && (
+                        <span className="sort-direction-badge" aria-hidden="true">
+                          {sortDirection === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}>
+            ＋ Add
+          </button>
+        </div>
+      </div>
+
+      <nav className="sidebar-list">
+        {projects === null && (
+          <>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="skeleton" style={{ height: 52 }} />
+            ))}
+          </>
+        )}
+        {projects?.length === 0 && (
+          <div className="faint" style={{ fontSize: 13, padding: '4px 2px' }}>
+            No projects tracked yet.
+          </div>
+        )}
+        {visible.map((p) => (
+          <SidebarItem key={p.id} project={p} />
+        ))}
+        {projects !== null && visible.length === 0 && projects.length > 0 && (
+          <div className="faint" style={{ fontSize: 13, padding: '4px 2px' }}>
+            No projects match “{query.trim()}”.
+          </div>
+        )}
+      </nav>
+
+      {projects && projects.length > 0 && (
+        <div className="sidebar-foot">
+          <div className="sidebar-totals" aria-label="Portfolio totals">
+            <div className="totals-grid">
+              <span className="t">
+                <b className="num">{formatCompact(totalsLines)}</b>
+                <span>lines</span>
+              </span>
+              <span className="t">
+                <b className="num">{totalsCommits}</b>
+                <span>30d</span>
+              </span>
+              <span className="t">
+                <b className="num">{totalsFlight}</b>
+                <span>in flight</span>
+              </span>
+            </div>
+          </div>
+          <span className="faint">
+            {visible.length !== projects.length
+              ? `${visible.length} of ${projects.length} projects`
+              : `${projects.length} project${projects.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+      )}
+
+      <AddProjectDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        onAdded={(project) => {
+          setAdding(false);
+          setProjects((prev) => (prev ? [...prev, project] : [project]));
+          navigate(`/projects/${project.id}`);
+        }}
+        onAddedMany={(result) => {
+          setAdding(false);
+          setProjects((prev) => (prev ? [...prev, ...result.added] : [...result.added]));
+          if (result.added.length === 1) navigate(`/projects/${result.added[0]!.id}`);
+        }}
+      />
+    </aside>
+  );
+}
+
+function SidebarItem({ project: p }: { project: ProjectSummary }) {
+  const flight = p.cardCounts.in_progress + p.cardCounts.review;
+  const planned = p.cardCounts.backlog + p.cardCounts.todo;
+  const topLang = p.code?.languages[0]?.name;
+  return (
+    <NavLink
+      to={`/projects/${p.id}`}
+      className={({ isActive }) => `sidebar-item${isActive ? ' is-active' : ''}`}
+      title={p.path}
+      aria-label={`${p.name} — ${p.path}`}
+    >
+      <span className="sidebar-name-row">
+        <StatusDot project={p} />
+        <span className="sidebar-name truncate">{p.name}</span>
+        {p.missing ? (
+          <span className="badge badge-danger">missing</span>
+        ) : p.scan.status === 'scanning' ? (
+          <span className="badge">
+            <span className="spinner" style={{ width: 10, height: 10 }} />
+          </span>
+        ) : flight > 0 ? (
+          <span className="badge" title="In progress + Review">
+            {flight} ▶
+          </span>
+        ) : planned > 0 ? (
+          <span className="badge" title="Backlog + To do">
+            {planned}
+          </span>
+        ) : null}
+      </span>
+      <span className="sidebar-stats">
+        <span className="num">{p.code ? formatCompact(p.code.code) : '—'}</span>
+        <span className="faint">lines</span>
+        <span aria-hidden="true" className="faint">
+          ·
+        </span>
+        <span className="truncate" style={{ maxWidth: 96 }}>
+          {topLang ?? '—'}
+        </span>
+        <span aria-hidden="true" className="faint">
+          ·
+        </span>
+        {p.git?.lastCommitAt ? (
+          <span className="faint" title={p.git.lastCommitAt}>
+            {formatRelative(p.git.lastCommitAt)}
+          </span>
+        ) : (
+          <span className="faint">no commits</span>
+        )}
+      </span>
+    </NavLink>
+  );
+}
+
+function StatusDot({ project: p }: { project: ProjectSummary }) {
+  let color = 'var(--series-other)';
+  let label = 'Idle';
+  if (p.missing) {
+    color = 'var(--danger)';
+    label = 'Folder missing';
+  } else if (p.scan.status === 'scanning') {
+    color = 'var(--accent)';
+    label = 'Scanning';
+  } else if (p.scan.status === 'error') {
+    color = 'var(--danger)';
+    label = 'Scan failed';
+  } else if (p.cardCounts.in_progress + p.cardCounts.review > 0) {
+    color = 'var(--good, #0ca30c)';
+    label = 'Work in flight';
+  }
+  return (
+    <span
+      className="status-dot"
+      style={{ background: color }}
+      title={label}
+      aria-label={label}
+      role="img"
+    />
+  );
+}

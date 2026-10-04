@@ -1,0 +1,1201 @@
+// Supervises persistent agent CLI sessions and one-shot runs.
+//
+// Design (supervisor pattern, like systemd/supervisord):
+// - Every session/run is a row in SQLite plus a log file on disk, so it survives
+//   server restarts and machine reboots.
+// - Sessions carry desiredState ('running' vs 'stopped') and a supervise flag.
+//   On boot, wanted + supervised sessions relaunch automatically (provider resume
+//   flags keep AI conversations going where the CLI supports it); anything else
+//   left 'running' is marked 'dead'.
+// - stdin written while a session has no live process waits in agent_input_queue
+//   and flushes on the next spawn — queued work survives reboots too.
+// - Runs are one-shot dispatches (usually of a Kanban card). Runs left
+//   'running'/'queued' at shutdown relaunch up to maxAttempts, then fail with an
+//   explanatory error; the linked card keeps its status and the verdict.
+// - Only node builtins are used (child_process, fs). No shell is ever spawned:
+//   argv arrays go straight to the OS, so prompts cannot inject shell commands.
+
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import {
+  appendFileSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  closeSync,
+  statSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs';
+import path from 'node:path';
+import type {
+  AgentDesiredState,
+  AgentOutput,
+  AgentRun,
+  AgentRunStatus,
+  AgentSession,
+  AgentSessionStatus,
+  CardRunSummary,
+  CardStatus,
+} from '../../shared/types.js';
+import type { Db } from '../db.js';
+import { getCard, getProjectRow, updateCard } from '../store.js';
+import {
+  buildDispatchArgv,
+  buildInteractiveArgv,
+  buildResumeArgv,
+  getProvider,
+  providerAvailable,
+} from './providers.js';
+
+const now = () => new Date().toISOString();
+
+export const MAX_SESSIONS_PER_PROJECT = 8;
+export const MAX_RUNNING_RUNS_PER_PROJECT = 3;
+export const MAX_LOG_BYTES = 8 * 1024 * 1024;
+const MEM_CAP_BYTES = 256 * 1024;
+const MAX_READ_BYTES = 128 * 1024;
+const MAX_QUEUE_ENTRIES = 500;
+const MAX_QUEUE_BYTES = 256 * 1024;
+const RUN_DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
+const RUN_MAX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+const MAX_RESTARTS = 20;
+const RESTART_BASE_MS = 2000;
+const RESTART_CAP_MS = 60_000;
+const KILL_GRACE_MS = 3000;
+
+export class AgentError extends Error {
+  constructor(
+    public status: 400 | 404 | 409,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+// ---- Output log -----------------------------------------------------------------------------
+
+interface Chunk {
+  text: string;
+  bytes: number;
+}
+
+/** File-backed, offset-addressed log with a capped in-memory window. */
+class OutputLog {
+  private chunks: Chunk[] = [];
+  private memBytes = 0;
+  private baseOffset = 0; // bytes dropped from the head of `chunks`
+  private capped = false;
+  totalBytes = 0;
+
+  constructor(private file: string) {
+    mkdirSync(path.dirname(file), { recursive: true });
+  }
+
+  append(text: string): void {
+    if (!text || this.capped) return;
+    try {
+      const size = statSync(this.file, { throwIfNoEntry: false })?.size ?? 0;
+      if (size >= MAX_LOG_BYTES) {
+        this.capped = true;
+        const marker = `\n[log truncated: ${MAX_LOG_BYTES} byte cap reached]\n`;
+        appendFileSync(this.file, marker);
+        this.push(marker);
+        return;
+      }
+      appendFileSync(this.file, text);
+    } catch {
+      // A log write must never take down a session; memory still serves reads.
+    }
+    this.push(text);
+  }
+
+  private push(text: string): void {
+    const bytes = Buffer.byteLength(text);
+    this.chunks.push({ text, bytes });
+    this.memBytes += bytes;
+    this.totalBytes += bytes;
+    while (this.memBytes > MEM_CAP_BYTES && this.chunks.length > 1) {
+      const dropped = this.chunks.shift()!;
+      this.memBytes -= dropped.bytes;
+      this.baseOffset += dropped.bytes;
+    }
+  }
+
+  /** Read up to MAX_READ_BYTES starting at byte offset `after`. */
+  read(after: number): { data: string; nextOffset: number } {
+    if (!Number.isFinite(after) || after < 0) after = 0;
+    if (after < this.baseOffset) return this.readFile(after);
+    // Serve from memory; slice chunks by bytes so multibyte chars never split.
+    let skip = after - this.baseOffset;
+    const parts: string[] = [];
+    let used = 0;
+    for (const c of this.chunks) {
+      if (used >= MAX_READ_BYTES) break;
+      if (skip >= c.bytes) {
+        skip -= c.bytes;
+        continue;
+      }
+      const take = Math.min(c.bytes - skip, MAX_READ_BYTES - used);
+      parts.push(
+        Buffer.from(c.text, 'utf8')
+          .subarray(skip, skip + take)
+          .toString('utf8'),
+      );
+      used += take;
+      skip = 0;
+    }
+    const data = parts.join('');
+    return { data, nextOffset: after + Buffer.byteLength(data) };
+  }
+
+  /** Positioned read straight from the file for ranges that fell out of memory. */
+  private readFile(after: number): { data: string; nextOffset: number } {
+    try {
+      const fd = openSync(this.file, 'r');
+      try {
+        const size = statSync(this.file).size;
+        const start = Math.min(after, size);
+        const len = Math.min(MAX_READ_BYTES, size - start);
+        const buf = Buffer.alloc(len);
+        readSync(fd, buf, 0, len, start);
+        const data = buf.toString('utf8');
+        return { data, nextOffset: start + Buffer.byteLength(data) };
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      return { data: '', nextOffset: after };
+    }
+  }
+}
+
+// ---- Process tree kill ----------------------------------------------------------------------
+
+export function killTree(pid: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (process.platform === 'win32') {
+      execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => resolve());
+    } else {
+      try {
+        process.kill(-pid, 'SIGTERM');
+      } catch {
+        return resolve();
+      }
+      const timer = setTimeout(() => {
+        try {
+          process.kill(-pid, 'SIGKILL');
+        } catch {
+          // Already gone.
+        }
+        resolve();
+      }, KILL_GRACE_MS);
+      timer.unref?.();
+    }
+  });
+}
+
+// ---- Supervisor -------------------------------------------------------------------------------
+
+interface LiveProc {
+  proc: ChildProcess;
+  log: OutputLog;
+  stoppedByUser: boolean;
+  timer?: NodeJS.Timeout;
+  kind: 'session' | 'run';
+  id: number;
+}
+
+interface SessionRow {
+  id: number;
+  project_id: number;
+  name: string;
+  provider_id: string;
+  command_json: string;
+  resume_json: string | null;
+  cwd: string;
+  pid: number | null;
+  status: AgentSessionStatus;
+  exit_code: number | null;
+  desired_state: AgentDesiredState;
+  supervise: number;
+  restarts: number;
+  last_restart_at: string | null;
+  created_at: string;
+  started_at: string;
+  ended_at: string | null;
+  log_path: string;
+}
+
+interface RunRow {
+  id: number;
+  project_id: number;
+  card_id: number | null;
+  name: string;
+  provider_id: string;
+  command_json: string;
+  prompt: string;
+  status: AgentRunStatus;
+  exit_code: number | null;
+  error: string | null;
+  attempts: number;
+  max_attempts: number;
+  validation: 'accepted' | 'rejected' | null;
+  validated_at: string | null;
+  validated_move: CardStatus | null;
+  created_at: string;
+  started_at: string | null;
+  ended_at: string | null;
+  log_path: string;
+}
+
+export class AgentSupervisor {
+  private live = new Map<string, LiveProc>();
+  private logs = new Map<string, OutputLog>();
+  private closed = false;
+
+  constructor(
+    private db: Db,
+    private logDir: string,
+  ) {
+    mkdirSync(logDir, { recursive: true });
+    this.reconcile();
+  }
+
+  // ---- Boot reconciliation: survive restarts and reboots -------------------------------------
+
+  private reconcile(): void {
+    // Sessions: relaunch what is still wanted and supervised, mark the rest dead.
+    const sessions = this.db
+      .prepare(`SELECT * FROM agent_sessions`)
+      .all() as unknown as SessionRow[];
+    for (const row of sessions) {
+      if (row.desired_state === 'running' && row.supervise && row.status === 'running') {
+        this.log(
+          row.log_path,
+          `\n[supervisor] server restarted — relaunching session (attempt ${row.restarts + 1})\n`,
+        );
+        this.spawnSession(row, true).catch((e) => this.markSessionDead(row.id, String(e)));
+      } else if (row.status === 'running') {
+        this.db
+          .prepare(
+            `UPDATE agent_sessions SET status = 'dead', pid = NULL, ended_at = ? WHERE id = ?`,
+          )
+          .run(now(), row.id);
+      }
+    }
+    // Runs: relaunch attempts left, fail the exhausted ones with an explanation.
+    const runs = this.db
+      .prepare(`SELECT * FROM agent_runs WHERE status IN ('queued', 'running')`)
+      .all() as unknown as RunRow[];
+    for (const row of runs) {
+      if (row.attempts < row.max_attempts) {
+        this.log(
+          row.log_path,
+          `\n[supervisor] server restarted — relaunching run (attempt ${row.attempts + 1}/${row.max_attempts})\n`,
+        );
+        this.spawnRun({ ...row, attempts: row.attempts }, true);
+      } else {
+        this.db
+          .prepare(`UPDATE agent_runs SET status = 'failed', error = ?, ended_at = ? WHERE id = ?`)
+          .run('Server shut down before completion (attempts exhausted)', now(), row.id);
+      }
+    }
+  }
+
+  // ---- Sessions -------------------------------------------------------------------------------
+
+  listSessions(projectId: number): AgentSession[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM agent_sessions WHERE project_id = ? ORDER BY id`)
+      .all(projectId) as unknown as SessionRow[];
+    return rows.map((r) => this.toSession(r));
+  }
+
+  getSession(id: number, projectId?: number): AgentSession | null {
+    const row = this.db.prepare(`SELECT * FROM agent_sessions WHERE id = ?`).get(id) as
+      SessionRow | undefined;
+    if (!row || (projectId !== undefined && row.project_id !== projectId)) return null;
+    return this.toSession(row);
+  }
+
+  async createSession(
+    projectId: number,
+    input: {
+      providerId?: string;
+      command?: string[];
+      name?: string;
+      cwd?: string;
+      supervise?: boolean;
+      env?: Record<string, string>;
+    },
+  ): Promise<AgentSession> {
+    const project = getProjectRow(this.db, projectId);
+    if (!project) throw new AgentError(404, 'Project not found');
+    const count = (
+      this.db
+        .prepare(`SELECT COUNT(*) AS n FROM agent_sessions WHERE project_id = ?`)
+        .get(projectId) as { n: number }
+    ).n;
+    if (count >= MAX_SESSIONS_PER_PROJECT) {
+      throw new AgentError(409, `Session limit reached (${MAX_SESSIONS_PER_PROJECT} per project)`);
+    }
+
+    const providerId = input.providerId ?? (input.command ? 'custom' : 'shell');
+    const provider = getProvider(providerId);
+    if (!provider) throw new AgentError(400, `Unknown provider: ${providerId}`);
+    if (provider.binary && !(await providerAvailable(providerId))) {
+      throw new AgentError(
+        400,
+        `${provider.name} is not on PATH${provider.installUrl ? ` — install: ${provider.installUrl}` : ''}`,
+      );
+    }
+    // Explicit commands win; otherwise an AI provider starts its interactive
+    // REPL and a resume path is stored for crash/reboot relaunches.
+    const explicit = input.command ? validateCommand(input.command) : null;
+    const command = explicit ?? buildInteractiveArgv(provider);
+    if (command.length === 0) throw new AgentError(400, 'No command to run');
+    const resume = explicit ? null : buildResumeArgv(provider);
+    const cwd = resolveCwd(input.cwd ?? project.path);
+    const env = validateEnv(input.env);
+
+    const ts = now();
+    const logPath = path.join(
+      this.logDir,
+      `session-${Date.now()}-${Math.floor(Math.random() * 1e6)}.log`,
+    );
+    const result = this.db
+      .prepare(
+        `INSERT INTO agent_sessions
+           (project_id, name, provider_id, command_json, resume_json, cwd, status,
+            desired_state, supervise, created_at, started_at, log_path)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?)`,
+      )
+      .run(
+        projectId,
+        input.name?.trim() || provider.name,
+        providerId,
+        JSON.stringify({ command, env }),
+        resume ? JSON.stringify(resume) : null,
+        cwd,
+        (input.supervise ?? true) ? 1 : 0,
+        ts,
+        ts,
+        logPath,
+      );
+    const id = Number(result.lastInsertRowid);
+    const row = this.db
+      .prepare(`SELECT * FROM agent_sessions WHERE id = ?`)
+      .get(id) as unknown as SessionRow;
+    this.spawnSession(row, false).catch((e) => this.markSessionDead(id, String(e)));
+    return this.toSession(
+      this.db.prepare(`SELECT * FROM agent_sessions WHERE id = ?`).get(id) as unknown as SessionRow,
+    );
+  }
+
+  renameSession(id: number, name: string): AgentSession | null {
+    const row = this.getSessionRow(id);
+    if (!row) return null;
+    this.db.prepare(`UPDATE agent_sessions SET name = ? WHERE id = ?`).run(name, id);
+    return this.getSession(id);
+  }
+
+  setSupervise(id: number, supervise: boolean): AgentSession | null {
+    const row = this.getSessionRow(id);
+    if (!row) return null;
+    this.db
+      .prepare(`UPDATE agent_sessions SET supervise = ? WHERE id = ?`)
+      .run(supervise ? 1 : 0, id);
+    return this.getSession(id);
+  }
+
+  /** Write stdin: straight to the live process, or queued durably when it is down. */
+  sendInput(id: number, data: string): { queued: boolean; session: AgentSession | null } {
+    const row = this.getSessionRow(id);
+    if (!row) return { queued: false, session: null };
+    if (!data) throw new AgentError(400, 'Input is empty');
+    if (Buffer.byteLength(data) > 64 * 1024)
+      throw new AgentError(400, 'Input too large (64KB max)');
+    const live = this.live.get(`session:${id}`);
+    if (live && live.proc.stdin?.writable && live.proc.exitCode === null && !live.proc.killed) {
+      try {
+        live.proc.stdin.write(data);
+        return { queued: false, session: this.getSession(id) };
+      } catch {
+        // Fall through to queueing.
+      }
+    }
+    const usage = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM agent_input_queue WHERE session_id = ?`,
+      )
+      .get(id) as { n: number; bytes: number };
+    if (usage.n >= MAX_QUEUE_ENTRIES || usage.bytes > MAX_QUEUE_BYTES) {
+      throw new AgentError(409, 'Input queue is full; wait for the session to come back');
+    }
+    this.db
+      .prepare(`INSERT INTO agent_input_queue (session_id, data, created_at) VALUES (?, ?, ?)`)
+      .run(id, data, now());
+    return { queued: true, session: this.getSession(id) };
+  }
+
+  readSessionOutput(id: number, after: number): AgentOutput | null {
+    const row = this.getSessionRow(id);
+    if (!row) return null;
+    return this.readOutput(
+      `session:${id}`,
+      row.log_path,
+      row.status === 'running',
+      row.exit_code,
+      after,
+    );
+  }
+
+  async stopSession(id: number): Promise<AgentSession | null> {
+    const row = this.getSessionRow(id);
+    if (!row) return null;
+    this.db.prepare(`UPDATE agent_sessions SET desired_state = 'stopped' WHERE id = ?`).run(id);
+    const live = this.live.get(`session:${id}`);
+    if (live) {
+      live.stoppedByUser = true;
+      if (live.timer) clearTimeout(live.timer);
+      await killTree(live.proc.pid!);
+    } else if (row.status === 'running') {
+      this.db
+        .prepare(
+          `UPDATE agent_sessions SET status = 'killed', pid = NULL, ended_at = ? WHERE id = ?`,
+        )
+        .run(now(), id);
+    }
+    return this.getSession(id);
+  }
+
+  /** (Re)start a stopped/dead/exited session. Resets the restart counter. */
+  startSession(id: number): AgentSession {
+    const row = this.getSessionRow(id);
+    if (!row) throw new AgentError(404, 'Session not found');
+    if (this.live.has(`session:${id}`)) throw new AgentError(409, 'Session is already running');
+    this.db
+      .prepare(`UPDATE agent_sessions SET desired_state = 'running', restarts = 0 WHERE id = ?`)
+      .run(id);
+    const fresh = this.getSessionRow(id)!;
+    this.spawnSession(fresh, false).catch((e) => this.markSessionDead(id, String(e)));
+    return this.getSession(id)!;
+  }
+
+  async removeSession(id: number): Promise<boolean> {
+    const row = this.getSessionRow(id);
+    if (!row) return false;
+    await this.stopSession(id);
+    this.db.prepare(`DELETE FROM agent_sessions WHERE id = ?`).run(id);
+    try {
+      rmSync(row.log_path, { force: true });
+    } catch {
+      // Log cleanup is best-effort.
+    }
+    return true;
+  }
+
+  // ---- Runs -----------------------------------------------------------------------------------
+
+  listRuns(projectId: number, cardId?: number): AgentRun[] {
+    const rows = (cardId === undefined
+      ? this.db
+          .prepare(`SELECT * FROM agent_runs WHERE project_id = ? ORDER BY id DESC`)
+          .all(projectId)
+      : this.db
+          .prepare(`SELECT * FROM agent_runs WHERE project_id = ? AND card_id = ? ORDER BY id DESC`)
+          .all(projectId, cardId)) as unknown as RunRow[];
+    return rows.map((r) => this.toRun(r));
+  }
+
+  getRun(id: number, projectId?: number): AgentRun | null {
+    const row = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as
+      RunRow | undefined;
+    if (!row || (projectId !== undefined && row.project_id !== projectId)) return null;
+    return this.toRun(row);
+  }
+
+  cardSummaries(projectId: number): CardRunSummary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT card_id,
+                SUM(status = 'running' OR status = 'queued') AS running,
+                SUM(status = 'succeeded') AS succeeded,
+                SUM(status = 'failed') AS failed,
+                SUM(status = 'succeeded' AND validation IS NULL) AS awaiting
+           FROM agent_runs WHERE project_id = ? AND card_id IS NOT NULL GROUP BY card_id`,
+      )
+      .all(projectId) as {
+      card_id: number;
+      running: number;
+      succeeded: number;
+      failed: number;
+      awaiting: number;
+    }[];
+    return rows.map((r) => ({
+      cardId: r.card_id,
+      running: r.running,
+      succeeded: r.succeeded,
+      failed: r.failed,
+      awaitingValidation: r.awaiting,
+    }));
+  }
+
+  /** Push a card to an AI CLI: spawns a one-shot run and moves the card to In progress. */
+  async dispatchCard(
+    projectId: number,
+    cardId: number,
+    input: {
+      providerId?: string;
+      command?: string[];
+      prompt?: string;
+      timeoutMin?: number;
+      maxAttempts?: number;
+    },
+  ): Promise<AgentRun> {
+    const project = getProjectRow(this.db, projectId);
+    if (!project) throw new AgentError(404, 'Project not found');
+    const card = getCard(this.db, cardId);
+    if (!card || card.projectId !== projectId) throw new AgentError(404, 'Card not found');
+    const running = (
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM agent_runs WHERE project_id = ? AND status IN ('queued', 'running')`,
+        )
+        .get(projectId) as { n: number }
+    ).n;
+    if (running >= MAX_RUNNING_RUNS_PER_PROJECT) {
+      throw new AgentError(
+        409,
+        `Too many active runs (${MAX_RUNNING_RUNS_PER_PROJECT} per project)`,
+      );
+    }
+
+    const providerId = input.providerId ?? (input.command ? 'custom' : 'claude');
+    const provider = getProvider(providerId);
+    if (!provider) throw new AgentError(400, `Unknown provider: ${providerId}`);
+    if (provider.binary && !(await providerAvailable(providerId))) {
+      throw new AgentError(
+        400,
+        `${provider.name} is not on PATH${provider.installUrl ? ` — install: ${provider.installUrl}` : ''}`,
+      );
+    }
+    if (
+      (providerId === 'shell' || (provider.binary && provider.argsTemplate.length === 0)) &&
+      !input.command
+    ) {
+      throw new AgentError(400, `${provider.name} needs an explicit command for a one-shot run`);
+    }
+    const prompt = (input.prompt ?? defaultPrompt(card.key, card.title, card.description)).slice(
+      0,
+      20_000,
+    );
+    if (!prompt.trim()) throw new AgentError(400, 'Prompt is empty');
+    const command = input.command
+      ? validateCommand(input.command)
+      : buildDispatchArgv(provider, prompt);
+    if (command.length === 0) throw new AgentError(400, 'Command is empty');
+    const timeoutMs =
+      input.timeoutMin === undefined ? RUN_DEFAULT_TIMEOUT_MS : input.timeoutMin * 60_000;
+    if (!(timeoutMs > 0) || timeoutMs > RUN_MAX_TIMEOUT_MS) {
+      throw new AgentError(400, 'timeoutMin must be between 1 and 240');
+    }
+    const maxAttempts = input.maxAttempts ?? 3;
+    if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) {
+      throw new AgentError(400, 'maxAttempts must be 1–10');
+    }
+
+    const ts = now();
+    const logPath = path.join(
+      this.logDir,
+      `run-${Date.now()}-${Math.floor(Math.random() * 1e6)}.log`,
+    );
+    const id = Number(
+      this.db
+        .prepare(
+          `INSERT INTO agent_runs
+             (project_id, card_id, name, provider_id, command_json, prompt, status,
+              attempts, max_attempts, created_at, log_path)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?)`,
+        )
+        .run(
+          projectId,
+          cardId,
+          `${card.key}: ${card.title}`.slice(0, 120),
+          providerId,
+          JSON.stringify({ command, timeoutMs }),
+          prompt,
+          maxAttempts,
+          ts,
+          logPath,
+        ).lastInsertRowid,
+    );
+    // Dispatching work starts it: backlog/todo cards move to In progress.
+    if (card.status === 'backlog' || card.status === 'todo') {
+      updateCard(this.db, cardId, { status: 'in_progress' });
+    }
+    const row = this.db
+      .prepare(`SELECT * FROM agent_runs WHERE id = ?`)
+      .get(id) as unknown as RunRow;
+    this.spawnRun(row, false);
+    return this.toRun(
+      this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as RunRow,
+    );
+  }
+
+  readRunOutput(id: number, after: number): AgentOutput | null {
+    const row = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as
+      RunRow | undefined;
+    if (!row) return null;
+    const running = row.status === 'queued' || row.status === 'running';
+    return this.readOutput(`run:${id}`, row.log_path, running, row.exit_code, after);
+  }
+
+  async stopRun(id: number): Promise<AgentRun | null> {
+    const row = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as
+      RunRow | undefined;
+    if (!row) return null;
+    const live = this.live.get(`run:${id}`);
+    if (live) {
+      live.stoppedByUser = true;
+      if (live.timer) clearTimeout(live.timer);
+      await killTree(live.proc.pid!);
+    } else if (row.status === 'queued' || row.status === 'running') {
+      this.db
+        .prepare(`UPDATE agent_runs SET status = 'killed', ended_at = ? WHERE id = ?`)
+        .run(now(), id);
+    }
+    return this.getRun(id);
+  }
+
+  retryRun(id: number): AgentRun {
+    const row = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as
+      RunRow | undefined;
+    if (!row) throw new AgentError(404, 'Run not found');
+    if (row.status === 'queued' || row.status === 'running') {
+      throw new AgentError(409, 'Run is still active; stop it before retrying');
+    }
+    const ts = now();
+    const logPath = path.join(
+      this.logDir,
+      `run-${Date.now()}-${Math.floor(Math.random() * 1e6)}.log`,
+    );
+    const next = Number(
+      this.db
+        .prepare(
+          `INSERT INTO agent_runs
+             (project_id, card_id, name, provider_id, command_json, prompt, status,
+              attempts, max_attempts, created_at, log_path)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?)`,
+        )
+        .run(
+          row.project_id,
+          row.card_id,
+          row.name,
+          row.provider_id,
+          row.command_json,
+          row.prompt,
+          row.max_attempts,
+          ts,
+          logPath,
+        ).lastInsertRowid,
+    );
+    const fresh = this.db
+      .prepare(`SELECT * FROM agent_runs WHERE id = ?`)
+      .get(next) as unknown as RunRow;
+    this.spawnRun(fresh, false);
+    return this.toRun(
+      this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(next) as unknown as RunRow,
+    );
+  }
+
+  /** Validate a finished run and move the linked card through its lifecycle. */
+  validateRun(id: number, decision: 'accepted' | 'rejected', moveTo?: CardStatus): AgentRun {
+    const row = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as
+      RunRow | undefined;
+    if (!row) throw new AgentError(404, 'Run not found');
+    if (row.status !== 'succeeded' && row.status !== 'failed') {
+      throw new AgentError(409, 'Only finished runs can be validated');
+    }
+    if (row.validation) throw new AgentError(409, `Run was already ${row.validation}`);
+    const target: CardStatus | null = decision === 'accepted' ? (moveTo ?? 'review') : 'todo';
+    if (decision === 'accepted' && moveTo && moveTo !== 'review' && moveTo !== 'done') {
+      throw new AgentError(400, "Accepting moves the card to 'review' or 'done'");
+    }
+    const card = row.card_id ? getCard(this.db, row.card_id) : null;
+    if (card) {
+      if (decision === 'accepted') {
+        // Never drag a card backwards: leave Done cards where they are.
+        if (card.status !== 'done' && target) updateCard(this.db, card.id, { status: target });
+      } else if (card.status === 'in_progress' || card.status === 'review') {
+        updateCard(this.db, card.id, { status: 'todo' });
+      }
+    }
+    this.db
+      .prepare(
+        `UPDATE agent_runs SET validation = ?, validated_at = ?, validated_move = ? WHERE id = ?`,
+      )
+      .run(decision, now(), target, id);
+    return this.getRun(id)!;
+  }
+
+  async removeRun(id: number): Promise<boolean> {
+    const row = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as
+      RunRow | undefined;
+    if (!row) return false;
+    await this.stopRun(id);
+    this.db.prepare(`DELETE FROM agent_runs WHERE id = ?`).run(id);
+    try {
+      rmSync(row.log_path, { force: true });
+    } catch {
+      // Best-effort.
+    }
+    return true;
+  }
+
+  /** Stop everything for a deleted project and drop its logs. */
+  async onProjectDeleted(projectId: number): Promise<void> {
+    for (const live of [...this.live.values()]) {
+      const rowId = live.id;
+      const table = live.kind === 'session' ? 'agent_sessions' : 'agent_runs';
+      const row = this.db.prepare(`SELECT project_id FROM ${table} WHERE id = ?`).get(rowId) as
+        { project_id: number } | undefined;
+      if (row?.project_id === projectId) {
+        live.stoppedByUser = true;
+        if (live.timer) clearTimeout(live.timer);
+        try {
+          await killTree(live.proc.pid!);
+        } catch {
+          // Already gone.
+        }
+      }
+    }
+  }
+
+  /** Graceful shutdown: stop live processes so the next boot can relaunch them cleanly. */
+  async shutdown(): Promise<void> {
+    this.closed = true;
+    const kills = [...this.live.values()].map(async (live) => {
+      if (live.timer) clearTimeout(live.timer);
+      // If a process was mid-restart-backoff it never spawned: leave the row as
+      // 'running' + wanted so the next boot picks it up.
+      try {
+        await killTree(live.proc.pid!);
+      } catch {
+        // Already gone.
+      }
+    });
+    await Promise.allSettled(kills);
+    this.live.clear();
+  }
+
+  // ---- Spawning ---------------------------------------------------------------------------------
+
+  private logPathFor(kind: 'session' | 'run', id: number): string {
+    return `${kind}:${id}`;
+  }
+
+  private outputFor(key: string, file: string): OutputLog {
+    let log = this.logs.get(key);
+    if (!log) {
+      log = new OutputLog(file);
+      this.logs.set(key, log);
+    }
+    return log;
+  }
+
+  private log(file: string, text: string): void {
+    try {
+      mkdirSync(path.dirname(file), { recursive: true });
+      appendFileSync(file, text);
+    } catch {
+      // Best-effort (boot markers must not crash startup).
+    }
+  }
+
+  private readOutput(
+    key: string,
+    file: string,
+    running: boolean,
+    exitCode: number | null,
+    after: number,
+  ): AgentOutput {
+    const log = this.logs.get(key);
+    const safeAfter = Number.isFinite(after) && after >= 0 ? Math.floor(after) : 0;
+    if (log) {
+      const { data, nextOffset } = log.read(safeAfter);
+      return { data, nextOffset, running, exitCode, logBytes: log.totalBytes };
+    }
+    // No live log (server restarted since): serve the persisted file directly.
+    const tmp = new OutputLog(file);
+    const { data, nextOffset } = tmp.read(safeAfter);
+    let logBytes = nextOffset;
+    try {
+      logBytes = Math.max(nextOffset, statSync(file).size);
+    } catch {
+      // Missing file: report what we read.
+    }
+    return { data, nextOffset, running, exitCode, logBytes };
+  }
+
+  private flushInputQueue(sessionId: number, proc: ChildProcess): void {
+    const queued = this.db
+      .prepare(`SELECT id, data FROM agent_input_queue WHERE session_id = ? ORDER BY id`)
+      .all(sessionId) as { id: number; data: string }[];
+    if (queued.length === 0) return;
+    let flushed = 0;
+    for (const item of queued) {
+      try {
+        proc.stdin!.write(item.data);
+        flushed++;
+      } catch {
+        break;
+      }
+    }
+    if (flushed > 0) {
+      const ids = queued.slice(0, flushed).map((q) => q.id);
+      this.db
+        .prepare(`DELETE FROM agent_input_queue WHERE id IN (${ids.map(() => '?').join(',')})`)
+        .run(...ids);
+    }
+  }
+
+  private spawnSession(row: SessionRow, isRelaunch: boolean): Promise<void> {
+    return new Promise((resolve) => {
+      const key = this.logPathFor('session', row.id);
+      if (this.live.has(key)) return resolve();
+      const { command, env } = JSON.parse(row.command_json) as {
+        command: string[];
+        env: Record<string, string>;
+      };
+      // Relaunching prefers the stored resume argv (e.g. `claude --continue`),
+      // so an AI conversation picks up instead of starting cold. Shells and
+      // custom commands simply respawn.
+      const resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
+      const argv = isRelaunch && resume ? resume : command;
+      const log = this.outputFor(key, row.log_path);
+      if (isRelaunch) {
+        log.append(
+          `\n[supervisor] session relaunched after restart (restart ${row.restarts})` +
+            (resume ? ' — resuming conversation' : ' — fresh start') +
+            `\n$ ${argv.join(' ')}\n`,
+        );
+      }
+      let proc: ChildProcess;
+      try {
+        proc = spawn(argv[0]!, argv.slice(1), {
+          cwd: row.cwd,
+          env: { ...process.env, ...env },
+          stdio: ['pipe', 'pipe', 'pipe'],
+          detached: true,
+          windowsHide: true,
+        });
+      } catch (e) {
+        this.markSessionDead(row.id, `spawn failed: ${(e as Error).message}`);
+        return resolve();
+      }
+      if (!isRelaunch) log.append(`$ ${argv.join(' ')}\n(cd ${row.cwd})\n`);
+
+      const live: LiveProc = { proc, log, stoppedByUser: false, kind: 'session', id: row.id };
+      this.live.set(key, live);
+      this.db
+        .prepare(
+          `UPDATE agent_sessions SET status = 'running', pid = ?, started_at = ?, ended_at = NULL WHERE id = ?`,
+        )
+        .run(proc.pid ?? null, now(), row.id);
+
+      proc.stdout!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
+      proc.stderr!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
+      proc.on('error', (e) => {
+        log.append(`\n[process error: ${e.message}]\n`);
+      });
+      proc.on('exit', (code, signal) => {
+        this.live.delete(key);
+        if (live.stoppedByUser) {
+          this.db
+            .prepare(
+              `UPDATE agent_sessions SET status = 'killed', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
+            )
+            .run(code, now(), row.id);
+          return resolve();
+        }
+        if (this.closed) {
+          // Shutdown kills everything: leave the row 'running' + wanted so the
+          // next boot relaunches it (reboot-proof by design).
+          return resolve();
+        }
+        const current = this.getSessionRow(row.id);
+        if (!current || current.desired_state !== 'running') {
+          this.db
+            .prepare(
+              `UPDATE agent_sessions SET status = 'exited', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
+            )
+            .run(code, now(), row.id);
+          return resolve();
+        }
+        if (current.supervise && current.restarts < MAX_RESTARTS) {
+          const restarts = current.restarts + 1;
+          const delay = Math.min(RESTART_BASE_MS * 2 ** Math.min(restarts - 1, 5), RESTART_CAP_MS);
+          log.append(
+            `\n[supervisor] process exited (code ${code ?? signal}) — relaunching in ${(delay / 1000).toFixed(0)}s (restart ${restarts}/${MAX_RESTARTS})\n`,
+          );
+          this.db
+            .prepare(`UPDATE agent_sessions SET restarts = ?, last_restart_at = ? WHERE id = ?`)
+            .run(restarts, now(), row.id);
+          const timer = setTimeout(() => {
+            const fresh = this.getSessionRow(row.id);
+            if (fresh && fresh.desired_state === 'running') {
+              this.spawnSession(fresh, true).catch((e) => this.markSessionDead(row.id, String(e)));
+            }
+            resolve();
+          }, delay);
+          timer.unref?.();
+          live.timer = timer;
+        } else {
+          if (current.supervise && current.restarts >= MAX_RESTARTS) {
+            log.append(
+              `\n[supervisor] restart budget exhausted (${MAX_RESTARTS}) — leaving session down; press Start to retry\n`,
+            );
+          }
+          this.db
+            .prepare(
+              `UPDATE agent_sessions SET status = 'exited', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
+            )
+            .run(code, now(), row.id);
+          resolve();
+        }
+      });
+
+      // Flush stdin queued while the session was down (reboot-proof inbox).
+      this.flushInputQueue(row.id, proc);
+      resolve();
+    });
+  }
+
+  private markSessionDead(id: number, error: string): void {
+    this.log(
+      this.getSessionRow(id)?.log_path ?? '',
+      `\n[supervisor] session could not start: ${error}\n`,
+    );
+    this.db
+      .prepare(`UPDATE agent_sessions SET status = 'dead', pid = NULL, ended_at = ? WHERE id = ?`)
+      .run(now(), id);
+  }
+
+  private spawnRun(row: RunRow, isRelaunch: boolean): void {
+    const key = this.logPathFor('run', row.id);
+    if (this.live.has(key)) return;
+    const { command, timeoutMs } = JSON.parse(row.command_json) as {
+      command: string[];
+      timeoutMs: number;
+    };
+    const project = getProjectRow(this.db, row.project_id);
+    const cwd = project?.path ?? process.cwd();
+    let proc: ChildProcess;
+    try {
+      proc = spawn(command[0]!, command.slice(1), {
+        cwd,
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+        windowsHide: true,
+      });
+    } catch (e) {
+      this.finishRun(row.id, 'failed', null, `spawn failed: ${(e as Error).message}`);
+      return;
+    }
+    const attempts = row.attempts + 1;
+    this.db
+      .prepare(
+        `UPDATE agent_runs SET status = 'running', started_at = ?, attempts = ? WHERE id = ?`,
+      )
+      .run(now(), attempts, row.id);
+    const log = this.outputFor(key, row.log_path);
+    if (!isRelaunch) log.append(`$ ${command.join(' ')}\n(cd ${cwd})\n`);
+
+    const live: LiveProc = { proc, log, stoppedByUser: false, kind: 'run', id: row.id };
+    this.live.set(key, live);
+    const timer = setTimeout(() => {
+      const stillLive = this.live.get(key);
+      if (!stillLive) return;
+      stillLive.stoppedByUser = false;
+      log.append(`\n[supervisor] timed out after ${Math.round(timeoutMs / 60000)}m — killing\n`);
+      killTree(proc.pid!).catch(() => undefined);
+      this.finishRun(row.id, 'failed', null, `Timed out after ${Math.round(timeoutMs / 60000)}m`);
+    }, timeoutMs);
+    timer.unref?.();
+    live.timer = timer;
+
+    proc.stdout!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
+    proc.stderr!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
+    proc.on('error', (e) => log.append(`\n[process error: ${e.message}]\n`));
+    proc.on('exit', (code) => {
+      if (live.timer) clearTimeout(live.timer);
+      this.live.delete(key);
+      if (this.closed) {
+        // Shutdown kills everything: leave wanted rows alone so the next boot
+        // relaunches them; finished rows already carry their terminal state.
+        return;
+      }
+      const current = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(row.id) as
+        RunRow | undefined;
+      if (!current || (current.status !== 'running' && current.status !== 'queued')) return;
+      if (live.stoppedByUser) {
+        this.finishRun(row.id, 'killed', code, null);
+      } else if (code === 0) {
+        log.append(`\n[run succeeded — awaiting validation]\n`);
+        this.finishRun(row.id, 'succeeded', code, null);
+      } else {
+        this.finishRun(row.id, 'failed', code, `Exited with code ${code}`);
+      }
+    });
+  }
+
+  private finishRun(
+    id: number,
+    status: AgentRunStatus,
+    exitCode: number | null,
+    error: string | null,
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE agent_runs SET status = ?, exit_code = ?, error = ?, ended_at = ? WHERE id = ?`,
+      )
+      .run(status, exitCode, error, now(), id);
+  }
+
+  // ---- Row mapping --------------------------------------------------------------------------------
+
+  private getSessionRow(id: number): SessionRow | null {
+    return (
+      (this.db.prepare(`SELECT * FROM agent_sessions WHERE id = ?`).get(id) as unknown as
+        SessionRow | undefined) ?? null
+    );
+  }
+
+  private queuedInputBytes(sessionId: number): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM agent_input_queue WHERE session_id = ?`,
+      )
+      .get(sessionId) as { bytes: number };
+    return row.bytes;
+  }
+
+  private toSession(row: SessionRow): AgentSession {
+    const { command } = JSON.parse(row.command_json) as { command: string[] };
+    const live = this.live.get(`session:${row.id}`);
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      name: row.name,
+      providerId: row.provider_id,
+      command,
+      cwd: row.cwd,
+      pid: live?.proc.pid ?? row.pid,
+      status: live ? 'running' : row.status,
+      exitCode: row.exit_code,
+      desiredState: row.desired_state,
+      supervise: row.supervise === 1,
+      resumeSupported: row.resume_json !== null,
+      restarts: row.restarts,
+      lastRestartAt: row.last_restart_at,
+      queuedInputBytes: this.queuedInputBytes(row.id),
+      createdAt: row.created_at,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      logBytes: live ? live.log.totalBytes : this.fileSize(row.log_path),
+    };
+  }
+
+  private toRun(row: RunRow): AgentRun {
+    const { command } = JSON.parse(row.command_json) as { command: string[] };
+    const live = this.live.get(`run:${row.id}`);
+    let cardKey: string | null = null;
+    if (row.card_id) {
+      const card = getCard(this.db, row.card_id);
+      if (card) cardKey = card.key;
+    }
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      cardId: row.card_id,
+      cardKey,
+      name: row.name,
+      providerId: row.provider_id,
+      command,
+      prompt: row.prompt,
+      status: row.status,
+      exitCode: row.exit_code,
+      error: row.error,
+      attempts: row.attempts,
+      maxAttempts: row.max_attempts,
+      validation: row.validation,
+      validatedAt: row.validated_at,
+      validatedMove: row.validated_move,
+      createdAt: row.created_at,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      logBytes: live ? live.log.totalBytes : this.fileSize(row.log_path),
+    };
+  }
+
+  private fileSize(file: string): number {
+    try {
+      return statSync(file).size;
+    } catch {
+      return 0;
+    }
+  }
+}
+
+// ---- Validation helpers ---------------------------------------------------------------------------
+
+function validateCommand(command: unknown): string[] {
+  if (!Array.isArray(command) || command.length === 0 || command.length > 32) {
+    throw new AgentError(400, 'command must be a non-empty array (max 32 args)');
+  }
+  for (const arg of command) {
+    if (typeof arg !== 'string' || !arg || Buffer.byteLength(arg) > 8192) {
+      throw new AgentError(400, 'command args must be non-empty strings (max 8KB each)');
+    }
+  }
+  return command as string[];
+}
+
+function validateEnv(env: unknown): Record<string, string> {
+  if (env === undefined) return {};
+  if (!env || typeof env !== 'object' || Array.isArray(env)) {
+    throw new AgentError(400, 'env must be an object of string to string');
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env as Record<string, unknown>)) {
+    if (typeof v !== 'string' || Buffer.byteLength(v) > 8192) {
+      throw new AgentError(400, `env var ${k} must be a string (max 8KB)`);
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
+function resolveCwd(cwd: string): string {
+  if (!path.isAbsolute(cwd)) throw new AgentError(400, 'cwd must be an absolute path');
+  try {
+    const resolved = realpathSync.native(cwd);
+    if (!statSync(resolved).isDirectory()) throw new Error('not a directory');
+    return resolved;
+  } catch {
+    throw new AgentError(400, `Folder not found: ${cwd}`);
+  }
+}
+
+function defaultPrompt(key: string, title: string, description: string): string {
+  const parts = [
+    `Task ${key}: ${title}`,
+    description.trim(),
+    '---',
+    'Work in the project root directory (your current working directory).',
+    'Implement the task above. When finished, summarise what changed.',
+  ];
+  return parts.filter(Boolean).join('\n\n');
+}

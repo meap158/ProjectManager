@@ -1,0 +1,243 @@
+#!/usr/bin/env node
+// One-command launcher: checks prerequisites, picks a free port (preferred port first, then the
+// next ones), starts the server, waits until it is healthy, prints the URL and opens the browser.
+// Ctrl+C stops the whole process tree.
+//
+//   node scripts/launch.mjs          development (Vite HMR + server auto-restart)
+//   node scripts/launch.mjs --prod   production build (run `npm run build` first)
+//   --no-open                        don't open a browser (also: BROWSER=none, CI=true)
+//
+// No dependencies on purpose: this must run before `npm install` has happened.
+
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import net from 'node:net';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MIN_NODE = [22, 13];
+const MAX_PORT_ATTEMPTS = 50;
+const READY_TIMEOUT_MS = 60_000;
+/** Line the server prints on EADDRINUSE (see server/index.ts). Works under tsx watch too,
+ *  where a crashed server doesn't exit but waits for file changes. */
+const PORT_IN_USE_MARKER = '[server] EADDRINUSE';
+
+const args = new Set(process.argv.slice(2));
+const prod = args.has('--prod');
+
+const log = (msg) => console.log(`\x1b[36m[launch]\x1b[0m ${msg}`);
+const fail = (msg) => {
+  console.error(`\x1b[31m[launch] ${msg}\x1b[0m`);
+  process.exit(1);
+};
+
+// ---- Prerequisites ------------------------------------------------------------------------------
+
+const [major, minor] = process.versions.node.split('.').map(Number);
+if (major < MIN_NODE[0] || (major === MIN_NODE[0] && minor < MIN_NODE[1])) {
+  fail(`Node.js ${MIN_NODE.join('.')}+ is required (found ${process.versions.node}).`);
+}
+
+if (!existsSync(path.join(ROOT, 'node_modules'))) {
+  log('Dependencies missing - running npm install...');
+  const result = spawnSync('npm', ['install'], { cwd: ROOT, stdio: 'inherit', shell: true });
+  if (result.status !== 0)
+    fail('npm install failed. Fix the error above and run the launcher again.');
+}
+
+if (spawnSync('git', ['--version'], { stdio: 'ignore' }).status !== 0) {
+  log('\x1b[33mgit not found on PATH - commit stats and heatmaps will be unavailable.\x1b[0m');
+}
+
+if (prod && !existsSync(path.join(ROOT, 'dist', 'server', 'index.js'))) {
+  fail('No production build found. Run `npm run build` first.');
+}
+
+// ---- Configuration ------------------------------------------------------------------------------
+
+loadDotEnv(path.join(ROOT, '.env'));
+const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+const host = process.env.HOST || '127.0.0.1';
+const preferredPort = Number(process.env.PORT || pkg.config?.port || 5180);
+if (!Number.isInteger(preferredPort) || preferredPort < 1 || preferredPort > 65535) {
+  fail(`Invalid PORT "${process.env.PORT}".`);
+}
+const shouldOpen = !args.has('--no-open') && process.env.BROWSER !== 'none' && !process.env.CI;
+
+/** Minimal .env reader: KEY=value lines; existing environment variables win. */
+function loadDotEnv(file) {
+  if (!existsSync(file)) return;
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!match || line.trimStart().startsWith('#')) continue;
+    const [, key, raw] = match;
+    if (process.env[key] === undefined) process.env[key] = raw.replace(/^(['"])(.*)\1$/, '$2');
+  }
+}
+
+// ---- Port selection -----------------------------------------------------------------------------
+
+/** A port is free if nothing accepts connections on it and we can bind it ourselves. */
+async function isPortFree(port) {
+  const accepting = await new Promise((resolve) => {
+    const socket = net.connect({ port, host });
+    socket.setTimeout(400);
+    socket.once('connect', () => (socket.destroy(), resolve(true)));
+    socket.once('timeout', () => (socket.destroy(), resolve(false)));
+    socket.once('error', () => resolve(false));
+  });
+  if (accepting) return false;
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.once('error', () => resolve(false));
+    server.listen({ port, host, exclusive: true }, () => server.close(() => resolve(true)));
+  });
+}
+
+async function findFreePort(start, exclude) {
+  for (let port = start; port < start + MAX_PORT_ATTEMPTS && port <= 65535; port++) {
+    if (exclude.has(port)) continue;
+    if (await isPortFree(port)) return port;
+    log(`Port ${port} is busy, trying ${port + 1}...`);
+  }
+  return null;
+}
+
+// ---- Child process management -------------------------------------------------------------------
+
+let child = null;
+let shuttingDown = false;
+
+function killTree(proc) {
+  if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
+  if (process.platform === 'win32') {
+    // Kills the watcher and the server it spawned; plain kill() would orphan the grandchild.
+    spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else {
+    try {
+      process.kill(-proc.pid, 'SIGTERM'); // Whole process group (spawned with detached: true).
+    } catch {
+      proc.kill('SIGTERM');
+    }
+  }
+}
+
+function shutdown(code = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  killTree(child);
+  process.exit(code);
+}
+
+process.on('SIGINT', () => shutdown(0));
+process.on('SIGTERM', () => shutdown(0));
+process.on('SIGHUP', () => shutdown(0));
+process.on('exit', () => killTree(child));
+
+function startServer(port) {
+  const env = { ...process.env, PORT: String(port), HOST: host };
+  let argv;
+  if (prod) {
+    env.NODE_ENV = 'production';
+    argv = ['--disable-warning=ExperimentalWarning', 'dist/server/index.js'];
+  } else {
+    env.NODE_ENV = 'development';
+    // tsx watch restarts the server when server/ or shared/ files change; Vite handles client HMR.
+    const tsxCli = path.join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+    env.NODE_OPTIONS = `${env.NODE_OPTIONS ?? ''} --disable-warning=ExperimentalWarning`.trim();
+    argv = [tsxCli, 'watch', '--clear-screen=false', 'server/index.ts'];
+  }
+  env.FORCE_COLOR ??= '1';
+  const proc = spawn(process.execPath, argv, {
+    cwd: ROOT,
+    env,
+    stdio: ['inherit', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
+  });
+  // Forward output and flag a port collision so the caller can retry on another port.
+  proc.portInUse = false;
+  for (const [stream, target] of [
+    [proc.stdout, process.stdout],
+    [proc.stderr, process.stderr],
+  ]) {
+    stream.on('data', (chunk) => {
+      if (chunk.toString().includes(PORT_IN_USE_MARKER)) proc.portInUse = true;
+      target.write(chunk);
+    });
+  }
+  return proc;
+}
+
+async function waitUntilReady(port, proc) {
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (proc.exitCode !== null || proc.portInUse) return false;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+      if (res.ok) return true;
+    } catch {
+      // Not listening yet.
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+}
+
+function openBrowser(url) {
+  const [cmd, cmdArgs] =
+    process.platform === 'win32'
+      ? ['explorer.exe', [url]]
+      : process.platform === 'darwin'
+        ? ['open', [url]]
+        : ['xdg-open', [url]];
+  const proc = spawn(cmd, cmdArgs, { stdio: 'ignore', detached: true });
+  proc.on('error', () => log(`Could not open a browser automatically. Open ${url} manually.`));
+  proc.unref();
+}
+
+// ---- Main ---------------------------------------------------------------------------------------
+
+const triedPorts = new Set();
+for (let attempt = 0; attempt < 5; attempt++) {
+  const port = await findFreePort(preferredPort, triedPorts);
+  if (port === null) {
+    fail(
+      `No free port found in ${preferredPort}-${preferredPort + MAX_PORT_ATTEMPTS - 1}. ` +
+        'Set PORT in .env to a different range.',
+    );
+  }
+  triedPorts.add(port);
+
+  log(`Starting ${prod ? 'production' : 'development'} server on port ${port}...`);
+  child = startServer(port);
+  const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)));
+  const ready = await waitUntilReady(port, child);
+
+  if (ready) {
+    const url = `http://localhost:${port}`;
+    const note = port === preferredPort ? '' : ` (preferred port ${preferredPort} was busy)`;
+    console.log(
+      `\n  \x1b[1m\x1b[32mProjectManager is running:\x1b[0m  \x1b[1m${url}\x1b[0m${note}\n`,
+    );
+    console.log('  Press Ctrl+C to stop.\n');
+    if (shouldOpen) openBrowser(url);
+    const code = await exited;
+    if (!shuttingDown) fail(`Server stopped unexpectedly (exit code ${code}).`);
+    break;
+  }
+
+  if (child.portInUse) {
+    killTree(child);
+    log(`Port ${port} was taken just before startup, trying another...`);
+    continue;
+  }
+  const code = child.exitCode;
+  killTree(child);
+  fail(
+    code === null
+      ? `Server did not become ready within ${READY_TIMEOUT_MS / 1000}s.`
+      : `Server failed to start (exit code ${code}). See the error above.`,
+  );
+}
