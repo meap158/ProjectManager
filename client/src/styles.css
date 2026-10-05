@@ -859,6 +859,15 @@ a.t:hover {
 .btn-danger:hover:not(:disabled) {
   background: var(--danger-soft);
 }
+/* The confirm button of a destructive dialog: solid red, white text. */
+.btn-danger-solid {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.btn-danger-solid:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
 .btn-ghost {
   border-color: transparent;
   background: transparent;
@@ -1452,6 +1461,17 @@ dialog {
   padding: 0;
   width: min(640px, calc(100vw - 32px));
   box-shadow: var(--shadow-lg);
+}
+dialog.confirm-dialog {
+  width: min(440px, calc(100vw - 32px));
+}
+.confirm-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.confirm-dialog p {
+  margin: 0;
+  color: var(--text-2);
 }
 dialog::backdrop {
   background: rgb(0 0 0 / 0.4);
@@ -2145,14 +2165,16 @@ kbd {
   background: var(--surface-2);
 }
 
-/* Theme switch (top bar, right). */
+/* Theme menu (top bar, right): a standard labelled menu button; the menu opens right-aligned. */
 .theme-switch {
   margin-left: auto;
 }
-.theme-switch button {
-  padding: 2px 8px;
-  font-size: 13px;
-  line-height: 1.2;
+.theme-switch .dropdown-trigger {
+  font-weight: 500;
+}
+.theme-switch .dropdown-list {
+  left: auto;
+  right: 0;
 }
 
 /* Sidebar: CLI sessions running in a project (terminal glyph + count). */

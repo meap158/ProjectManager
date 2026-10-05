@@ -5,7 +5,7 @@ import { api } from '../api';
 import { Dropdown } from './Dropdown';
 import { formatBytes } from '../format';
 import { RunCard } from './RunCard';
-import { DeleteButton } from './ui/delete-button';
+import { ConfirmDelete } from './ConfirmDelete';
 
 // xterm is heavy: it loads only when a terminal actually renders.
 const TerminalView = lazy(() =>
@@ -263,8 +263,10 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                       Start
                     </button>
                   )}
-                  <DeleteButton
-                    title={`Delete session "${s.name}" (stops the process)`}
+                  <ConfirmDelete
+                    label={`Delete session "${s.name}"`}
+                    heading={`Delete session "${s.name}"?`}
+                    message="Stops the process if it's running and deletes its log. This can't be undone."
                     onConfirm={async () => {
                       try {
                         await api.deleteSession(s.id);

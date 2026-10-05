@@ -5,14 +5,15 @@ import {
   setThemePreference,
   type ThemePreference,
 } from '../theme';
+import { Dropdown } from './Dropdown';
 
-const OPTIONS: { value: ThemePreference; label: string; icon: string }[] = [
-  { value: 'system', label: 'Match system', icon: '◐' },
-  { value: 'light', label: 'Light', icon: '☀' },
-  { value: 'dark', label: 'Dark', icon: '☾' },
+const OPTIONS: { value: ThemePreference; label: string; title: string }[] = [
+  { value: 'system', label: 'Theme: System', title: 'Follow your operating system setting' },
+  { value: 'light', label: 'Theme: Light', title: 'Always light' },
+  { value: 'dark', label: 'Theme: Dark', title: 'Always dark' },
 ];
 
-/** System / Light / Dark switch for the top bar. */
+/** Theme menu for the top bar: System (default), Light or Dark. */
 export function ThemeSwitch() {
   const [preference, setPreference] = useState<ThemePreference>(readThemePreference);
   const current = useRef(preference);
@@ -22,24 +23,16 @@ export function ThemeSwitch() {
   useEffect(() => followSystemTheme(() => current.current), []);
 
   return (
-    <div className="segmented theme-switch" role="radiogroup" aria-label="Colour theme">
-      {OPTIONS.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={preference === o.value}
-          aria-label={o.label}
-          title={o.label}
-          className={preference === o.value ? 'is-active' : ''}
-          onClick={() => {
-            setPreference(o.value);
-            setThemePreference(o.value);
-          }}
-        >
-          <span aria-hidden="true">{o.icon}</span>
-        </button>
-      ))}
+    <div className="theme-switch">
+      <Dropdown
+        label="Colour theme"
+        value={preference}
+        options={OPTIONS}
+        onChange={(value) => {
+          setPreference(value);
+          setThemePreference(value);
+        }}
+      />
     </div>
   );
 }

@@ -157,7 +157,13 @@ adjacent-pair CVD separation in both modes).
 - **Dialogs:** native `<dialog>` with `showModal()`, which gives focus trapping, Esc to close and a
   backdrop. Layout is `.dialog-body` + `.dialog-footer` (destructive action on the left, Cancel and
   primary action on the right).
-- **Destructive actions:** use Rare UI `DeleteButton` (confirm in place, no modal, Esc cancels).
+- **Destructive actions:** `ConfirmDelete` (`components/ConfirmDelete.tsx`): a danger button
+  (icon-only in dense rows, labelled elsewhere) opens a small confirmation dialog that names the
+  action and its consequence ("Stop tracking X? … Files on disk are not touched."), with Cancel
+  focused and a solid red confirm. Esc cancels.
+- **Standard web conventions** over platform-flavoured controls: labelled menu buttons instead
+  of tiny segmented icon switches, text-labelled confirmations instead of icon-only morphing
+  widgets, plain lists/charts instead of decorative pills.
   Never use `window.confirm`.
 - **Tabs (project page):** a plain, stable tab bar (`.tabs` / `role="tablist"`), synced to `?tab=`
   in the URL.
@@ -201,11 +207,10 @@ adjacent-pair CVD separation in both modes).
 [Rare UI](https://rareui.com) components are installed via the shadcn CLI into `client/src/components/ui/`
 and are **owned code**: adapt them freely, and keep a header comment saying what changed.
 
-| Component         | Where                       | Adaptation                                    |
-| ----------------- | --------------------------- | --------------------------------------------- |
-| `GitHubActivity`  | Commit activity heatmap     | `unit` prop added, fed local data, no network |
-| `AnimatedCounter` | All stat tiles (`StatTile`) | none                                          |
-| `DeleteButton`    | Remove project, delete card | none                                          |
+| Component         | Where                       | Adaptation                                                                                              |
+| ----------------- | --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `GitHubActivity`  | Commit activity heatmap     | `unit` prop added, fed local data, no network, no contributors pill (the Contributors chart lists them) |
+| `AnimatedCounter` | All stat tiles (`StatTile`) | none                                                                                                    |
 
 Other rules:
 

@@ -16,7 +16,7 @@ import { api } from '../api';
 import { formatDate } from '../format';
 import { Dropdown } from './Dropdown';
 import { RunCard } from './RunCard';
-import { DeleteButton } from './ui/delete-button';
+import { ConfirmDelete } from './ConfirmDelete';
 
 const AUTONOMY_HINTS: Record<AgentAutonomy, string> = {
   read: 'Read-only: the agent can look around and answer, but not change files or run commands.',
@@ -385,7 +385,13 @@ export function CardDialog({
             )}
           </div>
           <div className="dialog-footer" style={{ alignItems: 'center' }}>
-            <DeleteButton onConfirm={remove} aria-label="Delete card" />
+            <ConfirmDelete
+              label="Delete card"
+              text="Delete"
+              heading={`Delete card ${card.key}?`}
+              message="The card and its notes are removed from the board. This can't be undone."
+              onConfirm={remove}
+            />
             <div className="actions">
               <button type="button" className="btn" onClick={onClose}>
                 Cancel

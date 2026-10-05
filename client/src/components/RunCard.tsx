@@ -3,7 +3,7 @@ import { AGENT_AUTONOMY_LABELS, type AgentRun } from '../../../shared/types';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
 import { formatBytes, formatRelative } from '../format';
-import { DeleteButton } from './ui/delete-button';
+import { ConfirmDelete } from './ConfirmDelete';
 
 // xterm is heavy: it loads only when output is opened.
 const TerminalView = lazy(() =>
@@ -207,8 +207,10 @@ export function RunCard({
           </button>
         )}
         <span style={{ flex: 1 }} />
-        <DeleteButton
-          title="Delete run record"
+        <ConfirmDelete
+          label="Delete run record"
+          heading="Delete this run record?"
+          message="Removes the run's output and change summary. The card stays where it is."
           onConfirm={async () => {
             try {
               await api.deleteRun(run.id);

@@ -14,7 +14,7 @@ import {
 } from '../components/charts';
 import { KanbanBoard } from '../components/KanbanBoard';
 import { BytesTile, StatTile } from '../components/StatTile';
-import { DeleteButton } from '../components/ui/delete-button';
+import { ConfirmDelete } from '../components/ConfirmDelete';
 import { GitHubActivity } from '../components/ui/github-activity';
 import { formatBytes, formatDate, formatNumber, formatRelative } from '../format';
 
@@ -124,8 +124,11 @@ export function ProjectPage() {
           <button className="btn" onClick={rescan} disabled={scanning || project.missing}>
             {scanning ? <span className="spinner" /> : '↻'} Refresh
           </button>
-          <DeleteButton
-            title="Stop tracking (files on disk are not touched)"
+          <ConfirmDelete
+            label="Stop tracking this project"
+            heading={`Stop tracking ${project.name}?`}
+            message="ProjectManager forgets this project with its board, sessions and runs. Files on disk are not touched."
+            confirmLabel="Stop tracking"
             onConfirm={async () => {
               try {
                 await api.removeProject(id);
@@ -336,12 +339,10 @@ function Overview({ project }: { project: ProjectDetail }) {
             </div>
             <GitHubActivity
               contributions={toContributions(git.dailyCommits)}
-              repos={git.contributors.slice(0, 5).map((c) => ({ name: c.name, count: c.commits }))}
-              label="Top contributors"
               unit="commit"
               accent={HEAT_SCALE}
               showMonths
-              className="w-full rounded-none bg-transparent p-0 pb-[68px] dark:bg-transparent"
+              className="w-full rounded-none bg-transparent p-0 dark:bg-transparent"
               style={{ width: '100%' }}
             />
           </div>
