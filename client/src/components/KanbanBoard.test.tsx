@@ -15,6 +15,7 @@ vi.mock('../api', () => ({
     listProviders: vi.fn(async () => []),
     listRuns: vi.fn(async () => []),
     listSessions: vi.fn(async () => []),
+    listAttachments: vi.fn(async () => []),
   },
 }));
 

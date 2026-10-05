@@ -6,6 +6,7 @@ import type {
   AgentRun,
   AgentSession,
   AgentTokenUsage,
+  CardAttachment,
   BulkAddResult,
   Card,
   CardRunSummary,
@@ -59,6 +60,15 @@ export const api = {
       'GET',
       `/fs/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`,
     ),
+
+  // ---- Card images ----------------------------------------------------------------------------
+  listAttachments: (cardId: number) =>
+    request<CardAttachment[]>('GET', `/cards/${cardId}/attachments`),
+  /** `data` is base64 (the API only accepts JSON writes). */
+  addAttachment: (cardId: number, image: { name: string; type: string; data: string }) =>
+    request<CardAttachment>('POST', `/cards/${cardId}/attachments`, image),
+  deleteAttachment: (cardId: number, file: string) =>
+    request<void>('DELETE', `/cards/${cardId}/attachments/${encodeURIComponent(file)}`),
 
   // ---- Agent CLI sessions and runs ------------------------------------------------------------
   listProviders: () => request<AgentProviderStatus[]>('GET', '/agents/providers'),

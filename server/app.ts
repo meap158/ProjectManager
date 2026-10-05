@@ -10,6 +10,7 @@ import { Scanner } from './scanner.js';
 import * as store from './store.js';
 import { AgentError, AgentSupervisor } from './agents/supervisor.js';
 import { registerAgentRoutes } from './agents/routes.js';
+import { registerAttachmentRoutes, removeAttachments } from './attachments.js';
 
 const idParam = z.coerce.number().int().positive();
 
@@ -113,6 +114,9 @@ export function createApp(
   app.get('/health', (c) => c.json({ ok: true }));
 
   registerAgentRoutes(app, db, supervisor);
+  // Card images live beside the agent logs: <dataDir>/attachments/<cardId>/.
+  const attachmentsRoot = path.join(path.dirname(logDir), 'attachments');
+  registerAttachmentRoutes(app, db, attachmentsRoot);
 
   // ---- Projects -------------------------------------------------------------------------------
 
@@ -220,7 +224,10 @@ export function createApp(
   });
 
   app.delete('/cards/:id', (c) => {
-    if (!store.deleteCard(db, parseId(c))) throw new HttpError(404, 'Card not found');
+    const id = parseId(c);
+    if (!store.deleteCard(db, id)) throw new HttpError(404, 'Card not found');
+    // A deleted card's images go with it (no orphaned files in the data folder).
+    removeAttachments(attachmentsRoot, id);
     return c.body(null, 204);
   });
 

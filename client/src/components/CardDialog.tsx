@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
   AGENT_AUTONOMY,
@@ -14,6 +14,7 @@ import {
 } from '../../../shared/types';
 import { api } from '../api';
 import { formatDate } from '../format';
+import { CardImages } from './CardImages';
 import { Dropdown } from './Dropdown';
 import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -100,6 +101,8 @@ export function CardDialog({
   const [autonomy, setAutonomy] = useState<AgentAutonomy>('edit');
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  // Pasting a screenshot anywhere in the dialog attaches it (text pastes are left alone).
+  const pasteImages = useRef<((event: ClipboardEvent) => void) | null>(null);
   const [handMode, setHandModeState] = useState<HandMode>(readHandMode);
   const setHandMode = (next: HandMode) => {
     setHandModeState(next);
@@ -249,7 +252,12 @@ export function CardDialog({
   }
 
   return (
-    <dialog ref={dialogRef} onClose={onClose} aria-labelledby="card-dialog-title">
+    <dialog
+      ref={dialogRef}
+      onClose={onClose}
+      aria-labelledby="card-dialog-title"
+      onPaste={(event) => pasteImages.current?.(event)}
+    >
       {card && (
         <form onSubmit={save}>
           <div className="dialog-body">
@@ -292,6 +300,11 @@ export function CardDialog({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="What should this feature do? Acceptance criteria, links, ideas…"
               />
+            </div>
+            <div className="field">
+              <label>Images</label>
+              {/* Keyed by card: switching cards never shows the previous card's images. */}
+              <CardImages key={card.id} cardId={card.id} pasteRef={pasteImages} />
             </div>
             <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
               Tip: mention <code>{card.key}</code> in a commit message to move this card to In

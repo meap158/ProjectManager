@@ -3,6 +3,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 export interface DropdownOption<T extends string | number> {
   value: T;
   label: string;
+  /** One-line explanation under the label, e.g. what a preset contains. */
+  sub?: string;
   /** Shown dimmed and skipped by keyboard; needs `hint` or `title` saying why. */
   disabled?: boolean;
   /** Short right-side meta, e.g. "not on PATH". */
@@ -131,6 +133,8 @@ export function Dropdown<T extends string | number>({
         }}
       >
         <span className="truncate">{selected?.label ?? '—'}</span>
+        {/* The closed picker says what the open list says about the choice (e.g. its CLI). */}
+        {selected?.hint && <span className="dropdown-trigger-hint truncate">{selected.hint}</span>}
         <span className="dropdown-caret" aria-hidden="true">
           ▾
         </span>
@@ -186,7 +190,10 @@ export function Dropdown<T extends string | number>({
                 <span className="dropdown-check" aria-hidden="true">
                   {option.value === value ? '✓' : ''}
                 </span>
-                <span className="truncate">{option.label}</span>
+                <span className="dropdown-text">
+                  <span className="truncate">{option.label}</span>
+                  {option.sub && <span className="dropdown-sub truncate">{option.sub}</span>}
+                </span>
                 {option.hint && <span className="dropdown-hint">{option.hint}</span>}
               </button>
             </li>

@@ -126,6 +126,19 @@ export interface ProjectSummary {
 
 export type ProjectDetail = ProjectSummary;
 
+/** An image attached to a card as context (stored in the data folder, not the project). */
+export interface CardAttachment {
+  /** Stored file name; identifies the attachment. */
+  file: string;
+  /** Original name, for display. */
+  name: string;
+  type: string;
+  bytes: number;
+  addedAt: string;
+  /** Same-origin URL serving the image. */
+  url: string;
+}
+
 export interface Card {
   id: number;
   projectId: number;

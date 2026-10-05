@@ -43,6 +43,7 @@ import type {
   RunChanges,
 } from '../../shared/types.js';
 import { isTerminalReport, stripTerminalReports } from '../../shared/terminalReports.js';
+import { withAttachments } from '../attachments.js';
 import type { Db } from '../db.js';
 import { getCard, getProjectRow, updateCard } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
@@ -351,6 +352,11 @@ export class AgentSupervisor {
   /** Resolves once boot reconciliation (re-attach / relaunch) is done. */
   readonly ready: Promise<void>;
 
+  /** A card task plus the paths of the card's attached images (stored next to the agent logs). */
+  private withImages(prompt: string, cardId: number): string {
+    return withAttachments(prompt, path.join(path.dirname(this.logDir), 'attachments'), cardId);
+  }
+
   constructor(
     private db: Db,
     private logDir: string,
@@ -564,7 +570,12 @@ export class AgentSupervisor {
     // REPL and a resume path is stored for crash/reboot relaunches.
     const explicit = input.command ? validateCommand(input.command) : null;
     const prompt = (
-      input.prompt ?? (card ? defaultPrompt(card.key, card.title, card.description) : '')
+      card
+        ? this.withImages(
+            input.prompt ?? defaultPrompt(card.key, card.title, card.description),
+            card.id,
+          )
+        : (input.prompt ?? '')
     ).slice(0, 20_000);
     // Pin the conversation to our own id where the CLI supports it, so resume reopens exactly
     // this conversation even when several sessions share a project.
@@ -675,7 +686,10 @@ export class AgentSupervisor {
     if (!options.send || !isAiCli) {
       return { session: this.getSession(id)!, queued: false, sent: false };
     }
-    const prompt = (options.prompt ?? defaultPrompt(card.key, card.title, card.description))
+    const prompt = this.withImages(
+      options.prompt ?? defaultPrompt(card.key, card.title, card.description),
+      card.id,
+    )
       .slice(0, 20_000)
       // A paste-end marker inside the text would end the paste early; never forward it.
       .replaceAll('\x1b[201~', '');
@@ -905,10 +919,10 @@ export class AgentSupervisor {
     ) {
       throw new AgentError(400, `${provider.name} needs an explicit command for a one-shot run`);
     }
-    const prompt = (input.prompt ?? defaultPrompt(card.key, card.title, card.description)).slice(
-      0,
-      20_000,
-    );
+    const prompt = this.withImages(
+      input.prompt ?? defaultPrompt(card.key, card.title, card.description),
+      card.id,
+    ).slice(0, 20_000);
     if (!prompt.trim()) throw new AgentError(400, 'Prompt is empty');
     const autonomy = input.autonomy ?? 'edit';
     if (!input.command && !supportsAutonomy(provider, autonomy)) {

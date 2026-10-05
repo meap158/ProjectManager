@@ -65,7 +65,14 @@ export function ConfirmDelete({
         <TrashIcon />
         {text}
       </button>
-      <dialog ref={dialogRef} className="confirm-dialog" aria-labelledby={headingId}>
+      <dialog
+        ref={dialogRef}
+        className="confirm-dialog"
+        aria-labelledby={headingId}
+        // React passes a nested dialog's close up the component tree: cancelling here must not
+        // also close a dialog this one was opened from (e.g. the card dialog).
+        onClose={(e) => e.stopPropagation()}
+      >
         <div className="dialog-body">
           <h2 id={headingId}>{heading}</h2>
           <p>{message}</p>
