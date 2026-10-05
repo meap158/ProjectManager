@@ -99,7 +99,10 @@ describe('KanbanBoard', () => {
       ...patch,
     }));
     fireEvent.click((await screen.findByText('Edit me')).closest('button')!);
-    fireEvent.change(screen.getByLabelText('Column'), { target: { value: 'in_progress' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Column' }));
+    fireEvent.click(
+      within(screen.getByRole('option', { name: /In progress/ })).getByRole('button'),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(api.updateCard).toHaveBeenCalledWith(

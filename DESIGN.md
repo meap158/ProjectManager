@@ -144,10 +144,12 @@ adjacent-pair CVD separation in both modes).
 
 - **Buttons:** `.btn` (secondary), `.btn-primary` (one per view, the main action), `.btn-ghost`,
   `.btn-danger`, plus `.btn-sm` and `.btn-icon` sizes. Height is 32px (26px for small).
-- **Inputs:** `.input`, `.select`, `.textarea`, each wrapped in `.field` with a visible `<label>`.
-- **Dropdowns:** the shared `Dropdown` atom (`components/Dropdown.tsx`) for toolbar and menu
-  value pickers — never a native `<select>` there; its OS rendering breaks the design language
-  (see the workspace toolbar). Form fields inside dialogs keep native selects with visible labels.
+- **Inputs:** `.input` (32px, same height as `.btn`) and `.textarea`, each wrapped in `.field` with a
+  visible `<label>`. They share the dropdown trigger's border, hover and accent focus ring.
+- **Dropdowns:** always the shared `Dropdown` atom (`components/Dropdown.tsx`), never a native
+  `<select>`: its OS rendering breaks the design language. In forms (`.field`, `.dispatch-row`,
+  `.session-form-row`) the trigger grows to 32px at normal weight to match the text boxes beside it;
+  toolbars keep the compact 26px trigger. Pass `id` to name it with a visible `<label htmlFor>`.
   Anatomy follows KDP's `opp-select`:
   button trigger with rotating caret, absolute listbox (4px gap, 240px max scroll), accent + bold +
   ✓ selected state, disabled options with a reason, outside-click/Esc close, full arrow/Home/End/
@@ -166,7 +168,7 @@ adjacent-pair CVD separation in both modes).
 - **Kanban:**
   - Native HTML5 drag-and-drop. A drop indicator line appears above the target card, and the column
     highlights when dropping at its end.
-  - **Keyboard alternative:** open a card (Enter/click) and change its **Column** select. Every
+  - **Keyboard alternative:** open a card (Enter/click) and change its **Column** dropdown. Every
     drag-and-drop action has a non-drag equivalent.
   - New cards go to the **top** of a column. Quick-add stays open for rapid entry; Esc closes it.
   - Card keys (`PM-12`) are always visible in mono so they can be typed into commit messages.

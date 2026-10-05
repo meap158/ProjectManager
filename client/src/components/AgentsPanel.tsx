@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState, type FormEven
 import type { AgentProviderStatus, AgentRun, AgentSession } from '../../../shared/types';
 import { Link } from 'react-router';
 import { api } from '../api';
+import { Dropdown } from './Dropdown';
 import { formatBytes } from '../format';
 import { RunCard } from './RunCard';
 import { DeleteButton } from './ui/delete-button';
@@ -470,19 +471,18 @@ function NewSessionForm({
       <div className="field">
         <label htmlFor="agent-provider">New session</label>
         <div className="session-form-row">
-          <select
+          <Dropdown
             id="agent-provider"
-            className="select"
+            label="Agent"
             value={providerId}
-            onChange={(e) => setProviderId(e.target.value)}
-          >
-            {providers.map((p) => (
-              <option key={p.id} value={p.id} disabled={!p.available}>
-                {p.name}
-                {!p.available ? ' (not on PATH)' : ''}
-              </option>
-            ))}
-          </select>
+            options={providers.map((p) => ({
+              value: p.id,
+              label: p.name,
+              disabled: !p.available,
+              ...(p.available ? {} : { hint: 'not on PATH', title: `${p.name} isn’t on PATH` }),
+            }))}
+            onChange={setProviderId}
+          />
           <input
             className="input"
             value={name}
@@ -493,7 +493,7 @@ function NewSessionForm({
           />
           <button
             type="submit"
-            className="btn btn-primary btn-sm"
+            className="btn btn-primary"
             disabled={busy || (needsCommand && !binary.trim())}
           >
             Start

@@ -220,18 +220,13 @@ export function CardDialog({
             </div>
             <div className="field">
               <label htmlFor="card-status">Column</label>
-              <select
+              <Dropdown
                 id="card-status"
-                className="select"
+                label="Column"
                 value={status}
-                onChange={(e) => setStatus(e.target.value as CardStatus)}
-              >
-                {CARD_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {CARD_STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </select>
+                options={CARD_STATUSES.map((s) => ({ value: s, label: CARD_STATUS_LABELS[s] }))}
+                onChange={setStatus}
+              />
             </div>
             <div className="field">
               <label htmlFor="card-description">Notes</label>
@@ -268,46 +263,40 @@ export function CardDialog({
                 Validate the run to move the card on.
               </p>
               <div className="dispatch-row">
-                <select
-                  className="select"
-                  aria-label="Agent provider"
+                <Dropdown
+                  label="Agent provider"
                   value={dispatchProvider}
-                  onChange={(e) => setDispatchProvider(e.target.value)}
-                >
-                  {aiProviders.map((p) => (
-                    <option
-                      key={p.id}
-                      value={p.id}
-                      disabled={!p.available}
-                      title={p.unavailableReason}
-                    >
-                      {p.name}
-                      {!p.available ? ' (unavailable)' : ''}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="select"
-                  aria-label="What the agent may do"
+                  options={aiProviders.map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                    disabled: !p.available,
+                    ...(p.available
+                      ? {}
+                      : { hint: 'unavailable', title: p.unavailableReason ?? 'Not available' }),
+                  }))}
+                  onChange={setDispatchProvider}
+                />
+                <Dropdown
+                  label="What the agent may do"
                   value={autonomy}
-                  onChange={(e) => setAutonomy(e.target.value as AgentAutonomy)}
-                >
-                  {AGENT_AUTONOMY.map((level) => (
-                    <option
-                      key={level}
-                      value={level}
-                      disabled={
-                        !!selectedProvider?.autonomyArgs &&
-                        selectedProvider.autonomyArgs[level] === undefined
-                      }
-                    >
-                      {AGENT_AUTONOMY_LABELS[level]}
-                    </option>
-                  ))}
-                </select>
+                  options={AGENT_AUTONOMY.map((level) => {
+                    const unsupported =
+                      !!selectedProvider?.autonomyArgs &&
+                      selectedProvider.autonomyArgs[level] === undefined;
+                    return {
+                      value: level,
+                      label: AGENT_AUTONOMY_LABELS[level],
+                      disabled: unsupported,
+                      ...(unsupported
+                        ? { hint: 'not supported', title: 'This agent has no flag for this level' }
+                        : {}),
+                    };
+                  })}
+                  onChange={setAutonomy}
+                />
                 <button
                   type="button"
-                  className="btn btn-primary btn-sm"
+                  className="btn btn-primary"
                   disabled={dispatching || !selectedProvider?.available || !autonomySupported}
                   onClick={dispatch}
                 >
@@ -315,7 +304,7 @@ export function CardDialog({
                 </button>
                 <button
                   type="button"
-                  className="btn btn-sm"
+                  className="btn"
                   disabled={dispatching || !selectedProvider?.available}
                   onClick={openInTerminal}
                   title="Start an interactive session on this card and open it in the Agents workspace"
@@ -337,7 +326,7 @@ export function CardDialog({
                   />
                   <button
                     type="button"
-                    className="btn btn-sm"
+                    className="btn"
                     disabled={dispatching || attachTo === null}
                     onClick={sendToSession}
                     title="Paste this card's task into the running session (it keeps its context) and open it"

@@ -22,11 +22,16 @@ export function Dropdown<T extends string | number>({
   value,
   options,
   onChange,
+  id,
+  disabled,
 }: {
   label: string;
   value: T;
   options: DropdownOption<T>[];
   onChange: (value: T) => void;
+  /** Id for the trigger, so a visible `<label htmlFor>` can name it. */
+  id?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -99,7 +104,9 @@ export function Dropdown<T extends string | number>({
     <div className="dropdown" ref={rootRef}>
       <button
         ref={triggerRef}
+        id={id}
         type="button"
+        disabled={disabled}
         className={`dropdown-trigger${open ? ' is-open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}

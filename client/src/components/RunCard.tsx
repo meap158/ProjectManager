@@ -1,6 +1,7 @@
 import { Suspense, lazy, useState } from 'react';
 import { AGENT_AUTONOMY_LABELS, type AgentRun } from '../../../shared/types';
 import { api } from '../api';
+import { Dropdown } from './Dropdown';
 import { formatBytes, formatRelative } from '../format';
 import { DeleteButton } from './ui/delete-button';
 
@@ -134,16 +135,16 @@ export function RunCard({
           <span className="faint">Validate:</span>
           {run.status === 'succeeded' && (
             <>
-              <select
-                className="select"
-                aria-label="Move accepted card to"
+              <Dropdown
+                label="Move accepted card to"
                 value={moveTo}
-                onChange={(e) => setMoveTo(e.target.value as 'review' | 'done')}
+                options={[
+                  { value: 'review' as const, label: 'Review' },
+                  { value: 'done' as const, label: 'Done' },
+                ]}
+                onChange={setMoveTo}
                 disabled={busy}
-              >
-                <option value="review">Review</option>
-                <option value="done">Done</option>
-              </select>
+              />
               <button
                 className="btn btn-primary btn-sm"
                 disabled={busy}

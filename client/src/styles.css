@@ -417,6 +417,20 @@ code,
 .dropdown-trigger.is-open {
   border-color: var(--accent);
 }
+.dropdown-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* In forms a dropdown is a field: same height and text weight as the text boxes beside it.
+   Toolbars keep the compact 26px trigger. */
+.field .dropdown-trigger,
+.dispatch-row .dropdown-trigger,
+.session-form-row .dropdown-trigger {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: inherit;
+  font-weight: 400;
+}
 .dropdown-caret {
   margin-left: auto;
   color: var(--text-3);
@@ -850,18 +864,38 @@ code,
   padding: 0;
 }
 
+/* Text boxes share the button height (.btn 32px) and the dropdown trigger's border, hover and
+   focus, so a row of input + dropdown + button lines up. */
 .input,
-.textarea,
-.select {
+.textarea {
   width: 100%;
-  padding: 7px 10px;
   border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
   font: inherit;
+  transition: border-color 120ms;
+}
+.input {
+  height: 32px;
+  padding: 0 10px;
+}
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-3);
+}
+.input:hover,
+.textarea:hover {
+  border-color: var(--text-3);
+}
+.input:focus,
+.textarea:focus {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 0;
 }
 .textarea {
+  padding: 7px 10px;
   min-height: 140px;
   resize: vertical;
   font-family: var(--font-sans);
@@ -1561,7 +1595,7 @@ dialog::backdrop {
   gap: 6px;
   align-items: center;
 }
-.session-form-row .select,
+.session-form-row .dropdown,
 .session-form-row .input {
   flex: 1;
   min-width: 0;
@@ -1657,7 +1691,7 @@ dialog::backdrop {
   display: flex;
   gap: 6px;
 }
-.dispatch-row .select {
+.dispatch-row .dropdown {
   flex: 1;
   min-width: 0;
 }
