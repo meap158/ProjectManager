@@ -25,6 +25,7 @@ import {
 import { api } from '../api';
 import { Dropdown } from '../components/Dropdown';
 import { InlineRename } from '../components/InlineRename';
+import { readLastAgent, saveLastAgent } from '../lastAgent';
 import { isTerminalReport } from '../../../shared/terminalReports';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
@@ -827,7 +828,11 @@ function NewSessionInline({
   onError: (message: string) => void;
 }) {
   const [projectId, setProjectId] = useState<number | ''>('');
-  const [providerId, setProviderId] = useState('claude');
+  const [providerId, setProviderIdState] = useState(() => readLastAgent('claude'));
+  const setProviderId = (id: string) => {
+    setProviderIdState(id);
+    saveLastAgent(id);
+  };
   const [busy, setBusy] = useState(false);
   const usable = providers.filter((p) => p.id !== 'custom');
   const chosen = projectId || projects[0]?.id;

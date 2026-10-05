@@ -9,6 +9,7 @@ import { Link } from 'react-router';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
 import { InlineRename } from './InlineRename';
+import { readLastAgent, saveLastAgent } from '../lastAgent';
 import { isTerminalReport } from '../../../shared/terminalReports';
 import { AgentWorkList, mergeWork, workKey, type WorkItem, type WorkKey } from './AgentWorkList';
 import { RunCard } from './RunCard';
@@ -420,7 +421,11 @@ function NewSessionForm({
   onCreated: (s: AgentSession) => void;
   onError: (message: string) => void;
 }) {
-  const [providerId, setProviderId] = useState('shell');
+  const [providerId, setProviderIdState] = useState(() => readLastAgent('shell'));
+  const setProviderId = (id: string) => {
+    setProviderIdState(id);
+    saveLastAgent(id);
+  };
   const [name, setName] = useState('');
   const [binary, setBinary] = useState('');
   const [args, setArgs] = useState('');
