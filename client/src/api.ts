@@ -16,6 +16,7 @@ import type {
   CardWithProject,
   DirectoryListing,
   ProjectDetail,
+  PullRequestsResult,
   ProjectSummary,
   WorkspaceLayout,
 } from '../../shared/types';
@@ -35,6 +36,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
+  pullRequests: (id: number) => request<PullRequestsResult>('GET', `/projects/${id}/pull-requests`),
   listProjects: () => request<ProjectSummary[]>('GET', '/projects'),
   getProject: (id: number) => request<ProjectDetail>('GET', `/projects/${id}`),
   addProject: (path: string, name?: string) =>

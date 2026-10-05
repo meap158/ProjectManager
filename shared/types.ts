@@ -448,3 +448,19 @@ export interface WorkspaceLayout {
 }
 
 export const WORKSPACE_FONT_SIZES = { min: 10, max: 20, default: 12.5 } as const;
+
+export interface PullRequestsResult {
+  requests: {
+    number: number;
+    title: string;
+    url: string;
+    author: { login: string } | null;
+    isDraft: boolean;
+    headRefName: string;
+    baseRefName: string;
+    updatedAt: string;
+    reviewDecision: string | null;
+  }[];
+  error: string | null;
+  fetchedAt: string;
+}

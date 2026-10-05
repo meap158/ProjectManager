@@ -10,6 +10,7 @@ import { Scanner } from './scanner.js';
 import * as store from './store.js';
 import { AgentError, AgentSupervisor } from './agents/supervisor.js';
 import { registerAgentRoutes } from './agents/routes.js';
+import { pullRequests } from './pullRequests.js';
 import { openInFileManager } from './openFolder.js';
 import { registerAttachmentRoutes, removeAttachments } from './attachments.js';
 
@@ -172,6 +173,12 @@ export function createApp(
       if (created) added.push(created);
     }
     return c.json({ added, skipped }, 201);
+  });
+
+  app.get('/projects/:id/pull-requests', async (c) => {
+    const project = store.getProjectRow(db, parseId(c));
+    if (!project) throw new HttpError(404, 'Project not found');
+    return c.json(await pullRequests(project.path));
   });
 
   app.get('/projects/:id', (c) => {

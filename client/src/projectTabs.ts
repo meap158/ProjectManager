@@ -2,12 +2,12 @@
 // keeps the section you were in: links to a project open it on the current tab.
 import { useLocation } from 'react-router';
 
-export type ProjectTab = 'overview' | 'board' | 'agents';
+export type ProjectTab = 'overview' | 'board' | 'agents' | 'pull-requests';
 
 const KEY = 'pm-project-tab';
 
 export function parseProjectTab(value: string | null): ProjectTab {
-  return value === 'board' || value === 'agents' ? value : 'overview';
+  return value === 'board' || value === 'agents' || value === 'pull-requests' ? value : 'overview';
 }
 
 export function rememberProjectTab(tab: ProjectTab): void {

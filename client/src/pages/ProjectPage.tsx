@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { CARD_STATUS_LABELS, type ProjectDetail } from '../../../shared/types';
 import { api } from '../api';
 import { remoteWebUrl } from '../gitRemote';
 import { rememberProjectTab } from '../projectTabs';
+import { PullRequestsPanel } from '../components/PullRequestsPanel';
 import { AgentsPanel } from '../components/AgentsPanel';
+import { BoardIcon, GridIcon, TerminalIcon } from '../components/icons';
 import {
   HEAT_SCALE,
   HorizontalBars,
@@ -20,12 +22,25 @@ import { GitHubActivity } from '../components/ui/github-activity';
 import { formatBytes, formatDate, formatNumber, formatRelative } from '../format';
 
 const POLL_MS = 1000;
-const TABS = ['overview', 'board', 'agents'] as const;
+const TABS = ['overview', 'board', 'agents', 'pull-requests'] as const;
 type Tab = (typeof TABS)[number];
-const TAB_LABELS: Record<Tab, string> = { overview: 'Overview', board: 'Board', agents: 'Agents' };
+const TAB_LABELS: Record<Tab, string> = {
+  overview: 'Overview',
+  board: 'Board',
+  agents: 'Agents',
+  'pull-requests': 'Pull requests',
+};
+
+/** Fitting tab icons from the shared set: grid (overview), kanban (board), terminal (agents). */
+const TAB_ICONS: Record<Tab, ReactNode> = {
+  overview: <GridIcon />,
+  board: <BoardIcon />,
+  agents: <TerminalIcon />,
+  'pull-requests': <ExternalIcon />,
+};
 
 function parseTab(value: string | null): Tab {
-  return value === 'board' || value === 'agents' ? value : 'overview';
+  return value === 'board' || value === 'agents' || value === 'pull-requests' ? value : 'overview';
 }
 
 export function ProjectPage() {
@@ -101,64 +116,84 @@ export function ProjectPage() {
 
   return (
     <main className="page">
-      <div className="page-header">
-        <div style={{ minWidth: 0 }}>
-          {/* Keyed by project: switching projects resets the rename box instead of
-              showing the previous project's name. */}
-          <ProjectTitle key={project.id} project={project} onRenamed={setProject} />
-          <div className="subtitle">
-            <button
-              type="button"
-              className="path-link mono"
-              title={`Open ${project.path} in the file manager`}
-              onClick={() =>
-                api.openProjectFolder(project.id).catch((e: Error) => setError(e.message))
-              }
-            >
-              <FolderIcon />
-              <span className="truncate">{project.path}</span>
+      {/* Sticky chrome: title, actions and tabs stay put while the tab content scrolls. */}
+      <div className="sticky-head">
+        <div className="page-header">
+          <div style={{ minWidth: 0 }}>
+            {/* Keyed by project: switching projects resets the rename box instead of
+                showing the previous project's name. */}
+            <ProjectTitle key={project.id} project={project} onRenamed={setProject} />
+            <div className="subtitle">
+              <button
+                type="button"
+                className="path-link mono"
+                title={`Open ${project.path} in the file manager`}
+                onClick={() =>
+                  api.openProjectFolder(project.id).catch((e: Error) => setError(e.message))
+                }
+              >
+                <FolderIcon />
+                <span className="truncate">{project.path}</span>
+              </button>
+              {project.git?.branch && <span className="badge mono">⎇ {project.git.branch}</span>}
+              {project.git?.remoteUrl &&
+                (remoteWebUrl(project.git.remoteUrl) ? (
+                  <a
+                    className="path-link faint mono"
+                    href={remoteWebUrl(project.git.remoteUrl)!}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Open ${remoteWebUrl(project.git.remoteUrl)} in your browser`}
+                  >
+                    <span className="truncate">{project.git.remoteUrl}</span>
+                    <ExternalIcon />
+                  </a>
+                ) : (
+                  <span className="faint mono truncate" title="origin">
+                    {project.git.remoteUrl}
+                  </span>
+                ))}
+            </div>
+          </div>
+          <div className="actions" style={{ alignItems: 'center' }}>
+            <span className="faint" style={{ fontSize: 12.5 }}>
+              {scanning ? 'Scanning…' : `Scanned ${formatRelative(project.lastScannedAt)}`}
+            </span>
+            <button className="btn" onClick={rescan} disabled={scanning || project.missing}>
+              {scanning ? <span className="spinner" /> : '↻'} Refresh
             </button>
-            {project.git?.branch && <span className="badge mono">⎇ {project.git.branch}</span>}
-            {project.git?.remoteUrl &&
-              (remoteWebUrl(project.git.remoteUrl) ? (
-                <a
-                  className="path-link faint mono"
-                  href={remoteWebUrl(project.git.remoteUrl)!}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={`Open ${remoteWebUrl(project.git.remoteUrl)} in your browser`}
-                >
-                  <span className="truncate">{project.git.remoteUrl}</span>
-                  <ExternalIcon />
-                </a>
-              ) : (
-                <span className="faint mono truncate" title="origin">
-                  {project.git.remoteUrl}
-                </span>
-              ))}
+            <ConfirmDelete
+              label="Stop tracking this project"
+              heading={`Stop tracking ${project.name}?`}
+              message="ProjectManager forgets this project with its board, sessions and runs. Files on disk are not touched."
+              confirmLabel="Stop tracking"
+              onConfirm={async () => {
+                try {
+                  await api.removeProject(id);
+                  navigate('/');
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+            />
           </div>
         </div>
-        <div className="actions" style={{ alignItems: 'center' }}>
-          <span className="faint" style={{ fontSize: 12.5 }}>
-            {scanning ? 'Scanning…' : `Scanned ${formatRelative(project.lastScannedAt)}`}
-          </span>
-          <button className="btn" onClick={rescan} disabled={scanning || project.missing}>
-            {scanning ? <span className="spinner" /> : '↻'} Refresh
-          </button>
-          <ConfirmDelete
-            label="Stop tracking this project"
-            heading={`Stop tracking ${project.name}?`}
-            message="ProjectManager forgets this project with its board, sessions and runs. Files on disk are not touched."
-            confirmLabel="Stop tracking"
-            onConfirm={async () => {
-              try {
-                await api.removeProject(id);
-                navigate('/');
-              } catch (e) {
-                setError((e as Error).message);
-              }
-            }}
-          />
+
+        {/* A plain, stable tab bar: switching never moves or animates the tabs themselves. */}
+        <div className="tabs" role="tablist" aria-label="Project sections">
+          {TABS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              className="tab"
+              aria-selected={tab === t}
+              onClick={() => setParams(t === 'overview' ? {} : { tab: t })}
+            >
+              {TAB_ICONS[t]}
+              {TAB_LABELS[t]}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -183,22 +218,6 @@ export function ProjectPage() {
         </div>
       )}
 
-      {/* A plain, stable tab bar: switching never moves or animates the tabs themselves. */}
-      <div className="tabs" role="tablist" aria-label="Project sections">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            className="tab"
-            aria-selected={tab === t}
-            onClick={() => setParams(t === 'overview' ? {} : { tab: t })}
-          >
-            {TAB_LABELS[t]}
-          </button>
-        ))}
-      </div>
-
       {/* All tab panels stay mounted; the inactive ones hide. Tab switches never
           unmount, refetch from blank, or flash skeletons — board and agent data is
           cached per project and refreshes in the background. Panels are keyed by
@@ -207,7 +226,15 @@ export function ProjectPage() {
         <Overview project={project} />
       </div>
       <div className="tab-panel" hidden={tab !== 'board'}>
-        <KanbanBoard key={id} projectId={id} reloadKey={cardsVersion} />
+        <KanbanBoard
+          key={id}
+          projectId={id}
+          reloadKey={cardsVersion}
+          preset={project.boardPreset}
+        />
+      </div>
+      <div className="tab-panel" hidden={tab !== 'pull-requests'}>
+        <PullRequestsPanel key={id} projectId={id} visible={tab === 'pull-requests'} />
       </div>
       <div className="tab-panel" hidden={tab !== 'agents'}>
         <AgentsPanel key={id} projectId={id} visible={tab === 'agents'} />

@@ -1138,6 +1138,9 @@ a.t:hover {
   gap: 6px;
   align-items: center;
 }
+.tab svg {
+  flex: none;
+}
 .tab:hover {
   color: var(--text);
 }
