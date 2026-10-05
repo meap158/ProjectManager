@@ -48,7 +48,7 @@ anything.
   `repairSchema()` exists to clean up after it).
 - **UI:** follow `DESIGN.md`. Use token variables, not raw hex. Every drag interaction needs a
   keyboard alternative. Use Rare UI `DeleteButton` for destructive actions, never `window.confirm`.
-- **Rare UI attribution** (licence requirement): keep the footer link and the README credit.
+- **Rare UI attribution** (licence requirement): keep the README credit (a visible link to rareui.com).
 - Errors: API errors are `{ error: string }` with a fitting status code. The UI shows them in
   `.error-banner`. Log unexpected server errors with a `[area]` prefix.
 

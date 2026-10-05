@@ -204,8 +204,8 @@ and are **owned code**: adapt them freely, and keep a header comment saying what
 
 Other rules:
 
-- **License:** MIT + Commons Clause + **attribution**. The footer link to rareui.com and the README
-  credit must stay.
+- **License:** MIT + Commons Clause + **attribution**. The README credit (a visible link to
+  rareui.com) satisfies it and must stay. The in-app footer credit was removed at the owner's request.
 - All Rare UI components honour `prefers-reduced-motion`. Our own CSS animations (spinner, skeleton) are
   turned off under it too.
 - Add motion only through Rare UI components or tiny CSS transitions (≤150ms on colour/border).

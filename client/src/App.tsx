@@ -44,14 +44,6 @@ export function App() {
               }
             />
           </Routes>
-          {!fullWidth && (
-            <footer className="footer">
-              Animated components by{' '}
-              <a href="https://rareui.com" target="_blank" rel="noreferrer">
-                Rare UI
-              </a>
-            </footer>
-          )}
         </div>
       </div>
     </>

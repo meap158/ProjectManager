@@ -1664,12 +1664,6 @@ dialog::backdrop {
 
 /* ---- Footer ------------------------------------------------------------------------------- */
 
-.footer {
-  text-align: center;
-  color: var(--text-3);
-  font-size: 12px;
-  padding: 12px var(--gutter) 16px;
-}
 .stat-unit {
   font-size: 14px;
   font-weight: 550;
