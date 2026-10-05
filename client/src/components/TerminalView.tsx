@@ -148,8 +148,10 @@ export function TerminalView({
       };
     }
 
+    // Loop step. Only start() checks `polling` (one loop at a time); the loop's own scheduled
+    // continuation must not, or polling stops after the first fetch.
     async function poll() {
-      if (cancelled || controller.polling) return;
+      if (cancelled) return;
       controller.polling = true;
       try {
         const out = await callbacks.current.fetchOutput(offsetRef.current);

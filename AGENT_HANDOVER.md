@@ -38,8 +38,8 @@ read it before product work. `/References` is empty.
 
 ## Roadmap (owner-requested, in priority order)
 
-1. Component tests for the terminal (xterm needs a canvas; consider mocking `@xterm/xterm`) and the
-   workspace page interactions (shortcuts, drag-to-swap).
+All owner-requested items to date are implemented (see Research/feature-requests.md, Addenda 1–7).
+Add new requests here as they come in.
 
 Dropped on purpose: a theme toggle (it was our idea, not the owner's, and the owner asked for no
 rarely used features). The tokens still support `data-theme` if it's ever wanted.
@@ -80,8 +80,9 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
 
 - Complexity is a heuristic (branch tokens per line).
 - Client tests (`client/**/*.test.{ts,tsx}`, Testing Library on jsdom via
-  `// @vitest-environment jsdom`) cover the board (columns, drag/drop, quick add, dialog column
-  change), workspace placement, the commits chart and formatting. The terminal is not covered yet.
+  `// @vitest-environment jsdom`) cover the board, workspace placement and interactions
+  (shortcuts, swap, text size), the terminal (fake xterm and EventSource: streaming, replay
+  dedupe, keystrokes, polling, live font size), the commits chart and formatting.
 - **Linux:** `node-pty` has no Linux prebuild and compiles from source. Without build tools it's
   skipped (it's optional), and sessions fall back to pipes, where interactive AI CLIs don't work.
 - Card IDs (`PM-n`) can be reused after deleting the newest card (no AUTOINCREMENT). Commit refs
