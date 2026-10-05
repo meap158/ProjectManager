@@ -3020,3 +3020,31 @@ dialog.lightbox img {
   font: inherit;
   cursor: pointer;
 }
+
+/* Compact filter + sort menu (PM-10): two columns, tighter rows, so several projects stay
+   visible under it. Labels, filters and the divider span both columns. */
+.sorter-menu {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 2px;
+  min-width: max(100%, 236px);
+}
+.sorter-menu > .sorter-label,
+.sorter-menu > .sorter-filters,
+.sorter-menu > .sorter-divider {
+  grid-column: 1 / -1;
+}
+.sorter-menu .sorter-option {
+  padding: 4px 6px;
+  font-size: 12px;
+  gap: 4px;
+}
+.sorter-menu .sorter-filters {
+  margin: 2px 0;
+}
+.sorter-menu .sorter-filters button {
+  padding: 3px 2px;
+}
+.sorter-menu .sorter-divider {
+  margin: 4px 0;
+}
