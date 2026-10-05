@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
 import { InlineRename } from './InlineRename';
-import { formatBytes } from '../format';
+import { AgentWorkList, mergeWork, workKey, type WorkItem, type WorkKey } from './AgentWorkList';
 import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
 
@@ -27,7 +27,7 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
     () => sessionsCache.get(projectId) ?? null,
   );
   const [runs, setRuns] = useState<AgentRun[] | null>(() => runsCache.get(projectId) ?? null);
-  const [activeId, setActiveId] = useState<number | null>(null);
+  const [selected, setSelected] = useState<WorkKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
   const [input, setInput] = useState('');
@@ -44,9 +44,10 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
           setRuns(r);
           setNow(Date.now());
           setError(null);
-          setActiveId((prev) => {
-            if (prev !== null && s.some((x) => x.id === prev)) return prev;
-            return s.length > 0 ? s[s.length - 1]!.id : null;
+          setSelected((prev) => {
+            const items = mergeWork(s, r);
+            if (prev && items.some((w) => workKey(w) === prev)) return prev;
+            return items[0] ? workKey(items[0]) : null;
           });
         },
         (e: Error) => setError(e.message),
@@ -74,7 +75,67 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
     return () => clearTimeout(timer);
   }, [visible, alive, sessions, runs, load]);
 
-  const active = sessions?.find((s) => s.id === activeId) ?? null;
+  const active = sessions?.find((s) => `session:${s.id}` === selected) ?? null;
+  const activeRun = runs?.find((r) => `run:${r.id}` === selected) ?? null;
+  const work = sessions && runs ? mergeWork(sessions, runs) : null;
+  const available = providers?.filter((p) => p.available).length ?? 0;
+
+  async function changeSession(fn: () => Promise<AgentSession>) {
+    try {
+      const next = await fn();
+      setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function sessionActions(w: WorkItem) {
+    if (w.kind !== 'session') return null;
+    const s = w.item;
+    return (
+      <>
+        <Link
+          className="btn btn-sm"
+          to={`/workspace?open=${s.id}`}
+          title="Show this session in the multi-pane Agents workspace"
+        >
+          Open in workspace
+        </Link>
+        {s.status === 'running' ? (
+          <button
+            type="button"
+            className="btn btn-sm"
+            title="Stop the process (it won't relaunch until you start it)"
+            onClick={() => changeSession(() => api.stopSession(s.id))}
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-sm"
+            title={s.resumeSupported ? 'Start again, resuming the conversation' : 'Start again'}
+            onClick={() => changeSession(() => api.startSession(s.id))}
+          >
+            Start
+          </button>
+        )}
+        <ConfirmDelete
+          label={`Delete session "${s.name}"`}
+          heading={`Delete session "${s.name}"?`}
+          message="Stops the process if it's running and deletes its log. This can't be undone."
+          onConfirm={async () => {
+            try {
+              await api.deleteSession(s.id);
+              setSessions((prev) => prev?.filter((x) => x.id !== s.id) ?? prev);
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          }}
+        />
+      </>
+    );
+  }
 
   async function sendInput(event: FormEvent) {
     event.preventDefault();
@@ -126,161 +187,86 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
     <div className="agents">
       {error && <div className="error-banner">{error}</div>}
 
-      <section className="panel" aria-label="Providers">
-        <div className="panel-header">
-          <h2>Providers</h2>
-          <span className="meta">AI CLIs on PATH · custom commands always available</span>
-        </div>
-        {providers === null ? (
-          <div className="skeleton" style={{ height: 40 }} />
-        ) : (
-          <ul className="list provider-list">
-            {providers.map((p) => (
-              <li key={p.id}>
-                <span className={`status-dot ${p.available ? 'green' : ''}`} />
-                <span style={{ minWidth: 0 }}>
-                  <b>{p.name}</b>{' '}
-                  <span className="faint" style={{ fontSize: 12 }}>
-                    {p.description}
-                  </span>
-                  {!p.available && p.installUrl && (
-                    <>
-                      {' '}
-                      <a href={p.installUrl} target="_blank" rel="noreferrer">
-                        install
-                      </a>
-                    </>
-                  )}
-                </span>
-                <span style={{ flex: 1 }} />
-                {!p.available && p.binary && (
-                  <span className="badge" title={p.unavailableReason}>
-                    unavailable
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+      <section className="panel agents-start" aria-label="Start a session">
         <NewSessionForm
           projectId={projectId}
           providers={providers ?? []}
           onCreated={(s) => {
             setSessions((prev) => [...(prev ?? []), s]);
-            setActiveId(s.id);
+            setSelected(`session:${s.id}`);
           }}
           onError={setError}
         />
-      </section>
-
-      <section className="panel" aria-label="Terminal sessions">
-        <div className="panel-header">
-          <h2>Sessions</h2>
-          <span className="meta">persistent · kept until you stop or delete them</span>
-        </div>
-        {sessions === null ? (
-          <div className="skeleton" style={{ height: 120 }} />
-        ) : sessions.length === 0 ? (
-          <p className="faint" style={{ margin: 0 }}>
-            No sessions yet. Start one above — an AI CLI REPL or a plain shell, ready to drive from
-            here.
-          </p>
-        ) : (
-          <ul className="list session-list">
-            {sessions.map((s) => (
-              <li key={s.id} className={s.id === activeId ? 'selected' : undefined}>
-                <button
-                  type="button"
-                  className={`session-row${s.id === activeId ? ' is-active' : ''}`}
-                  onClick={() => setActiveId(s.id)}
-                  title={`${s.command.join(' ')}\n${s.cwd}`}
-                >
-                  <SessionDot session={s} />
-                  <span className="truncate" style={{ flex: 1 }}>
-                    <b>{s.name}</b> <span className="faint">· {s.providerId}</span>{' '}
-                    {s.terminal === 'pipe' && (
-                      <span
-                        className="badge"
-                        title="Line-based pipes: full-screen CLIs won't render"
-                      >
-                        pipe
-                      </span>
+        <details className="providers-details">
+          <summary>
+            Agents on this machine{' '}
+            <span className="faint">
+              · {providers ? `${available} of ${providers.length} available` : 'checking…'}
+            </span>
+          </summary>
+          {providers === null ? (
+            <div className="skeleton" style={{ height: 40 }} />
+          ) : (
+            <ul className="list provider-list">
+              {providers.map((p) => (
+                <li key={p.id}>
+                  <span
+                    className={`status-dot ${p.available ? 'green' : ''}`}
+                    role="img"
+                    aria-label={p.available ? 'Available' : 'Not available'}
+                  />
+                  <span style={{ minWidth: 0 }}>
+                    <b>{p.name}</b>{' '}
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      {p.description}
+                    </span>
+                    {!p.available && p.installUrl && (
+                      <>
+                        {' '}
+                        <a href={p.installUrl} target="_blank" rel="noreferrer">
+                          install
+                        </a>
+                      </>
                     )}
                   </span>
-                  {s.restarts > 0 && (
-                    <span className="badge" title={`Relaunched ${s.restarts}× after crashes`}>
-                      {s.restarts}↻
+                  <span style={{ flex: 1 }} />
+                  {!p.available && p.binary && (
+                    <span className="badge" title={p.unavailableReason}>
+                      unavailable
                     </span>
                   )}
-                  {s.queuedInputBytes > 0 && (
-                    <span className="badge" title="Stdin queued while the session is down">
-                      {formatBytes(s.queuedInputBytes)} queued
-                    </span>
-                  )}
-                  <span className="faint num" style={{ fontSize: 12 }}>
-                    {s.status}
-                  </span>
-                </button>
-                <span className="actions">
-                  <Link
-                    className="btn btn-sm"
-                    to={`/workspace?open=${s.id}`}
-                    title="Show this session in the multi-pane Agents workspace"
-                  >
-                    Open in workspace
-                  </Link>
-                  {s.status === 'running' ? (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={async () => {
-                        try {
-                          const next = await api.stopSession(s.id);
-                          setSessions(
-                            (prev) => prev?.map((x) => (x.id === s.id ? next : x)) ?? prev,
-                          );
-                        } catch (e) {
-                          setError((e as Error).message);
-                        }
-                      }}
-                    >
-                      Stop
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={async () => {
-                        try {
-                          const next = await api.startSession(s.id);
-                          setSessions(
-                            (prev) => prev?.map((x) => (x.id === s.id ? next : x)) ?? prev,
-                          );
-                        } catch (e) {
-                          setError((e as Error).message);
-                        }
-                      }}
-                    >
-                      Start
-                    </button>
-                  )}
-                  <ConfirmDelete
-                    label={`Delete session "${s.name}"`}
-                    heading={`Delete session "${s.name}"?`}
-                    message="Stops the process if it's running and deletes its log. This can't be undone."
-                    onConfirm={async () => {
-                      try {
-                        await api.deleteSession(s.id);
-                        setSessions((prev) => prev?.filter((x) => x.id !== s.id) ?? prev);
-                      } catch (e) {
-                        setError((e as Error).message);
-                      }
-                    }}
-                  />
-                </span>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+        </details>
+      </section>
+
+      <section className="panel" aria-label="Agent work">
+        <div className="panel-header">
+          <h2>Agent work</h2>
+          <span
+            className="meta"
+            title="Terminal: an interactive session you type into; it keeps running until you stop it. One-shot: a card dispatch that runs once, then waits for you to accept or reject its changes."
+          >
+            Terminals keep running until stopped · one-shot runs wait for your review
+          </span>
+        </div>
+        {work === null ? (
+          <div className="skeleton" style={{ height: 120 }} />
+        ) : work.length === 0 ? (
+          <p className="faint" style={{ margin: 0 }}>
+            Nothing yet. Start a terminal session above, or open a card on the Board and hand it to
+            an agent.
+          </p>
+        ) : (
+          <AgentWorkList
+            items={work}
+            selected={selected}
+            onSelect={setSelected}
+            now={now}
+            actions={sessionActions}
+          />
         )}
 
         {active && (
@@ -376,32 +362,15 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             )}
           </div>
         )}
-      </section>
-
-      <section className="panel" aria-label="Card runs">
-        <div className="panel-header">
-          <h2>Runs</h2>
-          <span className="meta">one-shot card dispatches · validate to move cards</span>
-        </div>
-        {runs === null ? (
-          <div className="skeleton" style={{ height: 120 }} />
-        ) : runs.length === 0 ? (
-          <p className="faint" style={{ margin: 0 }}>
-            No runs yet. Open a card on the Board and dispatch it to an AI CLI — the run shows up
-            here for review and validation.
-          </p>
-        ) : (
+        {activeRun && (
           <div className="runs">
-            {runs.map((r) => (
-              <RunCard
-                key={r.id}
-                run={r}
-                now={now}
-                paused={!visible}
-                onChanged={upsertRun}
-                onDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
-              />
-            ))}
+            <RunCard
+              run={activeRun}
+              now={now}
+              paused={!visible}
+              onChanged={upsertRun}
+              onDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
+            />
           </div>
         )}
       </section>
@@ -413,26 +382,6 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
         you stop or delete them; input typed while one is down waits in a durable queue.
       </p>
     </div>
-  );
-}
-
-function SessionDot({ session: s }: { session: AgentSession }) {
-  const color =
-    s.status === 'running'
-      ? 'var(--good, #0ca30c)'
-      : s.status === 'dead'
-        ? 'var(--danger)'
-        : 'var(--series-other)';
-  const label =
-    s.status === 'running' ? 'Running' : s.status === 'dead' ? 'Dead' : `Ended (${s.status})`;
-  return (
-    <span
-      className="status-dot"
-      style={{ background: color }}
-      title={label}
-      role="img"
-      aria-label={label}
-    />
   );
 }
 

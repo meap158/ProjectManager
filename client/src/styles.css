@@ -2247,3 +2247,90 @@ kbd {
   text-align: center;
   margin-top: 2px;
 }
+
+/* ---- Agents tab: start row + one list of agent work (AgentWorkList) ---------------------------- */
+.agents-start .session-form {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.providers-details {
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+.providers-details summary {
+  cursor: pointer;
+  color: var(--text-2);
+  width: fit-content;
+}
+.providers-details[open] summary {
+  margin-bottom: 6px;
+}
+.work-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.work-list li.selected {
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+}
+.work-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.work-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.work-kind {
+  flex: none;
+  height: 18px;
+  font-size: 11px;
+}
+.work-state {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.work-state.tone-attention {
+  font-weight: 600;
+  color: var(--text);
+}
+.work-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  padding-left: 16px;
+  font-size: 12px;
+}
+.work-facts span + span::before {
+  content: '·';
+  margin-right: 10px;
+}
+.status-dot.tone-good {
+  background: var(--good, #0ca30c);
+}
+.status-dot.tone-bad {
+  background: var(--danger);
+}
+.status-dot.tone-attention {
+  background: var(--series-4);
+}
+.status-dot.tone-idle {
+  background: var(--series-other);
+}

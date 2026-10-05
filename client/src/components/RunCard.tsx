@@ -2,7 +2,7 @@ import { Suspense, lazy, useState } from 'react';
 import { AGENT_AUTONOMY_LABELS, type AgentRun } from '../../../shared/types';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
-import { formatBytes, formatRelative } from '../format';
+import { formatBytes, formatDuration, formatRelative } from '../format';
 import { ConfirmDelete } from './ConfirmDelete';
 
 // xterm is heavy: it loads only when output is opened.
@@ -21,10 +21,7 @@ const STATUS_BADGE: Record<AgentRun['status'], string> = {
 function elapsed(run: AgentRun, now: number): string {
   const start = run.startedAt ? Date.parse(run.startedAt) : Date.parse(run.createdAt);
   const end = run.endedAt ? Date.parse(run.endedAt) : now;
-  const s = Math.max(0, Math.round((end - start) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  return formatDuration(end - start);
 }
 
 /** One agent run: status, output, stop/retry, and the validate step that moves
