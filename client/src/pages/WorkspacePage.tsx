@@ -319,6 +319,11 @@ export function WorkspacePage() {
               {...dropProps(index)}
               session={session}
               projectName={projectName.get(session.projectId) ?? `Project ${session.projectId}`}
+              agentName={
+                session.providerId === 'custom'
+                  ? (session.command[0] ?? 'Custom command')
+                  : (providers.find((p) => p.id === session.providerId)?.name ?? session.providerId)
+              }
               maximized={layout.maximized === index}
               onToggleMaximize={() =>
                 update({ ...layout, maximized: layout.maximized === index ? null : index })
@@ -362,6 +367,7 @@ function Pane({
   onDrop,
   session: s,
   projectName,
+  agentName,
   maximized,
   onToggleMaximize,
   onClose,
@@ -374,6 +380,8 @@ function Pane({
   onDragEnd: () => void;
   session: AgentSession;
   projectName: string;
+  /** Which CLI runs in the pane, e.g. "Claude Code". */
+  agentName: string;
   maximized: boolean;
   onToggleMaximize: () => void;
   onClose: () => void;
@@ -465,6 +473,15 @@ function Pane({
           }
         />
         <span className="pane-meta faint">
+          {/* Skipped when the session is simply named after its agent ("Shell"). */}
+          {agentName !== s.name && (
+            <>
+              <span className="pane-agent" title="Agent running in this session">
+                {agentName}
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          )}
           <Link to={`/projects/${s.projectId}?tab=agents`} className="truncate">
             {projectName}
           </Link>
@@ -486,7 +503,14 @@ function Pane({
                   )
                 }
               >
-                ×
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                  <path
+                    d="M2 2l6 6M8 2l-6 6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
               </button>
             </>
           )}

@@ -1830,7 +1830,12 @@ dialog::backdrop {
 .icon-btn.icon-btn-sm {
   width: 18px;
   height: 18px;
+  padding: 0; /* the SVG glyph centres exactly; a text × sat low */
   flex: none;
+}
+.pane-agent {
+  flex: none;
+  color: var(--text-2);
 }
 .icon-btn {
   display: grid;
