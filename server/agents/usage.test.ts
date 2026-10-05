@@ -30,7 +30,7 @@ describe('Claude session usage', () => {
   });
 
   it('locates the transcript by the cwd slug', () => {
-    const cwd = 'S:\Vibe Coding\Demo';
+    const cwd = 'S:\\Vibe Coding\\Demo';
     const dir = path.join(home, '.claude', 'projects', 'S--Vibe-Coding-Demo');
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, `${ID}.jsonl`), '');

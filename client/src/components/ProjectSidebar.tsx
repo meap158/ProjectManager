@@ -66,6 +66,8 @@ export function ProjectSidebar() {
   const projectHref = useProjectHref();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
+  // Clock for working/idle badges, refreshed on every load (never read during render).
+  const [now, setNow] = useState(0);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>(() =>
     readSortPreference('pm-sidebar-sort', SORT_MODES, 'name'),
@@ -126,6 +128,7 @@ export function ProjectSidebar() {
         if (!cancelled) {
           setProjects(list);
           setSessions(all);
+          setNow(Date.now());
         }
         const scanning = list.some((p) => p.scan.status === 'scanning');
         // Working vs idle is judged on output in the last few seconds: poll faster while any
@@ -171,7 +174,6 @@ export function ProjectSidebar() {
   );
   const totalsRunning = (projects ?? []).reduce((s, p) => s + p.runningSessions, 0);
   // Per project: how many CLI sessions are working (recent output) vs idle (waiting for you).
-  const now = Date.now();
   const activity = new Map<number, { working: number; idle: number }>();
   for (const x of sessions) {
     const state = sessionActivity(x, now);
