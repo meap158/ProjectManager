@@ -1164,6 +1164,7 @@ function WorkList({
           <RunCard
             run={run}
             now={now}
+            hideHeader
             onChanged={onRunChanged}
             onDeleted={(id) => {
               onRunDeleted(id);

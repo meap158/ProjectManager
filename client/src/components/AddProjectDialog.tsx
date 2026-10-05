@@ -1,6 +1,19 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { BulkAddResult, DirectoryListing, ProjectDetail } from '../../../shared/types';
 import { api } from '../api';
+
+/** localStorage key for the dialog's memory: where the last tracked folder lives. */
+const LAST_DIR_KEY = 'pm-track-dialog-dir';
+
+/** Parent folder of an absolute path, tolerating both separators and both roots. */
+function parentDir(folder: string): string | null {
+  const trimmed = folder.replace(/[/\\]+$/, '');
+  if (!trimmed) return null;
+  const cut = trimmed.replace(/[/\\][^/\\]*$/, '');
+  if (!cut) return trimmed.startsWith('/') ? '/' : null;
+  if (/^[A-Za-z]:$/.test(cut)) return `${cut}\\`;
+  return cut;
+}
 
 /** Modal for tracking folders. Select one folder, or tick several to track them all at once. */
 export function AddProjectDialog({
@@ -22,6 +35,56 @@ export function AddProjectDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  /** Remember a browsed location for the next visit. */
+  function rememberLocation(folder: string) {
+    try {
+      localStorage.setItem(LAST_DIR_KEY, folder);
+    } catch {
+      // Storage unavailable (e.g. private mode): the dialog still works.
+    }
+  }
+
+  /** Remember the added folder's parent for the next visit. */
+  function rememberDir(folder: string) {
+    const parent = parentDir(folder);
+    if (!parent) return;
+    rememberLocation(parent);
+  }
+
+  const browse = useCallback(async (target: string | undefined) => {
+    setBrowseError(null);
+    try {
+      const result = await api.browse(target);
+      setListing(result);
+      setPath(result.path);
+      // Everywhere you navigate is where you'll reopen (tracking saves the parent instead).
+      rememberLocation(result.path);
+    } catch (e) {
+      setBrowseError((e as Error).message);
+    }
+  }, []);
+
+  /** Reopen where the last tracked folder lives (falling back to home when gone). */
+  const browseLast = useCallback(async () => {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(LAST_DIR_KEY);
+    } catch {
+      // Storage unavailable: fall through to home with saved === null.
+    }
+    if (saved) {
+      try {
+        const result = await api.browse(saved);
+        setListing(result);
+        setPath(result.path);
+        return;
+      } catch {
+        // Folder moved or unreadable: fall through to home below.
+      }
+    }
+    browse(undefined);
+  }, [browse]);
+
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -30,22 +93,11 @@ export function AddProjectDialog({
       setError(null);
       setBrowseError(null);
       setSelected([]);
-      browse(undefined);
+      browseLast();
     } else if (!open && dialog.open) {
       dialog.close();
     }
-  }, [open]);
-
-  async function browse(target: string | undefined) {
-    setBrowseError(null);
-    try {
-      const result = await api.browse(target);
-      setListing(result);
-      setPath(result.path);
-    } catch (e) {
-      setBrowseError((e as Error).message);
-    }
-  }
+  }, [open, browseLast]);
 
   function toggleSelected(folder: string, isTracked?: boolean) {
     if (isTracked) return;
@@ -79,6 +131,7 @@ export function AddProjectDialog({
           setError(result.skipped[0]?.reason ?? 'Could not track any of the selected folders.');
           return;
         }
+        rememberDir(result.added[result.added.length - 1]!.path);
         if (onAddedMany) {
           onAddedMany(result);
         } else {
@@ -93,7 +146,9 @@ export function AddProjectDialog({
       } else {
         const single = selected.length === 1 ? selected[0]! : path.trim();
         if (!single) return;
-        onAdded(await api.addProject(single));
+        const created = await api.addProject(single);
+        rememberDir(created.path);
+        onAdded(created);
       }
     } catch (e) {
       setError((e as Error).message);

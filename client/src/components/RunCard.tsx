@@ -32,6 +32,7 @@ export function RunCard({
   onChanged,
   onDeleted,
   paused = false,
+  hideHeader = false,
 }: {
   run: AgentRun;
   now: number;
@@ -39,6 +40,8 @@ export function RunCard({
   onDeleted: (id: number) => void;
   /** Stops output traffic while the surrounding tab is hidden. */
   paused?: boolean;
+  /** Hides name + meta: the list row above already says it (workspace list view). */
+  hideHeader?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,43 +78,53 @@ export function RunCard({
   }
 
   return (
-    <div className="run-card">
-      <div className="run-head">
-        <span className={STATUS_BADGE[run.status]}>
-          {active && <span className="spinner" style={{ width: 10, height: 10 }} />}
-          {run.status === 'succeeded' && '✓ '}
-          {run.status === 'failed' && '✗ '}
-          {run.status}
-          {run.attempts > 1 && ` · try ${run.attempts}`}
-        </span>
-        <span className="truncate" style={{ flex: 1 }} title={run.prompt || run.command.join(' ')}>
-          <b>{run.name}</b>
-        </span>
-        {run.cardKey && (
-          <span className="mono faint" title="Linked card">
-            {run.cardKey}
-          </span>
-        )}
-      </div>
+    <div className="run-card" aria-label={hideHeader ? `Run details: ${run.name}` : undefined}>
+      {!hideHeader && (
+        <>
+          <div className="run-head">
+            <span className={STATUS_BADGE[run.status]}>
+              {active && <span className="spinner" style={{ width: 10, height: 10 }} />}
+              {run.status === 'succeeded' && '✓ '}
+              {run.status === 'failed' && '✗ '}
+              {run.status}
+              {run.attempts > 1 && ` · try ${run.attempts}`}
+            </span>
+            <span
+              className="truncate"
+              style={{ flex: 1 }}
+              title={run.prompt || run.command.join(' ')}
+            >
+              <b>{run.name}</b>
+            </span>
+            {run.cardKey && (
+              <span className="mono faint" title="Linked card">
+                {run.cardKey}
+              </span>
+            )}
+          </div>
 
-      <div className="run-meta faint">
-        <span>{run.providerId}</span>
-        <span aria-hidden="true">·</span>
-        <span title="What the agent was allowed to do">{AGENT_AUTONOMY_LABELS[run.autonomy]}</span>
-        <span aria-hidden="true">·</span>
-        <span className="num">{elapsed(run, now)}</span>
-        <span aria-hidden="true">·</span>
-        <span className="num">{formatBytes(run.logBytes)}</span>
-        {run.exitCode !== null && (
-          <>
+          <div className="run-meta faint">
+            <span>{run.providerId}</span>
             <span aria-hidden="true">·</span>
-            <span className="num">exit {run.exitCode}</span>
-          </>
-        )}
-        {run.startedAt && (
-          <span title={run.startedAt}>started {formatRelative(run.startedAt)}</span>
-        )}
-      </div>
+            <span title="What the agent was allowed to do">
+              {AGENT_AUTONOMY_LABELS[run.autonomy]}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="num">{elapsed(run, now)}</span>
+            <span aria-hidden="true">·</span>
+            <span className="num">{formatBytes(run.logBytes)}</span>
+            {run.exitCode !== null && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="num">exit {run.exitCode}</span>
+              </>
+            )}
+            {run.startedAt && (
+              <span title={run.startedAt}>started {formatRelative(run.startedAt)}</span>
+            )}
+          </div>
+        </>
+      )}
 
       {run.error && <div className="error-banner">{run.error}</div>}
 
