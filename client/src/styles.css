@@ -189,8 +189,12 @@ code,
   position: absolute;
   width: 1px;
   height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
   clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
@@ -1730,4 +1734,116 @@ dialog::backdrop {
 dialog:modal {
   margin: auto;
   max-height: calc(100dvh - 32px);
+}
+
+/* ---- Commits by project (stacked columns) ----------------------------------------------- */
+
+.stack-chart {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 180px;
+  padding-top: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.stack-grid {
+  position: absolute;
+  inset: 8px 0 0 0;
+  pointer-events: none;
+}
+.stack-grid span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--border);
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 0;
+  text-indent: 2px;
+}
+.stack-col {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  cursor: default;
+}
+.stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px; /* surface spacer between stacked segments */
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+}
+.stack span {
+  flex-basis: 0;
+  min-height: 2px;
+  transition: opacity 120ms;
+}
+.stack-col:hover .stack {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 1px;
+}
+.stack-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stack-tip span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stack-legend {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 4px 16px;
+  font-size: 12.5px;
+}
+.stack-legend li {
+  display: grid;
+  grid-template-columns: auto 1fr auto 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  cursor: default;
+}
+.stack-legend li:hover,
+.stack-legend li:focus-visible {
+  background: var(--surface-2);
+}
+.stack-legend .faint {
+  text-align: right;
+}
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.segmented button {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.segmented button.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.faint-zero {
+  color: var(--text-2);
 }

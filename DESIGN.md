@@ -114,10 +114,20 @@ adjacent-pair CVD separation in both modes).
 - **Sequential (commit heatmap):** a single blue hue from light to dark. Level 0 is the grid's neutral
   tint. Levels 1–4 are quartiles of the busiest day in the window.
 - **Single-series bars** (folder sizes, contributors, commits per month) use `--series-1` and need no legend.
+- **Commits by project** (dashboard, `CommitsByProject.tsx`): stacked columns per month or week.
+  - The top 6 projects get slots 1–6, ranked by **12-month** commits whatever range is shown, so a
+    project keeps its colour when you switch ranges. The rest fold into grey "Other (n)".
+  - The biggest project sits on the baseline. Segments have 2px surface gaps and the stack has a
+    rounded top.
+  - The legend is a ranked list (total and share) that emphasises one project on hover or focus.
+  - The column tooltip shows the breakdown, and there's a Table toggle plus a screen-reader table.
+  - The range choice is remembered per viewer (localStorage).
 - **Marks:** thin bars with 4px rounded data ends, anchored to the baseline. The language bar uses 2px
   surface gaps between segments.
 - **Hover:** every chart has a tooltip (`useTooltip()` in `components/charts.tsx`, or the built-in one in
   the Rare UI heatmap). Tooltips are dark-on-light (inverted) and never block the pointer.
+- **Visually hidden tables** must be wrapped in a `<div class="sr-only">`: tables ignore
+  `width: 1px`, so `<table class="sr-only">` stretches the page.
 - **Accessibility:** charts have an `aria-label` summary. The monthly chart includes a screen-reader
   table. The language bar always comes with a legend and the full table.
 - **Never:** dual axes, rainbow scales, or a number printed on every bar.

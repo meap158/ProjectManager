@@ -8,8 +8,13 @@ import type { Contribution, ContributionLevel } from './ui/github-activity';
 /** Hover/focus tooltip anchored above the target element. Render `node` once per chart. */
 export function useTooltip() {
   const [tip, setTip] = useState<{ x: number; y: number; content: ReactNode } | null>(null);
-  const show = (event: MouseEvent<Element> | FocusEvent<Element>, content: ReactNode) => {
-    const rect = event.currentTarget.getBoundingClientRect();
+  /** Anchors above `anchor` when given (e.g. the visible mark inside a larger hit target). */
+  const show = (
+    event: MouseEvent<Element> | FocusEvent<Element>,
+    content: ReactNode,
+    anchor?: Element | null,
+  ) => {
+    const rect = (anchor ?? event.currentTarget).getBoundingClientRect();
     setTip({ x: rect.left + rect.width / 2, y: rect.top, content });
   };
   const hide = () => setTip(null);
@@ -175,17 +180,19 @@ export function MonthlyCommits({ dailyCommits }: { dailyCommits: Record<string, 
           <span key={m.key}>{MONTHS[m.date.getMonth()]!.slice(0, 1)}</span>
         ))}
       </div>
-      <table className="sr-only">
-        <caption>Commits per month</caption>
-        <tbody>
-          {months.map((m) => (
-            <tr key={m.key}>
-              <th scope="row">{label(m.date)}</th>
-              <td>{m.count}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="sr-only">
+        <table>
+          <caption>Commits per month</caption>
+          <tbody>
+            {months.map((m) => (
+              <tr key={m.key}>
+                <th scope="row">{label(m.date)}</th>
+                <td>{m.count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {tooltip.node}
     </div>
   );

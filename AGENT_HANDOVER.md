@@ -28,22 +28,19 @@ read it before product work. `/References` is empty.
   - agent runs (dispatch → evidence → validate)
   - persistent PTY sessions
   - multi-pane Agents workspace wired to the board (DESIGN.md §12.2)
+  - dashboard "Commits by project" stacked chart (DESIGN.md §5)
 
 ## Roadmap (owner-requested, in priority order)
 
-1. **Commits over time by project** on the All-projects dashboard (Research Addendum 2).
-   - Per-project series in fixed categorical order, top N + "Other", legend + direct labels,
-     tooltip, and a table alternative.
-   - Data: each project's `git.dailyCommits` is already stored per project.
-2. **Workspace polish** (follow-ups to Addendum 3):
+1. **Workspace polish** (follow-ups to Addendum 3):
    - keyboard shortcuts (focus pane N, maximise)
    - drag a session between panes
    - per-pane font size
    - a way to send a finished interactive session's outcome back to the card (e.g. a
      "Mark card for review" action in the pane header)
-3. Portfolio status view: stale projects, uncommitted changes, everything in flight across projects.
-4. Client tests (Vitest + Testing Library) for the board, dialogs, terminal and workspace.
-5. A theme toggle (the tokens already support `data-theme`).
+2. Portfolio status view: stale projects, uncommitted changes, everything in flight across projects.
+3. Client tests (Vitest + Testing Library) for the board, dialogs, terminal and workspace.
+4. A theme toggle (the tokens already support `data-theme`).
 
 ## Architecture
 

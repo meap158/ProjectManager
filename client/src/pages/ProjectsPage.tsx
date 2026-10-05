@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router';
 import { CARD_STATUS_LABELS, type LanguageStats, type ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { AddProjectDialog } from '../components/AddProjectDialog';
-import { LanguageBar, MonthlyCommits } from '../components/charts';
+import { LanguageBar } from '../components/charts';
+import { CommitsByProject } from '../components/CommitsByProject';
 import { BytesTile, StatTile } from '../components/StatTile';
 import { formatBytes, formatCompact, formatDate, formatNumber, formatRelative } from '../format';
 
@@ -88,16 +89,6 @@ export function ProjectsPage() {
       }
     }
     return [...byName.values()].sort((a, b) => b.code - a.code);
-  }, [projects]);
-
-  const portfolioDaily = useMemo(() => {
-    const merged: Record<string, number> = {};
-    for (const p of projects ?? []) {
-      for (const [day, n] of Object.entries(p.git?.dailyCommits ?? {})) {
-        merged[day] = (merged[day] ?? 0) + n;
-      }
-    }
-    return merged;
   }, [projects]);
 
   // What needs attention: missing folders, failed scans, repos untouched for 90+ days.
@@ -200,26 +191,19 @@ export function ProjectsPage() {
             </section>
           )}
 
-          <section className="grid grid-2">
-            <div className="panel">
-              <div className="panel-header">
-                <h2>Languages across all projects</h2>
-                <span className="meta">by lines of code</span>
-              </div>
-              {portfolioLanguages.length === 0 ? (
-                <p className="faint">Waiting for the first scan…</p>
-              ) : (
-                <LanguageBar languages={portfolioLanguages} />
-              )}
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Languages across all projects</h2>
+              <span className="meta">by lines of code</span>
             </div>
-            <div className="panel">
-              <div className="panel-header">
-                <h2>Commits per month · all projects</h2>
-                <span className="meta">Last 12 months</span>
-              </div>
-              <MonthlyCommits dailyCommits={portfolioDaily} />
-            </div>
+            {portfolioLanguages.length === 0 ? (
+              <p className="faint">Waiting for the first scan…</p>
+            ) : (
+              <LanguageBar languages={portfolioLanguages} />
+            )}
           </section>
+
+          <CommitsByProject projects={projects} />
 
           <RankingsTable projects={projects} />
 
@@ -339,7 +323,8 @@ function RankingsTable({ projects }: { projects: ProjectSummary[] }) {
   }
 
   const rows = useMemo(() => {
-    const flip = sortDir === RANK_DEFAULT_DIR[sortKey] ? 1 : -1;
+    // The comparator below is ascending; the arrow in the header shows sortDir, so follow it.
+    const flip = sortDir === 'asc' ? 1 : -1;
     return [...projects].sort((a, b) => {
       const va = rankValue(a, sortKey);
       const vb = rankValue(b, sortKey);

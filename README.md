@@ -20,6 +20,8 @@ Everything runs on your machine. Nothing is uploaded anywhere.
   biggest top-level folders.
 - **Git activity:** a GitHub-style commit heatmap, commits per month, contributors, recent commits, and
   first/last commit dates.
+- **Portfolio dashboard:** totals across all projects, a ranked table, and **commits by project**
+  over the last 12 months or 12 weeks, so you can see which projects get the most work.
 - **Feature board per project:** Backlog → To do → In progress → Review → Done, with drag and drop.
 - **Automatic card moves.** Every card has a key like `PM-12`.
   - A commit that mentions `PM-12` moves it to **In progress**.
