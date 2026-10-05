@@ -1749,14 +1749,12 @@ dialog::backdrop {
 }
 .workspace-new {
   display: flex;
+  align-items: center; /* Labels and controls share one centre line (default stretch pins text up). */
   gap: 6px;
   margin-left: auto;
-}
-.workspace-new .select {
-  width: auto;
-  max-width: 220px;
-  padding: 3px 8px;
-  height: 26px;
+  /* Divider on the group, like .bar-group, so it spans the controls' height. */
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
 }
 .pane-grid {
   flex: 1;
@@ -2102,10 +2100,6 @@ kbd {
   font-family: var(--font-mono);
   font-size: 11px;
   background: var(--surface-2);
-}
-.workspace-new .bar-label:first-child {
-  padding-left: 12px;
-  border-left: 1px solid var(--border);
 }
 
 /* Theme switch (top bar, right). */
