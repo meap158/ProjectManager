@@ -5,7 +5,7 @@ shows how big each one is, what it's written in and how active it is, much like 
 Each project also gets a Trello-style board for planning upcoming features, and cards can be handed to
 an AI coding agent.
 
-Everything runs on your machine. Nothing is uploaded anywhere.
+ProjectManager stores its data locally. GitHub PR queries use your gh login; agent CLIs use their configured providers.
 
 ![Dashboard with portfolio totals, languages and project rankings](docs/screenshots/dashboard.png)
 
@@ -21,13 +21,20 @@ Everything runs on your machine. Nothing is uploaded anywhere.
 - **Git activity:** a GitHub-style commit heatmap, commits per month, contributors, recent commits, and
   first/last commit dates.
 - **Portfolio dashboard:** totals across all projects, a ranked table, and **commits by project**
-  over the last 12 months or 12 weeks, so you can see which projects get the most work.
+  over the last 12 months, 12 weeks or 30 days, so you can see which projects get the most work.
+- **Global Board:** cards across projects, project tags, filters and full card creation. New card uses the same dialog as Edit card, including images and agent/session choices.
+- **Theme:** System, Light and Dark, remembered across reloads.
+- **Last page:** opening the app returns to the page you had open (project tab, board, or agents). All projects still opens the dashboard when you choose it.
+- **Settings** (top right): agent CLIs with one-click install using each vendor's official
+  method, and per-project board column presets (Full flow, Simple, Capture flow).
+- **Pull requests:** a project tab lists up to 100 open GitHub PRs, draft/review state, branches and authors. Install GitHub CLI and run `gh auth login`; Refresh reloads the list.
 - **Feature board per project:** Backlog → To do → In progress → Review → Done, with drag and drop.
 - **Automatic card moves.** Every card has a key like `PM-12`.
   - A commit that mentions `PM-12` moves it to **In progress**.
   - A commit saying `Fixes PM-12` (also `closes` / `resolves` / `completes`) moves it to **Done**.
   - Moves happen on the next refresh.
-- **AI agents:** dispatch a card to Claude Code, Codex, Grok, OpenCode or Gemini CLI (whichever is installed).
+- **AI agents:** dispatch a card to Claude Code, Codex, Grok, Antigravity or OpenCode (whichever is
+  installed). Gemini has been replaced by Antigravity; existing Gemini sessions still open.
   - Choose what the agent may do: **Read-only**, **Edit files** (default) or **Full access**.
   - Dispatching moves the card to In progress.
   - When the run finishes you see what it changed ("3 files changed · 1 commit"), then
@@ -56,7 +63,7 @@ Everything runs on your machine. Nothing is uploaded anywhere.
 - **git** on your PATH (for commit stats; everything else works without it)
 - Optional: [scc](https://github.com/boyter/scc) on your PATH. If found, it's used for faster, more
   accurate line counts.
-- Optional: an AI coding CLI (`claude`, `codex`, `grok`, `opencode`, `gemini`) for agent dispatch
+- Optional: an AI coding CLI (`claude`, `codex`, `grok`, `agy`, `opencode`) for agent dispatch
 
 ## Quick start
 
@@ -127,3 +134,29 @@ and rejects requests from other sites. Don't expose it to a network.
 ## Credits
 
 Animated components by [Rare UI](https://rareui.com) (MIT + Commons Clause; attribution required).
+
+## Agent board tools and images
+
+Claude Code, Codex, OpenCode and (existing) Gemini sessions/runs launched by ProjectManager receive a
+`projectmanager` MCP server automatically. It provides `get_card`, `update_status`, `add_note`
+and `read_image`. It can access only the owner's currently assigned card in that project;
+reattaching changes that scope, detaching removes card access, and deleting the owner revokes it.
+Card dialogs show **Agent board history** for audited status changes and notes. Validate work
+before moving it to Review; Done means the task is complete.
+
+The stdio bridge (`scripts/board-mcp.mjs`) finds the live local server on each request, including
+after port fallback. CLI config is injected per process; project and global CLI files are not edited.
+Gemini receives a generated system-defaults file in the data directory, preserving existing defaults.
+Capabilities are stored in the local database and passed through environment variables, never task text.
+Existing terminals started before this integration need a stop/start to load MCP configuration.
+
+Image transport uses documented provider support: Codex initial prompts use `--image`, Claude gets
+`--add-dir` access, Antigravity gets `--add-dir`, and OpenCode one-shot runs use `--file`.
+MCP `read_image` delivers native image content, including when sending a new card to an existing
+connected session. Grok and custom commands retain file-path context: automatic isolated MCP/image
+configuration has not been verified for those providers. Clipboard image shortcuts are not emulated.
+
+References: [Codex CLI](https://developers.openai.com/codex/cli/reference),
+[Claude CLI](https://code.claude.com/docs/en/cli-reference),
+[OpenCode CLI](https://opencode.ai/docs/cli/),
+[Gemini settings](https://geminicli.com/docs/reference/configuration/).

@@ -22,6 +22,9 @@ anything.
 | `server/app.ts`           | Hono API (`/api/*`), validation (zod), security middleware                        |
 | `server/store.ts`         | All project/card SQL. Routes never touch the DB directly                          |
 | `server/db.ts`            | `node:sqlite` connection + **append-only** migrations (`PRAGMA user_version`)     |
+| `server/boardMcp.ts`      | Scoped agent board tools, process config injection and audit records              |
+| `scripts/board-mcp.mjs`   | MCP stdio bridge to the live local server                                         |
+| `server/pullRequests.ts`  | gh-backed open pull requests for a project                                        |
 | `server/scanner.ts`       | Background scan jobs (code + disk + git) and auto-moving cards from commit refs   |
 | `server/analysis/*`       | Pure-ish analysis: line counter, languages, file listing, disk walk, git, scc     |
 | `server/agents/*`         | AI agent providers, run/session supervisor, agent API routes                      |

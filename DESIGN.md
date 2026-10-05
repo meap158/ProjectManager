@@ -27,6 +27,13 @@ a populated pane.
   top bar, `.app-shell` is `flex: 1; min-height: 0; overflow: hidden`. `.app-main`
   scrolls (`overflow-y: auto`); the sidebar scrolls its own list. There is exactly one
   page scrollbar. Thin 6px scrollbars everywhere.
+- **No document scroll, ever:** `html, body` are `overflow: hidden`. Even 1px of document
+  overflow paints a second bar next to `.app-main`'s, so the rule is structural, not hoping
+  content fits. Dialogs are top-layer and unaffected.
+- **Topbar:** brand, then primary nav (All projects, Board, Agents), then a right-side utility group
+  (`margin-left: auto`) with the theme control followed by Settings. Icon + label pills;
+  under 600px the labels and the wordmark hide and the icons (with matching `aria-label`s) carry the nav.
+  The mark stays.
 - **Sidebar (256px, KDP width):** filter + sort/add row on top with fixed slots (filter is
   the only elastic part, so the row never lurches when badges appear), then two-line rows:
   name + state badge, then one glance line (lines · top language · relative last commit).
@@ -46,12 +53,20 @@ a populated pane.
   `--gutter` horizontal, 14px section gaps. Stats tiles start at 132px columns.
 - **Density budget:** panel padding 14–16px, card gaps ≤ 12px, footer ≤ 16px. New chrome
   must earn vertical pixels: prefer a second line of glance data over a new section.
-- **Narrow screens:** the sidebar becomes one horizontal strip (controls in a single row,
-  projects as sideways-scrolling chips, footer hidden) — never a tall stacked panel that
-  eats the first screenful.
+- **Narrow screens:** under 900px the shell stacks and the sidebar becomes one horizontal strip
+  above the page (controls in a single row, projects as sideways-scrolling chips, footer hidden) —
+  never a tall stacked panel that eats the first screenful.
+- **Sticky chrome:** the dashboard/project headers (+ tabs) live in `.sticky-head`
+  (`position: sticky`, opaque page background, one rule line). Titles, actions and tabs stay
+  visible while tab content scrolls; banners and notices scroll away. Stuck bars keep 8px
+  breathing room above (`.page` top padding compensates, so resting pages are unchanged) —
+  sticky content never touches the viewport edge.
 - **The all-projects overview (`/`) is pinned prominent:** first item in the sidebar
   ("All projects" with an accent icon when active, above the filter) and a topbar nav
   link. It is never buried under the project list.
+- **Last page:** opening the app at `/` returns to the last in-app page, including its
+  project tab, board filter, or workspace session. Choosing All projects during a visit
+  stays there. The choice is per browser (`localStorage`). Paths outside this app are ignored.
 
 ## 2b. Dashboard (home)
 
@@ -153,7 +168,8 @@ adjacent-pair CVD separation in both modes).
   Anatomy follows KDP's `opp-select`:
   button trigger with rotating caret, absolute listbox (4px gap, 240px max scroll), accent + bold +
   ✓ selected state, disabled options with a reason, outside-click/Esc close, full arrow/Home/End/
-  Enter keyboard support with focus return.
+  Enter keyboard support with focus return. Options may carry a one-line `sub` explaining the
+  choice (e.g. a board preset's column chain).
 - **Dialogs:** native `<dialog>` with `showModal()`, which gives focus trapping, Esc to close and a
   backdrop. Layout is `.dialog-body` + `.dialog-footer` (destructive action on the left, Cancel and
   primary action on the right).
@@ -166,7 +182,10 @@ adjacent-pair CVD separation in both modes).
   widgets, plain lists/charts instead of decorative pills.
   Never use `window.confirm`.
 - **Tabs (project page):** a plain, stable tab bar (`.tabs` / `role="tablist"`), synced to `?tab=`
-  in the URL.
+  in the URL. Each tab has a fitting 14px stroke icon: grid (Overview), kanban columns (Board),
+  terminal prompt (Agents). Icons live in the shared `components/icons.tsx` set (also used by the
+  topbar: grid for All projects, terminal for Agents) — inline SVG, no icon dependency,
+  `aria-hidden`, inheriting the text color.
   - Tabs never animate or move. Rare UI's GooeyNav was removed because its moving segments were
     distracting.
   - All tab panels stay mounted and inactive ones are hidden, so switching never refetches or
@@ -174,6 +193,9 @@ adjacent-pair CVD separation in both modes).
 - **Kanban:**
   - Native HTML5 drag-and-drop. A drop indicator line appears above the target card, and the column
     highlights when dropping at its end.
+  - Column presets (Settings → Boards): Full flow, Simple (To do/In progress/Done), Capture flow
+    (Backlog/In progress/Done). Presets only hide columns — cards keep their statuses everywhere
+    else, and the board counts hidden cards instead of losing them.
   - **Keyboard alternative:** open a card (Enter/click) and change its **Column** dropdown. Every
     drag-and-drop action has a non-drag equivalent.
   - New cards go to the **top** of a column. Quick-add stays open for rapid entry; Esc closes it.
@@ -259,6 +281,9 @@ Switching tabs or projects must not move anything that stays on screen.
   skips reported, never failing the whole batch).
 - Folders already tracked show a `✓ tracked` badge with a disabled checkbox; the open folder
   shows an "Already tracking as X" notice that disables single-track actions.
+- The dialog remembers where you were (localStorage): every browsed folder is saved, and
+  tracking a folder saves its parent instead. It reopens there, falling back to home when the
+  folder is gone.
 - Paths are shown exactly as the OS reports them (backslashes on Windows) in mono.
 
 ## 12. Agent CLI sessions and runs
@@ -277,9 +302,25 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   backlog/todo cards to In progress; a finished run awaits **validation**: Accept moves the
   card to Review (or Done), Reject sends it back to To do. Kanban cards carry Quil-style
   attention badges (▶ running, ✓ awaiting validation, ✗ failed).
-- **Providers** (Claude Code, Codex, Grok, OpenCode, Gemini, shell, custom) are PATH-probed with
+- **Providers** (Claude Code, Codex, Grok, Antigravity, OpenCode, shell, custom; Gemini is
+  `retired`: never offered for new work, existing sessions still relaunch) are PATH-probed with
   install links when missing; dispatches use argv arrays, never a shell. xterm.js renders
   terminal output and is code-split so it loads only with a terminal.
+- **Honest activity:** a session reads "running" while the CLI is busy or a shell/subagent it
+  started is still going, judged from its last screen frame (the text between its last two
+  prompt draws); a prompt with neither reads "idle · waiting for you". Log recency alone lies
+  (TUI redraws keep the file fresh for hours) and is only the fallback for unknown CLIs.
+- **Agent work rows:** title flush left right after the status dot, provider mark + name after
+  it (official Claude Code, Gemini and OpenCode marks in brand colours, generic terminal glyph
+  otherwise — never a wrong "official" mark); card tag, state word and actions sit in fixed
+  right-hand columns so they line up on every row.
+- **Settings (/settings):** one section per concern. First section is agent CLIs: availability,
+  and one-click **Install** for whatever is missing, using each vendor's official method
+  (native installer scripts for Claude/Codex/Grok/OpenCode-posix; npm globals for
+  OpenCode-Windows and Gemini everywhere). The recipe (label, what it downloads, docs link)
+  shows before anything runs; execution needs the explicit Install POST; output streams live
+  and availability re-probes past the status cache on success. Installs never relaunch after
+  a restart — retry by hand. Same-machine trust model and caps apply.
 - **Trust model:** same-machine only (existing Host allowlist + JSON-write guard). Sessions
   run as your user with your environment; logs live under `data/agent-logs/` (gitignored).
   Caps: 8 sessions/project, 3 concurrent runs/project, 8MB logs, 20min default run timeout.
@@ -409,3 +450,18 @@ Sessions are never lost unless you stop or delete them (owner requirement, Resea
   attached for a minute.
 - **Simpler UI:** the "Supervise" option was removed. Every session persists by default.
 - Disable with `AGENT_HOST=off` (sessions then run inside the server as before).
+
+## Oct 06: cards, board tools and pull requests
+
+- New card and Edit card use the same CardDialog fields and agent/session controls. Global creation
+  requires a project; agent choices load for that project. Images stage locally until creation.
+  Cancel before creation leaves no card. Sending saves current title/notes and uploads images first.
+- Backend sessions/runs remain distinct for lifecycle purposes; the UI presents one Agent work list.
+  Pane and List views share rows, with a resizable terminal dock in List view.
+- System/Light/Dark uses a labelled theme menu, calm grey surfaces and desaturated accents.
+- Pull requests is a remembered project tab. Fetch on first opening, explicit Refresh thereafter;
+  preserve loaded rows during refresh. List open PR title/link, author, branches, draft/review state
+  and update date. Missing gh/auth/non-GitHub errors appear inside the panel.
+- Agent board tools are scoped to the owner's assigned card. add_note appends evidence; status
+  changes and notes have a persistent audit visible through Agent board history. Native MCP image
+  reads avoid relying on browser-terminal clipboard emulation.

@@ -2,7 +2,43 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
-## State (2026-10-05)
+## Current state (2026-10-06, everything committed)
+
+All owner tasks to date are implemented and committed (both parallel sessions' work, split into
+atomic commits). Nothing is pending in the working tree.
+
+- **Shell:** Settings page (agent CLIs with install, per-project board column presets), icon nav
+  with a global Board between All projects and Agents, remembered last page, calm dark theme,
+  stacked layout under 900px.
+- **Boards:** project and global boards create cards through the full CardDialog (notes, staged
+  images, hand-to-agent); the project is required on the global Board. Dashboard tiles link to
+  /board?show=planned|active. Card images: data folder only, lightbox preview.
+- **Agents:** one Agent work list (sessions + runs) with facts, token usage (Claude), rename in
+  place, names flush left with the card tag, state and actions in fixed right-hand columns, and
+  official provider marks where verified (Claude Code, Gemini, OpenCode; others the generic
+  glyph). Workspace Panes / List with a resizable, maximisable docked terminal.
+- **State (PM-14):** "running" means the CLI's last screen frame shows busy chrome or a still-
+  running background shell/subagent; "idle" means it is at its prompt; unknown CLIs (shell,
+  custom) fall back to output recency (`server/agents/activity.ts`, `tailState`).
+- **Providers:** Antigravity (`agy`, flags from `agy --help`) replaces Gemini (PM-13). Gemini is
+  `retired`: hidden from new-session/run/install menus and refused by the API, while existing
+  Gemini sessions keep their name and relaunch.
+- **Board MCP** (card-scoped get_card / update_status / add_note / read_image, audited, migration 7) is injected for Claude, Codex, OpenCode and Gemini. Native images: Codex --image, Claude
+  --add-dir, OpenCode run --file; Grok/custom keep the path list.
+- **Claude resume:** if the pinned conversation has no transcript, a relaunch starts a fresh
+  conversation under a new pinned id (and stores it) instead of crash-looping on
+  "No conversation found".
+- **Pull requests** tab via `gh pr list`.
+- **Verification (this snapshot):** both typechecks, lint on every changed file, Prettier, and
+  154+ tests pass (`npx vitest run --maxWorkers=1`). Browser QA in Chrome on a scratch instance
+  (port 5290): agent rows aligned (measured), sidebar slots/menu (measured), Board create flow.
+  Not verified live: an MCP tool call or native image inside a running provider.
+
+**Gotcha (low RAM):** when other apps hold most memory, `tsc`, ESLint and Vitest workers die with
+"Fatal process out of memory: Zone". Run tsc with `NODE_OPTIONS=--max-old-space-size=4096`, lint
+files in small batches, and Vitest with `--maxWorkers=1`; they pass.
+
+## Earlier state (2026-10-05)
 
 Milestone 1, a working agent CLI integration, and the multi-pane agent workspace are implemented
 and verified in the browser.
@@ -14,6 +50,16 @@ and verified in the browser.
   - card → "Work on it in a terminal" → Claude got the card's task and wrote the file
   - two panes across two projects
   - shell input, layout persisted across reload, maximise, live badge on the board
+
+## State (2026-10-05, UI stability + sticky chrome, uncommitted)
+
+- Tab/project switches no longer flicker or shift: keep-mounted tab panels, per-project module
+  caches, hidden tabs pause polling/streams, mirrored skeletons, rename box keyed by project
+  (DESIGN.md §7 stability rules).
+- Shared `Dropdown` atom for toolbar/menu pickers (KDP `opp-select` anatomy); workspace project
+  - provider selects converted (DESIGN.md §6).
+- Spacing scale + symmetry rules (DESIGN.md §13); strays normalised in `styles.css`.
+- Dashboard + project headers/tabs are sticky (`.sticky-head`); banners scroll away.
 
 ## Product brief
 
@@ -43,11 +89,13 @@ read it before product work. `/References` is empty.
 
 ## Roadmap (owner-requested, in priority order)
 
-All owner-requested items to date are implemented (see Research/feature-requests.md, Addenda 1–8).
-Add new requests here as they come in.
+Addenda 1-9 are implemented except for verified native Grok/custom image input and automatic isolated MCP configuration for those providers. Browser QA of the Oct 06 card, pull-request, and board-history UI passed on the live dev server; a live provider image/MCP run has not.
 
-Dropped on purpose: a theme toggle (it was our idea, not the owner's, and the owner asked for no
-rarely used features). The tokens still support `data-theme` if it's ever wanted.
+- **Done since:** board column presets per project (Settings → Boards): Full flow, Simple
+  (To do/In progress/Done), Capture flow (Backlog/In progress/Done). Cards in hidden columns
+  keep their status everywhere else.
+
+System / Light / Dark theme switching is implemented at the owner's request (Addendum 9).
 
 Owner preferences to keep applying (Research Addenda 4 and 7): simple over feature-rich, no rarely
 used options, never lose sessions, no layout shift.
