@@ -202,7 +202,7 @@ export function CardDialog({
   }, [card, effectiveProjectId, creating]);
 
   // One-shot dispatch needs a CLI with a prompt mode; Shell/Custom are for sessions.
-  const aiProviders = (providers ?? []).filter((p) => p.binary !== null);
+  const aiProviders = (providers ?? []).filter((p) => p.binary !== null && !p.retired);
   const selectedProvider = aiProviders.find((p) => p.id === dispatchProvider);
   const autonomySupported =
     !selectedProvider?.autonomyArgs || selectedProvider.autonomyArgs[autonomy] !== undefined;

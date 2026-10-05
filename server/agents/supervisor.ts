@@ -620,6 +620,9 @@ export class AgentSupervisor {
     const providerId = input.providerId ?? (input.command ? 'custom' : 'shell');
     const provider = getProvider(providerId);
     if (!provider) throw new AgentError(400, `Unknown provider: ${providerId}`);
+    if (provider.retired) {
+      throw new AgentError(400, `${provider.name} has been replaced; pick another agent`);
+    }
     if (provider.binary && !(await providerAvailable(providerId))) {
       throw new AgentError(
         400,
@@ -976,6 +979,9 @@ export class AgentSupervisor {
     const providerId = input.providerId ?? (input.command ? 'custom' : 'claude');
     const provider = getProvider(providerId);
     if (!provider) throw new AgentError(400, `Unknown provider: ${providerId}`);
+    if (provider.retired) {
+      throw new AgentError(400, `${provider.name} has been replaced; pick another agent`);
+    }
     if (provider.binary && !(await providerAvailable(providerId))) {
       throw new AgentError(
         400,

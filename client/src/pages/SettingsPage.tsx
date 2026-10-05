@@ -88,7 +88,7 @@ export function SettingsPage() {
     }
   }
 
-  const clis = (providers ?? []).filter((p) => p.id !== 'shell' && p.id !== 'custom');
+  const clis = (providers ?? []).filter((p) => p.id !== 'shell' && p.id !== 'custom' && !p.retired);
 
   return (
     <main className="page">

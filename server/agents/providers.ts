@@ -63,6 +63,21 @@ export const PROVIDERS: AgentProvider[] = [
     installUrl: 'https://docs.x.ai/build/overview',
   },
   {
+    id: 'antigravity',
+    name: 'Antigravity',
+    binary: 'agy',
+    argsTemplate: ['-p', PROMPT_PLACEHOLDER],
+    interactivePromptArgs: ['-i', PROMPT_PLACEHOLDER],
+    resumeLatestArgs: ['-c'],
+    autonomyArgs: {
+      read: ['--mode', 'plan'],
+      edit: ['--mode', 'accept-edits'],
+      full: ['--dangerously-skip-permissions'],
+    },
+    description: 'Google Antigravity CLI, non-interactive print mode',
+    installUrl: 'https://github.com/google/antigravity',
+  },
+  {
     id: 'opencode',
     name: 'OpenCode',
     binary: 'opencode',
@@ -88,6 +103,8 @@ export const PROVIDERS: AgentProvider[] = [
     },
     description: 'Google Gemini CLI, non-interactive prompt mode',
     installUrl: 'https://github.com/google-gemini/gemini-cli',
+    // Replaced by Antigravity (owner request PM-13); old Gemini sessions still open.
+    retired: true,
   },
   {
     id: 'shell',

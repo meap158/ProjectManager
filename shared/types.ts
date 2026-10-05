@@ -269,6 +269,9 @@ export interface AgentProvider {
   description: string;
   /** Install link shown when the binary is missing (Quil-style). */
   installUrl?: string;
+  /** Replaced by another provider: never offered for new sessions or runs, but existing
+      sessions keep their name, open, and relaunch as before. */
+  retired?: boolean;
 }
 
 export interface AgentProviderStatus extends AgentProvider {

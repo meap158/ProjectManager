@@ -37,6 +37,7 @@ const CLAUDE_DOCS = 'https://docs.anthropic.com/en/docs/claude-code/setup';
 const CODEX_DOCS = 'https://github.com/openai/codex#readme';
 const GROK_DOCS = 'https://docs.x.ai/build/overview';
 const OPENCODE_DOCS = 'https://opencode.ai/docs';
+const ANTIGRAVITY_DOCS = 'https://github.com/google/antigravity#readme';
 const GEMINI_DOCS = 'https://github.com/google-gemini/gemini-cli#readme';
 
 export const INSTALL_RECIPES: Record<string, Partial<Record<Platform, InstallRecipe>>> = {
@@ -108,6 +109,11 @@ export const INSTALL_RECIPES: Record<string, Partial<Record<Platform, InstallRec
       GROK_DOCS,
       'Downloads the installer from x.ai and runs it via bash.',
     ),
+  },
+  antigravity: {
+    win32: npmGlobal('@google/antigravity-cli', ANTIGRAVITY_DOCS),
+    darwin: npmGlobal('@google/antigravity-cli', ANTIGRAVITY_DOCS),
+    linux: npmGlobal('@google/antigravity-cli', ANTIGRAVITY_DOCS),
   },
   opencode: {
     win32: npmGlobal('opencode-ai@latest', OPENCODE_DOCS),

@@ -839,7 +839,7 @@ function NewSessionInline({
     saveLastAgent(id);
   };
   const [busy, setBusy] = useState(false);
-  const usable = providers.filter((p) => p.id !== 'custom');
+  const usable = providers.filter((p) => p.id !== 'custom' && !p.retired);
   const chosen = projectId || projects[0]?.id;
 
   async function start(event: FormEvent) {

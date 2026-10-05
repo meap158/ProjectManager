@@ -77,6 +77,12 @@ describe('recipeFor', () => {
       '-g',
       'opencode-ai@latest',
     ]);
+    expect(recipeFor(getProvider('antigravity')!, 'win32')?.command).toEqual([
+      'npm',
+      'install',
+      '-g',
+      '@google/antigravity-cli',
+    ]);
     expect(recipeFor(getProvider('gemini')!, 'linux')?.command).toEqual([
       'npm',
       'install',

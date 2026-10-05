@@ -50,6 +50,13 @@ describe('buildDispatchArgv', () => {
       '-p',
       PROMPT,
     ]);
+    expect(buildDispatchArgv(getProvider('antigravity')!, PROMPT, 'edit')).toEqual([
+      'agy',
+      '--mode',
+      'accept-edits',
+      '-p',
+      PROMPT,
+    ]);
     expect(buildDispatchArgv(getProvider('opencode')!, PROMPT, 'edit')).toEqual([
       'opencode',
       'run',
@@ -61,6 +68,11 @@ describe('buildDispatchArgv', () => {
     expect(buildResumeArgv(getProvider('grok')!)).toBeNull();
     expect(supportsAutonomy(getProvider('grok')!, 'read')).toBe(true);
     expect(supportsAutonomy(getProvider('grok')!, 'full')).toBe(true);
+    expect(buildInteractiveArgv(getProvider('antigravity')!, { prompt: 'hi' })).toEqual([
+      'agy',
+      '-i',
+      'hi',
+    ]);
   });
 
   it('knows which autonomy levels each provider supports', () => {
@@ -521,6 +533,7 @@ describe('resuming CLIs without pinned conversations after a reboot', () => {
       '--resume',
       'latest',
     ]);
+    expect(sup.resumeLatestArgv(insert('/repo-c2', 'antigravity', ['agy']))).toEqual(['agy', '-c']);
     expect(sup.resumeLatestArgv(insert('/repo-d', 'codex', ['codex', '--model', 'x']))).toEqual([
       'codex',
       'resume',
