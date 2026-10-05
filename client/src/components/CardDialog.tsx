@@ -11,9 +11,11 @@ import {
   type AgentRun,
   type Card,
   type CardStatus,
+  type ProjectSummary,
 } from '../../../shared/types';
 import { api } from '../api';
 import { formatDate } from '../format';
+import { CardAgentAudit } from './CardAgentAudit';
 import { CardImages } from './CardImages';
 import { Dropdown } from './Dropdown';
 import { RunCard } from './RunCard';
@@ -55,9 +57,9 @@ const HAND_MODES: {
   {
     value: 'send',
     label: 'Send to a running session',
-    hint: 'Pastes the task into a session that is already running, so it keeps its context.',
+    hint: 'Submits the task automatically to a running session, so it keeps its context.',
     action: 'Send to session',
-    title: 'Paste this card\u2019s task into the chosen running session and open it',
+    title: 'Submit this card\u2019s task to the chosen running session',
   },
 ];
 
@@ -76,7 +78,11 @@ export function CardDialog({
   onDeleted,
   onDispatched,
   liveSessionId = null,
+  creating = false,
+  projects,
 }: {
+  creating?: boolean;
+  projects?: ProjectSummary[];
   card: Card | null;
   projectId: number;
   onClose: () => void;
@@ -87,6 +93,12 @@ export function CardDialog({
   liveSessionId?: number | null;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [chosenProject, setChosenProject] = useState(projectId);
+  const effectiveProjectId = creating ? chosenProject : projectId;
+  const createdRef = useRef<Card | null>(null);
+  const [hasCreated, setHasCreated] = useState(false);
+  const [imagesBusy, setImagesBusy] = useState(false);
+  const pendingImages = useRef<{ name: string; type: string; data: string }[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<CardStatus>('backlog');
@@ -94,7 +106,9 @@ export function CardDialog({
   const [saving, setSaving] = useState(false);
   const [providers, setProviders] = useState<AgentProviderStatus[] | null>(null);
   /** Running AI CLI sessions in this project, for "send to a running session". */
-  const [liveSessions, setLiveSessions] = useState<AgentSession[]>([]);
+  const [loadedSessions, setLiveSessions] = useState<AgentSession[]>([]);
+  const [sessionsProject, setSessionsProject] = useState<number | null>(null);
+  const liveSessions = sessionsProject === effectiveProjectId ? loadedSessions : [];
   const [attachTo, setAttachTo] = useState<number | null>(null);
   const [dispatchProvider, setDispatchProvider] = useState('claude');
   const [prompt, setPrompt] = useState('');
@@ -120,6 +134,10 @@ export function CardDialog({
   // prop changes" pattern), rather than in an effect.
   if (card !== shownCard) {
     setShownCard(card);
+    if (creating) {
+      setChosenProject(projectId);
+      setHasCreated(false);
+    }
     if (card) {
       setTitle(card.title);
       setDescription(card.description);
@@ -132,32 +150,56 @@ export function CardDialog({
   }
 
   useEffect(() => {
+    if (creating) {
+      createdRef.current = null;
+      pendingImages.current = [];
+    }
+  }, [card, creating]);
+
+  useEffect(() => {
+    let active = true;
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (card) {
       if (!dialog.open) dialog.showModal();
-      api.listProviders().then(setProviders, () => setProviders([]));
-      api.listSessions(projectId).then(
-        (all) => {
-          const usable = all.filter(
-            (s) => s.status === 'running' && s.providerId !== 'shell' && s.providerId !== 'custom',
-          );
-          setLiveSessions(usable);
-          setAttachTo(usable.at(-1)?.id ?? null);
-        },
-        () => setLiveSessions([]),
-      );
-      api.listRuns(projectId, card.id).then(
+      api.listProviders().then(
         (next) => {
-          setRuns(next);
-          setNow(Date.now());
+          if (active) setProviders(next);
         },
-        () => setRuns([]),
+        () => {
+          if (active) setProviders([]);
+        },
       );
+      if (effectiveProjectId)
+        api.listSessions(effectiveProjectId).then(
+          (all) => {
+            if (!active) return;
+            setSessionsProject(effectiveProjectId);
+            const usable = all.filter(
+              (s) =>
+                s.status === 'running' && s.providerId !== 'shell' && s.providerId !== 'custom',
+            );
+            setLiveSessions(usable);
+            setAttachTo(usable.at(-1)?.id ?? null);
+          },
+          () => setLiveSessions([]),
+        );
+      if (!creating)
+        api.listRuns(effectiveProjectId, card.id).then(
+          (next) => {
+            if (!active) return;
+            setRuns(next);
+            setNow(Date.now());
+          },
+          () => setRuns([]),
+        );
     } else if (dialog.open) {
       dialog.close();
     }
-  }, [card, projectId]);
+    return () => {
+      active = false;
+    };
+  }, [card, effectiveProjectId, creating]);
 
   // One-shot dispatch needs a CLI with a prompt mode; Shell/Custom are for sessions.
   const aiProviders = (providers ?? []).filter((p) => p.binary !== null);
@@ -170,17 +212,41 @@ export function CardDialog({
   const mode: HandMode = handMode === 'send' && liveSessions.length === 0 ? 'terminal' : handMode;
   const modeInfo = HAND_MODES.find((m) => m.value === mode)!;
 
+  async function ensureCard(): Promise<Card> {
+    if (!card || !title.trim() || !effectiveProjectId)
+      throw new Error('Enter a title and choose a project.');
+    const existing = creating ? createdRef.current : card;
+    const saved = existing
+      ? await api.updateCard(existing.id, {
+          title: title.trim(),
+          description,
+          ...(status !== existing.status ? { status } : {}),
+        })
+      : await api.addCard(effectiveProjectId, { title: title.trim(), description, status });
+    if (creating) {
+      createdRef.current = saved;
+      setHasCreated(true);
+      while (pendingImages.current.length) {
+        await api.addAttachment(saved.id, pendingImages.current[0]!);
+        pendingImages.current.shift();
+      }
+    }
+    return saved;
+  }
+
   async function openInTerminal() {
     if (!card) return;
     setDispatching(true);
     setDispatchError(null);
     try {
-      const session = await api.createSession(projectId, {
+      const saved = await ensureCard();
+      const session = await api.createSession(effectiveProjectId, {
         providerId: dispatchProvider,
-        cardId: card.id,
+        cardId: saved.id,
         ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
       });
       onDispatched?.();
+      if (creating) onSaved(saved);
       navigate(`/workspace?open=${session.id}`);
     } catch (e) {
       setDispatchError((e as Error).message);
@@ -189,16 +255,18 @@ export function CardDialog({
     }
   }
 
-  /** Continue in a session that already has context: paste this card's task into it. */
+  /** Submit in the background to a session that already has context. */
   async function sendToSession() {
     const target = attachTo ?? liveSessions[0]?.id ?? null;
     if (!card || target === null) return;
     setDispatching(true);
     setDispatchError(null);
     try {
-      await api.attachCardToSession(target, card.id, true);
+      const saved = await ensureCard();
+      await api.attachCardToSession(target, saved.id, true, prompt.trim() || undefined);
       onDispatched?.();
-      navigate(`/workspace?open=${target}`);
+      if (creating) onSaved(saved);
+      onClose();
     } catch (e) {
       setDispatchError((e as Error).message);
     } finally {
@@ -211,13 +279,15 @@ export function CardDialog({
     setDispatching(true);
     setDispatchError(null);
     try {
-      const run = await api.dispatchCard(projectId, card.id, {
+      const saved = await ensureCard();
+      const run = await api.dispatchCard(effectiveProjectId, saved.id, {
         providerId: dispatchProvider,
         autonomy,
         ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
       });
       setRuns((prev) => [run, ...(prev ?? [])]);
       onDispatched?.();
+      if (creating) onSaved(saved);
     } catch (e) {
       setDispatchError((e as Error).message);
     } finally {
@@ -230,10 +300,7 @@ export function CardDialog({
     if (!card || !title.trim()) return;
     setSaving(true);
     try {
-      const patch: Parameters<typeof api.updateCard>[1] = { title: title.trim(), description };
-      // The server puts a card that changes column without a position at the top of it.
-      if (status !== card.status) patch.status = status;
-      onSaved(await api.updateCard(card.id, patch));
+      onSaved(await ensureCard());
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -263,13 +330,37 @@ export function CardDialog({
           <div className="dialog-body">
             <div className="page-header">
               <h2 id="card-dialog-title">
-                <span className="mono faint">{card.key}</span> Edit card
+                {creating ? (
+                  'New card'
+                ) : (
+                  <>
+                    <span className="mono faint">{card.key}</span> Edit card
+                  </>
+                )}
               </h2>
-              <span className="faint" style={{ fontSize: 12.5 }}>
-                Created {formatDate(card.createdAt)}
-                {card.closedAt && ` · Done ${formatDate(card.closedAt)}`}
-              </span>
+              {!creating && (
+                <span className="faint" style={{ fontSize: 12.5 }}>
+                  Created {formatDate(card.createdAt)}
+                  {card.closedAt && ` · Done ${formatDate(card.closedAt)}`}
+                </span>
+              )}
             </div>
+            {creating && !projectId && (
+              <div className="field">
+                <label htmlFor="new-card-project">Project</label>
+                <Dropdown
+                  id="new-card-project"
+                  label="Project"
+                  value={chosenProject}
+                  options={[
+                    { value: 0, label: 'Choose a project...', disabled: true },
+                    ...(projects ?? []).map((p) => ({ value: p.id, label: p.name })),
+                  ]}
+                  onChange={setChosenProject}
+                  disabled={hasCreated || dispatching || saving}
+                />
+              </div>
+            )}
             <div className="field">
               <label htmlFor="card-title">Title</label>
               <input
@@ -295,6 +386,7 @@ export function CardDialog({
               <label htmlFor="card-description">Notes</label>
               <textarea
                 id="card-description"
+                aria-label="Description"
                 className="textarea"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -304,13 +396,27 @@ export function CardDialog({
             <div className="field">
               <label>Images</label>
               {/* Keyed by card: switching cards never shows the previous card's images. */}
-              <CardImages key={card.id} cardId={card.id} pasteRef={pasteImages} />
+              <CardImages
+                key={card.id}
+                cardId={card.id}
+                pasteRef={pasteImages}
+                onBusyChange={setImagesBusy}
+                onPendingChange={
+                  creating
+                    ? (images) => {
+                        pendingImages.current = images;
+                      }
+                    : undefined
+                }
+              />
             </div>
-            <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
-              Tip: mention <code>{card.key}</code> in a commit message to move this card to In
-              progress, or write <code>Fixes {card.key}</code> to move it to Done on the next
-              refresh.
-            </p>
+            {!creating && (
+              <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+                Tip: mention <code>{card.key}</code> in a commit message to move this card to In
+                progress, or write <code>Fixes {card.key}</code> to move it to Done on the next
+                refresh.
+              </p>
+            )}
             {card.linkedCommit && (
               <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
                 Last moved automatically by commit <code>{card.linkedCommit.slice(0, 10)}</code>.
@@ -405,6 +511,10 @@ export function CardDialog({
                   title={modeInfo.title}
                   disabled={
                     dispatching ||
+                    saving ||
+                    imagesBusy ||
+                    !title.trim() ||
+                    !effectiveProjectId ||
                     (mode === 'send'
                       ? liveSessions.length === 0
                       : !selectedProvider?.available || (mode === 'run' && !autonomySupported))
@@ -437,6 +547,7 @@ export function CardDialog({
                 </div>
               )}
             </div>
+            {!creating && <CardAgentAudit key={card.id} cardId={card.id} />}
             {runs !== null && runs.length > 0 && (
               <div className="field">
                 <label>Agent runs ({runs.length})</label>
@@ -470,19 +581,27 @@ export function CardDialog({
             )}
           </div>
           <div className="dialog-footer" style={{ alignItems: 'center' }}>
-            <ConfirmDelete
-              label="Delete card"
-              text="Delete"
-              heading={`Delete card ${card.key}?`}
-              message="The card and its notes are removed from the board. This can't be undone."
-              onConfirm={remove}
-            />
+            {!creating && (
+              <ConfirmDelete
+                label="Delete card"
+                text="Delete"
+                heading={`Delete card ${card.key}?`}
+                message="The card and its notes are removed from the board. This can't be undone."
+                onConfirm={remove}
+              />
+            )}
             <div className="actions">
               <button type="button" className="btn" onClick={onClose}>
                 Cancel
               </button>
-              <button type="submit" className="btn btn-primary" disabled={saving || !title.trim()}>
-                Save
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={
+                  saving || dispatching || imagesBusy || !title.trim() || !effectiveProjectId
+                }
+              >
+                {creating ? 'Create card' : 'Save'}
               </button>
             </div>
           </div>

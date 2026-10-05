@@ -52,6 +52,10 @@ export const api = {
   openProjectFolder: (id: number) => request<void>('POST', `/projects/${id}/open-folder`, {}),
 
   /** Every card across projects (the global board). */
+  cardAgentAudit: (id: number) =>
+    request<
+      { owner_kind: string; owner_id: number; action: string; detail: string; created_at: string }[]
+    >('GET', `/cards/${id}/agent-audit`),
   listAllCards: () => request<CardWithProject[]>('GET', '/cards'),
   listCardsInFlight: () => request<CardWithProject[]>('GET', '/cards/in-flight'),
   listCards: (projectId: number) => request<Card[]>('GET', `/projects/${projectId}/cards`),
@@ -110,11 +114,11 @@ export const api = {
   patchSession: (id: number, patch: { name?: string; supervise?: boolean }) =>
     request<AgentSession>('PATCH', `/agent-sessions/${id}`, patch),
   /** Make a card the session's current task; `send` pastes the task into an AI CLI session. */
-  attachCardToSession: (id: number, cardId: number | null, send = false) =>
+  attachCardToSession: (id: number, cardId: number | null, send = false, prompt?: string) =>
     request<{ session: AgentSession; queued: boolean; sent: boolean }>(
       'POST',
       `/agent-sessions/${id}/card`,
-      { cardId, send },
+      { cardId, send, prompt },
     ),
   sendSessionInput: (id: number, data: string) =>
     request<{ queued: boolean; session: AgentSession }>('POST', `/agent-sessions/${id}/input`, {

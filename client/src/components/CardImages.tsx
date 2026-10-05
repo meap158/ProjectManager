@@ -36,11 +36,16 @@ export function imageFiles(list: FileList | DataTransferItemList | null | undefi
 export function CardImages({
   cardId,
   pasteRef,
+  onPendingChange,
+  onBusyChange,
 }: {
   cardId: number;
+  onBusyChange?: (busy: boolean) => void;
+  onPendingChange?: (images: { name: string; type: string; data: string }[]) => void;
   /** Set to this component's paste handler so the whole dialog accepts pasted images. */
   pasteRef?: { current: ((event: ClipboardEvent) => void) | null };
 }) {
+  const pending = useRef<{ name: string; type: string; data: string }[]>([]);
   const [images, setImages] = useState<CardAttachment[] | null>(null);
   const [busy, setBusy] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -49,8 +54,12 @@ export function CardImages({
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    onBusyChange?.(busy > 0);
+  }, [busy, onBusyChange]);
+
+  useEffect(() => {
     let active = true;
-    api.listAttachments(cardId).then(
+    (cardId ? api.listAttachments(cardId) : Promise.resolve([])).then(
       (list) => active && setImages(list),
       (e: Error) => active && setError(e.message),
     );
@@ -68,11 +77,26 @@ export function CardImages({
       }
       setBusy((n) => n + 1);
       try {
-        const added = await api.addAttachment(cardId, {
+        const image = {
           name: file.name || 'pasted image.png',
           type: file.type,
           data: await toBase64(file),
-        });
+        };
+        if (!cardId && pending.current.length >= 20) throw new Error('At most 20 images per card');
+        const added = cardId
+          ? await api.addAttachment(cardId, image)
+          : {
+              file: crypto.randomUUID(),
+              name: image.name,
+              type: image.type,
+              bytes: file.size,
+              addedAt: new Date().toISOString(),
+              url: `data:${image.type};base64,${image.data}`,
+            };
+        if (!cardId) {
+          pending.current.push(image);
+          onPendingChange?.([...pending.current]);
+        }
         setImages((prev) => [...(prev ?? []), added]);
       } catch (e) {
         setError((e as Error).message);
@@ -132,7 +156,13 @@ export function CardImages({
                   message="The image is deleted from this card. Agents already working on it keep their copy of the task."
                   confirmLabel="Remove"
                   onConfirm={() =>
-                    api.deleteAttachment(cardId, img.file).then(
+                    (cardId
+                      ? api.deleteAttachment(cardId, img.file)
+                      : Promise.resolve().then(() => {
+                          pending.current = pending.current.filter((_, index) => index !== i);
+                          onPendingChange?.([...pending.current]);
+                        })
+                    ).then(
                       () => setImages((prev) => prev?.filter((x) => x.file !== img.file) ?? prev),
                       (e: Error) => setError(e.message),
                     )

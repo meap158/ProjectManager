@@ -551,6 +551,17 @@ code,
   color: var(--accent);
   font-weight: 700;
 }
+.dropdown-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.dropdown-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-weight: 400;
+}
 .dropdown-hint {
   margin-left: auto;
   padding-left: 12px;
