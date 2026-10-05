@@ -137,6 +137,13 @@ adjacent-pair CVD separation in both modes).
 - **Buttons:** `.btn` (secondary), `.btn-primary` (one per view, the main action), `.btn-ghost`,
   `.btn-danger`, plus `.btn-sm` and `.btn-icon` sizes. Height is 32px (26px for small).
 - **Inputs:** `.input`, `.select`, `.textarea`, each wrapped in `.field` with a visible `<label>`.
+- **Dropdowns:** the shared `Dropdown` atom (`components/Dropdown.tsx`) for toolbar and menu
+  value pickers — never a native `<select>` there; its OS rendering breaks the design language
+  (see the workspace toolbar). Form fields inside dialogs keep native selects with visible labels.
+  Anatomy follows KDP's `opp-select`:
+  button trigger with rotating caret, absolute listbox (4px gap, 240px max scroll), accent + bold +
+  ✓ selected state, disabled options with a reason, outside-click/Esc close, full arrow/Home/End/
+  Enter keyboard support with focus return.
 - **Dialogs:** native `<dialog>` with `showModal()`, which gives focus trapping, Esc to close and a
   backdrop. Layout is `.dialog-body` + `.dialog-footer` (destructive action on the left, Cancel and
   primary action on the right).
@@ -308,3 +315,23 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   work looks done.
 - **Narrow screens** (< 900px): panes stack vertically with a minimum height and the grid
   scrolls.
+
+## 13. Spacing, alignment and symmetry
+
+Every margin, padding and gap in `styles.css` comes from one scale, and every box is
+symmetric unless it has a functional reason not to be. New CSS must use the scale; one-off
+values (5px, 7px, 9px, 18px…) are never added.
+
+- **Scale:** 0, 1 (hairline dividers), 2 (dense rows), 4 (badges, menu padding), 6 (form rows,
+  toolbar rows), 8 (panels' inner rhythm, option rows), 10/12 (cards, tiles), 14/16 (sections,
+  panels), 20 (dialog rhythm), 24 (`--gutter`, 16 under 600px).
+- **Symmetry:** padding shorthands are symmetric on both axes (`8px`, `6px 8px`, `10px 12px`).
+  Asymmetry needs a functional reason stated in a comment — e.g. `.pane-head` keeps a slimmer
+  right edge because icon buttons sit flush there, and `.chip` keeps extra left padding for
+  its remove button.
+- **Balance:** rows that mix text and controls hold one line (title truncates, actions keep
+  fixed slots — see §2); icon-only buttons are square-ish (22–32px); menus and dialogs share
+  the 4px outer / 7–8px row padding with the sorter and dropdown atoms.
+- **Audit trail:** normalised to the scale — tooltip `6px 9px` → `6px 8px`, project figures
+  and list indents `18px` → `16px`, workspace padding → symmetric `8px`, pane-body gutters →
+  `6px 0 0 6px`, sidebar microcopy gap `5px` → `6px`, dropdown rows `7px 9px` → `7px 8px`.

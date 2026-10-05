@@ -395,7 +395,7 @@ code,
   gap: 6px;
   width: 100%;
   min-height: 26px;
-  padding: 3px 8px;
+  padding: 4px 8px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
@@ -444,7 +444,7 @@ code,
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 7px 9px;
+  padding: 7px 8px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -590,7 +590,7 @@ code,
 .sidebar-stats {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   font-size: 11.5px;
   color: var(--text-2);
   min-width: 0;
@@ -1242,7 +1242,7 @@ code,
   pointer-events: none;
   background: var(--text);
   color: var(--bg);
-  padding: 6px 9px;
+  padding: 6px 8px;
   border-radius: var(--radius-sm);
   font-size: 12px;
   line-height: 1.35;
@@ -1278,7 +1278,7 @@ code,
 }
 .project-card .figures {
   display: flex;
-  gap: 18px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 .project-card .figures div {
@@ -1667,7 +1667,7 @@ dialog::backdrop {
 }
 .run-changes ul {
   margin: 6px 0 0;
-  padding-left: 18px;
+  padding-left: 16px;
   max-height: 160px;
   overflow-y: auto;
   font-size: 12px;
@@ -1690,7 +1690,7 @@ dialog::backdrop {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 6px 8px 8px;
+  padding: 8px;
 }
 .workspace-bar {
   display: flex;
@@ -1792,7 +1792,7 @@ dialog::backdrop {
 .pane-body {
   flex: 1;
   min-height: 0;
-  padding: 4px 0 0 6px;
+  padding: 6px 0 0 6px;
 }
 .pane-body .terminal {
   border-radius: 0;
