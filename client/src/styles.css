@@ -714,7 +714,7 @@ a.t:hover {
 
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center; /* actions centre on the whole title block (title + subtitle) */
   justify-content: space-between;
   gap: 12px;
   flex-wrap: nowrap;
