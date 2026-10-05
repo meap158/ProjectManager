@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 import { AnimatedCounter } from './ui/animated-counter';
 
 /** Splits a byte count into a value + unit so the number can animate while the unit stays put. */
@@ -22,6 +23,8 @@ export function StatTile({
   suffix,
   text,
   hint,
+  to,
+  linkTitle,
 }: {
   label: string;
   value?: number;
@@ -29,9 +32,12 @@ export function StatTile({
   suffix?: string;
   text?: ReactNode;
   hint?: ReactNode;
+  /** Makes the tile a link to where these items are listed. */
+  to?: string;
+  linkTitle?: string;
 }) {
-  return (
-    <div className="stat">
+  const body = (
+    <>
       <div className="label">{label}</div>
       <div className={value === undefined ? 'value value-text' : 'value'}>
         {value !== undefined ? (
@@ -49,7 +55,14 @@ export function StatTile({
           {hint}
         </div>
       )}
-    </div>
+    </>
+  );
+  return to ? (
+    <Link to={to} className="stat stat-link" title={linkTitle}>
+      {body}
+    </Link>
+  ) : (
+    <div className="stat">{body}</div>
   );
 }
 

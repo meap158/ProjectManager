@@ -1,6 +1,7 @@
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ThemeSwitch } from './components/ThemeSwitch';
+import { BoardPage } from './pages/BoardPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { WorkspacePage } from './pages/WorkspacePage';
@@ -19,6 +20,9 @@ export function App() {
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'is-active' : '')}>
             All projects
           </NavLink>
+          <NavLink to="/board" className={({ isActive }) => (isActive ? 'is-active' : '')}>
+            Board
+          </NavLink>
           <NavLink to="/workspace" className={({ isActive }) => (isActive ? 'is-active' : '')}>
             Agents
           </NavLink>
@@ -30,6 +34,7 @@ export function App() {
         <div className="app-main">
           <Routes>
             <Route path="/" element={<ProjectsPage />} />
+            <Route path="/board" element={<BoardPage />} />
             <Route path="/projects/:id" element={<ProjectPage />} />
             <Route path="/workspace" element={<WorkspacePage />} />
             <Route

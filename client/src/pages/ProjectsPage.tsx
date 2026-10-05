@@ -187,8 +187,20 @@ export function ProjectsPage() {
             <StatTile label="Lines of code" value={totals.code} />
             <BytesTile label="Size on disk" bytes={totals.bytes} />
             <StatTile label="Commits (30 days)" value={totals.commits30} />
-            <StatTile label="Planned tasks" value={totals.open} hint="In Backlog or To do" />
-            <StatTile label="Being worked on" value={totals.active} hint="In progress or review" />
+            <StatTile
+              label="Planned tasks"
+              value={totals.open}
+              hint="In Backlog or To do"
+              to="/board?show=planned"
+              linkTitle="Open the board on planned tasks across all projects"
+            />
+            <StatTile
+              label="Being worked on"
+              value={totals.active}
+              hint="In progress or review"
+              to="/board?show=active"
+              linkTitle="Open the board on tasks being worked on across all projects"
+            />
           </section>
 
           {attention.length > 0 && (

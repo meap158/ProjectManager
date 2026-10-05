@@ -219,6 +219,17 @@ export function listCards(db: Db, projectId: number): Card[] {
 }
 
 /** Cards being worked on (In progress / Review) across every project, oldest change first. */
+/** Every card in every project with its project name, most recently updated first (the global board; positions are per project). */
+export function listAllCards(db: Db): CardWithProject[] {
+  const rows = db
+    .prepare(
+      `SELECT c.*, p.name AS project_name FROM cards c JOIN projects p ON p.id = c.project_id
+        ORDER BY c.updated_at DESC, c.id DESC`,
+    )
+    .all() as unknown as (CardRow & { project_name: string })[];
+  return rows.map((r) => ({ ...toCard(r), projectName: r.project_name }));
+}
+
 export function listCardsInFlight(db: Db): CardWithProject[] {
   const rows = db
     .prepare(

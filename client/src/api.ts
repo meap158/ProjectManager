@@ -45,6 +45,8 @@ export const api = {
   /** Opens the project folder in Explorer / Finder / the desktop file manager. */
   openProjectFolder: (id: number) => request<void>('POST', `/projects/${id}/open-folder`, {}),
 
+  /** Every card across projects (the global board). */
+  listAllCards: () => request<CardWithProject[]>('GET', '/cards'),
   listCardsInFlight: () => request<CardWithProject[]>('GET', '/cards/in-flight'),
   listCards: (projectId: number) => request<Card[]>('GET', `/projects/${projectId}/cards`),
   addCard: (
