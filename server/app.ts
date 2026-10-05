@@ -10,6 +10,7 @@ import { Scanner } from './scanner.js';
 import * as store from './store.js';
 import { AgentError, AgentSupervisor } from './agents/supervisor.js';
 import { registerAgentRoutes } from './agents/routes.js';
+import { registerBoardMcp } from './boardMcp.js';
 import { pullRequests } from './pullRequests.js';
 import { openInFileManager } from './openFolder.js';
 import { registerAttachmentRoutes, removeAttachments } from './attachments.js';
@@ -126,6 +127,7 @@ export function createApp(
   // Card images live beside the agent logs: <dataDir>/attachments/<cardId>/.
   const attachmentsRoot = path.join(path.dirname(logDir), 'attachments');
   registerAttachmentRoutes(app, db, attachmentsRoot);
+  registerBoardMcp(app, db, attachmentsRoot);
 
   // ---- Projects -------------------------------------------------------------------------------
 

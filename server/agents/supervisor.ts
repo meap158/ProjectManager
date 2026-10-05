@@ -47,7 +47,8 @@ import type {
   RunChanges,
 } from '../../shared/types.js';
 import { isTerminalReport, stripTerminalReports } from '../../shared/terminalReports.js';
-import { withAttachments } from '../attachments.js';
+import { boardConnection, boardTaskNote } from '../boardMcp.js';
+import { withAttachments, listAttachments, cardAttachmentsDir } from '../attachments.js';
 import type { Db } from '../db.js';
 import { getCard, getProjectRow, updateCard } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
@@ -386,8 +387,22 @@ export class AgentSupervisor {
   readonly ready: Promise<void>;
 
   /** A card task plus the paths of the card's attached images (stored next to the agent logs). */
-  private withImages(prompt: string, cardId: number): string {
-    return withAttachments(prompt, path.join(path.dirname(this.logDir), 'attachments'), cardId);
+  private withImages(prompt: string, cardId: number, providerId?: string): string {
+    return withAttachments(
+      prompt +
+        (['claude', 'codex', 'opencode', 'antigravity', 'gemini'].includes(providerId ?? '')
+          ? boardTaskNote
+          : ''),
+      path.join(path.dirname(this.logDir), 'attachments'),
+      cardId,
+    );
+  }
+
+  private imagePaths(cardId: number): string[] {
+    const root = path.join(path.dirname(this.logDir), 'attachments');
+    return listAttachments(root, cardId).map((image) =>
+      path.join(cardAttachmentsDir(root, cardId), image.file),
+    );
   }
 
   constructor(
@@ -618,6 +633,7 @@ export class AgentSupervisor {
         ? this.withImages(
             input.prompt ?? defaultPrompt(card.key, card.title, card.description),
             card.id,
+            providerId,
           )
         : (input.prompt ?? '')
     ).slice(0, 20_000);
@@ -628,6 +644,7 @@ export class AgentSupervisor {
       explicit ??
       buildInteractiveArgv(provider, {
         sessionId: conversationId,
+        images: card ? this.imagePaths(card.id) : [],
         prompt: prompt.trim() ? prompt : undefined,
       });
     if (command.length === 0) throw new AgentError(400, 'No command to run');
@@ -739,6 +756,7 @@ export class AgentSupervisor {
     const prompt = this.withImages(
       options.prompt ?? defaultPrompt(card.key, card.title, card.description),
       card.id,
+      row.provider_id,
     )
       .slice(0, 20_000)
       // A paste-end marker inside the text would end the paste early; never forward it.
@@ -972,6 +990,7 @@ export class AgentSupervisor {
     const prompt = this.withImages(
       input.prompt ?? defaultPrompt(card.key, card.title, card.description),
       card.id,
+      providerId,
     ).slice(0, 20_000);
     if (!prompt.trim()) throw new AgentError(400, 'Prompt is empty');
     const autonomy = input.autonomy ?? 'edit';
@@ -980,7 +999,7 @@ export class AgentSupervisor {
     }
     const command = input.command
       ? validateCommand(input.command)
-      : buildDispatchArgv(provider, prompt, autonomy);
+      : buildDispatchArgv(provider, prompt, autonomy, this.imagePaths(card.id));
     if (command.length === 0) throw new AgentError(400, 'Command is empty');
     const timeoutMs =
       input.timeoutMin === undefined ? RUN_DEFAULT_TIMEOUT_MS : input.timeoutMin * 60_000;
@@ -1279,7 +1298,18 @@ export class AgentSupervisor {
       // so an AI conversation picks up instead of starting cold. Shells and
       // custom commands simply respawn.
       const resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
-      const argv = isRelaunch ? (resume ?? this.resumeLatestArgv(row) ?? command) : command;
+      const baseArgv = isRelaunch ? (resume ?? this.resumeLatestArgv(row) ?? command) : command;
+      const connection = this.dataDir
+        ? boardConnection(
+            this.db,
+            this.dataDir,
+            { kind: 'session', id: row.id, logPath: row.log_path },
+            row.provider_id,
+            baseArgv,
+            env,
+          )
+        : { command: baseArgv, env };
+      const argv = connection.command;
       const log = this.outputFor(key, row.log_path);
       if (isRelaunch) {
         log.append(
@@ -1302,7 +1332,7 @@ export class AgentSupervisor {
             key: hostKey(row),
             argv: resolved,
             cwd: row.cwd,
-            env: processEnv(env),
+            env: processEnv(connection.env),
             cols: 120,
             rows: 30,
             logPath: row.log_path,
@@ -1313,7 +1343,7 @@ export class AgentSupervisor {
           this.wireHosted(row, host, info, log);
           return;
         }
-        const options = { cwd: row.cwd, env: processEnv(env) };
+        const options = { cwd: row.cwd, env: processEnv(connection.env) };
         proc =
           row.terminal === 'pty' && ptyAvailable()
             ? spawnPty(resolved, options)
@@ -1466,10 +1496,20 @@ export class AgentSupervisor {
       let proc: AgentProc;
       let before: Awaited<ReturnType<typeof snapshotTree>> = null;
       try {
-        const resolved = await resolveArgv(command);
+        const connection = this.dataDir
+          ? boardConnection(
+              this.db,
+              this.dataDir,
+              { kind: 'run', id: row.id, logPath: row.log_path },
+              row.provider_id,
+              command,
+              {},
+            )
+          : { command, env: {} };
+        const resolved = await resolveArgv(connection.command);
         // Snapshot the work tree so validation can show what the agent actually changed.
         before = await snapshotTree(cwd);
-        proc = spawnPipe(resolved, { cwd, env: processEnv(), stdin: false });
+        proc = spawnPipe(resolved, { cwd, env: processEnv(connection.env), stdin: false });
       } catch (e) {
         log.append(`\n[supervisor] could not start: ${(e as Error).message}\n`);
         this.finishRun(row, 'failed', null, `spawn failed: ${(e as Error).message}`);

@@ -7,6 +7,7 @@
 // the same resolver the supervisor spawns with (Windows) or `command -v` (POSIX).
 
 import { execFile } from 'node:child_process';
+import path from 'node:path';
 import type { AgentAutonomy, AgentProvider, AgentProviderStatus } from '../../shared/types.js';
 import { recipeFor } from './install.js';
 import { ResolveError, resolveArgv } from './resolve.js';
@@ -149,7 +150,7 @@ function defaultShell(): string[] {
     optionally starting on a first prompt (e.g. the Kanban card's task). */
 export function buildInteractiveArgv(
   provider: AgentProvider,
-  options: { sessionId?: string; prompt?: string } = {},
+  options: { sessionId?: string; prompt?: string; images?: string[] } = {},
 ): string[] {
   if (provider.id === 'shell') return defaultShell();
   if (provider.id === 'custom' || !provider.binary) return [];
@@ -163,9 +164,13 @@ export function buildInteractiveArgv(
     );
   return [
     provider.binary,
+    ...nativeImageArgs(provider.id, options.images ?? [], true),
     ...(options.sessionId && provider.sessionIdArgs ? fill(provider.sessionIdArgs) : []),
     ...(options.prompt && provider.interactivePromptArgs
-      ? fill(provider.interactivePromptArgs)
+      ? [
+          ...(provider.id === 'claude' && options.images?.length ? ['--'] : []),
+          ...fill(provider.interactivePromptArgs),
+        ]
       : []),
   ];
 }
@@ -223,6 +228,7 @@ export function buildDispatchArgv(
   provider: AgentProvider,
   prompt: string,
   autonomy: AgentAutonomy = 'edit',
+  images: string[] = [],
 ): string[] {
   if (provider.id === 'shell') return defaultShell();
   if (!provider.binary) return [];
@@ -235,7 +241,13 @@ export function buildDispatchArgv(
   // `-p <prompt>` style: keep the flag glued to its value and put extras before the pair.
   const splitAt = at > 0 && template[at - 1]!.startsWith('-') ? at - 1 : at;
   const filled = template.map((a) => (a === PROMPT_PLACEHOLDER ? prompt : a));
-  return [provider.binary, ...filled.slice(0, splitAt), ...extra, ...filled.slice(splitAt)];
+  return [
+    provider.binary,
+    ...filled.slice(0, splitAt),
+    ...extra,
+    ...nativeImageArgs(provider.id, images, false),
+    ...filled.slice(splitAt),
+  ];
 }
 
 /** argv for relaunching a supervised session after a crash/reboot, or null when the provider
@@ -249,4 +261,31 @@ export function buildResumeArgv(provider: AgentProvider, sessionId?: string): st
     provider.binary,
     ...provider.resumeArgs.map((a) => (a === SESSION_ID_PLACEHOLDER ? sessionId! : a)),
   ];
+}
+
+/** Documented image/file flags only; terminal clipboard chords cannot carry bitmap data. */
+export function nativeImageArgs(
+  providerId: string,
+  images: string[],
+  interactive: boolean,
+): string[] {
+  if (!images.length) return [];
+  if (providerId === 'codex') return images.flatMap((file) => ['--image', file]);
+  if (providerId === 'antigravity')
+    return [...new Set(images.map((file) => path.dirname(file)))].flatMap((dir) => [
+      '--add-dir',
+      dir,
+    ]);
+  if (providerId === 'gemini')
+    return [...new Set(images.map((file) => path.dirname(file)))].flatMap((dir) => [
+      '--include-directories',
+      dir,
+    ]);
+  if (providerId === 'claude')
+    return [...new Set(images.map((file) => path.dirname(file)))].flatMap((dir) => [
+      '--add-dir',
+      dir,
+    ]);
+  if (providerId === 'opencode' && !interactive) return images.flatMap((file) => ['--file', file]);
+  return [];
 }

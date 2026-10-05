@@ -138,6 +138,17 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE projects ADD COLUMN board_preset TEXT NOT NULL DEFAULT 'full'
     CHECK (board_preset IN ('full', 'simple', 'capture'));
   `,
+  // Auditable, card-scoped agent board mutations.
+  `CREATE TABLE board_agent_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    owner_kind TEXT NOT NULL CHECK (owner_kind IN ('session', 'run')),
+    owner_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX board_agent_audit_by_card ON board_agent_audit(card_id, id);`,
 ];
 
 export function openDb(dataDir: string): Db {
