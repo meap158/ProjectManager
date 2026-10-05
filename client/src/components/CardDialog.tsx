@@ -18,6 +18,48 @@ import { Dropdown } from './Dropdown';
 import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
 
+// Three ways to hand a card to an agent: one choice + one button, each explained in place.
+type HandMode = 'terminal' | 'run' | 'send';
+const HAND_MODE_KEY = 'pm.card.handMode';
+function readHandMode(): HandMode {
+  try {
+    const v = localStorage.getItem(HAND_MODE_KEY);
+    return v === 'run' || v === 'send' ? v : 'terminal';
+  } catch {
+    return 'terminal';
+  }
+}
+const HAND_MODES: {
+  value: HandMode;
+  label: string;
+  hint: string;
+  action: string;
+  title: string;
+}[] = [
+  {
+    value: 'terminal',
+    label: 'Interactive terminal',
+    hint: 'Opens a session on this card in the Agents workspace. You can follow along and reply.',
+    action: 'Open terminal',
+    title: 'Start an interactive session on this card and open it in the Agents workspace',
+  },
+  {
+    value: 'run',
+    label: 'One-shot run',
+    hint: 'Runs the task once in the background. You review and accept its changes afterwards.',
+    action: 'Start run',
+    title:
+      'Move the card to In progress and run the task once in the background; accept or reject the result when it finishes',
+  },
+  {
+    value: 'send',
+    label: 'Send to a running session',
+    hint: 'Pastes the task into a session that is already running, so it keeps its context.',
+    action: 'Send to session',
+    title: 'Paste this card\u2019s task into the chosen running session and open it',
+  },
+];
+
 const AUTONOMY_HINTS: Record<AgentAutonomy, string> = {
   read: 'Read-only: the agent can look around and answer, but not change files or run commands.',
   edit: 'Edit files: the agent can change files in this project; risky commands still need approval or are blocked.',
@@ -58,6 +100,15 @@ export function CardDialog({
   const [autonomy, setAutonomy] = useState<AgentAutonomy>('edit');
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [handMode, setHandModeState] = useState<HandMode>(readHandMode);
+  const setHandMode = (next: HandMode) => {
+    setHandModeState(next);
+    try {
+      localStorage.setItem(HAND_MODE_KEY, next);
+    } catch {
+      // Remembering the choice is a convenience only.
+    }
+  };
   const [runs, setRuns] = useState<AgentRun[] | null>(null);
   const [now, setNow] = useState(0);
   const [shownCard, setShownCard] = useState<Card | null>(null);
@@ -113,6 +164,9 @@ export function CardDialog({
 
   const navigate = useNavigate();
   /** Interactive alternative to a one-shot run: a live session primed with the card task. */
+  const mode: HandMode = handMode === 'send' && liveSessions.length === 0 ? 'terminal' : handMode;
+  const modeInfo = HAND_MODES.find((m) => m.value === mode)!;
+
   async function openInTerminal() {
     if (!card) return;
     setDispatching(true);
@@ -134,13 +188,14 @@ export function CardDialog({
 
   /** Continue in a session that already has context: paste this card's task into it. */
   async function sendToSession() {
-    if (!card || attachTo === null) return;
+    const target = attachTo ?? liveSessions[0]?.id ?? null;
+    if (!card || target === null) return;
     setDispatching(true);
     setDispatchError(null);
     try {
-      await api.attachCardToSession(attachTo, card.id, true);
+      await api.attachCardToSession(target, card.id, true);
       onDispatched?.();
-      navigate(`/workspace?open=${attachTo}`);
+      navigate(`/workspace?open=${target}`);
     } catch (e) {
       setDispatchError((e as Error).message);
     } finally {
@@ -249,7 +304,7 @@ export function CardDialog({
               </p>
             )}
             <div className="field">
-              <label>Run with an agent</label>
+              <label id="hand-label">Hand to an agent</label>
               {liveSessionId !== null && (
                 <p style={{ margin: 0 }}>
                   <Link to={`/workspace?open=${liveSessionId}`}>⌨ Open live terminal</Link>{' '}
@@ -258,62 +313,27 @@ export function CardDialog({
                   </span>
                 </p>
               )}
-              <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
-                Dispatching moves the card to In progress and runs the prompt as a one-shot session.
-                Validate the run to move the card on.
-              </p>
-              <div className="dispatch-row">
-                <Dropdown
-                  label="Agent provider"
-                  value={dispatchProvider}
-                  options={aiProviders.map((p) => ({
-                    value: p.id,
-                    label: p.name,
-                    disabled: !p.available,
-                    ...(p.available
-                      ? {}
-                      : { hint: 'unavailable', title: p.unavailableReason ?? 'Not available' }),
-                  }))}
-                  onChange={setDispatchProvider}
-                />
-                <Dropdown
-                  label="What the agent may do"
-                  value={autonomy}
-                  options={AGENT_AUTONOMY.map((level) => {
-                    const unsupported =
-                      !!selectedProvider?.autonomyArgs &&
-                      selectedProvider.autonomyArgs[level] === undefined;
-                    return {
-                      value: level,
-                      label: AGENT_AUTONOMY_LABELS[level],
-                      disabled: unsupported,
-                      ...(unsupported
-                        ? { hint: 'not supported', title: 'This agent has no flag for this level' }
-                        : {}),
-                    };
-                  })}
-                  onChange={setAutonomy}
-                />
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={dispatching || !selectedProvider?.available || !autonomySupported}
-                  onClick={dispatch}
-                >
-                  {dispatching ? 'Dispatching…' : 'Dispatch'}
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={dispatching || !selectedProvider?.available}
-                  onClick={openInTerminal}
-                  title="Start an interactive session on this card and open it in the Agents workspace"
-                >
-                  Work on it in a terminal
-                </button>
+              <div className="hand-modes" role="radiogroup" aria-labelledby="hand-label">
+                {HAND_MODES.filter((m) => m.value !== 'send' || liveSessions.length > 0).map(
+                  (m) => (
+                    <label key={m.value} className="hand-mode" title={m.title}>
+                      <input
+                        type="radio"
+                        name="hand-mode"
+                        value={m.value}
+                        checked={mode === m.value}
+                        onChange={() => setHandMode(m.value)}
+                      />
+                      <span>
+                        <b>{m.label}</b>
+                        <span className="faint">{m.hint}</span>
+                      </span>
+                    </label>
+                  ),
+                )}
               </div>
-              {liveSessions.length > 0 && (
-                <div className="dispatch-row">
+              <div className="dispatch-row">
+                {mode === 'send' ? (
                   <Dropdown
                     label="Running session"
                     value={attachTo ?? liveSessions[0]!.id}
@@ -324,28 +344,74 @@ export function CardDialog({
                     }))}
                     onChange={setAttachTo}
                   />
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={dispatching || attachTo === null}
-                    onClick={sendToSession}
-                    title="Paste this card's task into the running session (it keeps its context) and open it"
-                  >
-                    Send to this session
-                  </button>
-                </div>
+                ) : (
+                  <Dropdown
+                    label="Agent"
+                    value={dispatchProvider}
+                    options={aiProviders.map((p) => ({
+                      value: p.id,
+                      label: p.name,
+                      disabled: !p.available,
+                      ...(p.available
+                        ? {}
+                        : { hint: 'unavailable', title: p.unavailableReason ?? 'Not available' }),
+                    }))}
+                    onChange={setDispatchProvider}
+                  />
+                )}
+                {mode === 'run' && (
+                  <Dropdown
+                    label="What the agent may do"
+                    value={autonomy}
+                    options={AGENT_AUTONOMY.map((level) => {
+                      const unsupported =
+                        !!selectedProvider?.autonomyArgs &&
+                        selectedProvider.autonomyArgs[level] === undefined;
+                      return {
+                        value: level,
+                        label: AGENT_AUTONOMY_LABELS[level],
+                        title: unsupported
+                          ? 'This agent has no flag for this level'
+                          : AUTONOMY_HINTS[level],
+                        disabled: unsupported,
+                        ...(unsupported ? { hint: 'not supported' } : {}),
+                      };
+                    })}
+                    onChange={setAutonomy}
+                  />
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  title={modeInfo.title}
+                  disabled={
+                    dispatching ||
+                    (mode === 'send'
+                      ? liveSessions.length === 0
+                      : !selectedProvider?.available || (mode === 'run' && !autonomySupported))
+                  }
+                  onClick={
+                    mode === 'run' ? dispatch : mode === 'send' ? sendToSession : openInTerminal
+                  }
+                >
+                  {dispatching ? 'Working…' : modeInfo.action}
+                </button>
+              </div>
+              {mode !== 'send' && (
+                <textarea
+                  className="textarea"
+                  style={{ minHeight: 70 }}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Leave empty to use the card title + notes as the task."
+                  aria-label="Custom task for the agent (optional)"
+                />
               )}
-              <textarea
-                className="textarea"
-                style={{ minHeight: 70 }}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={`Leave empty to use the card title + notes as the prompt.`}
-                aria-label="Custom run prompt (optional)"
-              />
-              <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
-                {AUTONOMY_HINTS[autonomy]}
-              </p>
+              {mode === 'run' && (
+                <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+                  {AUTONOMY_HINTS[autonomy]}
+                </p>
+              )}
               {dispatchError && (
                 <div className="error-banner" role="alert">
                   {dispatchError}

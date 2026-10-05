@@ -2364,3 +2364,40 @@ kbd {
   min-height: 0;
   overflow-y: auto;
 }
+
+/* Card dialog: how to hand a card to an agent (one radio choice, each option explained). */
+.hand-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hand-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.hand-mode:hover {
+  background: var(--surface-hover);
+}
+.hand-mode:has(input:checked) {
+  background: var(--accent-soft);
+}
+.hand-mode input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+.hand-mode > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.field .hand-mode b {
+  font-weight: 600;
+  color: var(--text);
+}
+.hand-mode .faint {
+  font-size: 12.5px;
+}
