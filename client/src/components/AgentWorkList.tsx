@@ -140,7 +140,7 @@ export function runFacts(r: AgentRun, now: number): Fact[] {
 function stateLabel(
   w: WorkItem,
   now: number,
-): { text: string; tone?: 'good' | 'bad' | 'attention'; activity?: 'working' | 'idle' } {
+): { text: string; tone?: 'good' | 'bad' | 'attention'; activity?: 'running' | 'idle' } {
   if (w.kind === 'session') {
     const s = w.item;
     const activity = sessionActivity(s, now);

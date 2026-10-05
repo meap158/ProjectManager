@@ -2752,7 +2752,7 @@ dialog.lightbox img {
   gap: 4px;
   font-variant-numeric: tabular-nums;
 }
-.badge-session.is-working {
+.badge-session.is-running {
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -2769,7 +2769,7 @@ dialog.lightbox img {
   border-right-color: transparent;
   animation: spin 900ms linear infinite;
 }
-.status-dot.is-working {
+.status-dot.is-running {
   box-shadow: 0 0 0 0 var(--good, #0ca30c);
   animation: activity-pulse 1.6s ease-out infinite;
 }
@@ -2787,7 +2787,7 @@ dialog.lightbox img {
 }
 @media (prefers-reduced-motion: reduce) {
   .badge-spinner,
-  .status-dot.is-working {
+  .status-dot.is-running {
     animation: none;
   }
 }

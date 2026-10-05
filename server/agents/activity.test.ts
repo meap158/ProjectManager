@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAwaitingInput, stripTerminal } from './activity.js';
+import { stripTerminal, tailState } from './activity.js';
 
 const ESC = '\x1b';
 
@@ -11,42 +11,57 @@ describe('stripTerminal', () => {
   });
 });
 
-describe('isAwaitingInput', () => {
-  it('sees a Codex session waiting at its prompt', () => {
-    const tail = [
-      `${ESC}[?25l${ESC}[2J${ESC}[H`,
-      'GPT-6.1-Sol low · S:\\Vibe Coding\\ProjectManager · Address PM-5',
+/** One Codex frame: status line (if any), then its always-visible input box. */
+const codexFrame = (status: string) =>
+  [
+    `${ESC}[?25l${ESC}[2J${ESC}[H`,
+    'GPT-6.1-Sol low · S:\\Vibe Coding\\ProjectManager · Address PM-5',
+    status,
+    '› Ask Codex to do anything',
+    '← for agents · ? for shortcuts',
+  ].join('\r\n');
+
+describe('tailState', () => {
+  it('Codex mid-task is running even though its input box is drawn (PM-14)', () => {
+    const tail = codexFrame(
       '└─ Working (12m 04s · esc to interrupt) · 2 background terminals running',
-      '› Ask Codex to do anything',
-      '← for agents · ? for shortcuts',
-      '⚠ 3 warnings · f2 to view',
-    ].join('\r\n');
-    expect(isAwaitingInput(tail)).toBe(true);
+    );
+    expect(tailState(tail)).toBe('running');
   });
 
-  it('sees a Claude session waiting at a bare prompt', () => {
-    expect(isAwaitingInput(`streaming some output here\n${ESC}[2K\r❯ `)).toBe(true);
+  it('Codex waiting with background terminals still going is running (PM-14)', () => {
+    const tail = codexFrame('Waiting for background terminal · 2 background terminals running');
+    expect(tailState(tail)).toBe('running');
   });
 
-  it('stays working while output streams with no prompt in sight', () => {
+  it('Codex finished: an older busy frame followed by a quiet frame is idle', () => {
+    const tail =
+      codexFrame('└─ Working (0m 41s · esc to interrupt)') + codexFrame('└─ Worked for 0m 42s');
+    expect(tailState(tail)).toBe('idle');
+  });
+
+  it('Claude at its prompt is idle, but running while a background shell or agent is going', () => {
+    expect(tailState(`streaming some output here\n${ESC}[2K\r❯ `)).toBe('idle');
+    expect(tailState('● Every game builds.\n✻ Worked for 1h 25m · 1 shell still running\n❯ ')).toBe(
+      'running',
+    );
+    expect(tailState('✻ Waiting for 2 background agents to finish\n❯ \n'.replace(/\n$/, ''))).toBe(
+      'running',
+    );
+  });
+
+  it('a busy stream with no prompt in sight says nothing (recency decides)', () => {
     const tail = [
       '⠋ Working on the fix… (esc to interrupt)',
       'Reading server/agents/supervisor.ts … 1,204 lines read',
       'Applying the patch now',
     ].join('\n');
-    expect(isAwaitingInput(tail)).toBe(false);
-  });
-
-  it('ignores an old prompt when newer busy output follows it', () => {
-    const tail = ['› Ask Codex to do anything', 'Working (0m 03s · esc to interrupt)', '…'].join(
-      '\n',
-    );
-    expect(isAwaitingInput(tail)).toBe(false);
+    expect(tailState(tail)).toBeNull();
   });
 
   it('says nothing for shells, empty logs, and unknown CLIs', () => {
-    expect(isAwaitingInput('')).toBe(false);
-    expect(isAwaitingInput('C:\\proj> dir\nfile1.txt\nC:\\proj> ')).toBe(false);
-    expect(isAwaitingInput('some random output')).toBe(false);
+    expect(tailState('')).toBeNull();
+    expect(tailState('C:\\proj> dir\nfile1.txt\nC:\\proj> ')).toBeNull();
+    expect(tailState('some random output')).toBeNull();
   });
 });

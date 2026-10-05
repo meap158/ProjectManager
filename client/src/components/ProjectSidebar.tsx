@@ -34,11 +34,15 @@ const SORT_DEFAULT_DIRECTION: Record<SortMode, SortDirection> = {
 };
 
 // Filters (KDP Library "Status" analogue): single choice, shown as a segmented group.
-type Filter = 'all' | 'open' | 'working' | 'active' | 'planned';
+type Filter = 'all' | 'open' | 'running' | 'active' | 'planned';
 const FILTERS: { value: Filter; label: string; title: string }[] = [
   { value: 'all', label: 'All', title: 'Every tracked project' },
   { value: 'open', label: 'CLI open', title: 'Projects with a CLI session running' },
-  { value: 'working', label: 'Working', title: 'Projects whose CLI is producing output right now' },
+  {
+    value: 'running',
+    label: 'Running',
+    title: 'Projects whose CLI is busy, or still has a shell or subtask going',
+  },
   { value: 'active', label: 'In progress', title: 'Projects with cards in progress or review' },
   { value: 'planned', label: 'Planned', title: 'Projects with cards in Backlog or To do' },
 ];
@@ -90,7 +94,7 @@ export function ProjectSidebar() {
   const projectHref = useProjectHref();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
-  // Clock for working/idle badges, refreshed on every load (never read during render).
+  // Clock for running/idle badges, refreshed on every load (never read during render).
   const [now, setNow] = useState(0);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>(() =>
@@ -182,26 +186,26 @@ export function ProjectSidebar() {
   // Comparators are written once in their natural direction and negated for
   // the reverse, so a flip can never disagree with the forward ordering.
   const flip = sortDirection === SORT_DEFAULT_DIRECTION[sortMode] ? 1 : -1;
-  // Per project: how many CLI sessions are working (recent output) vs idle (waiting for you).
-  const activity = new Map<number, { working: number; idle: number }>();
+  // Per project: how many CLI sessions are running (busy, or a shell/subtask going) vs idle (waiting for you).
+  const activity = new Map<number, { running: number; idle: number }>();
   for (const x of sessions) {
     const state = sessionActivity(x, now);
     if (state === 'stopped') continue;
-    const entry = activity.get(x.projectId) ?? { working: 0, idle: 0 };
+    const entry = activity.get(x.projectId) ?? { running: 0, idle: 0 };
     entry[state]++;
     activity.set(x.projectId, entry);
   }
   const open = (p: ProjectSummary) => {
     const a = activity.get(p.id);
-    return a ? a.working + a.idle : p.runningSessions;
+    return a ? a.running + a.idle : p.runningSessions;
   };
   const planned = (p: ProjectSummary) => p.cardCounts.backlog + p.cardCounts.todo;
   const inProgress = (p: ProjectSummary) => p.cardCounts.in_progress + p.cardCounts.review;
   const matchesFilter = (p: ProjectSummary) =>
     filter === 'open'
       ? open(p) > 0
-      : filter === 'working'
-        ? (activity.get(p.id)?.working ?? 0) > 0
+      : filter === 'running'
+        ? (activity.get(p.id)?.running ?? 0) > 0
         : filter === 'active'
           ? inProgress(p) > 0
           : filter === 'planned'
@@ -361,7 +365,7 @@ export function ProjectSidebar() {
             key={p.id}
             project={p}
             href={projectHref(p.id)}
-            activity={activity.get(p.id) ?? { working: 0, idle: p.runningSessions }}
+            activity={activity.get(p.id) ?? { running: 0, idle: p.runningSessions }}
           />
         ))}
         {projects !== null && visible.length === 0 && projects.length > 0 && (
@@ -438,7 +442,7 @@ function SidebarItem({
 }: {
   project: ProjectSummary;
   href: string;
-  activity: { working: number; idle: number };
+  activity: { running: number; idle: number };
 }) {
   const flight = p.cardCounts.in_progress + p.cardCounts.review;
   const planned = p.cardCounts.backlog + p.cardCounts.todo;
@@ -470,8 +474,8 @@ function SidebarItem({
         ) : null}
         {/* Rightmost fixed slot: session counts share one right edge; empty rows keep it. */}
         <span className="sidebar-session-slot">
-          {activity.working + activity.idle > 0 && (
-            <SessionBadge working={activity.working} idle={activity.idle} />
+          {activity.running + activity.idle > 0 && (
+            <SessionBadge running={activity.running} idle={activity.idle} />
           )}
         </span>
       </span>
@@ -504,17 +508,17 @@ function SidebarItem({
  * accent badge with a spinning ring. Idle (open, waiting for you): neutral badge with a
  * terminal glyph. Icon + count + text label, never colour alone.
  */
-function SessionBadge({ working, idle }: { working: number; idle: number }) {
-  const total = working + idle;
+function SessionBadge({ running, idle }: { running: number; idle: number }) {
+  const total = running + idle;
   const parts = [
-    working > 0 ? `${working} working` : null,
+    running > 0 ? `${running} running` : null,
     idle > 0 ? `${idle} open, waiting for you` : null,
   ].filter(Boolean);
   const label = `${total} CLI session${total === 1 ? '' : 's'}: ${parts.join(', ')}`;
-  const state = working > 0 ? 'working' : 'idle';
+  const state = running > 0 ? 'running' : 'idle';
   return (
     <span className={`badge badge-session is-${state}`} title={label} aria-label={label} role="img">
-      {state === 'working' ? (
+      {state === 'running' ? (
         <span className="badge-spinner" aria-hidden="true" />
       ) : (
         <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
