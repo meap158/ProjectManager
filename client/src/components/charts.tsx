@@ -142,7 +142,6 @@ export const HEAT_SCALE = ['var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)', 'v
 // ---- Commits per month (last 12 months) ---------------------------------------------------------
 
 export function MonthlyCommits({ dailyCommits }: { dailyCommits: Record<string, number> }) {
-  const tooltip = useTooltip();
   const months = useMemo(() => {
     const now = new Date();
     const buckets = Array.from({ length: 12 }, (_, i) => {
@@ -156,30 +155,20 @@ export function MonthlyCommits({ dailyCommits }: { dailyCommits: Record<string, 
     }
     return buckets;
   }, [dailyCommits]);
-  const max = Math.max(1, ...months.map((m) => m.count));
   const label = (d: Date) => d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
   return (
     <div>
-      <div className="columns-chart" aria-hidden="true">
-        {months.map((m) => (
-          <div
-            key={m.key}
-            className="col"
-            onMouseEnter={(e) =>
-              tooltip.show(e, `${label(m.date)}: ${formatNumber(m.count)} commits`)
-            }
-            onMouseLeave={tooltip.hide}
-          >
-            <span style={{ height: `${(m.count / max) * 100}%` }} />
-          </div>
-        ))}
-      </div>
-      <div className="columns-axis" aria-hidden="true">
-        {months.map((m) => (
-          <span key={m.key}>{MONTHS[m.date.getMonth()]!.slice(0, 1)}</span>
-        ))}
-      </div>
+      <ColumnChart
+        yTitle="Commits"
+        xTitle="Month"
+        columns={months.map((m) => ({
+          key: m.key,
+          short: MONTHS[m.date.getMonth()]!,
+          segments: [{ id: 'commits', value: m.count, color: 'var(--series-1)' }],
+          tip: `${label(m.date)}: ${formatNumber(m.count)} commit${m.count === 1 ? '' : 's'}`,
+        }))}
+      />
       <div className="sr-only">
         <table>
           <caption>Commits per month</caption>
@@ -193,7 +182,6 @@ export function MonthlyCommits({ dailyCommits }: { dailyCommits: Record<string, 
           </tbody>
         </table>
       </div>
-      {tooltip.node}
     </div>
   );
 }
@@ -219,6 +207,144 @@ export function HorizontalBars({
           <span className="val">{format(r.value)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---- Column chart (single or stacked series) ----------------------------------------------------
+// One frame for every columns chart (commits per month, commits by project), after AdRelay's
+// DailyChart: a labelled y scale with round ticks and gridlines, axis lines, x labels thinned to
+// fit (first and last always shown), values printed on the columns, and a hover tooltip.
+
+/**
+ * Gridline values: a round step first (1, 2, 2.5, 5 × 10ⁿ; whole numbers, since commits are
+ * counts), then four of them, so every line carries a holdable number (0, 10, 20, 30, 40) and the
+ * tallest column sits below the top line.
+ */
+export function columnTicks(max: number): number[] {
+  const rough = Math.max(1, max) / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const step =
+    [1, 2, 2.5, 5, 10]
+      .map((f) => f * magnitude)
+      .find((candidate) => candidate >= rough && Number.isInteger(candidate)) ?? 10 * magnitude;
+  return [0, step, step * 2, step * 3, step * 4];
+}
+
+/**
+ * Which columns print their value: all non-zero ones when there is room, otherwise only the
+ * peak and the latest non-zero column, so a dense chart never turns into a wall of numbers.
+ */
+export function valueLabelIndexes(totals: number[], roomForAll: number): Set<number> {
+  if (totals.length <= roomForAll) {
+    return new Set(totals.flatMap((n, i) => (n > 0 ? [i] : [])));
+  }
+  const shown = new Set<number>();
+  let peak = -1;
+  totals.forEach((n, i) => {
+    if (n > 0 && (peak === -1 || n >= totals[peak]!)) peak = i;
+  });
+  if (peak !== -1) shown.add(peak);
+  for (let i = totals.length - 1; i >= 0; i--) {
+    if (totals[i]! > 0) {
+      shown.add(i);
+      break;
+    }
+  }
+  return shown;
+}
+
+export interface ColumnSegment {
+  id: string;
+  value: number;
+  color: string;
+  dimmed?: boolean;
+}
+
+export interface ChartColumn {
+  key: string;
+  /** Under the column (may be thinned out). */
+  short: string;
+  segments: ColumnSegment[];
+  tip: ReactNode;
+}
+
+export function ColumnChart({
+  columns,
+  yTitle,
+  xTitle,
+  height = 160,
+}: {
+  columns: ChartColumn[];
+  yTitle: string;
+  xTitle: string;
+  height?: number;
+}) {
+  const tooltip = useTooltip();
+  const totals = columns.map((c) => c.segments.reduce((sum, s) => sum + s.value, 0));
+  const ticks = columnTicks(Math.max(0, ...totals));
+  const top = ticks[ticks.length - 1]!;
+  const labelled = valueLabelIndexes(totals, 16);
+  const xEvery = columns.length <= 16 ? 1 : Math.ceil(columns.length / 8);
+  // Every xEvery-th label plus the last; a regular label too close to the last one is dropped.
+  const last = columns.length - 1;
+  const showX = (i: number) => i === last || (i % xEvery === 0 && last - i >= xEvery / 2);
+
+  return (
+    <div className="colchart" aria-hidden="true">
+      <span className="colchart-ytitle">{yTitle}</span>
+      {/* Scale and plot share one inner area under a 16px headroom for the tallest value label. */}
+      <div className="colchart-scale" style={{ height }}>
+        <div className="colchart-area">
+          {ticks.map((t) => (
+            <span key={t} style={{ bottom: `${(t / top) * 100}%` }}>
+              {formatNumber(t)}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="colchart-plot" style={{ height }}>
+        <div className="colchart-area">
+          {ticks.slice(1).map((t) => (
+            <span key={t} className="colchart-grid" style={{ bottom: `${(t / top) * 100}%` }} />
+          ))}
+          {columns.map((c, i) => (
+            <div
+              key={c.key}
+              className="colchart-col"
+              onMouseEnter={(e) =>
+                tooltip.show(e, c.tip, e.currentTarget.querySelector('.colchart-bar'))
+              }
+              onMouseLeave={tooltip.hide}
+            >
+              <div className="colchart-bar" style={{ height: `${(totals[i]! / top) * 100}%` }}>
+                {labelled.has(i) && (
+                  <span className="colchart-val">{formatNumber(totals[i]!)}</span>
+                )}
+                {c.segments
+                  .filter((s) => s.value > 0)
+                  .map((s) => (
+                    <span
+                      key={s.id}
+                      style={{
+                        flexGrow: s.value,
+                        background: s.color,
+                        opacity: s.dimmed ? 0.2 : 1,
+                      }}
+                    />
+                  ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="colchart-x">
+        {columns.map((c, i) => (
+          <span key={c.key}>{showX(i) ? c.short : ''}</span>
+        ))}
+      </div>
+      <span className="colchart-xtitle">{xTitle}</span>
+      {tooltip.node}
     </div>
   );
 }

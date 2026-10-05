@@ -54,7 +54,8 @@ describe('CommitsByProject', () => {
           .previousElementSibling as HTMLElement
       ).style.background;
     const before = swatch('alpha');
-    fireEvent.click(screen.getByRole('radio', { name: '12 weeks' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Time range' }));
+    fireEvent.click(within(screen.getByRole('option', { name: /12 weeks/ })).getByRole('button'));
     expect(swatch('alpha')).toBe(before);
   });
 

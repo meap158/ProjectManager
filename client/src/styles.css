@@ -1274,42 +1274,6 @@ a.t:hover {
   min-width: 64px;
 }
 
-.columns-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 120px;
-  border-bottom: 1px solid var(--border);
-}
-.columns-chart .col {
-  flex: 1;
-  display: flex;
-  align-items: flex-end;
-  height: 100%;
-  cursor: default;
-}
-.columns-chart .col > span {
-  width: 100%;
-  background: var(--series-1);
-  border-radius: 4px 4px 0 0;
-  min-height: 0;
-}
-.columns-chart .col:hover > span {
-  background: var(--accent-hover);
-}
-.columns-axis {
-  display: flex;
-  gap: 2px;
-  color: var(--text-3);
-  font-size: 11px;
-  margin-top: 4px;
-}
-.columns-axis span {
-  flex: 1;
-  text-align: center;
-  overflow: hidden;
-}
-
 .tooltip {
   position: fixed;
   z-index: 100;
@@ -1940,55 +1904,6 @@ dialog:modal {
 
 /* ---- Commits by project (stacked columns) ----------------------------------------------- */
 
-.stack-chart {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  height: 180px;
-  padding-top: 8px;
-  border-bottom: 1px solid var(--border);
-}
-.stack-grid {
-  position: absolute;
-  inset: 8px 0 0 0;
-  pointer-events: none;
-}
-.stack-grid span {
-  position: absolute;
-  left: 0;
-  right: 0;
-  border-top: 1px dashed var(--border);
-  color: var(--text-3);
-  font-size: 10.5px;
-  line-height: 0;
-  text-indent: 2px;
-}
-.stack-col {
-  position: relative;
-  flex: 1;
-  height: 100%;
-  display: flex;
-  align-items: flex-end;
-  cursor: default;
-}
-.stack {
-  width: 100%;
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 2px; /* surface spacer between stacked segments */
-  border-radius: 4px 4px 0 0;
-  overflow: hidden;
-}
-.stack span {
-  flex-basis: 0;
-  min-height: 2px;
-  transition: opacity 120ms;
-}
-.stack-col:hover .stack {
-  outline: 2px solid var(--border-strong);
-  outline-offset: 1px;
-}
 .stack-tip {
   display: flex;
   flex-direction: column;
@@ -2224,4 +2139,111 @@ kbd {
   padding: 0 6px;
   font-size: inherit;
   font-weight: 600;
+}
+
+/* ---- Column chart (ColumnChart in charts.tsx) ------------------------------------------------ */
+.colchart {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.colchart-ytitle {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+}
+.colchart-scale,
+.colchart-plot {
+  position: relative;
+  padding-top: 16px; /* headroom for the tallest column's value label */
+}
+.colchart-area {
+  position: relative;
+  height: 100%;
+}
+.colchart-scale {
+  min-width: 22px;
+}
+.colchart-scale span {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.colchart-plot {
+  border-left: 1px solid var(--border-strong);
+}
+.colchart-plot .colchart-area {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-strong);
+}
+.colchart-grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--border);
+  pointer-events: none;
+}
+.colchart-col {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: default;
+}
+.colchart-bar {
+  position: relative;
+  width: 100%;
+  max-width: 48px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px; /* surface spacer between stacked segments */
+}
+.colchart-bar > span:not(.colchart-val) {
+  flex-basis: 0;
+  min-height: 2px;
+  transition: opacity 120ms;
+}
+.colchart-bar > span:last-child {
+  border-radius: 4px 4px 0 0; /* visual top segment (column-reverse) */
+}
+.colchart-col:hover .colchart-bar {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 1px;
+}
+.colchart-val {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.colchart-x {
+  grid-column: 2;
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.colchart-x span {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: visible;
+}
+.colchart-xtitle {
+  grid-column: 2;
+  text-align: center;
+  margin-top: 2px;
 }

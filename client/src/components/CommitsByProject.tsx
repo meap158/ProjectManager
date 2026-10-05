@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { ProjectSummary } from '../../../shared/types';
 import { formatNumber } from '../format';
-import { localDateKey, useTooltip } from './charts';
+import { ColumnChart, localDateKey } from './charts';
+import { Dropdown } from './Dropdown';
 
 // Commits over time, broken down by project (stacked columns): the stack height is the
 // portfolio total and the segments show which projects drive it. Data-viz rules (DESIGN.md §5):
@@ -9,10 +10,18 @@ import { localDateKey, useTooltip } from './charts';
 //    project keeps its colour when the range changes. The tail folds into a gray "Other".
 //  - 2px surface gaps between stacked segments, rounded top only, recessive gridlines.
 //  - Hover tooltip per column, hover a legend entry to emphasise one project, table view.
+//  - Ranges: 30 days (by date), 12 weeks, 12 months. The frame (axes, ticks, values) is ColumnChart.
 
-type Range = 'months' | 'weeks';
+type Range = 'days' | 'weeks' | 'months';
 const SERIES_SLOTS = 6;
 const PERIODS = 12;
+const DAYS = 30;
+const RANGE_OPTIONS: { value: Range; label: string; title: string }[] = [
+  { value: 'days', label: '30 days', title: 'Commits per day, last 30 days' },
+  { value: 'weeks', label: '12 weeks', title: 'Commits per week (Mon–Sun), last 12 weeks' },
+  { value: 'months', label: '12 months', title: 'Commits per month, last 12 months' },
+];
+const RANGE_UNIT: Record<Range, string> = { days: 'day', weeks: 'week', months: 'month' };
 const RANGE_KEY = 'pm.commitsByProject.range';
 
 interface Bucket {
@@ -60,6 +69,28 @@ function weekBuckets(): Bucket[] {
   });
 }
 
+function dayBuckets(): Bucket[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Array.from({ length: DAYS }, (_, i) => {
+    const start = new Date(today);
+    start.setDate(today.getDate() - (DAYS - 1 - i));
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+    return {
+      key: localDateKey(start),
+      label: start.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      }),
+      short: start.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }),
+      start: start.getTime(),
+      end: end.getTime(),
+    };
+  });
+}
+
 /** Commits per bucket for one project. Day keys are local calendar dates ("YYYY-MM-DD"). */
 function countsFor(daily: Record<string, number>, buckets: Bucket[]): number[] {
   const counts = new Array<number>(buckets.length).fill(0);
@@ -82,7 +113,8 @@ interface Series {
 
 function readRange(): Range {
   try {
-    return localStorage.getItem(RANGE_KEY) === 'weeks' ? 'weeks' : 'months';
+    const stored = localStorage.getItem(RANGE_KEY);
+    return stored === 'days' || stored === 'weeks' ? stored : 'months';
   } catch {
     return 'months';
   }
@@ -92,9 +124,8 @@ export function CommitsByProject({ projects }: { projects: ProjectSummary[] }) {
   const [range, setRange] = useState<Range>(readRange);
   const [focus, setFocus] = useState<string | null>(null);
   const [showTable, setShowTable] = useState(false);
-  const tooltip = useTooltip();
 
-  const { buckets, series, max } = useMemo(() => {
+  const { buckets, series } = useMemo(() => {
     const months = monthBuckets();
     // Rank by 12-month commits regardless of the visible range: colour follows the project.
     const ranked = projects
@@ -105,7 +136,7 @@ export function CommitsByProject({ projects }: { projects: ProjectSummary[] }) {
       .filter((r) => r.yearTotal > 0)
       .sort((a, b) => b.yearTotal - a.yearTotal);
 
-    const buckets = range === 'months' ? months : weekBuckets();
+    const buckets = range === 'months' ? months : range === 'weeks' ? weekBuckets() : dayBuckets();
     const head: Series[] = ranked.slice(0, SERIES_SLOTS).map(({ p }, i) => {
       const counts = countsFor(p.git?.dailyCommits ?? {}, buckets);
       return {
@@ -131,8 +162,7 @@ export function CommitsByProject({ projects }: { projects: ProjectSummary[] }) {
         total: counts.reduce((a, b) => a + b, 0),
       });
     }
-    const totals = buckets.map((_, i) => series.reduce((sum, s) => sum + s.counts[i]!, 0));
-    return { buckets, series, max: Math.max(1, ...totals) };
+    return { buckets, series };
   }, [projects, range]);
 
   const chooseRange = (next: Range) => {
@@ -152,19 +182,12 @@ export function CommitsByProject({ projects }: { projects: ProjectSummary[] }) {
       <div className="panel-header">
         <h2>Commits by project</h2>
         <div className="actions" style={{ alignItems: 'center' }}>
-          <div className="segmented" role="radiogroup" aria-label="Time range">
-            {(['months', 'weeks'] as const).map((r) => (
-              <button
-                key={r}
-                role="radio"
-                aria-checked={range === r}
-                className={range === r ? 'is-active' : ''}
-                onClick={() => chooseRange(r)}
-              >
-                {r === 'months' ? '12 months' : '12 weeks'}
-              </button>
-            ))}
-          </div>
+          <Dropdown
+            label="Time range"
+            value={range}
+            options={RANGE_OPTIONS}
+            onChange={chooseRange}
+          />
           <button
             className="btn btn-sm"
             aria-pressed={showTable}
@@ -215,61 +238,41 @@ export function CommitsByProject({ projects }: { projects: ProjectSummary[] }) {
         </div>
       ) : (
         <>
-          <div className="stack-chart" aria-hidden="true">
-            <div className="stack-grid">
-              <span style={{ bottom: '100%' }}>{formatNumber(max)}</span>
-              <span style={{ bottom: '50%' }}>{formatNumber(Math.round(max / 2))}</span>
-            </div>
-            {buckets.map((b, i) => {
+          <ColumnChart
+            yTitle="Commits"
+            xTitle={RANGE_OPTIONS.find((o) => o.value === range)!.title}
+            height={180}
+            columns={buckets.map((b, i) => {
               const total = series.reduce((sum, s) => sum + s.counts[i]!, 0);
+              // Bottom-up in legend rank order, so the biggest project sits on the baseline.
               const parts = series.filter((s) => s.counts[i]! > 0);
-              return (
-                <div
-                  key={b.key}
-                  className="stack-col"
-                  onMouseEnter={(e) =>
-                    tooltip.show(
-                      e,
-                      <div className="stack-tip">
-                        <b>
-                          {b.label}: {formatNumber(total)} commit{total === 1 ? '' : 's'}
-                        </b>
-                        {[...parts]
-                          .sort((x, y) => y.counts[i]! - x.counts[i]!)
-                          .map((s) => (
-                            <span key={s.id}>
-                              <i className="swatch" style={{ background: s.color }} /> {s.name}{' '}
-                              {formatNumber(s.counts[i]!)}
-                            </span>
-                          ))}
-                      </div>,
-                      e.currentTarget.querySelector('.stack'),
-                    )
-                  }
-                  onMouseLeave={tooltip.hide}
-                >
-                  <div className="stack" style={{ height: `${(total / max) * 100}%` }}>
-                    {/* Bottom-up in legend rank order, so the biggest project sits on the baseline. */}
-                    {parts.map((s) => (
-                      <span
-                        key={s.id}
-                        style={{
-                          flexGrow: s.counts[i]!,
-                          background: s.color,
-                          opacity: focus && focus !== s.id ? 0.2 : 1,
-                        }}
-                      />
-                    ))}
+              return {
+                key: b.key,
+                short: b.short,
+                segments: parts.map((s) => ({
+                  id: s.id,
+                  value: s.counts[i]!,
+                  color: s.color,
+                  dimmed: !!focus && focus !== s.id,
+                })),
+                tip: (
+                  <div className="stack-tip">
+                    <b>
+                      {b.label}: {formatNumber(total)} commit{total === 1 ? '' : 's'}
+                    </b>
+                    {[...parts]
+                      .sort((x, y) => y.counts[i]! - x.counts[i]!)
+                      .map((s) => (
+                        <span key={s.id}>
+                          <i className="swatch" style={{ background: s.color }} /> {s.name}{' '}
+                          {formatNumber(s.counts[i]!)}
+                        </span>
+                      ))}
                   </div>
-                </div>
-              );
+                ),
+              };
             })}
-          </div>
-          <div className="columns-axis" aria-hidden="true">
-            {buckets.map((b) => (
-              <span key={b.key}>{b.short}</span>
-            ))}
-          </div>
+          />
           <ul className="stack-legend" aria-label="Projects ranked by commits in this range">
             {legend.map((s) => (
               <li
@@ -291,7 +294,7 @@ export function CommitsByProject({ projects }: { projects: ProjectSummary[] }) {
           </ul>
           <div className="sr-only">
             <table>
-              <caption>Commits by project per {range === 'months' ? 'month' : 'week'}</caption>
+              <caption>Commits by project per {RANGE_UNIT[range]}</caption>
               <tbody>
                 {legend.map((s) => (
                   <tr key={s.id}>
@@ -308,7 +311,6 @@ export function CommitsByProject({ projects }: { projects: ProjectSummary[] }) {
           </div>
         </>
       )}
-      {tooltip.node}
     </section>
   );
 }
