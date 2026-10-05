@@ -21,6 +21,8 @@
 
   --bg: #f5f5f3;
   --surface: #fcfcfb;
+  /* Dialogs, menus: same as surface in light, a lighter step in dark (elevation by lightness). */
+  --surface-raised: #fcfcfb;
   --surface-2: #f0efec;
   --surface-hover: #ebeae6;
   --border: #e2e1dc;
@@ -33,6 +35,7 @@
   --accent-text: #ffffff;
   --accent-soft: #e6f0fc;
   --danger: #d03b3b;
+  --danger-text: #ffffff;
   --danger-soft: #fbeaea;
   --good: #0ca30c;
   --focus: #2a78d6;
@@ -72,16 +75,18 @@
   --surface-hover: #2a2a28;
   --border: #2e2e2b;
   --border-strong: #3d3d39;
-  --text: #f4f4f1;
-  --text-2: #c3c2b7;
-  --text-3: #8f8e86;
-  --accent: #3987e5;
-  --accent-hover: #5598e7;
-  --accent-text: #ffffff;
-  --accent-soft: #17293f;
-  --danger: #e66767;
+  --text: #e4e3dd;
+  --text-2: #a8a79f;
+  --text-3: #86857d;
+  --accent: #7fa8e0;
+  --accent-hover: #96b8e7;
+  --accent-text: #10161f;
+  --accent-soft: #1d2633;
+  --danger: #e0807c;
+  --danger-text: #1a1010;
+  --surface-raised: #242423;
   --danger-soft: #3a1d1d;
-  --focus: #5598e7;
+  --focus: #96b8e7;
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;
@@ -453,7 +458,7 @@ code,
   list-style: none;
   max-height: 240px;
   overflow-y: auto;
-  background: var(--surface);
+  background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
@@ -865,7 +870,7 @@ a.t:hover {
 .btn-danger-solid {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--danger-text);
 }
 .btn-danger-solid:hover:not(:disabled) {
   filter: brightness(1.08);
@@ -1422,7 +1427,7 @@ a.t:hover {
 dialog {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--surface-raised);
   color: var(--text);
   padding: 0;
   width: min(640px, calc(100vw - 32px));
