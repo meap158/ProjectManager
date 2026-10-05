@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isTerminalReport } from './terminalReports';
+import { isTerminalReport, stripTerminalReports } from './terminalReports.js';
 
 const ESC = '\x1b';
 const ST = `${ESC}\\`;
@@ -36,5 +36,13 @@ describe('isTerminalReport', () => {
     ]) {
       expect(isTerminalReport(typed), JSON.stringify(typed)).toBe(false);
     }
+  });
+});
+
+describe('stripTerminalReports', () => {
+  it('removes replies mixed into queued input and keeps the typing', () => {
+    const queued = `${ESC}[I${ESC}[?1;2cgit status\r${ESC}[12;40R${ESC}[O`;
+    expect(stripTerminalReports(queued)).toBe('git status\r');
+    expect(stripTerminalReports(`${ESC}[A\r`)).toBe(`${ESC}[A\r`);
   });
 });

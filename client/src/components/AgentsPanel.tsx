@@ -9,7 +9,7 @@ import { Link } from 'react-router';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
 import { InlineRename } from './InlineRename';
-import { isTerminalReport } from '../terminalReports';
+import { isTerminalReport } from '../../../shared/terminalReports';
 import { AgentWorkList, mergeWork, workKey, type WorkItem, type WorkKey } from './AgentWorkList';
 import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';

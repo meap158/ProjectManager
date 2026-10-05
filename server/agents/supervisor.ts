@@ -42,6 +42,7 @@ import type {
   CardStatus,
   RunChanges,
 } from '../../shared/types.js';
+import { isTerminalReport, stripTerminalReports } from '../../shared/terminalReports.js';
 import type { Db } from '../db.js';
 import { getCard, getProjectRow, updateCard } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
@@ -691,6 +692,9 @@ export class AgentSupervisor {
       throw new AgentError(400, 'Input too large (64KB max)');
     const live = this.live.get(`session:${id}`);
     if (live && live.proc.write(data)) return { queued: false, session: this.getSession(id) };
+    // A terminal's automatic replies (focus, device attributes, cursor reports) mean nothing to
+    // a process that isn't listening: never queue them.
+    if (isTerminalReport(data)) return { queued: false, session: this.getSession(id) };
     const usage = this.db
       .prepare(
         `SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM agent_input_queue WHERE session_id = ?`,
@@ -1175,7 +1179,9 @@ export class AgentSupervisor {
     if (queued.length === 0) return;
     let flushed = 0;
     for (const item of queued) {
-      if (!proc.write(item.data)) break;
+      // Strip terminal auto-replies queued by older clients; replaying them would type junk.
+      const data = stripTerminalReports(item.data);
+      if (data && !proc.write(data)) break;
       flushed++;
     }
     if (flushed > 0) {

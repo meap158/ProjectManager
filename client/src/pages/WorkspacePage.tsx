@@ -24,7 +24,7 @@ import {
 import { api } from '../api';
 import { Dropdown } from '../components/Dropdown';
 import { InlineRename } from '../components/InlineRename';
-import { isTerminalReport } from '../terminalReports';
+import { isTerminalReport } from '../../../shared/terminalReports';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { RunCard } from '../components/RunCard';
