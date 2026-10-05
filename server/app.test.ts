@@ -125,3 +125,25 @@ describe('projects and cards', () => {
     expect((await call('PATCH', '/cards/1', { status: 'nope' })).status).toBe(400);
   });
 });
+
+describe('cards in flight', () => {
+  it('lists In progress / Review cards across projects with their project name', async () => {
+    const { call } = setup();
+    const created = (await (
+      await call('POST', '/projects', { path: dir })
+    ).json()) as ProjectDetail;
+    const todo = (await (
+      await call('POST', `/projects/${created.id}/cards`, { title: 'Later', status: 'todo' })
+    ).json()) as Card;
+    const doing = (await (
+      await call('POST', `/projects/${created.id}/cards`, { title: 'Now', status: 'in_progress' })
+    ).json()) as Card;
+    const list = (await (await call('GET', '/cards/in-flight')).json()) as (Card & {
+      projectName: string;
+    })[];
+    expect(list.map((c) => c.id)).toEqual([doing.id]);
+    expect(list[0]!.projectName).toBe(created.name);
+    expect(list.some((c) => c.id === todo.id)).toBe(false);
+    await waitForScan(call, created.id); // Don't leave a scan running on the temp repo.
+  });
+});

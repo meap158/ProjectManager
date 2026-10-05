@@ -6,6 +6,7 @@ import {
   CARD_KEY_PREFIX,
   CARD_STATUSES,
   type Card,
+  type CardWithProject,
   type CardCounts,
   type CardStatus,
   type CodeStats,
@@ -188,6 +189,17 @@ export function listCards(db: Db, projectId: number): Card[] {
     .prepare('SELECT * FROM cards WHERE project_id = ? ORDER BY status, position, id')
     .all(projectId) as unknown as CardRow[];
   return rows.map(toCard);
+}
+
+/** Cards being worked on (In progress / Review) across every project, oldest change first. */
+export function listCardsInFlight(db: Db): CardWithProject[] {
+  const rows = db
+    .prepare(
+      `SELECT c.*, p.name AS project_name FROM cards c JOIN projects p ON p.id = c.project_id
+        WHERE c.status IN ('in_progress', 'review') ORDER BY c.updated_at`,
+    )
+    .all() as unknown as (CardRow & { project_name: string })[];
+  return rows.map((r) => ({ ...toCard(r), projectName: r.project_name }));
 }
 
 export function getCard(db: Db, id: number): Card | null {

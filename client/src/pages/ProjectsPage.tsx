@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { CARD_STATUS_LABELS, type LanguageStats, type ProjectSummary } from '../../../shared/types';
+import {
+  CARD_STATUS_LABELS,
+  type LanguageStats,
+  type ProjectSummary,
+  type CardWithProject,
+} from '../../../shared/types';
 import { api } from '../api';
 import { AddProjectDialog } from '../components/AddProjectDialog';
 import { LanguageBar } from '../components/charts';
@@ -29,11 +34,13 @@ export function ProjectsPage() {
   const [now, setNow] = useState(0);
 
   // Only sets state in promise callbacks, so effects may call it directly.
+  const [inFlight, setInFlight] = useState<CardWithProject[]>([]);
   const load = useCallback(
     () =>
-      api.listProjects().then(
-        (next) => {
+      Promise.all([api.listProjects(), api.listCardsInFlight().catch(() => [])]).then(
+        ([next, cards]) => {
           setProjects(next);
+          setInFlight(cards);
           setNow(Date.now());
           setError(null);
         },
@@ -110,6 +117,23 @@ export function ProjectsPage() {
           detail: `No commits for over 90 days (last ${formatRelative(p.git.lastCommitAt)})`,
         });
       }
+      // Work that only exists on this machine: uncommitted files, commits not pushed yet.
+      if (!p.missing && p.git?.dirtyFiles) {
+        const n = p.git.dirtyFiles;
+        items.push({
+          project: p,
+          kind: 'Uncommitted',
+          detail: `${n} changed file${n === 1 ? '' : 's'}`,
+        });
+      }
+      if (!p.missing && p.git?.ahead) {
+        const n = p.git.ahead;
+        items.push({
+          project: p,
+          kind: 'Unpushed',
+          detail: `${n} commit${n === 1 ? '' : 's'} not pushed to ${p.git.branch ?? 'upstream'}`,
+        });
+      }
     }
     return items;
   }, [projects, now]);
@@ -172,9 +196,9 @@ export function ProjectsPage() {
               </div>
               <ul className="list">
                 {attention.map(({ project: p, kind, detail }) => (
-                  <li key={p.id}>
+                  <li key={`${p.id}-${kind}`}>
                     <span
-                      className={`badge${kind === 'Stale' ? '' : ' badge-danger'}`}
+                      className={`badge${kind === 'Folder missing' || kind === 'Scan failed' ? ' badge-danger' : ''}`}
                       style={{ flex: 'none' }}
                     >
                       {kind}
@@ -184,6 +208,38 @@ export function ProjectsPage() {
                     </Link>
                     <span className="faint truncate" style={{ flex: 2 }} title={detail}>
                       {detail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {inFlight.length > 0 && (
+            <section className="panel" aria-label="In flight across projects">
+              <div className="panel-header">
+                <h2>In flight</h2>
+                <span className="meta">In progress and Review, all projects</span>
+              </div>
+              <ul className="list">
+                {inFlight.map((c) => (
+                  <li key={c.id}>
+                    <span className="badge" style={{ flex: 'none' }}>
+                      {CARD_STATUS_LABELS[c.status]}
+                    </span>
+                    <span className="mono faint" style={{ flex: 'none' }}>
+                      {c.key}
+                    </span>
+                    <Link
+                      to={`/projects/${c.projectId}?tab=board`}
+                      className="truncate"
+                      style={{ flex: 1 }}
+                      title={c.title}
+                    >
+                      {c.title}
+                    </Link>
+                    <span className="faint truncate" style={{ flex: 'none', maxWidth: '30%' }}>
+                      {c.projectName} · {formatRelative(c.updatedAt)}
                     </span>
                   </li>
                 ))}

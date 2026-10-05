@@ -209,6 +209,8 @@ export function createApp(
     return c.json(store.insertCard(db, id, body), 201);
   });
 
+  app.get('/cards/in-flight', (c) => c.json(store.listCardsInFlight(db)));
+
   app.patch('/cards/:id', async (c) => {
     const id = parseId(c);
     const body = await parseBody(c, updateCardBody);

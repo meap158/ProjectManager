@@ -97,6 +97,11 @@ export interface GitStats {
   /** Commits per calendar day (author's local date), keyed "YYYY-MM-DD". */
   dailyCommits: Record<string, number>;
   recentCommits: CommitSummary[];
+  /** Changed or untracked files in the working tree at scan time (absent in older scans). */
+  dirtyFiles?: number;
+  /** Commits ahead of / behind the upstream branch; null when there is no upstream. */
+  ahead?: number | null;
+  behind?: number | null;
 }
 
 export type CardCounts = Record<CardStatus, number>;
@@ -132,6 +137,11 @@ export interface Card {
   closedAt: string | null;
   /** Commit hash that moved this card automatically, if any. */
   linkedCommit: string | null;
+}
+
+/** A card plus its project's name, for cross-project lists (dashboard "In flight"). */
+export interface CardWithProject extends Card {
+  projectName: string;
 }
 
 export interface CardMove {

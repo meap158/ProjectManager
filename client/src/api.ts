@@ -9,6 +9,7 @@ import type {
   Card,
   CardRunSummary,
   CardStatus,
+  CardWithProject,
   DirectoryListing,
   ProjectDetail,
   ProjectSummary,
@@ -40,6 +41,7 @@ export const api = {
   removeProject: (id: number) => request<void>('DELETE', `/projects/${id}`),
   scanProject: (id: number) => request<ProjectDetail>('POST', `/projects/${id}/scan`),
 
+  listCardsInFlight: () => request<CardWithProject[]>('GET', '/cards/in-flight'),
   listCards: (projectId: number) => request<Card[]>('GET', `/projects/${projectId}/cards`),
   addCard: (
     projectId: number,

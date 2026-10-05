@@ -30,14 +30,38 @@ export interface RawCommit {
 export async function scanGit(root: string): Promise<GitStats> {
   if (!(await isGitRepo(root))) return EMPTY_GIT_STATS;
 
-  const [branch, remoteUrl, log] = await Promise.all([
+  const [branch, remoteUrl, log, status, upstream] = await Promise.all([
     gitOrNull(root, ['rev-parse', '--abbrev-ref', 'HEAD']),
     gitOrNull(root, ['remote', 'get-url', 'origin']),
     // `-- .` limits history to this folder when the project is a subfolder of a larger repo.
     gitOrNull(root, ['log', `--format=%H${US}%aI${US}%an${US}%ae${US}%s${RS}`, '--', '.']),
+    gitOrNull(root, ['status', '--porcelain=v1', '--untracked-files=all', '--', '.']),
+    // "behind<TAB>ahead" relative to the upstream; fails (null) when there is none.
+    gitOrNull(root, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD']),
   ]);
 
-  return { ...summarizeCommits(parseLog(log ?? '')), isRepo: true, branch, remoteUrl };
+  return {
+    ...summarizeCommits(parseLog(log ?? '')),
+    isRepo: true,
+    branch,
+    remoteUrl,
+    ...parseWorkingState(status, upstream),
+  };
+}
+
+/** Uncommitted files and ahead/behind counts for the "needs attention" view. */
+export function parseWorkingState(
+  status: string | null,
+  upstream: string | null,
+): { dirtyFiles: number; ahead: number | null; behind: number | null } {
+  const dirtyFiles = status ? status.split(/\r?\n/).filter((l) => l.trim()).length : 0;
+  const counts = upstream?.trim().split(/\s+/).map(Number);
+  const valid = counts?.length === 2 && counts.every(Number.isFinite);
+  return {
+    dirtyFiles,
+    behind: valid ? counts![0]! : null,
+    ahead: valid ? counts![1]! : null,
+  };
 }
 
 export function parseLog(output: string): RawCommit[] {

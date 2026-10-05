@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseLog, summarizeCommits } from './git.js';
+import { parseLog, parseWorkingState, summarizeCommits } from './git.js';
 
 const US = '\x1f';
 const RS = '\x1e';
@@ -30,5 +30,17 @@ describe('git log parsing', () => {
 
   it('handles empty history', () => {
     expect(summarizeCommits(parseLog(''))).toMatchObject({ totalCommits: 0, lastCommitAt: null });
+  });
+});
+
+describe('working state', () => {
+  it('counts uncommitted files and reads ahead/behind', () => {
+    expect(parseWorkingState(' M a.ts\n?? b.ts\n', '2\t5')).toEqual({
+      dirtyFiles: 2,
+      behind: 2,
+      ahead: 5,
+    });
+    // Clean tree, no upstream configured.
+    expect(parseWorkingState(null, null)).toEqual({ dirtyFiles: 0, behind: null, ahead: null });
   });
 });
