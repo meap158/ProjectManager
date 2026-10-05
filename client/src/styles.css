@@ -21,6 +21,13 @@
 
   --topbar-h: 48px;
   --sidebar-w: 272px;
+  /* Phone layout (DESIGN.md §10): bottom tab bar height and device safe areas (notches, home
+     indicator). env() is 0 unless the viewport meta has viewport-fit=cover. */
+  --tabbar-h: 56px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 
   --bg: #f5f5f3;
   --surface: #fcfcfb;
@@ -292,30 +299,6 @@ code,
 .topbar-right a.is-active {
   background: var(--accent-soft);
   color: var(--accent);
-}
-@media (max-width: 600px) {
-  .topbar {
-    gap: 6px;
-    padding-inline: 8px;
-  }
-  .topnav a,
-  .topbar-right a {
-    padding: 5px 8px;
-  }
-  /* Icons carry the nav on narrow screens; full labels return above 600px. */
-  .brand span,
-  .topnav a span,
-  .topbar-right a span {
-    display: none;
-  }
-  .theme-switch {
-    max-width: 7.5rem;
-  }
-  .theme-switch .dropdown-trigger {
-    max-width: 7.5rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 }
 
 .page {
@@ -739,8 +722,8 @@ a.t:hover {
   letter-spacing: 0.4px;
   color: var(--text-3);
 }
-@media (max-width: 900px) {
-  /* On narrow screens the sidebar becomes a single horizontal strip — a tall
+@media (min-width: 769px) and (max-width: 900px) {
+  /* On tablet widths the sidebar becomes a single horizontal strip — a tall
      stacked panel would eat the first screenful (KDP uses a 65px bottom bar
      for the same reason). The shell stacks so that strip sits above the page.
      Filter + sort + Add share one row; projects scroll sideways as compact
@@ -828,14 +811,6 @@ a.t:hover {
   flex: none;
   align-items: center;
 }
-@media (max-width: 600px) {
-  .page-header {
-    flex-wrap: wrap;
-  }
-  .page-header .subtitle {
-    flex-wrap: wrap;
-  }
-}
 
 /* Tab panels stay mounted while hidden so tab switches never flash or refetch
    from blank (see DESIGN.md stability rules). */
@@ -882,9 +857,6 @@ a.t:hover {
   }
 }
 @media (max-width: 600px) {
-  :root {
-    --gutter: 16px;
-  }
   .grid-cards {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3060,4 +3032,281 @@ dialog.lightbox img {
 }
 .sorter-menu .sorter-divider {
   margin: 4px 0;
+}
+
+/* ---- Phone layout (≤ 768px, DESIGN.md §10) ------------------------------------------------ */
+/* Same breakpoint as KDP's mobile bar. Navigation moves to a bottom tab bar, the project list
+   becomes a full-screen panel, headers wrap instead of truncating to nothing, wide grids scroll
+   sideways with snapping, and dialogs become bottom sheets. Keep PHONE_QUERY in App.tsx in sync. */
+
+.tabbar {
+  display: none;
+}
+@media (max-width: 768px) {
+  :root {
+    --gutter: 16px;
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .topbar {
+    height: calc(var(--topbar-h) + var(--safe-top));
+    padding: var(--safe-top) calc(12px + var(--safe-right)) 0 calc(12px + var(--safe-left));
+  }
+  /* The tab bar carries the primary nav and Settings. */
+  .topnav,
+  .topbar-right > a {
+    display: none;
+  }
+
+  .tabbar {
+    flex: none;
+    display: flex;
+    height: calc(var(--tabbar-h) + var(--safe-bottom));
+    padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+  }
+  .tabbar > a,
+  .tabbar > button {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-3);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 550;
+    cursor: pointer;
+  }
+  .tabbar > a:hover {
+    text-decoration: none;
+  }
+  .tabbar > .is-active {
+    color: var(--accent);
+  }
+  .tabbar svg {
+    flex: none;
+  }
+
+  /* Project list: hidden until the Projects tab opens it over the page area (KDP master/detail:
+     one pane at a time). The desktop sidebar styles apply inside, list included. */
+  .app-shell {
+    position: relative;
+  }
+  .sidebar {
+    display: none;
+  }
+  .sidebar.is-open {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    width: auto;
+    border-right: none;
+    padding: 12px calc(var(--gutter) + var(--safe-right)) 12px
+      calc(var(--gutter) + var(--safe-left));
+  }
+  .sidebar-foot {
+    padding-bottom: 4px;
+  }
+
+  .page {
+    padding-left: calc(var(--gutter) + var(--safe-left));
+    padding-right: calc(var(--gutter) + var(--safe-right));
+  }
+  /* Headers: the title takes its own row and actions wrap below it, so neither collapses. */
+  .page-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .page-header > div:first-child {
+    flex-basis: 100%;
+  }
+  .page-header .actions {
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+  .page-header .subtitle {
+    flex-wrap: wrap;
+  }
+  /* Tabs scroll sideways rather than wrapping into a second line. */
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .tab {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  /* Boards: one column fills most of the screen; swipe between columns, which snap. */
+  .board,
+  .gboard {
+    grid-template-columns: none !important;
+    grid-auto-flow: column;
+    grid-auto-columns: min(86%, 340px);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    padding-bottom: 8px;
+  }
+  .board > *,
+  .gboard > * {
+    scroll-snap-align: start;
+  }
+
+  /* Dialogs become bottom sheets: full width, anchored to the bottom, home-indicator safe. */
+  dialog:modal:not(.lightbox) {
+    width: 100%;
+    max-width: 100%;
+    margin: auto 0 0;
+    max-height: calc(100dvh - var(--safe-top) - 24px);
+    border-bottom: none;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .dialog-body {
+    padding: 16px;
+  }
+  /* The sheet scrolls as one; its actions stay pinned to the bottom edge within reach. */
+  .dialog-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background: var(--surface-raised);
+    padding: 12px 16px calc(12px + var(--safe-bottom));
+    flex-wrap: wrap;
+  }
+
+  /* Agents workspace: panes stack and each gets most of a screen; layout presets and keyboard
+     shortcut help have no meaning there, so the toolbar keeps View, text size and New session. */
+  .workspace {
+    padding: 8px calc(8px + var(--safe-right)) 8px calc(8px + var(--safe-left));
+  }
+  .workspace-bar {
+    row-gap: 8px;
+  }
+  .workspace-bar .bar-group:has(.preset-picker),
+  .workspace-bar .shortcuts {
+    display: none;
+  }
+  .workspace-new {
+    flex: 1 1 100%;
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+    flex-wrap: wrap;
+  }
+  .pane-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: none !important;
+    grid-auto-rows: minmax(min(480px, 62dvh), auto);
+    overflow-y: auto;
+  }
+  .pane-head {
+    white-space: nowrap;
+  }
+  /* The agent name (and its separator) gives way so the session name stays readable. */
+  .pane-agent,
+  .pane-agent + span {
+    display: none;
+  }
+
+  /* Panel headers: the meta line drops under the heading instead of squeezing it. */
+  .panel-header {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .panel-header h2 {
+    white-space: nowrap;
+  }
+
+  /* Dashboard lists: status, key and project on the first line, the title gets the second. */
+  .flight-list li,
+  .attention-list li {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .flight-list li > a {
+    order: 1;
+    flex: 1 1 100% !important;
+  }
+  .flight-list li > span:last-child {
+    flex: 1 1 0 !important;
+    max-width: none !important;
+    text-align: right;
+  }
+  .attention-list li > span:last-child {
+    order: 1;
+    flex: 1 1 100% !important;
+  }
+
+  /* Agent work rows: name line and facts on top, then card, state and actions on their own
+     line (the fixed desktop columns would need ~420px). The provider keeps its mark only. */
+  .work-list li {
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  .work-row {
+    flex-basis: 100%;
+  }
+  .work-provider > .faint {
+    display: none;
+  }
+  .work-side {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 0 6px 6px 22px;
+  }
+  .work-card-slot {
+    width: auto;
+  }
+  .work-state {
+    min-width: 0;
+    margin-right: auto;
+    text-align: left;
+  }
+  .work-actions {
+    min-width: 0;
+    margin-left: auto;
+  }
+}
+
+/* Touch screens at phone width: 40px targets (ApexTide/KDP use 40–44px) and 16px text in
+   fields, below which iOS zooms the page on focus. */
+@media (max-width: 768px) and (pointer: coarse) {
+  .btn {
+    height: 40px;
+  }
+  .btn-sm {
+    height: 34px;
+  }
+  .btn-icon {
+    width: 40px;
+  }
+  .input,
+  .dropdown-trigger {
+    min-height: 40px;
+  }
+  .input,
+  .textarea {
+    font-size: 16px;
+  }
+  .pane-head {
+    height: 36px;
+  }
+  .pane-head .icon-btn:not(.icon-btn-sm, .icon-btn-text) {
+    width: 32px;
+    height: 32px;
+  }
 }

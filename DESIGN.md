@@ -32,8 +32,8 @@ a populated pane.
   content fits. Dialogs are top-layer and unaffected.
 - **Topbar:** brand, then primary nav (All projects, Board, Agents), then a right-side utility group
   (`margin-left: auto`) with the theme control followed by Settings. Icon + label pills;
-  under 600px the labels and the wordmark hide and the icons (with matching `aria-label`s) carry the nav.
-  The mark stays.
+  at phone width (≤ 768px) the nav and Settings move to the bottom tab bar (§10) and the top bar
+  keeps only the brand and theme menu.
 - **Sidebar (256px, KDP width):** filter + sort/add row on top with fixed slots (filter is
   the only elastic part, so the row never lurches when badges appear), then two-line rows:
   name + state badge, then one glance line (lines · top language · relative last commit).
@@ -53,9 +53,9 @@ a populated pane.
   `--gutter` horizontal, 14px section gaps. Stats tiles start at 132px columns.
 - **Density budget:** panel padding 14–16px, card gaps ≤ 12px, footer ≤ 16px. New chrome
   must earn vertical pixels: prefer a second line of glance data over a new section.
-- **Narrow screens:** under 900px the shell stacks and the sidebar becomes one horizontal strip
+- **Tablet widths (769–900px):** the shell stacks and the sidebar becomes one horizontal strip
   above the page (controls in a single row, projects as sideways-scrolling chips, footer hidden) —
-  never a tall stacked panel that eats the first screenful.
+  never a tall stacked panel that eats the first screenful. Phones get the layout in §10.
 - **Sticky chrome:** the dashboard/project headers (+ tabs) live in `.sticky-head`
   (`position: sticky`, opaque page background, one rule line). Titles, actions and tabs stay
   visible while tab content scrolls; banners and notices scroll away. Stuck bars keep 8px
@@ -270,6 +270,45 @@ Switching tabs or projects must not move anything that stays on screen.
 
 - Desktop-first, usable down to 360px wide: grids collapse, tables scroll horizontally inside
   `.table-wrap`, and the board scrolls horizontally.
+- **Breakpoints:** 900px (tablet: shell stacks, two-column grids become one) and **768px (phone)**,
+  the same mobile breakpoint as the sister apps (KDP, Oracle). `PHONE_QUERY` in
+  `client/src/projectPanel.ts` mirrors it for JS.
+
+### 10.1 Phone layout (≤ 768px)
+
+Modelled on the sister apps: KDP's bottom bar and master/detail panes, ApexTide's safe-area
+tokens and touch targets.
+
+- **Bottom tab bar** (`MobileTabBar`, 56px + home-indicator inset): Home, Projects, Board, Agents,
+  Settings. 20px icons over 11px labels; the active tab is accent-coloured. It is the only
+  primary nav on phones; the top bar keeps the brand and the theme menu.
+- **Projects panel:** the Projects tab shows the sidebar full screen over the page (one pane at a
+  time, KDP master/detail), with its filter, sort, Add and totals intact. Picking a project, any
+  navigation, Esc, or the tab again closes it; it is tied to the history entry it opened on
+  (`useProjectPanel`). Projects reads active on project pages.
+- **Safe areas:** `viewport-fit=cover` plus `--safe-top/right/bottom/left` tokens pad the top bar,
+  tab bar, page gutters and bottom sheets. Pinch zoom stays enabled.
+- **Headers wrap** instead of truncating: the title gets its own row and actions wrap beneath.
+  Project tabs scroll sideways on one line. Panel headers drop their meta under the heading.
+- **Boards** (project and global): columns are `min(86%, 340px)` wide, scroll sideways and snap
+  to each column. Moving a card on touch uses the card dialog's Column dropdown (the drag
+  alternative from §6).
+- **Dialogs are bottom sheets:** full width, rounded top corners, anchored to the bottom, with the
+  footer pinned to the sheet's bottom edge so Save/Cancel stay reachable. The lightbox is exempt.
+  No slide-in animation (§8 motion rule).
+- **Lists:** dashboard "Being worked on" / "Needs attention" rows put status, key and project on
+  line one and the title on line two. Agent work rows move card, state and actions to their own
+  line and keep only the provider mark.
+- **Agents workspace:** panes stack, each at least `min(480px, 62dvh)` tall; the layout presets and
+  shortcut help hide (meaningless without side-by-side panes or a keyboard); pane headers drop
+  the agent name so the session name stays readable.
+- **Touch (`pointer: coarse`):** buttons 40px (small 34px), inputs and dropdown triggers ≥ 40px,
+  pane-header icon buttons 32px, and 16px text in fields so iOS doesn't zoom on focus. Nothing in
+  the app is hover-only, so touch sees every control.
+- **Browser chrome:** `theme-color` follows the active `--surface` token (`syncThemeColor`).
+- **Reachability:** the server binds 127.0.0.1 only (CLAUDE.md security model), so a phone reaches
+  the app only through a channel you control on the same machine (e.g. remote desktop). The
+  phone layout also serves narrow desktop windows and split screens.
 - The heatmap (Rare UI) fits as many weeks as the panel width allows and drops the oldest weeks first.
 
 ## 11. Platform notes
@@ -406,7 +445,7 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
 - **Card sessions** have a "→ Review" header action that moves the linked card to Review when the
   work looks done.
 - **Narrow screens** (< 900px): panes stack vertically with a minimum height and the grid
-  scrolls.
+  scrolls. Phones: see §10.1.
 
 ## 13. Spacing, alignment and symmetry
 
@@ -416,7 +455,7 @@ values (5px, 7px, 9px, 18px…) are never added.
 
 - **Scale:** 0, 1 (hairline dividers), 2 (dense rows), 4 (badges, menu padding), 6 (form rows,
   toolbar rows), 8 (panels' inner rhythm, option rows), 10/12 (cards, tiles), 14/16 (sections,
-  panels), 20 (dialog rhythm), 24 (`--gutter`, 16 under 600px).
+  panels), 20 (dialog rhythm), 24 (`--gutter`, 16 at phone width).
 - **Symmetry:** padding shorthands are symmetric on both axes (`8px`, `6px 8px`, `10px 12px`).
   Asymmetry needs a functional reason stated in a comment — e.g. `.pane-head` keeps a slimmer
   right edge because icon buttons sit flush there, and `.chip` keeps extra left padding for

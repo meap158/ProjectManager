@@ -1,4 +1,5 @@
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
+import { MobileTabBar } from './components/MobileTabBar';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ThemeSwitch } from './components/ThemeSwitch';
 import { BoardIcon, GridIcon, SettingsIcon, TerminalIcon } from './components/icons';
@@ -8,10 +9,13 @@ import { ProjectPage } from './pages/ProjectPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { WorkspacePage } from './pages/WorkspacePage';
+import { useProjectPanel } from './projectPanel';
 
 export function App() {
   // The agent workspace takes the full width: terminals need the screen space more than the list.
   const fullWidth = useLocation().pathname === '/workspace';
+  // Phone widths: the project list is a full-screen panel opened from the bottom tab bar.
+  const projects = useProjectPanel();
   return (
     <>
       <RememberLastPage />
@@ -60,7 +64,9 @@ export function App() {
         </div>
       </header>
       <div className="app-shell">
-        {!fullWidth && <ProjectSidebar />}
+        {(!fullWidth || projects.open) && (
+          <ProjectSidebar panelOpen={projects.open} onNavigate={projects.close} />
+        )}
         <div className="app-main">
           <Routes>
             <Route path="/" element={<ProjectsPage />} />
@@ -82,6 +88,7 @@ export function App() {
           </Routes>
         </div>
       </div>
+      <MobileTabBar projectsOpen={projects.open} onToggleProjects={projects.toggle} />
     </>
   );
 }

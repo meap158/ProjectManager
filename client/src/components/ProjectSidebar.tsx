@@ -89,7 +89,14 @@ function recentCommits(projects: ProjectSummary[], days: number): number {
 }
 
 /** Left sidebar: every tracked project with at-a-glance status. */
-export function ProjectSidebar() {
+/**
+ * `panelOpen` / `onNavigate` drive the phone layout, where the sidebar is a full-screen panel opened
+ * from the bottom tab bar (DESIGN.md §10.1). Above the phone breakpoint CSS ignores `panelOpen`.
+ */
+export function ProjectSidebar({
+  panelOpen = false,
+  onNavigate,
+}: { panelOpen?: boolean; onNavigate?: () => void } = {}) {
   const navigate = useNavigate();
   const projectHref = useProjectHref();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
@@ -142,7 +149,10 @@ export function ProjectSidebar() {
       if (!sorterRef.current?.contains(e.target as Node)) setSortOpen(false);
     }
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setSortOpen(false);
+      if (e.key === 'Escape') {
+        e.preventDefault(); // Esc closes the menu only, not the phone project panel around it.
+        setSortOpen(false);
+      }
     }
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -244,7 +254,15 @@ export function ProjectSidebar() {
   const totalsRunning = (projects ?? []).reduce((s, p) => s + p.runningSessions, 0);
 
   return (
-    <aside className="sidebar" aria-label="Tracked projects">
+    <aside
+      id="project-panel"
+      className={`sidebar${panelOpen ? ' is-open' : ''}`}
+      aria-label="Tracked projects"
+      // Picking any link (even the page already shown) closes the phone panel.
+      onClick={(e) => {
+        if ((e.target as Element).closest('a')) onNavigate?.();
+      }}
+    >
       <NavLink
         to="/"
         end

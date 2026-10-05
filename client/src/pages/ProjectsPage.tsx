@@ -211,7 +211,7 @@ export function ProjectsPage() {
                   {attention.length} project{attention.length === 1 ? '' : 's'}
                 </span>
               </div>
-              <ul className="list">
+              <ul className="list attention-list">
                 {attention.map(({ project: p, kind, detail }) => (
                   <li key={`${p.id}-${kind}`}>
                     <span
@@ -238,7 +238,7 @@ export function ProjectsPage() {
                 <h2>Being worked on</h2>
                 <span className="meta">In progress or in review, across all projects</span>
               </div>
-              <ul className="list">
+              <ul className="list flight-list">
                 {inFlight.map((c) => (
                   <li key={c.id}>
                     <span className="badge" style={{ flex: 'none' }}>

@@ -49,4 +49,12 @@ describe('theme', () => {
     listeners.forEach((cb) => cb());
     expect(theme()).toBe('dark');
   });
+
+  it('tints the browser chrome with the active surface colour', () => {
+    document.documentElement.style.setProperty('--surface', '#1a1a19');
+    setThemePreference('dark');
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    expect(meta?.content).toBe('#1a1a19');
+    document.documentElement.style.removeProperty('--surface');
+  });
 });

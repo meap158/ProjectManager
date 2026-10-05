@@ -9,7 +9,17 @@ atomic commits). Nothing is pending in the working tree.
 
 - **Shell:** Settings page (agent CLIs with install, per-project board column presets), icon nav
   with a global Board between All projects and Agents, remembered last page, calm dark theme,
-  stacked layout under 900px.
+  sidebar strip at tablet widths (769–900px).
+- **Phone layout (≤ 768px, DESIGN.md §10.1):** bottom tab bar (`MobileTabBar`: Home, Projects,
+  Board, Agents, Settings) replaces the top nav; Projects opens the sidebar full screen
+  (`useProjectPanel` in `client/src/projectPanel.ts`, tied to the history entry so navigation
+  closes it); safe-area tokens + `viewport-fit=cover`; headers wrap; tabs scroll; boards swipe
+  and snap per column; dialogs are bottom sheets with a pinned footer; dashboard and Agent work
+  rows reflow to two lines; workspace panes stack and hide presets/shortcut help; 40px touch
+  targets and 16px field text on coarse pointers; `theme-color` follows `--surface`. Patterns
+  taken from the sister apps KdpPublishingPipeline (bottom bar, master/detail) and ApexTide
+  (safe areas, touch targets). Verified in Chrome at 360/390px (light and dark), plus 820px and
+  1060px for regressions; no horizontal overflow on any page or project tab.
 - **Boards:** project and global boards create cards through the full CardDialog (notes, staged
   images, hand-to-agent); the project is required on the global Board. Dashboard tiles link to
   /board?show=planned|active. Card images: data folder only, lightbox preview.

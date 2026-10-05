@@ -19,6 +19,23 @@ export function readThemePreference(): ThemePreference {
 export function applyTheme(preference: ThemePreference): void {
   const dark = preference === 'dark' || (preference === 'system' && media().matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  syncThemeColor();
+}
+
+/**
+ * Tint the mobile browser's own chrome (address bar, status bar) to the top bar's surface.
+ * The meta tag needs a literal colour, so it is read from the active token.
+ */
+export function syncThemeColor(): void {
+  const surface = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim();
+  if (!surface) return;
+  let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    document.head.append(meta);
+  }
+  meta.content = surface;
 }
 
 export function setThemePreference(preference: ThemePreference): void {

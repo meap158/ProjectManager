@@ -24,6 +24,9 @@ ProjectManager stores its data locally. GitHub PR queries use your gh login; age
   over the last 12 months, 12 weeks or 30 days, so you can see which projects get the most work.
 - **Global Board:** cards across projects, project tags, filters and full card creation. New card uses the same dialog as Edit card, including images and agent/session choices.
 - **Theme:** System, Light and Dark, remembered across reloads.
+- **Phone layout:** at 768px wide and below, a bottom tab bar (Home, Projects, Board, Agents,
+  Settings) replaces the top nav, the project list opens full screen, boards swipe column by
+  column, and dialogs become bottom sheets. The same layout fits narrow desktop windows.
 - **Last page:** opening the app returns to the page you had open (project tab, board, or agents). All projects still opens the dashboard when you choose it.
 - **Settings** (top right): agent CLIs with one-click install using each vendor's official
   method, and per-project board column presets (Full flow, Simple, Capture flow).
@@ -113,6 +116,8 @@ Copy `.env.example` to `.env` to override any of these:
 
 The switch at the top right picks **Match system**, **Light** or **Dark**. It's remembered
 per browser.
+
+![Phone layout: dashboard, Projects panel and a swipeable board](docs/screenshots/mobile.png)
 
 ## Development
 

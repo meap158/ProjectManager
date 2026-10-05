@@ -125,6 +125,16 @@ export function ProviderIcon({ id, ...props }: IconProps & { id: string }) {
   return <TerminalIcon {...props} />;
 }
 
+/** Stacked folders: the tracked-project list (mobile tab bar). */
+export function FoldersIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M2 5V3.5A1 1 0 0 1 3 2.5h2.5L7 4h5a1 1 0 0 1 1 1v1" />
+      <path d="M2 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />
+    </Base>
+  );
+}
+
 /** Sliders: settings (same metaphor as KDP's settings icon). */
 export function SettingsIcon(props: IconProps) {
   return (
