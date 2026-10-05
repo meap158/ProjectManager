@@ -149,7 +149,12 @@ adjacent-pair CVD separation in both modes).
   primary action on the right).
 - **Destructive actions:** use Rare UI `DeleteButton` (confirm in place, no modal, Esc cancels).
   Never use `window.confirm`.
-- **Tabs (project page):** Rare UI `GooeyNav`, controlled and synced to `?tab=` in the URL.
+- **Tabs (project page):** a plain, stable tab bar (`.tabs` / `role="tablist"`), synced to `?tab=`
+  in the URL.
+  - Tabs never animate or move. Rare UI's GooeyNav was removed because its moving segments were
+    distracting.
+  - All tab panels stay mounted and inactive ones are hidden, so switching never refetches or
+    flashes.
 - **Kanban:**
   - Native HTML5 drag-and-drop. A drop indicator line appears above the target card, and the column
     highlights when dropping at its end.
@@ -170,6 +175,17 @@ adjacent-pair CVD separation in both modes).
 | Success / info  | `.notice` (e.g. "Moved by commits: PM-3 → Done" with a "View board" action)                  |
 | Folder missing  | danger badge on the card and a banner on the project page. The last scan stays visible       |
 
+**Stability (no layout shift, no flash — portfolio brief addendum 6):**
+
+- Tab switches never blank or refetch from empty: all tab panels stay mounted (`hidden`),
+  per-project data caches in module scope and refreshes in the background (board cards, agent
+  sessions/runs — the KDP ManuscriptViewer pattern), and hidden tabs never poll or stream
+  (`TerminalView` pauses, keeping offset and scrollback).
+- Switching projects keys panels by project id and resets the rename box; stale data stays
+  visible until the new project loads.
+- First-load skeletons mirror the loaded layout (title, subtitle, tabs, content), and the
+  header subtitle reserves one line so badges never change its height.
+
 ## 8. Motion and Rare UI
 
 [Rare UI](https://rareui.com) components are installed via the shadcn CLI into `client/src/components/ui/`
@@ -180,7 +196,6 @@ and are **owned code**: adapt them freely, and keep a header comment saying what
 | `GitHubActivity`  | Commit activity heatmap     | `unit` prop added, fed local data, no network |
 | `AnimatedCounter` | All stat tiles (`StatTile`) | none                                          |
 | `DeleteButton`    | Remove project, delete card | none                                          |
-| `GooeyNav`        | Overview / Board tabs       | Next.js imports removed                       |
 
 Other rules:
 
@@ -191,6 +206,20 @@ Other rules:
 - Add motion only through Rare UI components or tiny CSS transitions (≤150ms on colour/border).
 - To add one: `npx shadcn@latest add swamimalode07/rare-ui/<name>`, then check the diff. The CLI may add
   stray dependencies (it once added an unrelated `cn` package), and some components import `next/*`.
+
+## 8.1 Layout stability (no flicker, no shifting)
+
+Switching tabs or projects must not move anything that stays on screen.
+
+- `.app-main` and `.sidebar` use `scrollbar-gutter: stable`. A short view and a tall view would
+  otherwise toggle the scrollbar and shift the centred page sideways (this was the "project name
+  moves" bug).
+- Tab panels stay mounted (hidden when inactive). Board and agent data are cached per project and
+  refresh in the background, so revisits render instantly.
+- Skeletons mirror the real layout (title, subtitle, tabs, content), so the first paint lands where
+  the content will be.
+- Verified by measuring: the title and tabs keep identical coordinates across tab and project
+  switches, with no skeleton flashes.
 
 ## 9. Accessibility
 

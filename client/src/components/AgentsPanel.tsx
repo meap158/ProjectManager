@@ -11,11 +11,20 @@ const TerminalView = lazy(() =>
   import('./TerminalView').then((m) => ({ default: m.TerminalView })),
 );
 
+// Tab memory, same pattern as the board: revisits render instantly from the
+// module cache and refresh in the background. The project page keys the panel
+// by project and only polls while its tab is visible (no wasteful background
+// polling from a hidden tab).
+const sessionsCache = new Map<number, AgentSession[]>();
+const runsCache = new Map<number, AgentRun[]>();
+
 /** Per-project agent HQ: providers, persistent terminal sessions, and card runs. */
-export function AgentsPanel({ projectId }: { projectId: number }) {
+export function AgentsPanel({ projectId, visible }: { projectId: number; visible: boolean }) {
   const [providers, setProviders] = useState<AgentProviderStatus[] | null>(null);
-  const [sessions, setSessions] = useState<AgentSession[] | null>(null);
-  const [runs, setRuns] = useState<AgentRun[] | null>(null);
+  const [sessions, setSessions] = useState<AgentSession[] | null>(
+    () => sessionsCache.get(projectId) ?? null,
+  );
+  const [runs, setRuns] = useState<AgentRun[] | null>(() => runsCache.get(projectId) ?? null);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
@@ -27,6 +36,8 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
     () =>
       Promise.all([api.listSessions(projectId), api.listRuns(projectId)]).then(
         ([s, r]) => {
+          sessionsCache.set(projectId, s);
+          runsCache.set(projectId, r);
           setSessions(s);
           setRuns(r);
           setNow(Date.now());
@@ -50,15 +61,16 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
   }, [load]);
 
   // Poll fast while anything is alive, slow otherwise (KDP populated-pane rule:
-  // refreshes never blank what is on screen).
+  // refreshes never blank what is on screen). A hidden tab never polls at all.
   const alive =
     sessions?.some((s) => s.status === 'running') ??
     runs?.some((r) => r.status === 'running' || r.status === 'queued') ??
     false;
   useEffect(() => {
+    if (!visible) return;
     const timer = setTimeout(load, alive ? 2000 : 10000);
     return () => clearTimeout(timer);
-  }, [alive, sessions, runs, load]);
+  }, [visible, alive, sessions, runs, load]);
 
   const active = sessions?.find((s) => s.id === activeId) ?? null;
 
@@ -162,7 +174,7 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
       <section className="panel" aria-label="Terminal sessions">
         <div className="panel-header">
           <h2>Sessions</h2>
-          <span className="meta">persistent · survive restarts when supervised</span>
+          <span className="meta">persistent · kept until you stop or delete them</span>
         </div>
         {sessions === null ? (
           <div className="skeleton" style={{ height: 120 }} />
@@ -193,18 +205,6 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
                       </span>
                     )}
                   </span>
-                  {s.supervise && s.desiredState === 'running' && (
-                    <span
-                      className="badge"
-                      title={
-                        s.resumeSupported
-                          ? 'Resumes conversation after reboot'
-                          : 'Relaunches after reboot'
-                      }
-                    >
-                      {s.resumeSupported ? '↻ resume' : '↻ supervised'}
-                    </span>
-                  )}
                   {s.restarts > 0 && (
                     <span className="badge" title={`Relaunched ${s.restarts}× after crashes`}>
                       {s.restarts}↻
@@ -297,6 +297,7 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
                 height={active.terminal === 'pty' ? 380 : 320}
                 fetchOutput={(after) => api.sessionOutput(active.id, after)}
                 streamUrl={(after) => api.sessionStreamUrl(active.id, after)}
+                paused={!visible}
                 {...(active.terminal === 'pty'
                   ? {
                       onInput: (data: string) => sendKeys(active.id, data),
@@ -380,6 +381,7 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
                 key={r.id}
                 run={r}
                 now={now}
+                paused={!visible}
                 onChanged={upsertRun}
                 onDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
               />
@@ -390,9 +392,9 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
 
       <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
         Sessions run on this machine as your user, rooted in the project folder by default, and only
-        answer this page — the API refuses anything but same-machine requests. Supervised sessions
-        relaunch after crashes, server restarts and machine reboots; input typed while one is down
-        waits in a durable queue.
+        answer this page — the API refuses anything but same-machine requests. Sessions keep running
+        when ProjectManager restarts, relaunch after crashes and reboots, and are only removed when
+        you stop or delete them; input typed while one is down waits in a durable queue.
       </p>
     </div>
   );
@@ -433,7 +435,6 @@ function NewSessionForm({
   const [name, setName] = useState('');
   const [binary, setBinary] = useState('');
   const [args, setArgs] = useState('');
-  const [supervise, setSupervise] = useState(true);
   const [busy, setBusy] = useState(false);
   const provider = providers.find((p) => p.id === providerId);
   const needsCommand = providerId === 'custom';
@@ -448,12 +449,10 @@ function NewSessionForm({
               providerId: 'custom',
               command: [binary.trim(), ...args.split(/\s+/).filter(Boolean)],
               ...(name.trim() ? { name: name.trim() } : {}),
-              supervise,
             }
           : {
               providerId,
               ...(name.trim() ? { name: name.trim() } : {}),
-              supervise,
             };
       onCreated(await api.createSession(projectId, input));
       setName('');
@@ -492,14 +491,6 @@ function NewSessionForm({
             maxLength={80}
             aria-label="Session name"
           />
-          <label className="check" title="Relaunch after crashes, restarts and reboots">
-            <input
-              type="checkbox"
-              checked={supervise}
-              onChange={(e) => setSupervise(e.target.checked)}
-            />
-            Supervise
-          </label>
           <button
             type="submit"
             className="btn btn-primary btn-sm"

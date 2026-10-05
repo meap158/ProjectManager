@@ -18,8 +18,15 @@ function positionBetween(before: Card | undefined, after: Card | undefined): num
   return (before.position + after.position) / 2;
 }
 
+// Tab memory (KDP ManuscriptViewer pattern): the board unmounts never while switching tabs
+// (ProjectPage keeps panels mounted), but a revisit must still be instant. Module-scope caches
+// survive component lifetime; the project page keys the board by project so each project reads
+// its own entry and background refreshes keep it fresh.
+const cardCache = new Map<number, Card[]>();
+const runCache = new Map<number, CardRunSummary[]>();
+
 export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloadKey: number }) {
-  const [cards, setCards] = useState<Card[] | null>(null);
+  const [cards, setCards] = useState<Card[] | null>(() => cardCache.get(projectId) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<{
@@ -28,13 +35,29 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
   } | null>(null);
   const [adding, setAdding] = useState<CardStatus | null>(null);
   const [editing, setEditing] = useState<Card | null>(null);
-  const [runSummary, setRunSummary] = useState<Map<number, CardRunSummary>>(new Map());
+  const [runSummary, setRunSummary] = useState<Map<number, CardRunSummary>>(
+    () => new Map((runCache.get(projectId) ?? []).map((s) => [s.cardId, s])),
+  );
+
+  // Write-through cache: every cards update lands in the module cache too, so tab
+  // switches and revisits render instantly and refresh in the background.
+  const updateCards = useCallback(
+    (updater: (prev: Card[] | null) => Card[] | null) => {
+      setCards((prev) => {
+        const next = updater(prev);
+        if (next) cardCache.set(projectId, next);
+        return next;
+      });
+    },
+    [projectId],
+  );
 
   // Loaders only set state in promise callbacks, so effects may call them directly.
   const load = useCallback(
     () =>
       api.listCards(projectId).then(
         (next) => {
+          cardCache.set(projectId, next);
           setCards(next);
           setError(null);
         },
@@ -46,7 +69,10 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
   const loadRuns = useCallback(
     () =>
       api.runSummaries(projectId).then(
-        (summaries) => setRunSummary(new Map(summaries.map((s) => [s.cardId, s]))),
+        (summaries) => {
+          runCache.set(projectId, summaries);
+          setRunSummary(new Map(summaries.map((s) => [s.cardId, s])));
+        },
         // Agent runs are advisory: a failed lookup must not break the board.
         () => undefined,
       ),
@@ -67,12 +93,12 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
     const at = index === -1 ? target.length : index;
     const position = positionBetween(target[at - 1], target[at]);
     // Optimistic update; reload from the server if it fails.
-    setCards(
+    updateCards(
       (prev) => prev?.map((c) => (c.id === cardId ? { ...c, status, position } : c)) ?? prev,
     );
     try {
       const saved = await api.updateCard(cardId, { status, position });
-      setCards((prev) => prev?.map((c) => (c.id === cardId ? saved : c)) ?? prev);
+      updateCards((prev) => prev?.map((c) => (c.id === cardId ? saved : c)) ?? prev);
     } catch (e) {
       setError((e as Error).message);
       load();
@@ -139,7 +165,7 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
                   onCancel={() => setAdding(null)}
                   onSubmit={async (title) => {
                     const card = await api.addCard(projectId, { title, status });
-                    setCards((prev) => [...(prev ?? []), card]);
+                    updateCards((prev) => [...(prev ?? []), card]);
                   }}
                 />
               )}
@@ -194,11 +220,11 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
         liveSessionId={editing ? (runSummary.get(editing.id)?.liveSessionId ?? null) : null}
         onClose={() => setEditing(null)}
         onSaved={(saved) => {
-          setCards((prev) => prev?.map((c) => (c.id === saved.id ? saved : c)) ?? prev);
+          updateCards((prev) => prev?.map((c) => (c.id === saved.id ? saved : c)) ?? prev);
           setEditing(null);
         }}
         onDeleted={(id) => {
-          setCards((prev) => prev?.filter((c) => c.id !== id) ?? prev);
+          updateCards((prev) => prev?.filter((c) => c.id !== id) ?? prev);
           setEditing(null);
         }}
         onDispatched={() => {

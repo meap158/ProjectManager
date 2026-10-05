@@ -15,12 +15,12 @@ import { KanbanBoard } from '../components/KanbanBoard';
 import { BytesTile, StatTile } from '../components/StatTile';
 import { DeleteButton } from '../components/ui/delete-button';
 import { GitHubActivity } from '../components/ui/github-activity';
-import { GooeyNav } from '../components/ui/gooey-nav';
 import { formatBytes, formatDate, formatNumber, formatRelative } from '../format';
 
 const POLL_MS = 1000;
 const TABS = ['overview', 'board', 'agents'] as const;
 type Tab = (typeof TABS)[number];
+const TAB_LABELS: Record<Tab, string> = { overview: 'Overview', board: 'Board', agents: 'Agents' };
 
 function parseTab(value: string | null): Tab {
   return value === 'board' || value === 'agents' ? value : 'overview';
@@ -81,9 +81,13 @@ export function ProjectPage() {
     );
   }
   if (!project) {
+    // Skeleton mirrors the loaded layout (title, subtitle, tabs, content) so the
+    // first paint lands where the real page will be — no layout shift.
     return (
       <main className="page" aria-busy="true">
-        <div className="skeleton" style={{ height: 48, width: 320 }} />
+        <div className="skeleton" style={{ height: 28, maxWidth: 320 }} />
+        <div className="skeleton" style={{ height: 18 }} />
+        <div className="skeleton" style={{ height: 34 }} />
         <div className="skeleton" style={{ height: 320 }} />
       </main>
     );
@@ -95,7 +99,9 @@ export function ProjectPage() {
     <main className="page">
       <div className="page-header">
         <div style={{ minWidth: 0 }}>
-          <ProjectTitle project={project} onRenamed={setProject} />
+          {/* Keyed by project: switching projects resets the rename box instead of
+              showing the previous project's name. */}
+          <ProjectTitle key={project.id} project={project} onRenamed={setProject} />
           <div className="subtitle">
             <span className="mono truncate" title={project.path}>
               {project.path}
@@ -150,22 +156,35 @@ export function ProjectPage() {
         </div>
       )}
 
-      <GooeyNav
-        items={['Overview', 'Board', 'Agents']}
-        value={TABS.indexOf(tab)}
-        onChange={(i) => setParams(TABS[i] === 'overview' ? {} : { tab: TABS[i]! })}
-        activeColor="var(--accent)"
-        size="sm"
-        aria-label="Project sections"
-      />
+      {/* A plain, stable tab bar: switching never moves or animates the tabs themselves. */}
+      <div className="tabs" role="tablist" aria-label="Project sections">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            className="tab"
+            aria-selected={tab === t}
+            onClick={() => setParams(t === 'overview' ? {} : { tab: t })}
+          >
+            {TAB_LABELS[t]}
+          </button>
+        ))}
+      </div>
 
-      {tab === 'overview' ? (
+      {/* All tab panels stay mounted; the inactive ones hide. Tab switches never
+          unmount, refetch from blank, or flash skeletons — board and agent data is
+          cached per project and refreshes in the background. Panels are keyed by
+          project so switching projects starts from that project's cache. */}
+      <div className="tab-panel" hidden={tab !== 'overview'}>
         <Overview project={project} />
-      ) : tab === 'board' ? (
-        <KanbanBoard projectId={id} reloadKey={cardsVersion} />
-      ) : (
-        <AgentsPanel projectId={id} />
-      )}
+      </div>
+      <div className="tab-panel" hidden={tab !== 'board'}>
+        <KanbanBoard key={id} projectId={id} reloadKey={cardsVersion} />
+      </div>
+      <div className="tab-panel" hidden={tab !== 'agents'}>
+        <AgentsPanel key={id} projectId={id} visible={tab === 'agents'} />
+      </div>
     </main>
   );
 }

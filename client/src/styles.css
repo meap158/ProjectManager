@@ -288,6 +288,9 @@ code,
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  /* Reserve the scrollbar's space even when the page is short: otherwise switching between a
+     short and a tall view (tabs, projects) toggles the scrollbar and shifts everything sideways. */
+  scrollbar-gutter: stable;
 }
 .app-main .page {
   flex: 1;
@@ -299,6 +302,7 @@ code,
   flex: none;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable; /* Same reason as .app-main: list length must not shift the rows. */
   background: var(--surface);
   border-right: 1px solid var(--border);
   padding: 10px 8px;
@@ -706,6 +710,8 @@ code,
   flex-wrap: nowrap;
   align-items: center;
   overflow: hidden;
+  /* Reserve one line: badge presence must never change the header height. */
+  min-height: 21px;
 }
 .actions {
   display: flex;
@@ -721,6 +727,18 @@ code,
   .page-header .subtitle {
     flex-wrap: wrap;
   }
+}
+
+/* Tab panels stay mounted while hidden so tab switches never flash or refetch
+   from blank (see DESIGN.md stability rules). */
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.tab-panel[hidden] {
+  display: none;
 }
 
 .grid {

@@ -33,11 +33,14 @@ export function RunCard({
   now,
   onChanged,
   onDeleted,
+  paused = false,
 }: {
   run: AgentRun;
   now: number;
   onChanged: (run: AgentRun) => void;
   onDeleted: (id: number) => void;
+  /** Stops output traffic while the surrounding tab is hidden. */
+  paused?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -218,7 +221,11 @@ export function RunCard({
 
       {open && (
         <Suspense fallback={<div className="terminal skeleton" style={{ height: 280 }} />}>
-          <TerminalView fetchOutput={(after) => api.runOutput(run.id, after)} height={280} />
+          <TerminalView
+            fetchOutput={(after) => api.runOutput(run.id, after)}
+            height={280}
+            paused={paused}
+          />
         </Suspense>
       )}
     </div>

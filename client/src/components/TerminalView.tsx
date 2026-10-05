@@ -19,6 +19,7 @@ export function TerminalView({
   streamUrl,
   onInput,
   onResize,
+  paused = false,
   pollMs = 750,
   height = 320,
   fontSize = 12.5,
@@ -29,6 +30,8 @@ export function TerminalView({
   /** Receives raw keystrokes; makes the terminal interactive. */
   onInput?: (data: string) => void;
   onResize?: (cols: number, rows: number) => void;
+  /** Stops all traffic but keeps the terminal, offset and scrollback (hidden tabs). */
+  paused?: boolean;
   pollMs?: number;
   height?: number | string;
   /** Changes apply live (no terminal re-creation, output is kept). */
@@ -37,15 +40,34 @@ export function TerminalView({
   const hostRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
   // Keep the latest callbacks without re-creating the terminal.
-  const callbacks = useRef({ fetchOutput, streamUrl, onInput, onResize });
+  const callbacks = useRef({ fetchOutput, streamUrl, onInput, onResize, paused });
   useEffect(() => {
-    callbacks.current = { fetchOutput, streamUrl, onInput, onResize };
+    callbacks.current = { fetchOutput, streamUrl, onInput, onResize, paused };
   });
   const interactive = onInput !== undefined;
   const streaming = streamUrl !== undefined;
   // The live terminal + its refit, so font size changes apply without re-creating it.
-  const live = useRef<{ term: Terminal; refit: () => void } | null>(null);
+  const live = useRef<{ term: Terminal; refit: () => void; start: () => void } | null>(null);
   const initialFontSize = useRef(fontSize);
+  const ctl = useRef<{
+    timer?: ReturnType<typeof setTimeout>;
+    source?: EventSource | null;
+    polling: boolean;
+  }>({ polling: false });
+
+  // Pause/resume from the outside (hidden tab): traffic stops, everything kept.
+  useEffect(() => {
+    const controller = ctl.current;
+    const terminal = live.current;
+    if (paused) {
+      if (controller.timer) clearTimeout(controller.timer);
+      controller.source?.close();
+      controller.source = null;
+      controller.polling = false;
+    } else {
+      terminal?.start();
+    }
+  }, [paused]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -88,11 +110,13 @@ export function TerminalView({
       }
     };
     const resize = new ResizeObserver(refit);
-    live.current = { term, refit };
     const inputSub = interactive ? term.onData((data) => callbacks.current.onInput?.(data)) : null;
+    // Copy the controller: cleanup must not read a ref that may have changed by then.
+    const controller = ctl.current;
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let source: EventSource | null = null;
+    const stopLoop = () => {
+      controller.polling = false;
+    };
 
     const write = (data: string, nextOffset: number) => {
       if (cancelled) return;
@@ -103,10 +127,12 @@ export function TerminalView({
     };
 
     function connect() {
-      if (cancelled) return;
+      if (cancelled || controller.polling) return;
+      controller.polling = true;
       // Reconnect manually from our own offset: EventSource's built-in retry would replay the
       // original URL and duplicate output.
-      source = new EventSource(callbacks.current.streamUrl!(offsetRef.current));
+      const source = new EventSource(callbacks.current.streamUrl!(offsetRef.current));
+      controller.source = source;
       source.addEventListener('output', (event) => {
         const { data, nextOffset } = JSON.parse((event as MessageEvent<string>).data) as {
           data: string;
@@ -115,26 +141,42 @@ export function TerminalView({
         write(data, nextOffset);
       });
       source.onerror = () => {
-        source?.close();
-        source = null;
-        timer = setTimeout(connect, 1000);
+        source.close();
+        if (controller.source === source) controller.source = null;
+        stopLoop();
+        controller.timer = setTimeout(() => live.current?.start(), 1000);
       };
     }
 
     async function poll() {
-      if (cancelled) return;
+      if (cancelled || controller.polling) return;
+      controller.polling = true;
       try {
         const out = await callbacks.current.fetchOutput(offsetRef.current);
         if (cancelled) return;
         if (out.data) write(out.data, out.nextOffset);
+        if (callbacks.current.paused) {
+          stopLoop();
+          return;
+        }
         // A finished process drains first: keep reading while bytes arrive.
-        if (!out.running && !out.data) return;
-        timer = setTimeout(poll, out.running ? pollMs : 250);
+        if (!out.running && !out.data) {
+          stopLoop();
+          return;
+        }
+        controller.timer = setTimeout(poll, out.running ? pollMs : 250);
       } catch {
         // Transient fetch failure: keep the old output, try again.
-        timer = setTimeout(poll, pollMs);
+        controller.timer = setTimeout(poll, pollMs);
       }
     }
+
+    const start = () => {
+      if (cancelled || controller.polling || callbacks.current.paused) return;
+      if (streaming) connect();
+      else poll();
+    };
+    live.current = { term, refit, start };
 
     // Open on the next frame: xterm schedules viewport work right after open(), which throws if
     // the terminal is disposed first — exactly what StrictMode's throwaway mount does. A mount
@@ -146,16 +188,17 @@ export function TerminalView({
       resize.observe(host);
       window.addEventListener('resize', refit);
       if (interactive) term.focus();
-      if (streaming) connect();
-      else poll();
+      start();
     });
 
     return () => {
       live.current = null;
       cancelled = true;
+      controller.polling = false;
       cancelAnimationFrame(openFrame);
-      if (timer) clearTimeout(timer);
-      source?.close();
+      if (controller.timer) clearTimeout(controller.timer);
+      controller.source?.close();
+      controller.source = null;
       inputSub?.dispose();
       window.removeEventListener('resize', refit);
       resize.disconnect();
