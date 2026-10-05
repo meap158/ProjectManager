@@ -297,5 +297,14 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   - Only visible panes mount xterm and open an output stream; a maximised pane hides the rest.
   - The session list is polled every 4s for statuses only. Output is live over SSE.
   - Keystrokes are batched per ~12ms and sent in order.
+- **Keyboard:** Alt+1…4 focuses pane N (or switches the maximised pane), and Alt+Enter maximises or
+  restores the focused pane. These are captured before xterm, so CLIs never see them. Pane headers
+  show their number.
+- **Drag a pane header** onto another pane (or an empty one) to swap them. The drop target is
+  outlined.
+- **Font size:** A−/A+ in the toolbar (10–20px). It's saved with the layout and applied live
+  without re-creating terminals.
+- **Card sessions** have a "→ Review" header action that moves the linked card to Review when the
+  work looks done.
 - **Narrow screens** (< 900px): panes stack vertically with a minimum height and the grid
   scrolls.

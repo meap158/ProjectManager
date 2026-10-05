@@ -29,18 +29,13 @@ read it before product work. `/References` is empty.
   - persistent PTY sessions
   - multi-pane Agents workspace wired to the board (DESIGN.md §12.2)
   - dashboard "Commits by project" stacked chart (DESIGN.md §5)
+  - workspace polish: keyboard shortcuts, drag-to-swap panes, font size, → Review from a pane
 
 ## Roadmap (owner-requested, in priority order)
 
-1. **Workspace polish** (follow-ups to Addendum 3):
-   - keyboard shortcuts (focus pane N, maximise)
-   - drag a session between panes
-   - per-pane font size
-   - a way to send a finished interactive session's outcome back to the card (e.g. a
-     "Mark card for review" action in the pane header)
-2. Portfolio status view: stale projects, uncommitted changes, everything in flight across projects.
-3. Client tests (Vitest + Testing Library) for the board, dialogs, terminal and workspace.
-4. A theme toggle (the tokens already support `data-theme`).
+1. Portfolio status view: stale projects, uncommitted changes, everything in flight across projects.
+2. Client tests (Vitest + Testing Library) for the board, dialogs, terminal and workspace.
+3. A theme toggle (the tokens already support `data-theme`).
 
 ## Architecture
 

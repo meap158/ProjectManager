@@ -52,6 +52,7 @@ const workspaceBody = z
     preset: z.enum(WORKSPACE_PRESETS),
     panes: z.array(z.number().int().positive().nullable()).max(4),
     maximized: z.number().int().min(0).max(3).nullable(),
+    fontSize: z.number().min(10).max(20).optional(),
   })
   .refine((l) => l.panes.length === WORKSPACE_PRESET_INFO[l.preset].panes, {
     message: 'panes must match the preset',

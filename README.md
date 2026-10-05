@@ -35,7 +35,8 @@ Everything runs on your machine. Nothing is uploaded anywhere.
   - **Work on it in a terminal** (on a card) starts an interactive session already given the
     card's task. The card shows a **⌨ live** badge while it runs.
   - The **Agents** workspace (top bar) shows sessions from any projects side by side: pick a
-    layout (1, 2, 3 or 4 panes), double-click a pane header to maximise it. Your layout is
+    layout (1, 2, 3 or 4 panes), double-click a pane header (or Alt+Enter) to maximise it,
+    Alt+1…4 to jump between panes, and drag a header to swap panes. Your layout is
     saved and comes back after reloads and restarts.
   - Terminals are real and interactive. Click and type, and full-screen CLIs
     like `claude` work in the browser. Sessions survive restarts and reboots and resume the

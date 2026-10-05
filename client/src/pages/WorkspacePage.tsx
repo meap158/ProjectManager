@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
+  WORKSPACE_FONT_SIZES,
   WORKSPACE_PRESETS,
   WORKSPACE_PRESET_INFO,
   type AgentProviderStatus,
@@ -19,6 +20,7 @@ import {
   type WorkspacePreset,
 } from '../../../shared/types';
 import { api } from '../api';
+import { Dropdown } from '../components/Dropdown';
 
 // xterm is heavy: it loads only when a pane actually shows a terminal.
 const TerminalView = lazy(() =>
@@ -133,6 +135,65 @@ export function WorkspacePage() {
   const byId = useMemo(() => new Map((sessions ?? []).map((s) => [s.id, s])), [sessions]);
   const projectName = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
 
+  // Keyboard: Alt+1..4 focuses pane N (switching the maximised pane when one is maximised),
+  // Alt+Enter toggles maximise for the focused pane. Captured before xterm sees the keys.
+  useEffect(() => {
+    if (!layout) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const focusedPane = () => {
+        const el = document.activeElement?.closest<HTMLElement>('[data-pane]');
+        return el ? Number(el.dataset.pane) : null;
+      };
+      if (/^Digit[1-4]$/.test(event.code)) {
+        const index = Number(event.code.slice(5)) - 1;
+        if (index >= layout.panes.length) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (layout.maximized !== null && layout.maximized !== index) {
+          setLayout({ ...layout, maximized: index });
+        }
+        requestAnimationFrame(() =>
+          document
+            .querySelector<HTMLElement>(`[data-pane="${index}"] .xterm-helper-textarea`)
+            ?.focus(),
+        );
+      } else if (event.key === 'Enter') {
+        const index = focusedPane();
+        if (index === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setLayout({ ...layout, maximized: layout.maximized === index ? null : index });
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [layout]);
+
+  // Drag a pane header onto another pane to swap them.
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dropOn, setDropOn] = useState<number | null>(null);
+  const swapPanes = (from: number, to: number) => {
+    if (!layout || from === to) return;
+    const panes = [...layout.panes];
+    [panes[from], panes[to]] = [panes[to] ?? null, panes[from] ?? null];
+    setLayout({ ...layout, panes });
+  };
+  const dropProps = (index: number) => ({
+    dropActive: dropOn === index && dragFrom !== null && dragFrom !== index,
+    onDragOver: (event: React.DragEvent) => {
+      if (dragFrom === null) return;
+      event.preventDefault();
+      if (dropOn !== index) setDropOn(index);
+    },
+    onDrop: (event: React.DragEvent) => {
+      event.preventDefault();
+      if (dragFrom !== null) swapPanes(dragFrom, index);
+      setDragFrom(null);
+      setDropOn(null);
+    },
+  });
+
   if (!layout) {
     return (
       <main className="workspace" aria-busy="true">
@@ -146,6 +207,7 @@ export function WorkspacePage() {
   }
 
   const info = WORKSPACE_PRESET_INFO[layout.preset];
+  const fontSize = layout.fontSize ?? WORKSPACE_FONT_SIZES.default;
   const visible =
     layout.maximized !== null && layout.panes[layout.maximized] !== undefined
       ? [layout.maximized]
@@ -173,6 +235,35 @@ export function WorkspacePage() {
             </button>
           ))}
         </div>
+        <div className="font-size" role="group" aria-label="Terminal font size">
+          <button
+            className="icon-btn"
+            title="Smaller text"
+            aria-label="Smaller terminal text"
+            disabled={fontSize <= WORKSPACE_FONT_SIZES.min}
+            onClick={() => update({ ...layout, fontSize: fontSize - 1 })}
+          >
+            A−
+          </button>
+          <span className="num faint" aria-live="polite">
+            {fontSize}
+          </span>
+          <button
+            className="icon-btn"
+            title="Larger text"
+            aria-label="Larger terminal text"
+            disabled={fontSize >= WORKSPACE_FONT_SIZES.max}
+            onClick={() => update({ ...layout, fontSize: fontSize + 1 })}
+          >
+            A+
+          </button>
+        </div>
+        <span
+          className="faint shortcuts-hint"
+          title="Alt+1…4: focus pane · Alt+Enter: maximise / restore · drag a pane header onto another pane to swap them"
+        >
+          ⌨ Alt+1…4 · Alt+Enter · drag to swap
+        </span>
         <NewSessionInline
           projects={projects}
           providers={providers}
@@ -214,6 +305,14 @@ export function WorkspacePage() {
           return session ? (
             <Pane
               key={`${index}-${session.id}`}
+              index={index}
+              fontSize={fontSize}
+              onDragStart={() => setDragFrom(index)}
+              onDragEnd={() => {
+                setDragFrom(null);
+                setDropOn(null);
+              }}
+              {...dropProps(index)}
               session={session}
               projectName={projectName.get(session.projectId) ?? `Project ${session.projectId}`}
               maximized={layout.maximized === index}
@@ -229,6 +328,8 @@ export function WorkspacePage() {
           ) : (
             <EmptyPane
               key={`${index}-empty`}
+              index={index}
+              {...dropProps(index)}
               sessions={(sessions ?? []).filter((s) => !layout.panes.includes(s.id))}
               loading={sessions === null}
               projectName={projectName}
@@ -241,7 +342,20 @@ export function WorkspacePage() {
   );
 }
 
+interface DropTargetProps {
+  dropActive: boolean;
+  onDragOver: (event: React.DragEvent) => void;
+  onDrop: (event: React.DragEvent) => void;
+}
+
 function Pane({
+  index,
+  fontSize,
+  onDragStart,
+  onDragEnd,
+  dropActive,
+  onDragOver,
+  onDrop,
   session: s,
   projectName,
   maximized,
@@ -249,7 +363,11 @@ function Pane({
   onClose,
   onChanged,
   onError,
-}: {
+}: DropTargetProps & {
+  index: number;
+  fontSize: number;
+  onDragStart: () => void;
+  onDragEnd: () => void;
   session: AgentSession;
   projectName: string;
   maximized: boolean;
@@ -276,6 +394,19 @@ function Pane({
     }, 12);
   };
   const [line, setLine] = useState('');
+  const [cardNote, setCardNote] = useState<string | null>(null);
+
+  /** Hand the linked card on to Review once the work in this session looks done. */
+  async function sendCardToReview() {
+    if (!s.cardId) return;
+    try {
+      await api.updateCard(s.cardId, { status: 'review' });
+      setCardNote(`${s.cardKey} → Review`);
+      setTimeout(() => setCardNote(null), 2500);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }
 
   async function act(fn: () => Promise<AgentSession>) {
     try {
@@ -287,14 +418,27 @@ function Pane({
 
   return (
     <section
-      className={`pane${maximized ? ' is-maximized' : ''}`}
-      aria-label={`${s.name} terminal`}
+      className={`pane${maximized ? ' is-maximized' : ''}${dropActive ? ' drop-target' : ''}`}
+      aria-label={`${s.name} terminal (pane ${index + 1})`}
+      data-pane={index}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
     >
       <header
         className="pane-head"
         onDoubleClick={onToggleMaximize}
-        title="Double-click to maximise"
+        title="Double-click to maximise · drag onto another pane to swap"
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', s.name);
+          onDragStart();
+        }}
+        onDragEnd={onDragEnd}
       >
+        <span className="pane-index faint num" aria-hidden="true">
+          {index + 1}
+        </span>
         <span
           className="status-dot"
           style={{
@@ -320,6 +464,20 @@ function Pane({
           )}
         </span>
         <span style={{ flex: 1 }} />
+        {cardNote && (
+          <span className="badge badge-live" role="status">
+            {cardNote}
+          </span>
+        )}
+        {s.cardId && !cardNote && (
+          <button
+            className="icon-btn icon-btn-text"
+            title={`Move ${s.cardKey} to Review`}
+            onClick={sendCardToReview}
+          >
+            → Review
+          </button>
+        )}
         {running ? (
           <button
             className="icon-btn"
@@ -358,6 +516,7 @@ function Pane({
           <TerminalView
             key={`${s.id}-${s.terminal}`}
             height="100%"
+            fontSize={fontSize}
             fetchOutput={(after) => api.sessionOutput(s.id, after)}
             streamUrl={(after) => api.sessionStreamUrl(s.id, after)}
             {...(s.terminal === 'pty'
@@ -395,11 +554,16 @@ function Pane({
 }
 
 function EmptyPane({
+  index,
+  dropActive,
+  onDragOver,
+  onDrop,
   sessions,
   loading,
   projectName,
   onPick,
-}: {
+}: DropTargetProps & {
+  index: number;
   sessions: AgentSession[];
   loading: boolean;
   projectName: Map<number, string>;
@@ -410,7 +574,13 @@ function EmptyPane({
     (a, b) => Number(b.status === 'running') - Number(a.status === 'running') || b.id - a.id,
   );
   return (
-    <section className="pane pane-empty" aria-label="Empty pane">
+    <section
+      className={`pane pane-empty${dropActive ? ' drop-target' : ''}`}
+      aria-label={`Empty pane ${index + 1}`}
+      data-pane={index}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
       {loading ? (
         <div className="skeleton" style={{ flex: 1 }} />
       ) : sorted.length === 0 ? (
@@ -476,30 +646,24 @@ function NewSessionInline({
 
   return (
     <form className="workspace-new" onSubmit={start}>
-      <select
-        className="select"
-        aria-label="Project"
+      <Dropdown
+        label="Project"
         value={chosen ?? ''}
-        onChange={(e) => setProjectId(Number(e.target.value))}
-      >
-        {projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-      <select
-        className="select"
-        aria-label="Agent"
+        options={projects.map((p) => ({ value: p.id, label: p.name, title: p.path }))}
+        onChange={(v) => setProjectId(v)}
+      />
+      <Dropdown
+        label="Agent"
         value={providerId}
-        onChange={(e) => setProviderId(e.target.value)}
-      >
-        {usable.map((p) => (
-          <option key={p.id} value={p.id} disabled={!p.available} title={p.unavailableReason}>
-            {p.name}
-          </option>
-        ))}
-      </select>
+        options={usable.map((p) => ({
+          value: p.id,
+          label: p.name,
+          disabled: !p.available,
+          hint: !p.available ? 'not on PATH' : undefined,
+          title: p.unavailableReason ?? p.description,
+        }))}
+        onChange={setProviderId}
+      />
       <button className="btn btn-primary btn-sm" disabled={busy || !chosen}>
         ＋ New session
       </button>

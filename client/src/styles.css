@@ -381,6 +381,115 @@ code,
   color: var(--accent);
   flex: none;
 }
+
+/* ---- Dropdown (designed value picker; never a native select) -------------------------------
+   Anatomy follows the KDP sister project's `opp-select`: button trigger with a caret,
+   absolute listbox, accent selected state, outside-click/Escape close. */
+.dropdown {
+  position: relative;
+  min-width: 0;
+}
+.dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dropdown-trigger:hover {
+  background: var(--surface-hover);
+}
+.dropdown-trigger.is-open {
+  border-color: var(--accent);
+}
+.dropdown-caret {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+  flex: none;
+  transition: transform 120ms;
+  line-height: 1;
+}
+.dropdown-trigger.is-open .dropdown-caret {
+  transform: rotate(180deg);
+}
+.dropdown-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  z-index: 50;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.dropdown-list li button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dropdown-list li button:hover {
+  background: var(--accent-soft);
+}
+.dropdown-list li.selected button {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+.dropdown-list li button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.dropdown-list li button:disabled:hover {
+  background: transparent;
+}
+.dropdown-check {
+  width: 14px;
+  flex: none;
+  color: var(--accent);
+  font-weight: 700;
+}
+.dropdown-hint {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.workspace-new .dropdown {
+  max-width: 220px;
+}
+.workspace-new .dropdown-trigger {
+  height: 26px;
+}
 .sidebar-list {
   display: flex;
   flex-direction: column;
@@ -1846,4 +1955,42 @@ dialog:modal {
 }
 .faint-zero {
   color: var(--text-2);
+}
+
+/* Workspace polish: drag-to-swap target, pane numbers (Alt+N), font size, text icon buttons. */
+.pane.drop-target {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.pane-head[draggable='true'] {
+  cursor: grab;
+}
+.pane-index {
+  font-size: 11px;
+  min-width: 10px;
+}
+.icon-btn-text {
+  width: auto;
+  padding: 0 6px;
+  font-size: 11.5px;
+  font-weight: 550;
+}
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.font-size {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+}
+.shortcuts-hint {
+  font-size: 12px;
+  white-space: nowrap;
+}
+@media (max-width: 1100px) {
+  .shortcuts-hint {
+    display: none;
+  }
 }

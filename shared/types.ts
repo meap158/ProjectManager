@@ -347,4 +347,8 @@ export interface WorkspaceLayout {
   panes: (number | null)[];
   /** Pane index shown alone, or null. */
   maximized: number | null;
+  /** Terminal font size in px for all panes (default 12.5). */
+  fontSize?: number;
 }
+
+export const WORKSPACE_FONT_SIZES = { min: 10, max: 20, default: 12.5 } as const;

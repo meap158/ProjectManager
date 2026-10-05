@@ -21,6 +21,7 @@ export function TerminalView({
   onResize,
   pollMs = 750,
   height = 320,
+  fontSize = 12.5,
 }: {
   fetchOutput: (after: number) => Promise<AgentOutput>;
   /** Builds the SSE URL resuming from a byte offset; enables live streaming. */
@@ -30,6 +31,8 @@ export function TerminalView({
   onResize?: (cols: number, rows: number) => void;
   pollMs?: number;
   height?: number | string;
+  /** Changes apply live (no terminal re-creation, output is kept). */
+  fontSize?: number;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
@@ -40,13 +43,16 @@ export function TerminalView({
   });
   const interactive = onInput !== undefined;
   const streaming = streamUrl !== undefined;
+  // The live terminal + its refit, so font size changes apply without re-creating it.
+  const live = useRef<{ term: Terminal; refit: () => void } | null>(null);
+  const initialFontSize = useRef(fontSize);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     const term = new Terminal({
       fontFamily: "ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace",
-      fontSize: 12.5,
+      fontSize: initialFontSize.current,
       lineHeight: 1.25,
       scrollback: 5000,
       cursorBlink: interactive,
@@ -82,6 +88,7 @@ export function TerminalView({
       }
     };
     const resize = new ResizeObserver(refit);
+    live.current = { term, refit };
     const inputSub = interactive ? term.onData((data) => callbacks.current.onInput?.(data)) : null;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -144,6 +151,7 @@ export function TerminalView({
     });
 
     return () => {
+      live.current = null;
       cancelled = true;
       cancelAnimationFrame(openFrame);
       if (timer) clearTimeout(timer);
@@ -154,6 +162,13 @@ export function TerminalView({
       term.dispose();
     };
   }, [pollMs, interactive, streaming]);
+
+  useEffect(() => {
+    const current = live.current;
+    if (!current || current.term.options.fontSize === fontSize) return;
+    current.term.options.fontSize = fontSize;
+    current.refit(); // New cell size: recompute cols/rows and tell the PTY.
+  }, [fontSize]);
 
   return (
     <div
