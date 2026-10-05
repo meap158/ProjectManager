@@ -53,6 +53,7 @@ import type { Db } from '../db.js';
 import { getCard, getProjectRow, updateCard } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
 import { tailState } from './activity.js';
+import { staleClaudeResume } from './usage.js';
 import { HostClient } from './host/client.js';
 import type { HostSessionInfo } from './host/protocol.js';
 import { fetchScript, recipeFor } from './install.js';
@@ -1304,8 +1305,32 @@ export class AgentSupervisor {
       // Relaunching prefers the stored resume argv (e.g. `claude --continue`),
       // so an AI conversation picks up instead of starting cold. Shells and
       // custom commands simply respawn.
-      const resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
-      const baseArgv = isRelaunch ? (resume ?? this.resumeLatestArgv(row) ?? command) : command;
+      let resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
+      let launch = command;
+      // A pinned Claude conversation that was never saved (or whose transcript is gone) can't
+      // be resumed: `claude --resume <id>` exits with "No conversation found" and the session
+      // would crash-loop until it gives up. Start a fresh conversation under a new pinned id
+      // instead, and remember it so the next relaunch resumes that one.
+      if (isRelaunch && resume && row.provider_id === 'claude') {
+        const stale = staleClaudeResume(resume, row.cwd);
+        if (stale) {
+          const fresh = randomUUID();
+          const swap = (argv: string[]) => argv.map((a) => (a === stale ? fresh : a));
+          launch = swap(command);
+          resume = swap(resume);
+          this.db
+            .prepare(`UPDATE agent_sessions SET command_json = ?, resume_json = ? WHERE id = ?`)
+            .run(JSON.stringify({ command: launch, env }), JSON.stringify(resume), row.id);
+          this.outputFor(key, row.log_path).append(
+            `
+[supervisor] Claude has no saved conversation ${stale} to resume (it was never ` +
+              `saved, or its transcript is gone) — starting a new conversation instead
+`,
+          );
+          resume = null;
+        }
+      }
+      const baseArgv = isRelaunch ? (resume ?? this.resumeLatestArgv(row) ?? launch) : launch;
       const connection = this.dataDir
         ? boardConnection(
             this.db,
@@ -1321,7 +1346,7 @@ export class AgentSupervisor {
       if (isRelaunch) {
         log.append(
           `\r\n[supervisor] session relaunched after restart (restart ${row.restarts})` +
-            (argv !== command ? ' — resuming conversation' : ' — fresh start') +
+            (baseArgv !== launch ? ' — resuming conversation' : ' — fresh start') +
             `\r\n$ ${argv.join(' ')}\r\n`,
         );
       }

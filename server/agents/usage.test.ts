@@ -2,7 +2,12 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'n
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { claudeSessionId, readTranscriptUsage, transcriptPath } from './usage.js';
+import {
+  claudeSessionId,
+  readTranscriptUsage,
+  staleClaudeResume,
+  transcriptPath,
+} from './usage.js';
 
 const home = mkdtempSync(path.join(os.tmpdir(), 'pm-usage-'));
 afterAll(() => rmSync(home, { recursive: true, force: true }));
@@ -36,6 +41,16 @@ describe('Claude session usage', () => {
     writeFileSync(path.join(dir, `${ID}.jsonl`), '');
     expect(transcriptPath(cwd, ID, home)).toBe(path.join(dir, `${ID}.jsonl`));
     expect(transcriptPath(cwd, '00000000-0000-0000-0000-000000000000', home)).toBeNull();
+  });
+
+  it('flags a resume whose conversation Claude never saved (relaunch starts fresh)', () => {
+    const cwd = 'S:\\Vibe Coding\\Demo';
+    // Saved in the previous test: resumable.
+    expect(staleClaudeResume(['claude', '--resume', ID], cwd, home)).toBeNull();
+    const missing = '11111111-2222-3333-4444-555555555555';
+    expect(staleClaudeResume(['claude', '--resume', missing], cwd, home)).toBe(missing);
+    // Not a pinned resume: nothing to judge.
+    expect(staleClaudeResume(['claude', '--continue'], cwd, home)).toBeNull();
   });
 
   it('counts each reply once, reads appended lines, and skips bad lines', () => {

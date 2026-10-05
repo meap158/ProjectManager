@@ -49,6 +49,19 @@ export function transcriptPath(cwd: string, sessionId: string, home = os.homedir
   return null;
 }
 
+/**
+ * The pinned Claude conversation id in a resume command when Claude has no transcript for it
+ * (never saved, or deleted), i.e. when `claude --resume <id>` would fail; null otherwise.
+ */
+export function staleClaudeResume(
+  resume: string[],
+  cwd: string,
+  home = os.homedir(),
+): string | null {
+  const id = claudeSessionId(resume);
+  return id && !transcriptPath(cwd, id, home) ? id : null;
+}
+
 const empty = (): AgentTokenUsage => ({
   input: 0,
   output: 0,
