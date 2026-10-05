@@ -664,6 +664,13 @@ code,
   gap: 8px;
   min-width: 0;
 }
+/* Session count: always the last slot, right-aligned, same width on every row. */
+.sidebar-session-slot {
+  flex: none;
+  width: 40px;
+  display: inline-flex;
+  justify-content: flex-end;
+}
 .sidebar-name {
   flex: 1;
   font-weight: 600;

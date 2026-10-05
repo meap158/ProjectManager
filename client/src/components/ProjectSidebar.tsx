@@ -453,8 +453,6 @@ function SidebarItem({
       <span className="sidebar-name-row">
         <StatusDot project={p} />
         <span className="sidebar-name truncate">{p.name}</span>
-        {activity.working > 0 && <SessionBadge state="working" count={activity.working} />}
-        {activity.idle > 0 && <SessionBadge state="idle" count={activity.idle} />}
         {p.missing ? (
           <span className="badge badge-danger">missing</span>
         ) : p.scan.status === 'scanning' ? (
@@ -470,6 +468,12 @@ function SidebarItem({
             {planned}
           </span>
         ) : null}
+        {/* Rightmost fixed slot: session counts share one right edge; empty rows keep it. */}
+        <span className="sidebar-session-slot">
+          {activity.working + activity.idle > 0 && (
+            <SessionBadge working={activity.working} idle={activity.idle} />
+          )}
+        </span>
       </span>
       <span className="sidebar-stats">
         <span className="num">{p.code ? formatCompact(p.code.code) : '—'}</span>
@@ -500,11 +504,14 @@ function SidebarItem({
  * accent badge with a spinning ring. Idle (open, waiting for you): neutral badge with a
  * terminal glyph. Icon + count + text label, never colour alone.
  */
-function SessionBadge({ state, count }: { state: 'working' | 'idle'; count: number }) {
-  const label =
-    state === 'working'
-      ? `${count} CLI session${count === 1 ? '' : 's'} working`
-      : `${count} CLI session${count === 1 ? '' : 's'} open, waiting for you`;
+function SessionBadge({ working, idle }: { working: number; idle: number }) {
+  const total = working + idle;
+  const parts = [
+    working > 0 ? `${working} working` : null,
+    idle > 0 ? `${idle} open, waiting for you` : null,
+  ].filter(Boolean);
+  const label = `${total} CLI session${total === 1 ? '' : 's'}: ${parts.join(', ')}`;
+  const state = working > 0 ? 'working' : 'idle';
   return (
     <span className={`badge badge-session is-${state}`} title={label} aria-label={label} role="img">
       {state === 'working' ? (
@@ -521,7 +528,7 @@ function SessionBadge({ state, count }: { state: 'working' | 'idle'; count: numb
           />
         </svg>
       )}
-      {count}
+      {total}
     </span>
   );
 }
