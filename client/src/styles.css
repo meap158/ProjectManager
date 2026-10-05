@@ -2834,3 +2834,57 @@ dialog.lightbox img {
 .gcolumn-add {
   margin-left: auto;
 }
+
+/* Sidebar filter + sort menu (KDP Library selector): segmented Show filters, then Sort by. */
+.sorter-label {
+  padding: 2px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.sorter-filters {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  margin: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.sorter-filters button {
+  padding: 5px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.sorter-filters button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+.sorter-divider {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--border);
+}
+.sorter-trigger {
+  gap: 6px;
+}
+.sorter-filter {
+  color: var(--accent);
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
