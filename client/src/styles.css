@@ -2348,3 +2348,19 @@ kbd {
 .status-dot.tone-idle {
   background: var(--series-other);
 }
+
+/* Workspace: Panes / List view switch and the list view. */
+.view-switch {
+  display: inline-flex;
+  gap: 2px;
+}
+.view-switch .btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.workspace-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}

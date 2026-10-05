@@ -111,6 +111,8 @@ export const api = {
   stopSession: (id: number) => request<AgentSession>('POST', `/agent-sessions/${id}/stop`),
   deleteSession: (id: number) => request<void>('DELETE', `/agent-sessions/${id}`),
 
+  /** Newest runs across every project. */
+  listAllRuns: () => request<AgentRun[]>('GET', '/agent-runs'),
   listRuns: (projectId: number, cardId?: number) =>
     request<AgentRun[]>(
       'GET',

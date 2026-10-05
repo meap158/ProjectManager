@@ -297,6 +297,8 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   });
 
   // ---- Runs -----------------------------------------------------------------------------------
+  app.get('/agent-runs', (c) => c.json(supervisor.listAllRuns()));
+
   app.get('/projects/:id/agent-runs', (c) => {
     const projectId = requireProject(db, c);
     const cardId = c.req.query('cardId');

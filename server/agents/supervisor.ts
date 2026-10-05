@@ -786,6 +786,14 @@ export class AgentSupervisor {
     return rows.map((r) => this.toRun(r));
   }
 
+  /** The newest runs across every project (the workspace list view). */
+  listAllRuns(limit = 200): AgentRun[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM agent_runs ORDER BY id DESC LIMIT ?`)
+      .all(limit) as unknown as RunRow[];
+    return rows.map((r) => this.toRun(r));
+  }
+
   getRun(id: number, projectId?: number): AgentRun | null {
     const row = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as
       RunRow | undefined;

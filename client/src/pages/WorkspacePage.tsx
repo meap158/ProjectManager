@@ -14,7 +14,9 @@ import {
   WORKSPACE_PRESETS,
   WORKSPACE_PRESET_INFO,
   type AgentProviderStatus,
+  type AgentRun,
   type AgentSession,
+  type AgentTokenUsage,
   type ProjectSummary,
   type WorkspaceLayout,
   type WorkspacePreset,
@@ -22,6 +24,9 @@ import {
 import { api } from '../api';
 import { Dropdown } from '../components/Dropdown';
 import { InlineRename } from '../components/InlineRename';
+import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
+import { ConfirmDelete } from '../components/ConfirmDelete';
+import { RunCard } from '../components/RunCard';
 
 // xterm is heavy: it loads only when a pane actually shows a terminal.
 const TerminalView = lazy(() =>
@@ -29,6 +34,16 @@ const TerminalView = lazy(() =>
 );
 
 const SESSIONS_POLL_MS = 4000;
+const VIEW_KEY = 'pm.workspace.view';
+type View = 'panes' | 'list';
+
+function readView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'panes';
+  } catch {
+    return 'panes';
+  }
+}
 const SAVE_DEBOUNCE_MS = 300;
 /** Grow order when a session is opened and every pane is taken. */
 const GROW: Partial<Record<WorkspacePreset, WorkspacePreset>> = {
@@ -72,6 +87,21 @@ export function WorkspacePage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [providers, setProviders] = useState<AgentProviderStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // List view: every session and run across projects, one row each (same rows as a project's
+  // Agents tab). Runs and token counts load only while the list is shown.
+  const [view, setViewState] = useState<View>(readView);
+  const [runs, setRuns] = useState<AgentRun[] | null>(null);
+  const [usage, setUsage] = useState<Record<number, AgentTokenUsage | null>>({});
+  const [selectedRun, setSelectedRun] = useState<number | null>(null);
+  const [now, setNow] = useState(0);
+  const setView = (next: View) => {
+    setViewState(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Remembering the view is a convenience only.
+    }
+  };
 
   const loadSessions = useCallback(
     () => api.listAllSessions().then(setSessions, (e: Error) => setError(e.message)),
@@ -106,6 +136,35 @@ export function WorkspacePage() {
       clearInterval(timer);
     };
   }, [loadSessions]);
+
+  useEffect(() => {
+    if (view !== 'list') return;
+    let active = true;
+    const load = () => {
+      api.listAllRuns().then(
+        (r) => {
+          if (!active) return;
+          setRuns(r);
+          setNow(Date.now());
+        },
+        (e: Error) => active && setError(e.message),
+      );
+    };
+    load();
+    const timer = setInterval(load, SESSIONS_POLL_MS);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [view]);
+  const claudeIds = (sessions ?? [])
+    .filter((s) => s.providerId === 'claude')
+    .map((s) => s.id)
+    .join(',');
+  useEffect(() => {
+    if (view !== 'list' || !claudeIds) return;
+    api.sessionUsage(claudeIds.split(',').map(Number)).then(setUsage, () => undefined);
+  }, [view, claudeIds, runs]);
 
   // Persist every layout change after the initial load (debounced) so it survives reloads,
   // restarts and reboots.
@@ -219,55 +278,83 @@ export function WorkspacePage() {
       <div className="workspace-bar">
         <h1>Agents</h1>
         <div className="bar-group">
-          <span className="bar-label" id="ws-layout-label">
-            Layout
+          <span className="bar-label" id="ws-view-label">
+            View
           </span>
-          <div className="preset-picker" role="radiogroup" aria-labelledby="ws-layout-label">
-            {WORKSPACE_PRESETS.map((preset) => (
+          <div className="view-switch" role="radiogroup" aria-labelledby="ws-view-label">
+            {(['panes', 'list'] as const).map((v) => (
               <button
-                key={preset}
+                key={v}
                 type="button"
                 role="radio"
-                aria-checked={layout.preset === preset}
-                aria-label={WORKSPACE_PRESET_INFO[preset].label}
-                title={WORKSPACE_PRESET_INFO[preset].label}
-                className={`preset${layout.preset === preset ? ' is-active' : ''}`}
-                onClick={() =>
-                  update({ preset, panes: fitPanes(layout.panes, preset), maximized: null })
+                aria-checked={view === v}
+                className={`btn btn-sm${view === v ? ' is-active' : ''}`}
+                title={
+                  v === 'panes'
+                    ? 'Terminals side by side'
+                    : 'Every session and run across projects, one row each'
                 }
+                onClick={() => setView(v)}
               >
-                <PresetIcon preset={preset} />
+                {v === 'panes' ? 'Panes' : 'List'}
               </button>
             ))}
           </div>
         </div>
-        <div className="bar-group">
-          <span className="bar-label" id="ws-text-label">
-            Text size
-          </span>
-          <div className="stepper" role="group" aria-labelledby="ws-text-label">
-            <button
-              type="button"
-              aria-label="Smaller terminal text"
-              disabled={fontSize <= WORKSPACE_FONT_SIZES.min}
-              onClick={() => update({ ...layout, fontSize: fontSize - 1 })}
-            >
-              −
-            </button>
-            <span className="num" aria-live="polite">
-              {fontSize}
-            </span>
-            <button
-              type="button"
-              aria-label="Larger terminal text"
-              disabled={fontSize >= WORKSPACE_FONT_SIZES.max}
-              onClick={() => update({ ...layout, fontSize: fontSize + 1 })}
-            >
-              +
-            </button>
-          </div>
-        </div>
-        <ShortcutsHelp />
+        {view === 'panes' && (
+          <>
+            <div className="bar-group">
+              <span className="bar-label" id="ws-layout-label">
+                Layout
+              </span>
+              <div className="preset-picker" role="radiogroup" aria-labelledby="ws-layout-label">
+                {WORKSPACE_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    role="radio"
+                    aria-checked={layout.preset === preset}
+                    aria-label={WORKSPACE_PRESET_INFO[preset].label}
+                    title={WORKSPACE_PRESET_INFO[preset].label}
+                    className={`preset${layout.preset === preset ? ' is-active' : ''}`}
+                    onClick={() =>
+                      update({ preset, panes: fitPanes(layout.panes, preset), maximized: null })
+                    }
+                  >
+                    <PresetIcon preset={preset} />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="bar-group">
+              <span className="bar-label" id="ws-text-label">
+                Text size
+              </span>
+              <div className="stepper" role="group" aria-labelledby="ws-text-label">
+                <button
+                  type="button"
+                  aria-label="Smaller terminal text"
+                  disabled={fontSize <= WORKSPACE_FONT_SIZES.min}
+                  onClick={() => update({ ...layout, fontSize: fontSize - 1 })}
+                >
+                  −
+                </button>
+                <span className="num" aria-live="polite">
+                  {fontSize}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Larger terminal text"
+                  disabled={fontSize >= WORKSPACE_FONT_SIZES.max}
+                  onClick={() => update({ ...layout, fontSize: fontSize + 1 })}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <ShortcutsHelp />
+          </>
+        )}
         <NewSessionInline
           projects={projects}
           providers={providers}
@@ -287,66 +374,92 @@ export function WorkspacePage() {
         </div>
       )}
 
-      <div
-        className="pane-grid"
-        style={
-          visible.length === 1
-            ? { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' }
-            : {
-                gridTemplateColumns: `repeat(${info.columns}, minmax(0, 1fr))`,
-                gridTemplateRows: `repeat(${info.rows}, minmax(0, 1fr))`,
-              }
-        }
-      >
-        {visible.map((index) => {
-          const sessionId = layout.panes[index] ?? null;
-          const session = sessionId !== null ? byId.get(sessionId) : undefined;
-          const setPane = (id: number | null) => {
-            const panes = [...layout.panes];
-            panes[index] = id;
-            update({ ...layout, panes, maximized: id === null ? null : layout.maximized });
-          };
-          return session ? (
-            <Pane
-              key={`${index}-${session.id}`}
-              index={index}
-              fontSize={fontSize}
-              onDragStart={() => setDragFrom(index)}
-              onDragEnd={() => {
-                setDragFrom(null);
-                setDropOn(null);
-              }}
-              {...dropProps(index)}
-              session={session}
-              projectName={projectName.get(session.projectId) ?? `Project ${session.projectId}`}
-              agentName={
-                session.providerId === 'custom'
-                  ? (session.command[0] ?? 'Custom command')
-                  : (providers.find((p) => p.id === session.providerId)?.name ?? session.providerId)
-              }
-              maximized={layout.maximized === index}
-              onToggleMaximize={() =>
-                update({ ...layout, maximized: layout.maximized === index ? null : index })
-              }
-              onClose={() => setPane(null)}
-              onChanged={(next) =>
-                setSessions((prev) => prev?.map((s) => (s.id === next.id ? next : s)) ?? prev)
-              }
-              onError={setError}
-            />
-          ) : (
-            <EmptyPane
-              key={`${index}-empty`}
-              index={index}
-              {...dropProps(index)}
-              sessions={(sessions ?? []).filter((s) => !layout.panes.includes(s.id))}
-              loading={sessions === null}
-              projectName={projectName}
-              onPick={(id) => setPane(id)}
-            />
-          );
-        })}
-      </div>
+      {view === 'list' ? (
+        <WorkList
+          sessions={sessions}
+          runs={runs}
+          now={now}
+          usage={usage}
+          projectName={projectName}
+          selectedRun={selectedRun}
+          onSelectRun={setSelectedRun}
+          onShowInPane={(id) => {
+            update(placeSession(layout, id));
+            setView('panes');
+          }}
+          onSessionChanged={(next) =>
+            setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
+          }
+          onSessionDeleted={(id) => setSessions((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
+          onRunChanged={(next) =>
+            setRuns((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? [next])
+          }
+          onRunDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
+          onError={setError}
+        />
+      ) : (
+        <div
+          className="pane-grid"
+          style={
+            visible.length === 1
+              ? { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' }
+              : {
+                  gridTemplateColumns: `repeat(${info.columns}, minmax(0, 1fr))`,
+                  gridTemplateRows: `repeat(${info.rows}, minmax(0, 1fr))`,
+                }
+          }
+        >
+          {visible.map((index) => {
+            const sessionId = layout.panes[index] ?? null;
+            const session = sessionId !== null ? byId.get(sessionId) : undefined;
+            const setPane = (id: number | null) => {
+              const panes = [...layout.panes];
+              panes[index] = id;
+              update({ ...layout, panes, maximized: id === null ? null : layout.maximized });
+            };
+            return session ? (
+              <Pane
+                key={`${index}-${session.id}`}
+                index={index}
+                fontSize={fontSize}
+                onDragStart={() => setDragFrom(index)}
+                onDragEnd={() => {
+                  setDragFrom(null);
+                  setDropOn(null);
+                }}
+                {...dropProps(index)}
+                session={session}
+                projectName={projectName.get(session.projectId) ?? `Project ${session.projectId}`}
+                agentName={
+                  session.providerId === 'custom'
+                    ? (session.command[0] ?? 'Custom command')
+                    : (providers.find((p) => p.id === session.providerId)?.name ??
+                      session.providerId)
+                }
+                maximized={layout.maximized === index}
+                onToggleMaximize={() =>
+                  update({ ...layout, maximized: layout.maximized === index ? null : index })
+                }
+                onClose={() => setPane(null)}
+                onChanged={(next) =>
+                  setSessions((prev) => prev?.map((s) => (s.id === next.id ? next : s)) ?? prev)
+                }
+                onError={setError}
+              />
+            ) : (
+              <EmptyPane
+                key={`${index}-empty`}
+                index={index}
+                {...dropProps(index)}
+                sessions={(sessions ?? []).filter((s) => !layout.panes.includes(s.id))}
+                loading={sessions === null}
+                projectName={projectName}
+                onPick={(id) => setPane(id)}
+              />
+            );
+          })}
+        </div>
+      )}
     </main>
   );
 }
@@ -794,5 +907,133 @@ function PresetIcon({ preset }: { preset: WorkspacePreset }) {
     <svg viewBox="0 0 16 12" width="20" height="15" aria-hidden="true">
       {cells}
     </svg>
+  );
+}
+
+/** List view: every session and run across projects. Sessions open into a pane; runs expand. */
+function WorkList({
+  sessions,
+  runs,
+  now,
+  usage,
+  projectName,
+  selectedRun,
+  onSelectRun,
+  onShowInPane,
+  onSessionChanged,
+  onSessionDeleted,
+  onRunChanged,
+  onRunDeleted,
+  onError,
+}: {
+  sessions: AgentSession[] | null;
+  runs: AgentRun[] | null;
+  now: number;
+  usage: Record<number, AgentTokenUsage | null>;
+  projectName: Map<number, string>;
+  selectedRun: number | null;
+  onSelectRun: (id: number | null) => void;
+  onShowInPane: (sessionId: number) => void;
+  onSessionChanged: (s: AgentSession) => void;
+  onSessionDeleted: (id: number) => void;
+  onRunChanged: (r: AgentRun) => void;
+  onRunDeleted: (id: number) => void;
+  onError: (message: string) => void;
+}) {
+  if (!sessions || !runs) return <div className="skeleton" style={{ flex: 1 }} />;
+  const items = mergeWork(sessions, runs);
+  const run = runs.find((r) => r.id === selectedRun) ?? null;
+  const change = (fn: () => Promise<AgentSession>) =>
+    fn().then(onSessionChanged, (e: Error) => onError(e.message));
+
+  const actions = (w: WorkItem) => {
+    if (w.kind !== 'session') return null;
+    const s = w.item;
+    return (
+      <>
+        <button
+          type="button"
+          className="btn btn-sm"
+          title="Put this session in a pane"
+          onClick={() => onShowInPane(s.id)}
+        >
+          Show in pane
+        </button>
+        {s.status === 'running' ? (
+          <button
+            type="button"
+            className="btn btn-sm"
+            title="Stop the process (it won't relaunch until you start it)"
+            onClick={() => change(() => api.stopSession(s.id))}
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-sm"
+            title={s.resumeSupported ? 'Start again, resuming the conversation' : 'Start again'}
+            onClick={() => change(() => api.startSession(s.id))}
+          >
+            Start
+          </button>
+        )}
+        <ConfirmDelete
+          label={`Delete session "${s.name}"`}
+          heading={`Delete session "${s.name}"?`}
+          message="Stops the process if it's running and deletes its log. This can't be undone."
+          onConfirm={() =>
+            api.deleteSession(s.id).then(
+              () => onSessionDeleted(s.id),
+              (e: Error) => onError(e.message),
+            )
+          }
+        />
+      </>
+    );
+  };
+
+  return (
+    <section className="panel workspace-list" aria-label="All agent work">
+      <div className="panel-header">
+        <h2>All agent work</h2>
+        <span className="meta">
+          {sessions.length} session{sessions.length === 1 ? '' : 's'} · {runs.length} run
+          {runs.length === 1 ? '' : 's'} across projects
+        </span>
+      </div>
+      {items.length === 0 ? (
+        <p className="faint" style={{ margin: 0 }}>
+          Nothing yet. Start a session from the toolbar, or hand a card to an agent from a board.
+        </p>
+      ) : (
+        <AgentWorkList
+          items={items}
+          selected={run ? `run:${run.id}` : null}
+          onSelect={(key: WorkKey) => {
+            const [kind, id] = key.split(':');
+            if (kind === 'session') onShowInPane(Number(id));
+            else onSelectRun(Number(id) === selectedRun ? null : Number(id));
+          }}
+          now={now}
+          tokens={usage}
+          projectNames={projectName}
+          actions={actions}
+        />
+      )}
+      {run && (
+        <div className="runs">
+          <RunCard
+            run={run}
+            now={now}
+            onChanged={onRunChanged}
+            onDeleted={(id) => {
+              onRunDeleted(id);
+              onSelectRun(null);
+            }}
+          />
+        </div>
+      )}
+    </section>
   );
 }
