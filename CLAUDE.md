@@ -47,7 +47,7 @@ anything.
   migration that has shipped: real databases have already run the old text (this happened once, and
   `repairSchema()` exists to clean up after it).
 - **UI:** follow `DESIGN.md`. Use token variables, not raw hex. Every drag interaction needs a
-  keyboard alternative. Use Rare UI `DeleteButton` for destructive actions, never `window.confirm`.
+  keyboard alternative. Use `ConfirmDelete` for destructive actions, never `window.confirm`.
 - **Rare UI attribution** (licence requirement): keep the README credit (a visible link to rareui.com).
 - Errors: API errors are `{ error: string }` with a fitting status code. The UI shows them in
   `.error-banner`. Log unexpected server errors with a `[area]` prefix.
