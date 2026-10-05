@@ -277,7 +277,7 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   backlog/todo cards to In progress; a finished run awaits **validation**: Accept moves the
   card to Review (or Done), Reject sends it back to To do. Kanban cards carry Quil-style
   attention badges (▶ running, ✓ awaiting validation, ✗ failed).
-- **Providers** (Claude Code, Codex, OpenCode, Gemini, shell, custom) are PATH-probed with
+- **Providers** (Claude Code, Codex, Grok, OpenCode, Gemini, shell, custom) are PATH-probed with
   install links when missing; dispatches use argv arrays, never a shell. xterm.js renders
   terminal output and is code-split so it loads only with a terminal.
 - **Trust model:** same-machine only (existing Host allowlist + JSON-write guard). Sessions

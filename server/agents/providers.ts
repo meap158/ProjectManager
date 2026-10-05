@@ -53,6 +53,14 @@ export const PROVIDERS: AgentProvider[] = [
     installUrl: 'https://github.com/openai/codex',
   },
   {
+    id: 'grok',
+    name: 'Grok',
+    binary: 'grok',
+    argsTemplate: ['-p', PROMPT_PLACEHOLDER],
+    description: 'xAI Grok Build coding agent, non-interactive print mode',
+    installUrl: 'https://docs.x.ai/build/overview',
+  },
+  {
     id: 'opencode',
     name: 'OpenCode',
     binary: 'opencode',

@@ -79,6 +79,9 @@ describe('providers', () => {
     expect(ids).toEqual(
       expect.arrayContaining(['claude', 'codex', 'opencode', 'gemini', 'shell', 'custom']),
     );
+    // Grok sits below Codex and above OpenCode in the "new session" menu.
+    expect(ids.indexOf('grok')).toBeGreaterThan(ids.indexOf('codex'));
+    expect(ids.indexOf('grok')).toBeLessThan(ids.indexOf('opencode'));
     expect(providers.find((p) => p.id === 'shell')?.available).toBe(true);
     expect(providers.find((p) => p.id === 'custom')?.available).toBe(true);
   });

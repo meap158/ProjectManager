@@ -27,7 +27,7 @@ Everything runs on your machine. Nothing is uploaded anywhere.
   - A commit that mentions `PM-12` moves it to **In progress**.
   - A commit saying `Fixes PM-12` (also `closes` / `resolves` / `completes`) moves it to **Done**.
   - Moves happen on the next refresh.
-- **AI agents:** dispatch a card to Claude Code, Codex, OpenCode or Gemini CLI (whichever is installed).
+- **AI agents:** dispatch a card to Claude Code, Codex, Grok, OpenCode or Gemini CLI (whichever is installed).
   - Choose what the agent may do: **Read-only**, **Edit files** (default) or **Full access**.
   - Dispatching moves the card to In progress.
   - When the run finishes you see what it changed ("3 files changed · 1 commit"), then
@@ -56,7 +56,7 @@ Everything runs on your machine. Nothing is uploaded anywhere.
 - **git** on your PATH (for commit stats; everything else works without it)
 - Optional: [scc](https://github.com/boyter/scc) on your PATH. If found, it's used for faster, more
   accurate line counts.
-- Optional: an AI coding CLI (`claude`, `codex`, `opencode`, `gemini`) for agent dispatch
+- Optional: an AI coding CLI (`claude`, `codex`, `grok`, `opencode`, `gemini`) for agent dispatch
 
 ## Quick start
 
