@@ -34,6 +34,8 @@ export function Dropdown<T extends string | number>({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Opens upward when the menu would run past the bottom of its dialog body (or the window).
+  const [dropUp, setDropUp] = useState(false);
   const [focusIndex, setFocusIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -50,6 +52,14 @@ export function Dropdown<T extends string | number>({
     if (enabled.length === 0) return;
     const selectedIndex = options.findIndex((o) => o.value === value && !o.disabled);
     setFocusIndex(atSelected && selectedIndex >= 0 ? selectedIndex : enabled[0]!);
+    const trigger = triggerRef.current?.getBoundingClientRect();
+    if (trigger) {
+      const bounds = triggerRef.current!.closest('.dialog-body')?.getBoundingClientRect();
+      const bottom = bounds?.bottom ?? window.innerHeight;
+      const top = bounds?.top ?? 0;
+      const menuHeight = Math.min(240, options.length * 32 + 10);
+      setDropUp(trigger.bottom + 4 + menuHeight > bottom && trigger.top - 4 - menuHeight >= top);
+    }
     setOpen(true);
   }
 
@@ -126,7 +136,12 @@ export function Dropdown<T extends string | number>({
         </span>
       </button>
       {open && (
-        <ul className="dropdown-list" role="listbox" aria-label={label} id={listId}>
+        <ul
+          className={`dropdown-list${dropUp ? ' drop-up' : ''}`}
+          role="listbox"
+          aria-label={label}
+          id={listId}
+        >
           {options.map((option, i) => (
             <li
               key={String(option.value)}

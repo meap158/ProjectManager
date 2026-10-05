@@ -2406,3 +2406,7 @@ kbd {
 .hand-mode .faint {
   font-size: 12.5px;
 }
+.dropdown-list.drop-up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}

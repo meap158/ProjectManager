@@ -337,11 +337,17 @@ export function CardDialog({
                   <Dropdown
                     label="Running session"
                     value={attachTo ?? liveSessions[0]!.id}
-                    options={liveSessions.map((x) => ({
-                      value: x.id,
-                      label: x.name,
-                      ...(x.cardKey ? { hint: `on ${x.cardKey}` } : {}),
-                    }))}
+                    options={liveSessions.map((x) => {
+                      const cli = providers?.find((p) => p.id === x.providerId)?.name;
+                      return {
+                        value: x.id,
+                        label: x.name,
+                        // Which CLI it is, and the card it's on, as right-hand meta.
+                        hint: [cli !== x.name ? cli : null, x.cardKey ? `on ${x.cardKey}` : null]
+                          .filter(Boolean)
+                          .join(' · '),
+                      };
+                    })}
                     onChange={setAttachTo}
                   />
                 ) : (
