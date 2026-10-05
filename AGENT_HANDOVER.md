@@ -29,6 +29,11 @@ read it before product work. `/References` is empty.
   - persistent PTY sessions
   - multi-pane Agents workspace wired to the board (DESIGN.md §12.2)
   - dashboard "Commits by project" stacked chart (DESIGN.md §5)
+  - sorting (Research Addendum 8):
+    - Rankings sort by Lines, Size, Commits, Commits 30d, First commit, Last commit, Planned
+      and In flight.
+    - The sidebar sorts by A–Z, Recently active, Newest project and Most code.
+    - Projects without data for a column always sort last.
   - workspace polish: keyboard shortcuts, drag-to-swap panes, font size, → Review from a pane
   - session host: sessions survive server restarts (DESIGN.md §12.3)
   - attach a card to a running session: `POST /api/agent-sessions/:id/card`. The task is
@@ -38,7 +43,7 @@ read it before product work. `/References` is empty.
 
 ## Roadmap (owner-requested, in priority order)
 
-All owner-requested items to date are implemented (see Research/feature-requests.md, Addenda 1–7).
+All owner-requested items to date are implemented (see Research/feature-requests.md, Addenda 1–8).
 Add new requests here as they come in.
 
 Dropped on purpose: a theme toggle (it was our idea, not the owner's, and the owner asked for no

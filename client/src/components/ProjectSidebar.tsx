@@ -9,19 +9,22 @@ import { AddProjectDialog } from './AddProjectDialog';
 // a natural direction, re-selecting the active mode flips it, switching modes
 // restarts from the new mode's natural direction, and the label always names
 // the active direction (never "A–Z" while sorting Z–A).
-type SortMode = 'name' | 'recent' | 'lines';
+type SortMode = 'name' | 'recent' | 'started' | 'lines';
 type SortDirection = 'asc' | 'desc';
 
-const SORT_MODES: SortMode[] = ['name', 'recent', 'lines'];
+const SORT_MODES: SortMode[] = ['name', 'recent', 'started', 'lines'];
 const SORT_DEFAULT_DIRECTION: Record<SortMode, SortDirection> = {
   name: 'asc',
   recent: 'desc',
+  started: 'desc',
   lines: 'desc',
 };
 
 function sortOptionLabel(mode: SortMode, direction: SortDirection): string {
   if (mode === 'name') return direction === 'asc' ? 'A–Z' : 'Z–A';
-  if (mode === 'recent') return direction === 'desc' ? 'Newest first' : 'Oldest first';
+  // "Recently active" (last commit) vs "Newest project" (first commit): never ambiguous.
+  if (mode === 'recent') return direction === 'desc' ? 'Recently active' : 'Least active';
+  if (mode === 'started') return direction === 'desc' ? 'Newest project' : 'Oldest project';
   return direction === 'desc' ? 'Most code' : 'Least code';
 }
 
@@ -32,6 +35,10 @@ function readSortPreference<T extends string>(key: string, choices: T[], fallbac
   } catch {
     return fallback;
   }
+}
+
+function firstCommitTime(p: ProjectSummary): number | null {
+  return p.git?.firstCommitAt ? Date.parse(p.git.firstCommitAt) : null;
 }
 
 function lastCommitTime(p: ProjectSummary): number {
@@ -132,6 +139,13 @@ export function ProjectSidebar() {
     .slice()
     .sort((a, b) => {
       if (sortMode === 'recent') return flip * (lastCommitTime(b) - lastCommitTime(a));
+      if (sortMode === 'started') {
+        // Projects without commits have no age: always after the ones that do.
+        const fa = firstCommitTime(a);
+        const fb = firstCommitTime(b);
+        if (fa === null || fb === null) return fa === fb ? 0 : fa === null ? 1 : -1;
+        return flip * (fb - fa);
+      }
       if (sortMode === 'lines') return flip * ((b.code?.code ?? -1) - (a.code?.code ?? -1));
       return flip * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     });

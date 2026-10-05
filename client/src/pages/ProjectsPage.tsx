@@ -140,16 +140,19 @@ export function ProjectsPage() {
 
   return (
     <main className="page">
-      <div className="page-header">
-        <div>
-          <h1>Dashboard</h1>
-          <div className="subtitle">
-            Everything across your tracked folders: totals, rankings and projects.
+      {/* Sticky chrome: title and action stay put while the dashboard scrolls. */}
+      <div className="sticky-head">
+        <div className="page-header">
+          <div>
+            <h1>Dashboard</h1>
+            <div className="subtitle">
+              Everything across your tracked folders: totals, rankings and projects.
+            </div>
           </div>
+          <button className="btn btn-primary" onClick={() => setAdding(true)}>
+            ＋ Add project
+          </button>
         </div>
-        <button className="btn btn-primary" onClick={() => setAdding(true)}>
-          ＋ Add project
-        </button>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -291,13 +294,25 @@ export function ProjectsPage() {
 /** Portfolio rankings: every project in one sortable table. Column clicks follow the
     KDP sorter rule — a new column starts from its natural direction, clicking the
     active column reverses it. */
-type RankKey = 'project' | 'lines' | 'commits30' | 'lastCommit' | 'planned' | 'flight';
+type RankKey =
+  | 'project'
+  | 'lines'
+  | 'size'
+  | 'commits'
+  | 'commits30'
+  | 'firstCommit'
+  | 'lastCommit'
+  | 'planned'
+  | 'flight';
 type RankDir = 'asc' | 'desc';
 
 const RANK_DEFAULT_DIR: Record<RankKey, RankDir> = {
   project: 'asc',
   lines: 'desc',
+  size: 'desc',
+  commits: 'desc',
   commits30: 'desc',
+  firstCommit: 'desc',
   lastCommit: 'desc',
   planned: 'desc',
   flight: 'desc',
@@ -305,22 +320,33 @@ const RANK_DEFAULT_DIR: Record<RankKey, RankDir> = {
 const RANK_COLUMNS: { key: RankKey; label: string; numeric: boolean }[] = [
   { key: 'project', label: 'Project', numeric: false },
   { key: 'lines', label: 'Lines', numeric: true },
+  { key: 'size', label: 'Size', numeric: true },
+  { key: 'commits', label: 'Commits', numeric: true },
   { key: 'commits30', label: 'Commits 30d', numeric: true },
+  { key: 'firstCommit', label: 'First commit', numeric: false },
   { key: 'lastCommit', label: 'Last commit', numeric: false },
   { key: 'planned', label: 'Planned', numeric: true },
   { key: 'flight', label: 'In flight', numeric: true },
 ];
 
-function rankValue(p: ProjectSummary, key: RankKey): number | string {
+/** Sort value for a column; null when the project has no data for it (not scanned, no git
+    history), so such rows sort last in either direction instead of taking the top spots. */
+function rankValue(p: ProjectSummary, key: RankKey): number | string | null {
   switch (key) {
     case 'project':
       return p.name.toLowerCase();
     case 'lines':
-      return p.code?.code ?? -1;
+      return p.code?.code ?? null;
+    case 'size':
+      return p.disk?.bytes ?? null;
+    case 'commits':
+      return p.git?.isRepo ? p.git.totalCommits : null;
     case 'commits30':
       return recentCommits(p, 30);
+    case 'firstCommit':
+      return p.git?.firstCommitAt ? Date.parse(p.git.firstCommitAt) : null;
     case 'lastCommit':
-      return p.git?.lastCommitAt ? Date.parse(p.git.lastCommitAt) : 0;
+      return p.git?.lastCommitAt ? Date.parse(p.git.lastCommitAt) : null;
     case 'planned':
       return p.cardCounts.backlog + p.cardCounts.todo;
     case 'flight':
@@ -384,8 +410,10 @@ function RankingsTable({ projects }: { projects: ProjectSummary[] }) {
     return [...projects].sort((a, b) => {
       const va = rankValue(a, sortKey);
       const vb = rankValue(b, sortKey);
+      const byName = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      if (va === null || vb === null) return va === vb ? byName : va === null ? 1 : -1;
       const cmp = typeof va === 'string' ? va.localeCompare(vb as string) : va - (vb as number);
-      return flip * cmp || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      return flip * cmp || byName;
     });
   }, [projects, sortKey, sortDir]);
 
@@ -449,7 +477,12 @@ function RankingsTable({ projects }: { projects: ProjectSummary[] }) {
                   </span>{' '}
                   {p.code ? formatCompact(p.code.code) : '—'}
                 </td>
+                <td className="r num">{p.disk ? formatBytes(p.disk.bytes) : '—'}</td>
+                <td className="r num">{p.git?.isRepo ? formatNumber(p.git.totalCommits) : '—'}</td>
                 <td className="r num">{p.git ? formatNumber(recentCommits(p, 30)) : '—'}</td>
+                <td title={formatRelative(p.git?.firstCommitAt ?? null)}>
+                  {formatDate(p.git?.firstCommitAt ?? null)}
+                </td>
                 <td title={formatDate(p.git?.lastCommitAt ?? null)}>
                   {p.git?.lastCommitAt ? formatRelative(p.git.lastCommitAt) : '—'}
                 </td>
