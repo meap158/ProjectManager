@@ -28,6 +28,10 @@ atomic commits). Nothing is pending in the working tree.
 - **Claude resume:** if the pinned conversation has no transcript, a relaunch starts a fresh
   conversation under a new pinned id (and stores it) instead of crash-looping on
   "No conversation found".
+- **Animation-only tails** (Grok's idle welcome screen redraws a braille logo forever) read
+  idle: a tail with no letters or digits is redraw chrome, not work.
+- **Agents tab selection** is remembered per project (`pm.agents.selected`), across project
+  switches and restarts.
 - **Pull requests** tab via `gh pr list`.
 - **Verification (this snapshot):** both typechecks, lint on every changed file, Prettier, and
   154+ tests pass (`npx vitest run --maxWorkers=1`). Browser QA in Chrome on a scratch instance
