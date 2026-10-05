@@ -2836,3 +2836,6 @@ dialog.lightbox img {
   flex: 1 1 0;
   max-height: none;
 }
+.gcolumn-add {
+  margin-left: auto;
+}

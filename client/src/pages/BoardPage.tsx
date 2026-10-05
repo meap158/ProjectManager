@@ -11,6 +11,7 @@ import {
 import { api } from '../api';
 import { CardDialog } from '../components/CardDialog';
 import { Dropdown } from '../components/Dropdown';
+import { NewCardDialog } from '../components/NewCardDialog';
 import { formatRelative } from '../format';
 
 // One board across every project (Notion-style: a board view whose cards carry a project tag).
@@ -43,6 +44,8 @@ export function BoardPage() {
   const [openCard, setOpenCard] = useState<CardWithProject | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropOn, setDropOn] = useState<CardStatus | null>(null);
+  // Adding: the column whose + was clicked (null = closed).
+  const [addingTo, setAddingTo] = useState<CardStatus | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -124,6 +127,14 @@ export function BoardPage() {
           </div>
         </div>
         <div className="actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setAddingTo(columns[0]!)}
+            title="Add a card to one of your projects"
+          >
+            ＋ New card
+          </button>
           <Dropdown
             label="Project"
             value={projectFilter ?? 0}
@@ -179,6 +190,15 @@ export function BoardPage() {
                 <header className="gcolumn-head">
                   <h2>{CARD_STATUS_LABELS[status]}</h2>
                   <span className="faint num">{items.length}</span>
+                  <button
+                    type="button"
+                    className="icon-btn gcolumn-add"
+                    aria-label={`Add a card to ${CARD_STATUS_LABELS[status]}`}
+                    title={`Add a card to ${CARD_STATUS_LABELS[status]}`}
+                    onClick={() => setAddingTo(status)}
+                  >
+                    ＋
+                  </button>
                 </header>
                 <div className="gcolumn-cards">
                   {items.map((c) => (
@@ -228,6 +248,22 @@ export function BoardPage() {
         </p>
       )}
 
+      <NewCardDialog
+        open={addingTo !== null}
+        status={addingTo ?? 'backlog'}
+        {...(projectFilter ? { projectId: projectFilter } : { projects })}
+        onClose={() => setAddingTo(null)}
+        onCreated={(created) => {
+          const withProject: CardWithProject = {
+            ...created,
+            projectName: projects.find((p) => p.id === created.projectId)?.name ?? '',
+          };
+          setCards((prev) => [withProject, ...(prev ?? [])]);
+          setAddingTo(null);
+          // Straight into the full dialog: images, notes, hand to an agent.
+          setOpenCard(withProject);
+        }}
+      />
       <CardDialog
         card={openCard}
         projectId={openCard?.projectId ?? 0}
