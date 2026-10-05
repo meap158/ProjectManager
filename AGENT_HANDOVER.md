@@ -31,7 +31,7 @@ read it before product work. `/References` is empty.
   - dashboard "Commits by project" stacked chart (DESIGN.md §5)
   - sorting (Research Addendum 8):
     - Rankings sort by Lines, Size, Commits, Commits 30d, First commit, Last commit, Planned
-      and In flight.
+      and Active tasks.
     - The sidebar sorts by A–Z, Recently active, Newest project and Most code.
     - Projects without data for a column always sort last.
   - workspace polish: keyboard shortcuts, drag-to-swap panes, font size, → Review from a pane

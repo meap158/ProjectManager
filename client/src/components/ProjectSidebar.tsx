@@ -271,11 +271,11 @@ export function ProjectSidebar() {
               </span>
               <span className="t">
                 <b className="num">{totalsCommits}</b>
-                <span>30d</span>
+                <span title="Commits in the last 30 days">commits · 30d</span>
               </span>
               <span className="t">
                 <b className="num">{totalsFlight}</b>
-                <span>in flight</span>
+                <span title="Tasks in progress or in review">active</span>
               </span>
             </div>
           </div>
@@ -373,7 +373,7 @@ function StatusDot({ project: p }: { project: ProjectSummary }) {
     label = 'Scan failed';
   } else if (p.cardCounts.in_progress + p.cardCounts.review > 0) {
     color = 'var(--good, #0ca30c)';
-    label = 'Work in flight';
+    label = 'Tasks being worked on';
   }
   return (
     <span

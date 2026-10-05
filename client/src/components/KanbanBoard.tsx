@@ -247,7 +247,7 @@ function RunBadges({ summary }: { summary: CardRunSummary | undefined }) {
         </span>
       )}
       {summary.running > 0 && (
-        <span className="badge" title={`${summary.running} agent run(s) in flight`}>
+        <span className="badge" title={`${summary.running} agent run(s) still running`}>
           ▶ {summary.running}
         </span>
       )}

@@ -185,8 +185,8 @@ export function ProjectsPage() {
             <StatTile label="Lines of code" value={totals.code} />
             <BytesTile label="Size on disk" bytes={totals.bytes} />
             <StatTile label="Commits (30 days)" value={totals.commits30} />
-            <StatTile label="Planned cards" value={totals.open} hint="Backlog + To do" />
-            <StatTile label="In flight" value={totals.active} hint="In progress + Review" />
+            <StatTile label="Planned tasks" value={totals.open} hint="In Backlog or To do" />
+            <StatTile label="Being worked on" value={totals.active} hint="In progress or review" />
           </section>
 
           {attention.length > 0 && (
@@ -219,10 +219,10 @@ export function ProjectsPage() {
           )}
 
           {inFlight.length > 0 && (
-            <section className="panel" aria-label="In flight across projects">
+            <section className="panel" aria-label="Tasks being worked on across projects">
               <div className="panel-header">
-                <h2>In flight</h2>
-                <span className="meta">In progress and Review, all projects</span>
+                <h2>Being worked on</h2>
+                <span className="meta">In progress or in review, across all projects</span>
               </div>
               <ul className="list">
                 {inFlight.map((c) => (
@@ -326,7 +326,7 @@ const RANK_COLUMNS: { key: RankKey; label: string; numeric: boolean }[] = [
   { key: 'firstCommit', label: 'First commit', numeric: false },
   { key: 'lastCommit', label: 'Last commit', numeric: false },
   { key: 'planned', label: 'Planned', numeric: true },
-  { key: 'flight', label: 'In flight', numeric: true },
+  { key: 'flight', label: 'Active tasks', numeric: true },
 ];
 
 /** Sort value for a column; null when the project has no data for it (not scanned, no git
@@ -561,7 +561,7 @@ function ProjectCard({ project: p }: { project: ProjectSummary }) {
               className="badge"
               title={`${CARD_STATUS_LABELS.in_progress} + ${CARD_STATUS_LABELS.review}`}
             >
-              {flight} in flight
+              {flight} active
             </span>
           )}{' '}
           {p.cardCounts.backlog + p.cardCounts.todo > 0 && (

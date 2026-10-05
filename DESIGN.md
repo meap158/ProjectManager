@@ -31,7 +31,7 @@ a populated pane.
   the only elastic part, so the row never lurches when badges appear), then two-line rows:
   name + state badge, then one glance line (lines · top language · relative last commit).
   The full path lives in the `title` tooltip, not a third line. Footer holds a portfolio
-  totals card (lines / 30-day commits / in flight — the KDP "Active Focus" analogue) so
+  totals card (lines / 30-day commits / active tasks — the KDP "Active Focus" analogue) so
   totals never require a trip home. Polls every 2s while any scan runs, otherwise every 10s,
   and never replaces populated rows with skeletons (KDP populated-pane rule).
 - **Sorter (KDP Library sorter):** modes Name / Recent commit / Lines of code, each with a
@@ -57,13 +57,13 @@ a populated pane.
 
 The home page is the master dashboard for all tracked folders, top to bottom:
 
-1. Portfolio summary tiles (projects, lines, disk, 30-day commits, planned, in flight).
+1. Portfolio summary tiles (projects, lines, disk, 30-day commits, planned tasks, being worked on).
 2. **Needs attention** (only when non-empty): missing folders, failed scans, repos with no
    commits for 90+ days.
 3. Portfolio rollups: languages summed across projects (same slots/Other rule as §5) and
    merged commits-per-month.
 4. **Rankings**: one sortable table (Project / Lines / Commits 30d / Last commit / Planned /
-   In flight). Column clicks follow the sorter rule — a new column starts from its natural
+   Active tasks). Column clicks follow the sorter rule — a new column starts from its natural
    direction, clicking the active column reverses it — with `aria-sort` and a visible
    arrow. Lines cells carry a thin size bar.
 5. Project cards grid (visual entry points, unchanged).
