@@ -47,8 +47,7 @@ read it before product work. `/References` is empty.
      as persistent)
 
 1. Portfolio status view: stale projects, uncommitted changes, everything in flight across projects.
-2. Client tests (Vitest + Testing Library) for the board, dialogs, terminal and workspace.
-3. A theme toggle (the tokens already support `data-theme`).
+2. A theme toggle (the tokens already support `data-theme`).
 
 ## Architecture
 
@@ -82,7 +81,9 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
 ## Known issues and tech debt
 
 - Complexity is a heuristic (branch tokens per line).
-- No UI test suite; server tests only (`server/**/*.test.ts`, 50+ tests).
+- Client tests are still thin: `client/**/*.test.{ts,tsx}` (Testing Library on jsdom, enabled per
+  file with `// @vitest-environment jsdom`) cover workspace placement, the commits chart and
+  formatting. The board, dialogs and terminal still need component tests.
 - **Linux:** `node-pty` has no Linux prebuild and compiles from source. Without build tools it's
   skipped (it's optional), and sessions fall back to pipes, where interactive AI CLIs don't work.
 - Card IDs (`PM-n`) can be reused after deleting the newest card (no AUTOINCREMENT). Commit refs

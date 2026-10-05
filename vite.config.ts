@@ -18,6 +18,6 @@ export default defineConfig({
   },
   test: {
     root: '.',
-    include: ['server/**/*.test.ts', 'shared/**/*.test.ts', 'client/**/*.test.ts'],
+    include: ['server/**/*.test.ts', 'shared/**/*.test.ts', 'client/**/*.test.{ts,tsx}'],
   },
 });

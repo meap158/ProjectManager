@@ -64,7 +64,8 @@ anything.
 
 ## Verification (Definition of Done)
 
-1. `npm run check`: typecheck (client + server), ESLint, Prettier check, Vitest.
+1. `npm run check`: typecheck (client + server), ESLint, Prettier check, Vitest (server tests in
+   Node; client component tests on jsdom via `// @vitest-environment jsdom` at the top of the file).
 2. `npm run launch`: the app starts, the printed URL works, and the UI flow you changed works in the
    browser.
 3. If startup changed: occupy the preferred port (e.g. `node -e "require('net').createServer().listen(5180,'127.0.0.1')"`)
