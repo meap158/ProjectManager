@@ -463,6 +463,20 @@ function Pane({
               <Link to={`/projects/${s.projectId}?tab=board`} className="mono">
                 {s.cardKey}
               </Link>
+              <button
+                type="button"
+                className="icon-btn"
+                title={`Unlink ${s.cardKey} from this session (the session keeps running)`}
+                aria-label={`Unlink ${s.cardKey}`}
+                onClick={() =>
+                  api.attachCardToSession(s.id, null).then(
+                    (r) => onChanged(r.session),
+                    (e: Error) => onError(e.message),
+                  )
+                }
+              >
+                ×
+              </button>
             </>
           )}
         </span>

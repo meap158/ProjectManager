@@ -25,6 +25,7 @@ vi.mock('../api', () => ({
     stopSession: vi.fn(),
     startSession: vi.fn(),
     updateCard: vi.fn(),
+    attachCardToSession: vi.fn(),
   },
 }));
 
@@ -102,5 +103,27 @@ describe('Agents workspace interactions', () => {
     await waitFor(() =>
       expect(api.saveWorkspace).toHaveBeenCalledWith(expect.objectContaining({ fontSize: 13.5 })),
     );
+  });
+});
+
+describe('card link in a pane', () => {
+  it('unlinks the card without stopping the session', async () => {
+    vi.mocked(api.getWorkspace).mockResolvedValue({ preset: '1', panes: [1], maximized: null });
+    const linked = { ...session(1, 'Alpha'), cardId: 7, cardKey: 'PM-7' } as AgentSession;
+    vi.mocked(api.listAllSessions).mockResolvedValue([linked]);
+    vi.mocked(api.attachCardToSession).mockResolvedValue({
+      session: { ...linked, cardId: null, cardKey: null } as AgentSession,
+      queued: false,
+      sent: false,
+    });
+    render(
+      <MemoryRouter>
+        <WorkspacePage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Unlink PM-7' }));
+    await waitFor(() => expect(screen.queryByText('PM-7')).toBeNull());
+    expect(api.attachCardToSession).toHaveBeenCalledWith(1, null);
+    expect(api.stopSession).not.toHaveBeenCalled();
   });
 });
