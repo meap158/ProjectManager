@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type ReactNode,
 } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
@@ -93,7 +94,7 @@ export function WorkspacePage() {
   const [view, setViewState] = useState<View>(readView);
   const [runs, setRuns] = useState<AgentRun[] | null>(null);
   const [usage, setUsage] = useState<Record<number, AgentTokenUsage | null>>({});
-  const [selectedRun, setSelectedRun] = useState<number | null>(null);
+  const [selectedWork, setSelectedWork] = useState<WorkKey | null>(null);
   const [now, setNow] = useState(0);
   const setView = (next: View) => {
     setViewState(next);
@@ -297,6 +298,7 @@ export function WorkspacePage() {
                 }
                 onClick={() => setView(v)}
               >
+                <ViewIcon view={v} />
                 {v === 'panes' ? 'Panes' : 'List'}
               </button>
             ))}
@@ -382,8 +384,38 @@ export function WorkspacePage() {
           now={now}
           usage={usage}
           projectName={projectName}
-          selectedRun={selectedRun}
-          onSelectRun={setSelectedRun}
+          selected={selectedWork}
+          onSelect={setSelectedWork}
+          renderSession={(session, close) => (
+            // The same pane as the grid, docked under the list like VS Code's panel.
+            <Pane
+              key={session.id}
+              index={0}
+              fontSize={fontSize}
+              onDragStart={() => undefined}
+              onDragEnd={() => undefined}
+              dropActive={false}
+              onDragOver={() => undefined}
+              onDrop={() => undefined}
+              session={session}
+              projectName={projectName.get(session.projectId) ?? `Project ${session.projectId}`}
+              agentName={
+                session.providerId === 'custom'
+                  ? (session.command[0] ?? 'Custom command')
+                  : (providers.find((p) => p.id === session.providerId)?.name ?? session.providerId)
+              }
+              maximized={false}
+              onToggleMaximize={() => {
+                update(placeSession(layout, session.id));
+                setView('panes');
+              }}
+              onClose={close}
+              onChanged={(next) =>
+                setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
+              }
+              onError={setError}
+            />
+          )}
           onShowInPane={(id) => {
             update(placeSession(layout, id));
             setView('panes');
@@ -922,8 +954,9 @@ function WorkList({
   now,
   usage,
   projectName,
-  selectedRun,
-  onSelectRun,
+  selected,
+  onSelect,
+  renderSession,
   onShowInPane,
   onSessionChanged,
   onSessionDeleted,
@@ -936,8 +969,10 @@ function WorkList({
   now: number;
   usage: Record<number, AgentTokenUsage | null>;
   projectName: Map<number, string>;
-  selectedRun: number | null;
-  onSelectRun: (id: number | null) => void;
+  selected: WorkKey | null;
+  onSelect: (key: WorkKey | null) => void;
+  /** The docked panel for a selected session (its live terminal). */
+  renderSession: (session: AgentSession, close: () => void) => ReactNode;
   onShowInPane: (sessionId: number) => void;
   onSessionChanged: (s: AgentSession) => void;
   onSessionDeleted: (id: number) => void;
@@ -947,7 +982,8 @@ function WorkList({
 }) {
   if (!sessions || !runs) return <div className="skeleton" style={{ flex: 1 }} />;
   const items = mergeWork(sessions, runs);
-  const run = runs.find((r) => r.id === selectedRun) ?? null;
+  const run = runs.find((r) => `run:${r.id}` === selected) ?? null;
+  const session = sessions.find((x) => `session:${x.id}` === selected) ?? null;
   const change = (fn: () => Promise<AgentSession>) =>
     fn().then(onSessionChanged, (e: Error) => onError(e.message));
 
@@ -1007,38 +1043,66 @@ function WorkList({
           {runs.length === 1 ? '' : 's'} across projects
         </span>
       </div>
-      {items.length === 0 ? (
-        <p className="faint" style={{ margin: 0 }}>
-          Nothing yet. Start a session from the toolbar, or hand a card to an agent from a board.
-        </p>
-      ) : (
-        <AgentWorkList
-          items={items}
-          selected={run ? `run:${run.id}` : null}
-          onSelect={(key: WorkKey) => {
-            const [kind, id] = key.split(':');
-            if (kind === 'session') onShowInPane(Number(id));
-            else onSelectRun(Number(id) === selectedRun ? null : Number(id));
-          }}
-          now={now}
-          tokens={usage}
-          projectNames={projectName}
-          actions={actions}
-        />
+      <div className={`work-list-scroll${session || run ? ' is-docked' : ''}`}>
+        {items.length === 0 ? (
+          <p className="faint" style={{ margin: 0 }}>
+            Nothing yet. Start a session from the toolbar, or hand a card to an agent from a board.
+          </p>
+        ) : (
+          <AgentWorkList
+            items={items}
+            selected={selected}
+            onSelect={(key: WorkKey) => onSelect(key === selected ? null : key)}
+            now={now}
+            tokens={usage}
+            projectNames={projectName}
+            actions={actions}
+          />
+        )}
+      </div>
+      {session && (
+        <div className="work-panel" aria-label={`Terminal: ${session.name}`}>
+          {renderSession(session, () => onSelect(null))}
+        </div>
       )}
       {run && (
-        <div className="runs">
+        <div className="work-panel work-panel-run">
           <RunCard
             run={run}
             now={now}
             onChanged={onRunChanged}
             onDeleted={(id) => {
               onRunDeleted(id);
-              onSelectRun(null);
+              onSelect(null);
             }}
           />
         </div>
       )}
     </section>
+  );
+}
+
+/** Panes: a 2x2 grid of terminals. List: rows. */
+function ViewIcon({ view }: { view: View }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+      {view === 'panes' ? (
+        <path
+          d="M2 2.5h5v5H2zM9 2.5h5v5H9zM2 9.5h5v5H2zM9 9.5h5v5H9z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+      ) : (
+        <path
+          d="M2 3.5h12M2 8h12M2 12.5h12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
   );
 }

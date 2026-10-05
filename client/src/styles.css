@@ -2584,3 +2584,38 @@ dialog.lightbox img {
 .path-link:hover .path-icon {
   color: var(--accent);
 }
+
+/* Workspace list view: the list scrolls on top; a selected session's pane (or a run) docks
+   below it, like VS Code's bottom panel. */
+.workspace-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.work-list-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.work-list-scroll.is-docked {
+  flex: 0 1 auto;
+  max-height: 38%;
+}
+.work-panel {
+  flex: 1 1 60%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.work-panel > .pane {
+  flex: 1;
+}
+.work-panel-run {
+  overflow-y: auto;
+}
+.view-switch .btn {
+  gap: 5px;
+}
