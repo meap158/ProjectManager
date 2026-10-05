@@ -1,6 +1,13 @@
 import type { ReactNode } from 'react';
-import type { AgentRun, AgentSession } from '../../../shared/types';
-import { formatBytes, formatDate, formatDuration, formatNumber, formatRelative } from '../format';
+import type { AgentRun, AgentSession, AgentTokenUsage } from '../../../shared/types';
+import {
+  formatBytes,
+  formatCompact,
+  formatDate,
+  formatDuration,
+  formatNumber,
+  formatRelative,
+} from '../format';
 
 // One list for everything agents do in a project (or across projects on the workspace):
 // - Terminal: an interactive session. It keeps running (and relaunches after crashes) until you
@@ -55,7 +62,7 @@ interface Fact {
   title?: string;
 }
 
-export function sessionFacts(s: AgentSession, now: number, tokens?: number | null): Fact[] {
+export function sessionFacts(s: AgentSession, now: number, usage?: AgentTokenUsage | null): Fact[] {
   const facts: Fact[] = [];
   if (s.status === 'running') {
     facts.push({
@@ -86,10 +93,17 @@ export function sessionFacts(s: AgentSession, now: number, tokens?: number | nul
       title: 'Typed while the session was down; sent when it starts again',
     });
   }
-  if (tokens) {
+  if (usage && usage.replies > 0) {
+    // New tokens processed: input + cache writes + output. Cache reads (re-read context) are
+    // listed in the tooltip; counting them would inflate the total many times over.
+    const total = usage.input + usage.cacheWrite + usage.output;
     facts.push({
-      text: `${formatNumber(tokens)} tokens`,
-      title: 'Input + output tokens, read from the CLI’s own session transcript',
+      text: `${formatCompact(total)} tokens`,
+      title: [
+        `${formatNumber(total)} tokens over ${usage.replies} replies, from Claude's session transcript`,
+        `Input ${formatNumber(usage.input)} · cache writes ${formatNumber(usage.cacheWrite)} · output ${formatNumber(usage.output)}`,
+        `Cache reads ${formatNumber(usage.cacheRead)} (context re-read, not included)`,
+      ].join('\n'),
     });
   }
   return facts;
@@ -149,8 +163,8 @@ export function AgentWorkList({
   selected: WorkKey | null;
   onSelect: (key: WorkKey) => void;
   now: number;
-  /** Token totals by session id, where the CLI exposes them. */
-  tokens?: Map<number, number | null>;
+  /** Token usage by session id, where the CLI exposes it. */
+  tokens?: Record<number, AgentTokenUsage | null>;
   /** Shown when the list spans several projects. */
   projectNames?: Map<number, string>;
   actions?: (w: WorkItem) => ReactNode;
@@ -162,7 +176,7 @@ export function AgentWorkList({
         const state = stateLabel(w);
         const facts =
           w.kind === 'session'
-            ? sessionFacts(w.item, now, tokens?.get(w.item.id))
+            ? sessionFacts(w.item, now, tokens?.[w.item.id])
             : runFacts(w.item, now);
         return (
           <li key={key} className={key === selected ? 'selected' : undefined}>

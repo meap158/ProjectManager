@@ -5,6 +5,7 @@ import type {
   AgentTerminal,
   AgentRun,
   AgentSession,
+  AgentTokenUsage,
   BulkAddResult,
   Card,
   CardRunSummary,
@@ -62,6 +63,12 @@ export const api = {
   // ---- Agent CLI sessions and runs ------------------------------------------------------------
   listProviders: () => request<AgentProviderStatus[]>('GET', '/agents/providers'),
   listAllSessions: () => request<AgentSession[]>('GET', '/agent-sessions'),
+  /** Token usage per session id (null where the CLI doesn't expose it). */
+  sessionUsage: (ids: number[]) =>
+    request<Record<number, AgentTokenUsage | null>>(
+      'GET',
+      `/agent-sessions/usage?ids=${ids.join(',')}`,
+    ),
   getWorkspace: () => request<WorkspaceLayout>('GET', '/workspace'),
   saveWorkspace: (layout: WorkspaceLayout) => request<WorkspaceLayout>('PUT', '/workspace', layout),
   listSessions: (projectId: number) =>

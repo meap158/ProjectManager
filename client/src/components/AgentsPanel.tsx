@@ -1,5 +1,10 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AgentProviderStatus, AgentRun, AgentSession } from '../../../shared/types';
+import type {
+  AgentProviderStatus,
+  AgentRun,
+  AgentSession,
+  AgentTokenUsage,
+} from '../../../shared/types';
 import { Link } from 'react-router';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
@@ -32,6 +37,7 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   const [now, setNow] = useState(0);
   const [input, setInput] = useState('');
   const [queuedNote, setQueuedNote] = useState(false);
+  const [usage, setUsage] = useState<Record<number, AgentTokenUsage | null>>({});
 
   // Only sets state in promise callbacks, so effects may call it directly.
   const load = useCallback(
@@ -39,6 +45,11 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
       Promise.all([api.listSessions(projectId), api.listRuns(projectId)]).then(
         ([s, r]) => {
           sessionsCache.set(projectId, s);
+          // Token counts come from Claude's own transcripts; other CLIs report none.
+          const claude = s.filter((x) => x.providerId === 'claude').map((x) => x.id);
+          if (claude.length > 0) {
+            api.sessionUsage(claude).then(setUsage, () => undefined);
+          }
           runsCache.set(projectId, r);
           setSessions(s);
           setRuns(r);
@@ -265,6 +276,7 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             selected={selected}
             onSelect={setSelected}
             now={now}
+            tokens={usage}
             actions={sessionActions}
           />
         )}

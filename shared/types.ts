@@ -251,6 +251,16 @@ export type AgentTerminal = 'pty' | 'pipe';
 export type AgentSessionStatus = 'running' | 'exited' | 'killed' | 'dead';
 export type AgentDesiredState = 'running' | 'stopped';
 
+/** Token usage of one agent session, from the CLI's own transcript (Claude Code only). */
+export interface AgentTokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  /** Assistant replies counted. */
+  replies: number;
+}
+
 export interface AgentSession {
   id: number;
   projectId: number;

@@ -11,6 +11,7 @@ import {
   type WorkspaceLayout,
 } from '../../shared/types.js';
 import type { Db } from '../db.js';
+import { sessionUsage } from './usage.js';
 import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
@@ -133,6 +134,17 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   });
 
   app.get('/agent-sessions', (c) => c.json(supervisor.listAllSessions()));
+
+  // Token usage per session (?ids=1,2,3), read from the CLIs' own transcripts. Registered before
+  // /agent-sessions/:id so "usage" is never taken for an id.
+  app.get('/agent-sessions/usage', (c) => {
+    const ids = (c.req.query('ids') ?? '')
+      .split(',')
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0)
+      .slice(0, 200);
+    return c.json(sessionUsage(db, ids));
+  });
 
   // ---- Workspace layout (persisted server-side so it survives reloads, restarts, reboots) ----
   app.get('/workspace', (c) => {

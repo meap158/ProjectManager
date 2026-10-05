@@ -45,11 +45,13 @@ describe('mergeWork', () => {
 
 describe('facts', () => {
   it('describe a running session: uptime, first start, restarts, tokens', () => {
-    const facts = sessionFacts(session(1, { restarts: 2 }), NOW, 12_345).map((f) => f.text);
+    const usage = { input: 345, cacheWrite: 10_000, output: 2_000, cacheRead: 900_000, replies: 7 };
+    const facts = sessionFacts(session(1, { restarts: 2 }), NOW, usage).map((f) => f.text);
     expect(facts[0]).toBe('up 1h 20m');
     expect(facts[1]).toMatch(/^started /);
     expect(facts).toContain('2 restarts');
-    expect(facts.at(-1)).toMatch(/^12,345 tokens$|^12.345 tokens$/);
+    // New tokens only (input + cache writes + output); cache reads stay in the tooltip.
+    expect(facts.at(-1)).toMatch(/^12[.,]3K tokens$/i);
   });
 
   it('describe a finished run: duration and changed files', () => {
