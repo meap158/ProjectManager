@@ -31,12 +31,14 @@ read it before product work. `/References` is empty.
   - dashboard "Commits by project" stacked chart (DESIGN.md §5)
   - workspace polish: keyboard shortcuts, drag-to-swap panes, font size, → Review from a pane
   - session host: sessions survive server restarts (DESIGN.md §12.3)
+  - attach a card to a running session: `POST /api/agent-sessions/:id/card`. The task is
+    bracket-pasted and submitted, only into AI CLI sessions (never shells). Auto-named sessions
+    follow the card.
   - one server per data folder, launcher watchdog, schema repair
 
 ## Roadmap (owner-requested, in priority order)
 
 0. **Next up** (Research Addenda 5–7):
-   - attach a board card to an existing session (keep context)
    - UI consistency audit: tab/project switches must not flicker or shift. Another actor was
      editing `AgentsPanel`/`KanbanBoard` for this around 11:46, so check git status/diff
      before editing those files.

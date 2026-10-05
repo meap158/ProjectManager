@@ -426,3 +426,45 @@ describe('workspace and card-linked sessions', () => {
     await call('DELETE', `/agent-sessions/${s.id}`);
   }, 30_000);
 });
+
+describe('attaching a card to an existing session', () => {
+  it('links and detaches, moves the card, and never pastes a task into a shell', async () => {
+    const s = (await (
+      await call('POST', `/projects/${projectId}/agent-sessions`, {
+        providerId: 'custom',
+        command: [NODE, '-e', 'process.stdin.on("data",d=>process.stdout.write("IN:"+d))'],
+        terminal: 'pipe',
+      })
+    ).json()) as AgentSession;
+    const card = (await (
+      await call('POST', `/projects/${projectId}/cards`, { title: 'Continue here' })
+    ).json()) as { id: number; key: string };
+
+    const attached = (await (
+      await call('POST', `/agent-sessions/${s.id}/card`, { cardId: card.id, send: true })
+    ).json()) as { session: AgentSession; sent: boolean };
+    expect(attached.session).toMatchObject({ cardId: card.id, cardKey: card.key });
+    // A custom command/shell would execute pasted lines, so the task is linked but not sent.
+    expect(attached.sent).toBe(false);
+    const cards = (await (await call('GET', `/projects/${projectId}/cards`)).json()) as {
+      id: number;
+      status: string;
+    }[];
+    expect(cards.find((c) => c.id === card.id)?.status).toBe('in_progress');
+
+    const detached = (await (
+      await call('POST', `/agent-sessions/${s.id}/card`, { cardId: null })
+    ).json()) as { session: AgentSession };
+    expect(detached.session.cardId).toBeNull();
+
+    // Cards from another project are rejected.
+    const other = (await (await call('POST', '/projects', { path: tmp })).json()) as { id: number };
+    const foreign = (await (
+      await call('POST', `/projects/${other.id}/cards`, { title: 'Elsewhere' })
+    ).json()) as { id: number };
+    expect(
+      (await call('POST', `/agent-sessions/${s.id}/card`, { cardId: foreign.id })).status,
+    ).toBe(404);
+    await call('DELETE', `/agent-sessions/${s.id}`);
+  }, 30_000);
+});

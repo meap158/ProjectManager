@@ -80,6 +80,13 @@ export const api = {
   ) => request<AgentSession>('POST', `/projects/${projectId}/agent-sessions`, input),
   patchSession: (id: number, patch: { name?: string; supervise?: boolean }) =>
     request<AgentSession>('PATCH', `/agent-sessions/${id}`, patch),
+  /** Make a card the session's current task; `send` pastes the task into an AI CLI session. */
+  attachCardToSession: (id: number, cardId: number | null, send = false) =>
+    request<{ session: AgentSession; queued: boolean; sent: boolean }>(
+      'POST',
+      `/agent-sessions/${id}/card`,
+      { cardId, send },
+    ),
   sendSessionInput: (id: number, data: string) =>
     request<{ queued: boolean; session: AgentSession }>('POST', `/agent-sessions/${id}/input`, {
       data,

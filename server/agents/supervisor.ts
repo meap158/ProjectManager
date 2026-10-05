@@ -640,6 +640,48 @@ export class AgentSupervisor {
     return this.getSession(id);
   }
 
+  /**
+   * Make a card the session's current task, so an agent that already has context keeps working
+   * in the same conversation. With `send`, the card's task is pasted into the session (bracketed
+   * paste, so multi-line text arrives as one message) and submitted; only AI CLIs receive it, as
+   * a shell would run each pasted line as a command. `cardId: null` detaches.
+   */
+  attachCard(
+    id: number,
+    cardId: number | null,
+    options: { send?: boolean; prompt?: string } = {},
+  ): { session: AgentSession; queued: boolean; sent: boolean } {
+    const row = this.getSessionRow(id);
+    if (!row) throw new AgentError(404, 'Session not found');
+    if (cardId === null) {
+      this.db.prepare(`UPDATE agent_sessions SET card_id = NULL WHERE id = ?`).run(id);
+      return { session: this.getSession(id)!, queued: false, sent: false };
+    }
+    const card = getCard(this.db, cardId);
+    if (!card || card.projectId !== row.project_id) {
+      throw new AgentError(404, "Card not found in this session's project");
+    }
+    // Sessions named after their previous card ("PM-4: …", set automatically) follow the new card;
+    // a name the user chose is kept.
+    const autoNamed = /^[A-Z]+-\d+: /.test(row.name);
+    this.db
+      .prepare(`UPDATE agent_sessions SET card_id = ?, name = ? WHERE id = ?`)
+      .run(cardId, autoNamed ? `${card.key}: ${card.title}`.slice(0, 80) : row.name, id);
+    if (card.status === 'backlog' || card.status === 'todo') {
+      updateCard(this.db, card.id, { status: 'in_progress' });
+    }
+    const isAiCli = getProvider(row.provider_id)?.binary != null;
+    if (!options.send || !isAiCli) {
+      return { session: this.getSession(id)!, queued: false, sent: false };
+    }
+    const prompt = (options.prompt ?? defaultPrompt(card.key, card.title, card.description))
+      .slice(0, 20_000)
+      // A paste-end marker inside the text would end the paste early; never forward it.
+      .replaceAll('\x1b[201~', '');
+    const { queued } = this.sendInput(id, `\x1b[200~${prompt}\x1b[201~\r`);
+    return { session: this.getSession(id)!, queued, sent: true };
+  }
+
   /** Write stdin: straight to the live process, or queued durably when it is down. */
   sendInput(id: number, data: string): { queued: boolean; session: AgentSession | null } {
     const row = this.getSessionRow(id);

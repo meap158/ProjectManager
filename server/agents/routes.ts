@@ -60,6 +60,12 @@ const workspaceBody = z
 
 const DEFAULT_WORKSPACE: WorkspaceLayout = { preset: '1', panes: [null], maximized: null };
 
+const attachCardBody = z.object({
+  cardId: z.number().int().positive().nullable(),
+  send: z.boolean().optional(),
+  prompt: z.string().max(20_000).optional(),
+});
+
 const resizeBody = z.object({
   cols: z.number().int().min(20).max(500),
   rows: z.number().int().min(5).max(200),
@@ -159,6 +165,13 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     if (body.supervise !== undefined)
       session = supervisor.setSupervise(id, body.supervise) ?? session;
     return c.json(session);
+  });
+
+  // Attach a Kanban card to an existing session (keeps the agent's context); null detaches.
+  app.post('/agent-sessions/:id/card', async (c) => {
+    const body = await parseBody(c, attachCardBody);
+    const { cardId, ...options } = body;
+    return c.json(supervisor.attachCard(parseId(c), cardId, options));
   });
 
   app.post('/agent-sessions/:id/input', async (c) => {

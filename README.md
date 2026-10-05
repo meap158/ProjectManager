@@ -34,6 +34,8 @@ Everything runs on your machine. Nothing is uploaded anywhere.
     **Accept** (the card moves to Review) or **Reject** (it goes back to To do).
   - **Work on it in a terminal** (on a card) starts an interactive session already given the
     card's task. The card shows a **⌨ live** badge while it runs.
+  - **Send to this session** (on a card) gives the task to an agent session that's already running,
+    so it keeps everything it already knows about the project.
   - The **Agents** workspace (top bar) shows sessions from any projects side by side: pick a
     layout (1, 2, 3 or 4 panes), double-click a pane header (or Alt+Enter) to maximise it,
     Alt+1…4 to jump between panes, and drag a header to swap panes. Your layout is

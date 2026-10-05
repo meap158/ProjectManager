@@ -7,12 +7,14 @@ import {
   CARD_STATUS_LABELS,
   type AgentAutonomy,
   type AgentProviderStatus,
+  type AgentSession,
   type AgentRun,
   type Card,
   type CardStatus,
 } from '../../../shared/types';
 import { api } from '../api';
 import { formatDate } from '../format';
+import { Dropdown } from './Dropdown';
 import { RunCard } from './RunCard';
 import { DeleteButton } from './ui/delete-button';
 
@@ -48,6 +50,9 @@ export function CardDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [providers, setProviders] = useState<AgentProviderStatus[] | null>(null);
+  /** Running AI CLI sessions in this project, for "send to a running session". */
+  const [liveSessions, setLiveSessions] = useState<AgentSession[]>([]);
+  const [attachTo, setAttachTo] = useState<number | null>(null);
   const [dispatchProvider, setDispatchProvider] = useState('claude');
   const [prompt, setPrompt] = useState('');
   const [autonomy, setAutonomy] = useState<AgentAutonomy>('edit');
@@ -78,6 +83,16 @@ export function CardDialog({
     if (card) {
       if (!dialog.open) dialog.showModal();
       api.listProviders().then(setProviders, () => setProviders([]));
+      api.listSessions(projectId).then(
+        (all) => {
+          const usable = all.filter(
+            (s) => s.status === 'running' && s.providerId !== 'shell' && s.providerId !== 'custom',
+          );
+          setLiveSessions(usable);
+          setAttachTo(usable.at(-1)?.id ?? null);
+        },
+        () => setLiveSessions([]),
+      );
       api.listRuns(projectId, card.id).then(
         (next) => {
           setRuns(next);
@@ -110,6 +125,22 @@ export function CardDialog({
       });
       onDispatched?.();
       navigate(`/workspace?open=${session.id}`);
+    } catch (e) {
+      setDispatchError((e as Error).message);
+    } finally {
+      setDispatching(false);
+    }
+  }
+
+  /** Continue in a session that already has context: paste this card's task into it. */
+  async function sendToSession() {
+    if (!card || attachTo === null) return;
+    setDispatching(true);
+    setDispatchError(null);
+    try {
+      await api.attachCardToSession(attachTo, card.id, true);
+      onDispatched?.();
+      navigate(`/workspace?open=${attachTo}`);
     } catch (e) {
       setDispatchError((e as Error).message);
     } finally {
@@ -292,6 +323,29 @@ export function CardDialog({
                   Work on it in a terminal
                 </button>
               </div>
+              {liveSessions.length > 0 && (
+                <div className="dispatch-row">
+                  <Dropdown
+                    label="Running session"
+                    value={attachTo ?? liveSessions[0]!.id}
+                    options={liveSessions.map((x) => ({
+                      value: x.id,
+                      label: x.name,
+                      ...(x.cardKey ? { hint: `on ${x.cardKey}` } : {}),
+                    }))}
+                    onChange={setAttachTo}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={dispatching || attachTo === null}
+                    onClick={sendToSession}
+                    title="Paste this card's task into the running session (it keeps its context) and open it"
+                  >
+                    Send to this session
+                  </button>
+                </div>
+              )}
               <textarea
                 className="textarea"
                 style={{ minHeight: 70 }}
