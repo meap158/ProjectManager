@@ -1997,18 +1997,115 @@ dialog:modal {
   opacity: 0.4;
   cursor: default;
 }
-.font-size {
+
+/* ---- Workspace toolbar: labelled groups with distinct purposes ---------------------------- */
+.bar-group {
   display: flex;
   align-items: center;
-  gap: 2px;
-  font-size: 12px;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
 }
-.shortcuts-hint {
+.bar-label {
   font-size: 12px;
+  color: var(--text-3);
   white-space: nowrap;
 }
-@media (max-width: 1100px) {
-  .shortcuts-hint {
-    display: none;
-  }
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+.stepper button {
+  width: 26px;
+  height: 100%;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.stepper button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.stepper button:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+.stepper .num {
+  min-width: 36px;
+  text-align: center;
+  font-size: 12px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  line-height: 24px;
+}
+.shortcuts {
+  position: relative;
+}
+.shortcuts summary {
+  list-style: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.shortcuts summary::-webkit-details-marker {
+  display: none;
+}
+.shortcuts[open] summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.shortcuts-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 300px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  font-size: 12.5px;
+}
+.shortcuts-pop dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin: 8px 0 0;
+}
+.shortcuts-pop dt {
+  white-space: nowrap;
+}
+.shortcuts-pop dd {
+  margin: 0;
+  color: var(--text-2);
+}
+kbd {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--surface-2);
+}
+.workspace-new .bar-label:first-child {
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
 }

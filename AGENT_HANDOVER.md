@@ -38,16 +38,14 @@ read it before product work. `/References` is empty.
 
 ## Roadmap (owner-requested, in priority order)
 
-0. **Next up** (Research Addenda 5–7):
-   - UI consistency audit: tab/project switches must not flicker or shift. Another actor was
-     editing `AgentsPanel`/`KanbanBoard` for this around 11:46, so check git status/diff
-     before editing those files.
-   - clearer workspace toolbar grouping
-   - remove the "Supervise" checkbox in `AgentsPanel` (the server already treats every session
-     as persistent)
+1. A theme toggle (the tokens already support `data-theme`).
+2. More client component tests: board drag/drop, card dialog flows, terminal input.
+3. Session resume for Codex/Gemini/OpenCode after a reboot. Today only Claude pins its own
+   conversation; the others start fresh, because they only offer "resume latest", which could
+   pick another pane's conversation.
 
-1. Portfolio status view: stale projects, uncommitted changes, everything in flight across projects.
-2. A theme toggle (the tokens already support `data-theme`).
+Owner preferences to keep applying (Research Addenda 4 and 7): simple over feature-rich, no rarely
+used options, never lose sessions, no layout shift.
 
 ## Architecture
 

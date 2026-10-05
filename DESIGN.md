@@ -333,6 +333,13 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   - Only visible panes mount xterm and open an output stream; a maximised pane hides the rest.
   - The session list is polled every 4s for statuses only. Output is live over SSE.
   - Keystrokes are batched per ~12ms and sent in order.
+- **Toolbar** (one row, each group with a distinct, labelled purpose, separated by thin dividers):
+  - **Layout:** a segmented group of the five preset icons.
+  - **Text size:** a − / value / + stepper.
+  - **?** opens a small shortcuts card (closes on Esc or an outside click). There's no permanent
+    hint text.
+  - On the right, the new-session controls read as a sentence: "New session in [project] with
+    [agent] [Start]".
 - **Keyboard:** Alt+1…4 focuses pane N (or switches the maximised pane), and Alt+Enter maximises or
   restores the focused pane. These are captured before xterm, so CLIs never see them. Pane headers
   show their number.

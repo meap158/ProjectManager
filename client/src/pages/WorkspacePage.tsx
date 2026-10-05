@@ -217,53 +217,56 @@ export function WorkspacePage() {
     <main className="workspace">
       <div className="workspace-bar">
         <h1>Agents</h1>
-        <div className="preset-picker" role="radiogroup" aria-label="Pane layout">
-          {WORKSPACE_PRESETS.map((preset) => (
-            <button
-              key={preset}
-              type="button"
-              role="radio"
-              aria-checked={layout.preset === preset}
-              aria-label={WORKSPACE_PRESET_INFO[preset].label}
-              title={WORKSPACE_PRESET_INFO[preset].label}
-              className={`preset${layout.preset === preset ? ' is-active' : ''}`}
-              onClick={() =>
-                update({ preset, panes: fitPanes(layout.panes, preset), maximized: null })
-              }
-            >
-              <PresetIcon preset={preset} />
-            </button>
-          ))}
-        </div>
-        <div className="font-size" role="group" aria-label="Terminal font size">
-          <button
-            className="icon-btn"
-            title="Smaller text"
-            aria-label="Smaller terminal text"
-            disabled={fontSize <= WORKSPACE_FONT_SIZES.min}
-            onClick={() => update({ ...layout, fontSize: fontSize - 1 })}
-          >
-            A−
-          </button>
-          <span className="num faint" aria-live="polite">
-            {fontSize}
+        <div className="bar-group">
+          <span className="bar-label" id="ws-layout-label">
+            Layout
           </span>
-          <button
-            className="icon-btn"
-            title="Larger text"
-            aria-label="Larger terminal text"
-            disabled={fontSize >= WORKSPACE_FONT_SIZES.max}
-            onClick={() => update({ ...layout, fontSize: fontSize + 1 })}
-          >
-            A+
-          </button>
+          <div className="preset-picker" role="radiogroup" aria-labelledby="ws-layout-label">
+            {WORKSPACE_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                role="radio"
+                aria-checked={layout.preset === preset}
+                aria-label={WORKSPACE_PRESET_INFO[preset].label}
+                title={WORKSPACE_PRESET_INFO[preset].label}
+                className={`preset${layout.preset === preset ? ' is-active' : ''}`}
+                onClick={() =>
+                  update({ preset, panes: fitPanes(layout.panes, preset), maximized: null })
+                }
+              >
+                <PresetIcon preset={preset} />
+              </button>
+            ))}
+          </div>
         </div>
-        <span
-          className="faint shortcuts-hint"
-          title="Alt+1…4: focus pane · Alt+Enter: maximise / restore · drag a pane header onto another pane to swap them"
-        >
-          ⌨ Alt+1…4 · Alt+Enter · drag to swap
-        </span>
+        <div className="bar-group">
+          <span className="bar-label" id="ws-text-label">
+            Text size
+          </span>
+          <div className="stepper" role="group" aria-labelledby="ws-text-label">
+            <button
+              type="button"
+              aria-label="Smaller terminal text"
+              disabled={fontSize <= WORKSPACE_FONT_SIZES.min}
+              onClick={() => update({ ...layout, fontSize: fontSize - 1 })}
+            >
+              −
+            </button>
+            <span className="num" aria-live="polite">
+              {fontSize}
+            </span>
+            <button
+              type="button"
+              aria-label="Larger terminal text"
+              disabled={fontSize >= WORKSPACE_FONT_SIZES.max}
+              onClick={() => update({ ...layout, fontSize: fontSize + 1 })}
+            >
+              +
+            </button>
+          </div>
+        </div>
+        <ShortcutsHelp />
         <NewSessionInline
           projects={projects}
           providers={providers}
@@ -645,13 +648,15 @@ function NewSessionInline({
   }
 
   return (
-    <form className="workspace-new" onSubmit={start}>
+    <form className="workspace-new" onSubmit={start} aria-label="Start a new session">
+      <span className="bar-label">New session in</span>
       <Dropdown
         label="Project"
         value={chosen ?? ''}
         options={projects.map((p) => ({ value: p.id, label: p.name, title: p.path }))}
         onChange={(v) => setProjectId(v)}
       />
+      <span className="bar-label">with</span>
       <Dropdown
         label="Agent"
         value={providerId}
@@ -665,9 +670,55 @@ function NewSessionInline({
         onChange={setProviderId}
       />
       <button className="btn btn-primary btn-sm" disabled={busy || !chosen}>
-        ＋ New session
+        Start
       </button>
     </form>
+  );
+}
+
+/** Keyboard/mouse shortcuts behind a "?" button: discoverable without permanent clutter. */
+function ShortcutsHelp() {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      const el = ref.current;
+      if (!el?.open) return;
+      if (
+        event instanceof KeyboardEvent ? event.key === 'Escape' : !el.contains(event.target as Node)
+      ) {
+        el.open = false;
+      }
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, []);
+  return (
+    <details className="shortcuts" ref={ref}>
+      <summary aria-label="Keyboard shortcuts" title="Keyboard shortcuts">
+        ?
+      </summary>
+      <div className="shortcuts-pop" role="note">
+        <b>Shortcuts</b>
+        <dl>
+          <dt>
+            <kbd>Alt</kbd> + <kbd>1</kbd>…<kbd>4</kbd>
+          </dt>
+          <dd>Focus pane 1–4</dd>
+          <dt>
+            <kbd>Alt</kbd> + <kbd>Enter</kbd>
+          </dt>
+          <dd>Maximise / restore the focused pane</dd>
+          <dt>Double-click a header</dt>
+          <dd>Maximise / restore</dd>
+          <dt>Drag a header</dt>
+          <dd>Swap two panes</dd>
+        </dl>
+      </div>
+    </details>
   );
 }
 
