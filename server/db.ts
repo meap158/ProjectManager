@@ -6,7 +6,7 @@ export type Db = DatabaseSync;
 
 // Append-only list of migrations; the index + 1 is stored in PRAGMA user_version.
 // Never edit a migration that has shipped — add a new one.
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: string[] = [
   `
   CREATE TABLE projects (
     id              INTEGER PRIMARY KEY,
