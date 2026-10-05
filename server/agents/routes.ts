@@ -113,7 +113,37 @@ function requireProject(db: Db, c: Context): number {
 
 export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervisor): void {
   // ---- Providers ------------------------------------------------------------------------------
-  app.get('/agents/providers', async (c) => c.json(await providerStatuses()));
+  app.get('/agents/providers', async (c) => {
+    const refresh = c.req.query('refresh');
+    return c.json(await providerStatuses(refresh !== undefined));
+  });
+
+  // ---- Agent installs (Settings: one-click CLI installs) ---------------------------------------
+  // The recipe is public (review before consent); only this POST executes anything.
+
+  app.post('/agents/providers/:providerId/install', async (c) => {
+    try {
+      return c.json(await supervisor.startInstall(c.req.param('providerId')), 201);
+    } catch (e) {
+      if (e instanceof AgentError) throw e;
+      throw new AgentError(400, (e as Error).message);
+    }
+  });
+
+  app.get('/agent-installs', (c) => c.json(supervisor.listInstalls()));
+
+  app.get('/agent-installs/:id/output', (c) => {
+    const after = offsetParam.safeParse(c.req.query('after') ?? '0');
+    const output = supervisor.readInstallOutput(parseId(c), after.success ? after.data : 0);
+    if (!output) throw new AgentError(404, 'Install not found');
+    return c.json(output);
+  });
+
+  app.delete('/agent-installs/:id', async (c) => {
+    if (!(await supervisor.removeInstall(parseId(c))))
+      throw new AgentError(404, 'Install not found');
+    return c.body(null, 204);
+  });
 
   // ---- Sessions -------------------------------------------------------------------------------
   app.get('/projects/:id/agent-sessions', (c) => {

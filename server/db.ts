@@ -115,6 +115,24 @@ export const MIGRATIONS: string[] = [
   );
   ALTER TABLE agent_sessions ADD COLUMN card_id INTEGER REFERENCES cards(id) ON DELETE SET NULL;
   `,
+  // Agent CLI installs (Settings): one-shot installer runs with streamed logs.
+  `
+  CREATE TABLE agent_installs (
+    id            INTEGER PRIMARY KEY,
+    provider_id   TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'running'
+                  CHECK (status IN ('running', 'succeeded', 'failed', 'killed')),
+    exit_code     INTEGER,
+    error         TEXT,
+    created_at    TEXT NOT NULL,
+    started_at    TEXT,
+    ended_at      TEXT,
+    log_path      TEXT NOT NULL
+  );
+
+  CREATE INDEX agent_installs_by_provider ON agent_installs (provider_id, id);
+  `,
 ];
 
 export function openDb(dataDir: string): Db {

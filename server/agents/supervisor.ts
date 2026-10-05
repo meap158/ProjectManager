@@ -15,7 +15,7 @@
 // - Only node builtins are used (child_process, fs). No shell is ever spawned:
 //   argv arrays go straight to the OS, so prompts cannot inject shell commands.
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import {
@@ -29,9 +29,12 @@ import {
   rmSync,
 } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import type {
   AgentAutonomy,
   AgentDesiredState,
+  AgentInstall,
+  AgentInstallStatus,
   AgentOutput,
   AgentRun,
   AgentRunStatus,
@@ -40,6 +43,7 @@ import type {
   AgentTerminal,
   CardRunSummary,
   CardStatus,
+  InstallRecipe,
   RunChanges,
 } from '../../shared/types.js';
 import { isTerminalReport, stripTerminalReports } from '../../shared/terminalReports.js';
@@ -49,6 +53,7 @@ import { getCard, getProjectRow, updateCard } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
 import { HostClient } from './host/client.js';
 import type { HostSessionInfo } from './host/protocol.js';
+import { fetchScript, recipeFor } from './install.js';
 import { processEnv, ptyAvailable, spawnPipe, spawnPty, type AgentProc } from './proc.js';
 import {
   buildDispatchArgv,
@@ -75,6 +80,28 @@ const MAX_RESTARTS = 20;
 const RESTART_BASE_MS = 2000;
 const RESTART_CAP_MS = 60_000;
 const KILL_GRACE_MS = 3000;
+/** Installers get one shot each: 10 minutes, then killed. */
+const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
+
+interface InstallRow {
+  id: number;
+  provider_id: string;
+  name: string;
+  status: AgentInstallStatus;
+  exit_code: number | null;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  ended_at: string | null;
+  log_path: string;
+}
+
+interface InstallProc {
+  proc: ChildProcess;
+  log: OutputLog;
+  stoppedByUser: boolean;
+  timer?: NodeJS.Timeout;
+}
 
 export class AgentError extends Error {
   constructor(
@@ -349,6 +376,12 @@ export class AgentSupervisor {
   private host: HostClient | null = null;
   private hostConnecting: Promise<HostClient | null> | null = null;
   private hosted = new Map<string, { proc: HostedProc; log: OutputLog }>();
+  /** Live installer processes (global, not per-project). */
+  private installing = new Map<number, InstallProc>();
+  /** Provider ids with an install spawn in flight: guards double starts. */
+  private installStarting = new Set<string>();
+  /** Test-only recipe overrides (production always uses the catalog). */
+  private readonly installRecipes: Partial<Record<string, InstallRecipe>>;
   /** Resolves once boot reconciliation (re-attach / relaunch) is done. */
   readonly ready: Promise<void>;
 
@@ -360,10 +393,15 @@ export class AgentSupervisor {
   constructor(
     private db: Db,
     private logDir: string,
-    options: { host?: boolean; dataDir?: string } = {},
+    options: {
+      host?: boolean;
+      dataDir?: string;
+      installRecipes?: Partial<Record<string, InstallRecipe>>;
+    } = {},
   ) {
     mkdirSync(logDir, { recursive: true });
     this.dataDir = options.dataDir ?? null;
+    this.installRecipes = options.installRecipes ?? {};
     this.useHost = !!options.host && !!this.dataDir && ptyAvailable();
     this.ready = this.reconcile().catch((e: Error) => {
       console.error('[agents] reconcile failed:', e);
@@ -499,6 +537,12 @@ export class AgentSupervisor {
           .run('Server shut down before completion (attempts exhausted)', now(), row.id);
       }
     }
+    // Installs never relaunch: they are quick and idempotent enough to retry by hand.
+    this.db
+      .prepare(
+        `UPDATE agent_installs SET status = 'failed', error = ?, ended_at = ? WHERE status = 'running'`,
+      )
+      .run('Server shut down before completion', now());
   }
 
   // ---- Sessions -------------------------------------------------------------------------------
@@ -1123,6 +1167,14 @@ export class AgentSupervisor {
       re-attaches); in-process ones are stopped so the next boot can relaunch them cleanly. */
   async shutdown(): Promise<void> {
     this.closed = true;
+    const installKills = [...this.installing.values()].map(async (live) => {
+      if (live.timer) clearTimeout(live.timer);
+      try {
+        if (live.proc.pid) await killTree(live.proc.pid);
+      } catch {
+        // Already gone.
+      }
+    });
     const kills = [...this.live.values()].map(async (live) => {
       if (live.timer) clearTimeout(live.timer);
       if (live.proc instanceof HostedProc) return;
@@ -1135,7 +1187,9 @@ export class AgentSupervisor {
       }
     });
     await Promise.allSettled(kills);
+    await Promise.allSettled(installKills);
     this.live.clear();
+    this.installing.clear();
     this.hosted.clear();
     this.host?.close();
   }
@@ -1504,6 +1558,207 @@ export class AgentSupervisor {
         row.id,
         row.log_path,
       );
+  }
+
+  // ---- Installs (Settings: one-click agent CLI installs) ---------------------------------------
+
+  listInstalls(): AgentInstall[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM agent_installs ORDER BY id DESC`)
+      .all() as unknown as InstallRow[];
+    return rows.map((r) => this.toInstall(r));
+  }
+
+  getInstall(id: number): AgentInstall | null {
+    const row = this.db.prepare(`SELECT * FROM agent_installs WHERE id = ?`).get(id) as
+      unknown | undefined;
+    if (!row) return null;
+    return this.toInstall(row as InstallRow);
+  }
+
+  readInstallOutput(id: number, after: number): AgentOutput | null {
+    const row = this.db.prepare(`SELECT * FROM agent_installs WHERE id = ?`).get(id) as
+      unknown | undefined;
+    if (!row) return null;
+    const typed = row as InstallRow;
+    const running = typed.status === 'running';
+    return this.readOutput(`install:${id}`, typed.log_path, running, typed.exit_code, after);
+  }
+
+  /** Starts an install with the catalog recipe (or a test override). Never relaunches. */
+  async startInstall(providerId: string): Promise<AgentInstall> {
+    const provider = getProvider(providerId);
+    if (!provider) throw new AgentError(404, `Unknown provider: ${providerId}`);
+    const recipe = this.installRecipes[providerId] ?? recipeFor(provider);
+    if (!recipe) throw new AgentError(400, `${provider.name} has no automatic install`);
+    // No "already installed" rejection: vendor installers are idempotent, so reinstalling is a
+    // legitimate repair. The UI only offers Install for missing CLIs.
+    const active = (
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM agent_installs WHERE provider_id = ? AND status = 'running'`,
+        )
+        .get(providerId) as { n: number }
+    ).n;
+    if (active > 0 || this.installStarting.has(providerId)) {
+      throw new AgentError(409, `Install of ${provider.name} is already running`);
+    }
+    this.installStarting.add(providerId);
+    try {
+      const ts = now();
+      const logPath = path.join(
+        this.logDir,
+        `install-${providerId}-${Date.now()}-${Math.floor(Math.random() * 1e6)}.log`,
+      );
+      const id = Number(
+        this.db
+          .prepare(
+            `INSERT INTO agent_installs
+               (provider_id, name, created_at, started_at, log_path)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .run(providerId, `Install ${provider.name}`, ts, ts, logPath).lastInsertRowid,
+      );
+      const label =
+        recipe.kind === 'command'
+          ? `$ ${recipe.command!.join(' ')}`
+          : `Install script: ${recipe.scriptUrl}`;
+      this.log(logPath, `${label}\n(${recipe.detail} Source: ${recipe.docUrl})\n\n`);
+      await this.spawnInstall(id, recipe);
+      return this.getInstall(id)!;
+    } finally {
+      this.installStarting.delete(providerId);
+    }
+  }
+
+  private async spawnInstall(id: number, recipe: InstallRecipe): Promise<void> {
+    const row = this.db
+      .prepare(`SELECT * FROM agent_installs WHERE id = ?`)
+      .get(id) as unknown as InstallRow;
+    const key = `install:${id}`;
+    const log = this.outputFor(key, row.log_path);
+    const finish = (status: AgentInstallStatus, exitCode: number | null, error: string | null) => {
+      this.installing.delete(id);
+      this.db
+        .prepare(
+          `UPDATE agent_installs SET status = ?, exit_code = ?, error = ?, ended_at = ? WHERE id = ? AND log_path = ?`,
+        )
+        .run(status, exitCode, error, now(), id, row.log_path);
+    };
+
+    let proc: ChildProcess;
+    try {
+      if (recipe.kind === 'command') {
+        const resolved = await resolveArgv(recipe.command!);
+        proc = spawn(resolved[0]!, resolved.slice(1), {
+          cwd: os.tmpdir(),
+          env: processEnv(),
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true,
+          windowsHide: true,
+        });
+      } else {
+        const script = await fetchScript(recipe.scriptUrl!);
+        const resolved = await resolveArgv(recipe.interpreter!);
+        proc = spawn(resolved[0]!, resolved.slice(1), {
+          cwd: os.tmpdir(),
+          env: processEnv(),
+          stdio: ['pipe', 'pipe', 'pipe'],
+          detached: true,
+          windowsHide: true,
+        });
+        // Installers read to EOF: close stdin after handing over the script.
+        proc.stdin!.write(script);
+        proc.stdin!.end();
+      }
+    } catch (e) {
+      log.append(`\n[supervisor] could not start install: ${(e as Error).message}\n`);
+      finish('failed', null, `Could not start install: ${(e as Error).message}`);
+      return;
+    }
+    if (this.closed) {
+      if (proc.pid) await killTree(proc.pid);
+      return;
+    }
+    const live: InstallProc = { proc, log, stoppedByUser: false };
+    this.installing.set(id, live);
+    const timer = setTimeout(() => {
+      if (!this.installing.has(id)) return;
+      log.append(`\n[supervisor] install timed out — killing\n`);
+      if (proc.pid) killTree(proc.pid).catch(() => undefined);
+    }, INSTALL_TIMEOUT_MS);
+    timer.unref?.();
+    live.timer = timer;
+
+    proc.stdout!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
+    proc.stderr!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
+    proc.on('error', (e) => log.append(`\n[process error: ${e.message}]\n`));
+    proc.on('exit', (code) => {
+      clearTimeout(timer);
+      if (this.installing.get(id) !== live) return;
+      this.installing.delete(id);
+      if (this.closed) return;
+      const current = this.db
+        .prepare(`SELECT * FROM agent_installs WHERE id = ?`)
+        .get(id) as unknown as InstallRow | undefined;
+      if (!current || current.log_path !== row.log_path || current.status !== 'running') return;
+      if (live.stoppedByUser) {
+        finish('killed', code, null);
+      } else if (code === 0) {
+        log.append(`\n[install finished — re-checking PATH]\n`);
+        finish('succeeded', code, null);
+      } else {
+        finish('failed', code, `Installer exited with code ${code}`);
+      }
+    });
+  }
+
+  async cancelInstall(id: number): Promise<AgentInstall | null> {
+    const row = this.db.prepare(`SELECT * FROM agent_installs WHERE id = ?`).get(id) as unknown as
+      InstallRow | undefined;
+    if (!row) return null;
+    const live = this.installing.get(id);
+    if (live) {
+      live.stoppedByUser = true;
+      if (live.timer) clearTimeout(live.timer);
+      if (live.proc.pid) await killTree(live.proc.pid);
+    } else if (row.status === 'running') {
+      this.db
+        .prepare(`UPDATE agent_installs SET status = 'killed', ended_at = ? WHERE id = ?`)
+        .run(now(), id);
+    }
+    return this.getInstall(id);
+  }
+
+  async removeInstall(id: number): Promise<boolean> {
+    const row = this.db.prepare(`SELECT * FROM agent_installs WHERE id = ?`).get(id) as unknown as
+      InstallRow | undefined;
+    if (!row) return false;
+    await this.cancelInstall(id);
+    this.db.prepare(`DELETE FROM agent_installs WHERE id = ?`).run(id);
+    try {
+      rmSync(row.log_path, { force: true });
+    } catch {
+      // Best-effort.
+    }
+    return true;
+  }
+
+  private toInstall(row: InstallRow): AgentInstall {
+    const live = this.installing.get(row.id);
+    const provider = getProvider(row.provider_id);
+    return {
+      id: row.id,
+      providerId: row.provider_id,
+      providerName: provider?.name ?? row.provider_id,
+      status: row.status,
+      exitCode: row.exit_code,
+      error: row.error,
+      createdAt: row.created_at,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      logBytes: live ? live.log.totalBytes : this.fileSize(row.log_path),
+    };
   }
 
   // ---- Row mapping --------------------------------------------------------------------------------

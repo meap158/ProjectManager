@@ -8,6 +8,7 @@
 
 import { execFile } from 'node:child_process';
 import type { AgentAutonomy, AgentProvider, AgentProviderStatus } from '../../shared/types.js';
+import { recipeFor } from './install.js';
 import { ResolveError, resolveArgv } from './resolve.js';
 
 export const PROMPT_PLACEHOLDER = '{prompt}';
@@ -182,11 +183,13 @@ export async function providerStatuses(force = false): Promise<AgentProviderStat
   if (!force && cache && Date.now() - cache.at < CACHE_MS) return cache.statuses;
   const statuses = await Promise.all(
     PROVIDERS.map(async (p): Promise<AgentProviderStatus> => {
+      const install = recipeFor(p) ?? null;
       if (p.id === 'shell' || p.id === 'custom') {
         return {
           ...p,
           available: true,
           resolvedPath: p.id === 'shell' ? defaultShell()[0]! : null,
+          install,
         };
       }
       const found = await lookupBinary(p.binary!);
@@ -195,6 +198,7 @@ export async function providerStatuses(force = false): Promise<AgentProviderStat
         available: found.path !== null,
         resolvedPath: found.path,
         ...(found.reason ? { unavailableReason: found.reason } : {}),
+        install,
       };
     }),
   );

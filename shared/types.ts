@@ -256,6 +256,42 @@ export interface AgentProviderStatus extends AgentProvider {
   resolvedPath: string | null;
   /** Why the provider can't be used, when it is unavailable. */
   unavailableReason?: string;
+  /** How to install it on this machine right now (null: no automatic install). */
+  install: InstallPreview | null;
+}
+
+/** One official way to install an agent CLI, exactly as its vendor documents it. */
+export interface InstallRecipe {
+  /** Shown in the UI before anything runs, e.g. "Official installer (claude.ai)". */
+  label: string;
+  /** Shown alongside: what will happen, e.g. which URL is fetched and how. */
+  detail: string;
+  /** Source of the official instructions (linked in the UI). */
+  docUrl: string;
+  kind: 'command' | 'script';
+  /** kind=command: argv executed directly (resolved like any other spawn). */
+  command?: string[];
+  /** kind=script: installer downloaded and piped to this interpreter's stdin. */
+  scriptUrl?: string;
+  interpreter?: string[];
+}
+
+/** The recipe preview the API exposes (identical shape; execution needs the POST). */
+export type InstallPreview = InstallRecipe;
+
+export type AgentInstallStatus = 'running' | 'succeeded' | 'failed' | 'killed';
+
+export interface AgentInstall {
+  id: number;
+  providerId: string;
+  providerName: string;
+  status: AgentInstallStatus;
+  exitCode: number | null;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  logBytes: number;
 }
 
 /** How a session talks to its process: a pseudo-terminal (full TUI) or plain pipes. */
