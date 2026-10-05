@@ -34,7 +34,11 @@ async function main() {
 
   const db = openDb(config.dataDir);
   const root = new Hono();
-  const api = createApp(db, { dataDir: config.dataDir });
+  const api = createApp(db, {
+    dataDir: config.dataDir,
+    // Sessions live in the session host and survive server restarts (AGENT_HOST=off disables).
+    agentHost: process.env.AGENT_HOST !== 'off',
+  });
   root.route('/', api);
 
   const server = createServer();

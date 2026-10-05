@@ -335,3 +335,26 @@ values (5px, 7px, 9px, 18px…) are never added.
 - **Audit trail:** normalised to the scale — tooltip `6px 9px` → `6px 8px`, project figures
   and list indents `18px` → `16px`, workspace padding → symmetric `8px`, pane-body gutters →
   `6px 0 0 6px`, sidebar microcopy gap `5px` → `6px`, dropdown rows `7px 9px` → `7px 8px`.
+
+### 12.3 Session persistence (session host)
+
+Sessions are never lost unless you stop or delete them (owner requirement, Research Addendum 4).
+
+- **Session host** (`server/agents/host/ptyHost.ts`): one small background process per data
+  folder owns the interactive session processes (PTYs), like tmux. Server restarts (dev reloads,
+  crashes, out-of-memory kills) only detach from it. The next server re-attaches to the same
+  processes: same PID, no relaunch, no lost state.
+- **Reboots:** the host dies with the machine. On the next start the supervisor relaunches every
+  wanted session, and Claude resumes its own conversation (`--resume <id>`).
+- **Isolation:**
+  - It runs outside the server's process tree (started via a short-lived intermediate), so killing
+    the server tree never kills sessions.
+  - It talks newline-JSON over a local named pipe / unix socket. Every client must authenticate
+    with a token from `<dataDir>/agent-host.json`.
+- **Logs:** the host writes session output straight to the log file, so nothing is missed while no
+  server is attached. Attached servers mirror it from live events carrying exact byte offsets. Only
+  one writer touches a log at a time. The cap was raised to 32 MB.
+- **Efficiency:** the host exits on its own when no session is alive and no server has been
+  attached for a minute.
+- **Simpler UI:** the "Supervise" option was removed. Every session persists by default.
+- Disable with `AGENT_HOST=off` (sessions then run inside the server as before).

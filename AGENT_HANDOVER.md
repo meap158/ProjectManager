@@ -30,8 +30,19 @@ read it before product work. `/References` is empty.
   - multi-pane Agents workspace wired to the board (DESIGN.md §12.2)
   - dashboard "Commits by project" stacked chart (DESIGN.md §5)
   - workspace polish: keyboard shortcuts, drag-to-swap panes, font size, → Review from a pane
+  - session host: sessions survive server restarts (DESIGN.md §12.3)
+  - one server per data folder, launcher watchdog, schema repair
 
 ## Roadmap (owner-requested, in priority order)
+
+0. **Next up** (Research Addenda 5–7):
+   - attach a board card to an existing session (keep context)
+   - UI consistency audit: tab/project switches must not flicker or shift. Another actor was
+     editing `AgentsPanel`/`KanbanBoard` for this around 11:46, so check git status/diff
+     before editing those files.
+   - clearer workspace toolbar grouping
+   - remove the "Supervise" checkbox in `AgentsPanel` (the server already treats every session
+     as persistent)
 
 1. Portfolio status view: stale projects, uncommitted changes, everything in flight across projects.
 2. Client tests (Vitest + Testing Library) for the board, dialogs, terminal and workspace.
@@ -79,6 +90,13 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
   CardDialog resets its form during render. Keep to these patterns, or lint fails.
 
 ## Gotchas
+
+- **Session host processes** (`ptyHost`) legitimately outlive the server while sessions run.
+  Rendezvous: `<dataDir>/agent-host.json`; diagnostics: `<dataDir>/agent-host.log`.
+- `client/src/components/Dropdown.tsx` and some workspace toolbar changes came from another actor
+  (they ended up in commit 104669c).
+- Don't put backticks inside double-quoted `node -e` / shell strings: bash runs them as commands
+  (this once created a stray empty file named `{`). Use script files for doc edits.
 
 - **One server per data folder** (`server/instance.ts`, record in `<dataDir>/server.json`).
   - A second server exits with `[server] ALREADY_RUNNING <url>`, and the launcher just opens that URL.

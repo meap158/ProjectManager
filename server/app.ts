@@ -67,7 +67,12 @@ export type AppWithAgents = Hono & { supervisor: AgentSupervisor };
 
 export function createApp(
   db: Db,
-  options: { allowedHosts?: string[]; dataDir?: string } = {},
+  options: {
+    allowedHosts?: string[];
+    dataDir?: string;
+    /** Run interactive sessions in the session host so they survive server restarts. */
+    agentHost?: boolean;
+  } = {},
 ): AppWithAgents {
   const scanner = new Scanner(db);
   // Agent sessions/runs persist in SQLite + log files; the supervisor relaunches
@@ -77,7 +82,10 @@ export function createApp(
     options.dataDir ?? path.join(os.tmpdir(), 'projectmanager-agent-logs'),
     'agent-logs',
   );
-  const supervisor = new AgentSupervisor(db, logDir);
+  const supervisor = new AgentSupervisor(db, logDir, {
+    host: options.agentHost ?? false,
+    ...(options.dataDir ? { dataDir: options.dataDir } : {}),
+  });
   const app = new Hono().basePath('/api');
   const allowedHosts = new Set(options.allowedHosts ?? ['localhost', '127.0.0.1', '[::1]']);
 

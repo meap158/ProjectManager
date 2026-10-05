@@ -45,6 +45,8 @@ import type {
 import type { Db } from '../db.js';
 import { getCard, getProjectRow, updateCard } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
+import { HostClient } from './host/client.js';
+import type { HostSessionInfo } from './host/protocol.js';
 import { processEnv, ptyAvailable, spawnPipe, spawnPty, type AgentProc } from './proc.js';
 import {
   buildDispatchArgv,
@@ -60,7 +62,7 @@ const now = () => new Date().toISOString();
 
 export const MAX_SESSIONS_PER_PROJECT = 8;
 export const MAX_RUNNING_RUNS_PER_PROJECT = 3;
-export const MAX_LOG_BYTES = 8 * 1024 * 1024;
+export const MAX_LOG_BYTES = 32 * 1024 * 1024;
 const MEM_CAP_BYTES = 256 * 1024;
 const MAX_READ_BYTES = 128 * 1024;
 const MAX_QUEUE_ENTRIES = 500;
@@ -101,6 +103,28 @@ class OutputLog {
     private onAppend?: () => void,
   ) {
     mkdirSync(path.dirname(file), { recursive: true });
+    // Continue from what is already on disk, so byte offsets match the file across server
+    // restarts (a reconnecting terminal asks for "everything after byte N").
+    const size = statSync(file, { throwIfNoEntry: false })?.size ?? 0;
+    this.baseOffset = size;
+    this.totalBytes = size;
+  }
+
+  /** Output the session host already wrote to the file at `offset`: mirror it in memory only. */
+  ingest(offset: number, text: string): void {
+    const bytes = Buffer.byteLength(text);
+    if (offset + bytes <= this.totalBytes) return; // Already have it.
+    if (offset !== this.totalBytes) this.resync(offset); // Gap/overlap: follow the host.
+    this.push(text);
+  }
+
+  /** Re-anchor at the file size the host reports; anything older is read from disk. */
+  resync(size: number): void {
+    if (size === this.totalBytes) return;
+    this.chunks = [];
+    this.memBytes = 0;
+    this.baseOffset = size;
+    this.totalBytes = size;
   }
 
   append(text: string): void {
@@ -218,6 +242,50 @@ interface LiveProc {
   id: number;
 }
 
+/** A session process owned by the session host, driven over its socket. */
+class HostedProc implements AgentProc {
+  readonly terminal = 'pty' as const;
+  private exitListeners: ((code: number | null, signal: string | null) => void)[] = [];
+  private exited = false;
+
+  constructor(
+    private client: HostClient,
+    readonly key: string,
+    readonly pid: number | undefined,
+  ) {}
+
+  write(data: string): boolean {
+    if (this.exited || !this.client.connected) return false;
+    this.client.request({ op: 'write', key: this.key, data }).catch(() => undefined);
+    return true;
+  }
+
+  resize(cols: number, rows: number): void {
+    this.client.request({ op: 'resize', key: this.key, cols, rows }).catch(() => undefined);
+  }
+
+  async kill(): Promise<void> {
+    await this.client.request({ op: 'kill', key: this.key }).catch(() => undefined);
+  }
+
+  // Output goes straight from host events into the session's OutputLog (see wireHosted).
+  onData(): void {}
+  onError(): void {}
+
+  onExit(listener: (code: number | null, signal: string | null) => void): void {
+    this.exitListeners.push(listener);
+  }
+
+  deliverExit(code: number | null, signal: string | null): void {
+    if (this.exited) return;
+    this.exited = true;
+    for (const listener of this.exitListeners) listener(code, signal);
+  }
+}
+
+/** The host's key for a session record: the id alone is not unique (SQLite reuses ids). */
+const hostKey = (row: { id: number; log_path: string }) => `session:${row.id}|${row.log_path}`;
+
 interface SessionRow {
   id: number;
   project_id: number;
@@ -273,30 +341,133 @@ export class AgentSupervisor {
   private closed = false;
   /** Emits `output:<kind>:<id>` whenever a log grows, for live streaming to the GUI. */
   readonly events = new EventEmitter().setMaxListeners(0);
+  /** Interactive sessions live in the session host (survive server restarts) when enabled. */
+  private readonly useHost: boolean;
+  private readonly dataDir: string | null;
+  private host: HostClient | null = null;
+  private hostConnecting: Promise<HostClient | null> | null = null;
+  private hosted = new Map<string, { proc: HostedProc; log: OutputLog }>();
+  /** Resolves once boot reconciliation (re-attach / relaunch) is done. */
+  readonly ready: Promise<void>;
 
   constructor(
     private db: Db,
     private logDir: string,
+    options: { host?: boolean; dataDir?: string } = {},
   ) {
     mkdirSync(logDir, { recursive: true });
-    this.reconcile();
+    this.dataDir = options.dataDir ?? null;
+    this.useHost = !!options.host && !!this.dataDir && ptyAvailable();
+    this.ready = this.reconcile().catch((e: Error) => {
+      console.error('[agents] reconcile failed:', e);
+    });
+  }
+
+  // ---- Session host ------------------------------------------------------------------------
+
+  private getHost(): Promise<HostClient | null> {
+    if (!this.useHost || this.closed) return Promise.resolve(null);
+    if (this.host?.connected) return Promise.resolve(this.host);
+    this.hostConnecting ??= HostClient.connect(this.dataDir!).then((client) => {
+      this.hostConnecting = null;
+      if (!client || this.closed) {
+        client?.close();
+        if (!client) console.warn('[agents] session host unavailable; running sessions in-process');
+        return null;
+      }
+      this.host = client;
+      client.on('data', (key, offset, data) => this.hosted.get(key)?.log.ingest(offset, data));
+      client.on('exit', (key, code, signal) =>
+        this.hosted.get(key)?.proc.deliverExit(code, signal),
+      );
+      client.on('disconnect', () => this.onHostLost(client));
+      return client;
+    });
+    return this.hostConnecting;
+  }
+
+  /** The host went away (crashed/killed): its sessions are gone; restart them normally. */
+  private onHostLost(client: HostClient): void {
+    if (this.host === client) this.host = null;
+    if (this.closed) return;
+    console.warn('[agents] session host disconnected');
+    for (const [key, hosted] of this.hosted) {
+      this.hosted.delete(key);
+      hosted.proc.deliverExit(null, 'session host exited');
+    }
+  }
+
+  /** Common wiring for a hosted session we just spawned or re-attached to. */
+  private wireHosted(
+    row: SessionRow,
+    client: HostClient,
+    info: HostSessionInfo,
+    log: OutputLog,
+  ): void {
+    const key = this.logPathFor('session', row.id);
+    const hk = hostKey(row);
+    log.resync(info.logBytes);
+    const proc = new HostedProc(client, hk, info.pid ?? undefined);
+    const live: LiveProc = { proc, log, stoppedByUser: false, kind: 'session', id: row.id };
+    this.live.set(key, live);
+    this.hosted.set(hk, { proc, log });
+    proc.onExit((code, signal) => {
+      this.hosted.delete(hk);
+      client.request({ op: 'forget', key: hk }).catch(() => undefined);
+      this.onSessionExit(row, key, live, code, signal);
+    });
+    this.db
+      .prepare(
+        `UPDATE agent_sessions SET status = 'running', pid = ?, ended_at = NULL WHERE id = ?`,
+      )
+      .run(info.pid ?? null, row.id);
+    this.flushInputQueue(row.id, proc);
+  }
+
+  private async killLive(live: LiveProc): Promise<void> {
+    if (live.proc instanceof HostedProc) await live.proc.kill();
+    else if (live.proc.pid) await killTree(live.proc.pid);
   }
 
   // ---- Boot reconciliation: survive restarts and reboots -------------------------------------
 
-  private reconcile(): void {
-    // Sessions: relaunch what is still wanted and supervised, mark the rest dead.
+  private async reconcile(): Promise<void> {
+    // Sessions are never dropped by a restart: anything still wanted is re-attached (alive in the
+    // session host) or relaunched (died, e.g. reboot). Only deliberately stopped ones stay down.
     const sessions = this.db
       .prepare(`SELECT * FROM agent_sessions`)
       .all() as unknown as SessionRow[];
+    const inHost = new Map<string, HostSessionInfo>();
+    if (sessions.some((r) => r.terminal === 'pty' && r.status === 'running')) {
+      const host = await this.getHost();
+      try {
+        for (const info of (await host?.list()) ?? []) inHost.set(info.key, info);
+      } catch {
+        // Host unavailable: fall through to relaunching.
+      }
+    }
     for (const row of sessions) {
-      if (row.desired_state === 'running' && row.supervise && row.status === 'running') {
+      const hosted = inHost.get(hostKey(row));
+      if (row.desired_state === 'running' && row.status === 'running') {
+        if (hosted?.alive && this.host) {
+          this.wireHosted(
+            row,
+            this.host,
+            hosted,
+            this.outputFor(`session:${row.id}`, row.log_path),
+          );
+          continue;
+        }
+        if (hosted) this.host?.request({ op: 'forget', key: hostKey(row) }).catch(() => undefined);
         this.log(
           row.log_path,
           `\n[supervisor] server restarted — relaunching session (attempt ${row.restarts + 1})\n`,
         );
         this.spawnSession(row, true).catch((e) => this.markSessionDead(row.id, String(e)));
       } else if (row.status === 'running') {
+        // Wanted down (stopped on purpose) but still alive somewhere: honour the stop.
+        if (hosted?.alive)
+          this.host?.request({ op: 'kill', key: hostKey(row) }).catch(() => undefined);
         this.db
           .prepare(
             `UPDATE agent_sessions SET status = 'dead', pid = NULL, ended_at = ? WHERE id = ?`,
@@ -519,7 +690,7 @@ export class AgentSupervisor {
     if (live) {
       live.stoppedByUser = true;
       if (live.timer) clearTimeout(live.timer);
-      if (live.proc.pid) await killTree(live.proc.pid);
+      await this.killLive(live);
     } else if (row.status === 'running') {
       this.db
         .prepare(
@@ -758,7 +929,7 @@ export class AgentSupervisor {
     if (live) {
       live.stoppedByUser = true;
       if (live.timer) clearTimeout(live.timer);
-      if (live.proc.pid) await killTree(live.proc.pid);
+      await this.killLive(live);
     } else if (row.status === 'queued' || row.status === 'running') {
       this.db
         .prepare(`UPDATE agent_runs SET status = 'killed', ended_at = ? WHERE id = ?`)
@@ -866,7 +1037,7 @@ export class AgentSupervisor {
         live.stoppedByUser = true;
         if (live.timer) clearTimeout(live.timer);
         try {
-          if (live.proc.pid) await killTree(live.proc.pid);
+          await this.killLive(live);
         } catch {
           // Already gone.
         }
@@ -874,21 +1045,25 @@ export class AgentSupervisor {
     }
   }
 
-  /** Graceful shutdown: stop live processes so the next boot can relaunch them cleanly. */
+  /** Graceful shutdown. Hosted sessions keep running in the session host (the next server
+      re-attaches); in-process ones are stopped so the next boot can relaunch them cleanly. */
   async shutdown(): Promise<void> {
     this.closed = true;
     const kills = [...this.live.values()].map(async (live) => {
       if (live.timer) clearTimeout(live.timer);
+      if (live.proc instanceof HostedProc) return;
       // If a process was mid-restart-backoff it never spawned: leave the row as
       // 'running' + wanted so the next boot picks it up.
       try {
-        if (live.proc.pid) await killTree(live.proc.pid);
+        await this.killLive(live);
       } catch {
         // Already gone.
       }
     });
     await Promise.allSettled(kills);
     this.live.clear();
+    this.hosted.clear();
+    this.host?.close();
   }
 
   // ---- Spawning ---------------------------------------------------------------------------------
@@ -987,6 +1162,27 @@ export class AgentSupervisor {
       let proc: AgentProc;
       try {
         const resolved = await resolveArgv(argv);
+        const host = row.terminal === 'pty' ? await this.getHost() : null;
+        if (host) {
+          // Write our banner before the host starts appending: one writer at a time keeps byte
+          // offsets exact.
+          if (!isRelaunch) log.append(`$ ${argv.join(' ')}\r\n(cd ${row.cwd})\r\n`);
+          const info = (await host.request({
+            op: 'spawn',
+            key: hostKey(row),
+            argv: resolved,
+            cwd: row.cwd,
+            env: processEnv(env),
+            cols: 120,
+            rows: 30,
+            logPath: row.log_path,
+            maxLogBytes: MAX_LOG_BYTES,
+          })) as HostSessionInfo;
+          // Shutting down meanwhile: leave it running in the host; the next boot re-attaches.
+          if (this.closed) return;
+          this.wireHosted(row, host, info, log);
+          return;
+        }
         const options = { cwd: row.cwd, env: processEnv(env) };
         proc =
           row.terminal === 'pty' && ptyAvailable()
