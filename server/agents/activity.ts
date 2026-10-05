@@ -63,6 +63,10 @@ function promptOffsets(text: string): number[] {
  */
 export function tailState(logTail: string): TailState | null {
   const text = stripTerminal(logTail);
+  // Pure animation (e.g. Grok's idle welcome screen redraws a braille logo forever): a tail with
+  // no letters or digits at all is redraw chrome, not work. Busy CLIs always print words.
+  const words = text.replace(/[⠀-⣿─-▟\s]/g, '');
+  if (text.trim().length > 0 && !/[\p{L}\p{N}]/u.test(words)) return 'idle';
   const prompts = promptOffsets(text);
   const last = prompts.at(-1);
   if (last === undefined || text.length - last > PROMPT_TAIL_CHARS) return null;

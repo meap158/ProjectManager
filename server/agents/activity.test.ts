@@ -50,6 +50,19 @@ describe('tailState', () => {
     );
   });
 
+  it('Grok idle: a tail that only redraws its braille logo is idle, not running', () => {
+    const logo = '⣀⣀⡀⠀⠀⠀⢀⠄⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀⠀⠀⣼⡟⠁';
+    const tail = Array.from({ length: 40 }, () => `${ESC}[38;2;114;114;114m${logo}${ESC}[H`).join(
+      '',
+    );
+    expect(tailState(tail)).toBe('idle');
+    // Busy Grok prints words: back to the recency fallback.
+    expect(
+      tailState(`${tail}
+${ESC}[0mThinking…`),
+    ).toBeNull();
+  });
+
   it('a busy stream with no prompt in sight says nothing (recency decides)', () => {
     const tail = [
       '⠋ Working on the fix… (esc to interrupt)',
