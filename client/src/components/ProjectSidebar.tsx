@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router';
-import type { ProjectSummary } from '../../../shared/types';
+import type { AgentSession, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { formatCompact, formatRelative } from '../format';
 import { useProjectHref } from '../projectTabs';
+import { sessionActivity } from '../sessionActivity';
 import { AddProjectDialog } from './AddProjectDialog';
 
 // Sorter modelled on the KDP Publishing Pipeline Library sorter: each mode has
@@ -64,6 +65,7 @@ export function ProjectSidebar() {
   const navigate = useNavigate();
   const projectHref = useProjectHref();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>(() =>
     readSortPreference('pm-sidebar-sort', SORT_MODES, 'name'),
@@ -117,10 +119,19 @@ export function ProjectSidebar() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     async function load() {
       try {
-        const list = await api.listProjects();
-        if (!cancelled) setProjects(list);
+        const [list, all] = await Promise.all([
+          api.listProjects(),
+          api.listAllSessions().catch(() => [] as AgentSession[]),
+        ]);
+        if (!cancelled) {
+          setProjects(list);
+          setSessions(all);
+        }
         const scanning = list.some((p) => p.scan.status === 'scanning');
-        timer = setTimeout(load, scanning ? 2000 : 10000);
+        // Working vs idle is judged on output in the last few seconds: poll faster while any
+        // session runs so the badges keep up.
+        const running = all.some((x) => x.status === 'running');
+        timer = setTimeout(load, scanning ? 2000 : running ? 4000 : 10000);
       } catch {
         timer = setTimeout(load, 10000);
       }
@@ -159,6 +170,16 @@ export function ProjectSidebar() {
     0,
   );
   const totalsRunning = (projects ?? []).reduce((s, p) => s + p.runningSessions, 0);
+  // Per project: how many CLI sessions are working (recent output) vs idle (waiting for you).
+  const now = Date.now();
+  const activity = new Map<number, { working: number; idle: number }>();
+  for (const x of sessions) {
+    const state = sessionActivity(x, now);
+    if (state === 'stopped') continue;
+    const entry = activity.get(x.projectId) ?? { working: 0, idle: 0 };
+    entry[state]++;
+    activity.set(x.projectId, entry);
+  }
 
   return (
     <aside className="sidebar" aria-label="Tracked projects">
@@ -255,7 +276,12 @@ export function ProjectSidebar() {
           </div>
         )}
         {visible.map((p) => (
-          <SidebarItem key={p.id} project={p} href={projectHref(p.id)} />
+          <SidebarItem
+            key={p.id}
+            project={p}
+            href={projectHref(p.id)}
+            activity={activity.get(p.id) ?? { working: 0, idle: p.runningSessions }}
+          />
         ))}
         {projects !== null && visible.length === 0 && projects.length > 0 && (
           <div className="faint" style={{ fontSize: 13, padding: '4px 2px' }}>
@@ -316,7 +342,15 @@ export function ProjectSidebar() {
   );
 }
 
-function SidebarItem({ project: p, href }: { project: ProjectSummary; href: string }) {
+function SidebarItem({
+  project: p,
+  href,
+  activity,
+}: {
+  project: ProjectSummary;
+  href: string;
+  activity: { working: number; idle: number };
+}) {
   const flight = p.cardCounts.in_progress + p.cardCounts.review;
   const planned = p.cardCounts.backlog + p.cardCounts.todo;
   const topLang = p.code?.languages[0]?.name;
@@ -330,7 +364,8 @@ function SidebarItem({ project: p, href }: { project: ProjectSummary; href: stri
       <span className="sidebar-name-row">
         <StatusDot project={p} />
         <span className="sidebar-name truncate">{p.name}</span>
-        {p.runningSessions > 0 && <RunningBadge count={p.runningSessions} />}
+        {activity.working > 0 && <SessionBadge state="working" count={activity.working} />}
+        {activity.idle > 0 && <SessionBadge state="idle" count={activity.idle} />}
         {p.missing ? (
           <span className="badge badge-danger">missing</span>
         ) : p.scan.status === 'scanning' ? (
@@ -371,21 +406,32 @@ function SidebarItem({ project: p, href }: { project: ProjectSummary; href: stri
   );
 }
 
-/** Terminal glyph + count: CLI sessions running in this project (icon and text, never colour alone). */
-function RunningBadge({ count }: { count: number }) {
-  const label = `${count} CLI session${count === 1 ? '' : 's'} running`;
+/**
+ * CLI sessions in this project, by what they're doing. Working (output in the last seconds):
+ * accent badge with a spinning ring. Idle (open, waiting for you): neutral badge with a
+ * terminal glyph. Icon + count + text label, never colour alone.
+ */
+function SessionBadge({ state, count }: { state: 'working' | 'idle'; count: number }) {
+  const label =
+    state === 'working'
+      ? `${count} CLI session${count === 1 ? '' : 's'} working`
+      : `${count} CLI session${count === 1 ? '' : 's'} open, waiting for you`;
   return (
-    <span className="badge badge-running" title={label} aria-label={label} role="img">
-      <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
-        <path
-          d="M3 4l4 4-4 4M8.5 12H13"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+    <span className={`badge badge-session is-${state}`} title={label} aria-label={label} role="img">
+      {state === 'working' ? (
+        <span className="badge-spinner" aria-hidden="true" />
+      ) : (
+        <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M3 4l4 4-4 4M8.5 12H13"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
       {count}
     </span>
   );

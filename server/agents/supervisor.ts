@@ -1544,6 +1544,7 @@ export class AgentSupervisor {
       startedAt: row.started_at,
       endedAt: row.ended_at,
       logBytes: live ? live.log.totalBytes : this.fileSize(row.log_path),
+      lastOutputAt: this.fileModifiedAt(row.log_path),
     };
   }
 
@@ -1579,6 +1580,15 @@ export class AgentSupervisor {
       endedAt: row.ended_at,
       logBytes: live ? live.log.totalBytes : this.fileSize(row.log_path),
     };
+  }
+
+  /** When the log last grew: the session's last output (the host writes the log itself). */
+  private fileModifiedAt(file: string): string | null {
+    try {
+      return statSync(file).mtime.toISOString();
+    } catch {
+      return null;
+    }
   }
 
   private fileSize(file: string): number {

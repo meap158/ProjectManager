@@ -8,6 +8,7 @@ import {
   formatNumber,
   formatRelative,
 } from '../format';
+import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 
 // One list for everything agents do in a project (or across projects on the workspace):
 // - Terminal: an interactive session. It keeps running (and relaunches after crashes) until you
@@ -134,10 +135,14 @@ export function runFacts(r: AgentRun, now: number): Fact[] {
 }
 
 /** What the row says about state, in words (never colour alone). */
-function stateLabel(w: WorkItem): { text: string; tone?: 'good' | 'bad' | 'attention' } {
+function stateLabel(
+  w: WorkItem,
+  now: number,
+): { text: string; tone?: 'good' | 'bad' | 'attention'; activity?: 'working' | 'idle' } {
   if (w.kind === 'session') {
     const s = w.item;
-    if (s.status === 'running') return { text: 'running', tone: 'good' };
+    const activity = sessionActivity(s, now);
+    if (activity !== 'stopped') return { text: ACTIVITY_LABEL[activity], tone: 'good', activity };
     if (s.status === 'dead') return { text: 'crashed', tone: 'bad' };
     return { text: s.status === 'killed' ? 'stopped' : 'ended' };
   }
@@ -173,7 +178,7 @@ export function AgentWorkList({
     <ul className="list work-list">
       {items.map((w) => {
         const key = workKey(w);
-        const state = stateLabel(w);
+        const state = stateLabel(w, now);
         const facts =
           w.kind === 'session'
             ? sessionFacts(w.item, now, tokens?.[w.item.id])
@@ -192,7 +197,10 @@ export function AgentWorkList({
               }
             >
               <span className="work-line">
-                <span className={`status-dot tone-${state.tone ?? 'idle'}`} aria-hidden="true" />
+                <span
+                  className={`status-dot tone-${state.tone ?? 'idle'}${state.activity ? ` is-${state.activity}` : ''}`}
+                  aria-hidden="true"
+                />
                 <b className="truncate">{w.item.name}</b>
                 <span className="badge work-kind" title={KIND[w.kind].title}>
                   {KIND[w.kind].label}

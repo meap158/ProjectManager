@@ -2619,3 +2619,48 @@ dialog.lightbox img {
 .view-switch .btn {
   gap: 5px;
 }
+
+/* Session activity: working (recent output) vs idle (open, waiting for you). */
+.badge-session {
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.badge-session.is-working {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.badge-session.is-idle {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-2);
+}
+.badge-spinner {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  animation: spin 900ms linear infinite;
+}
+.status-dot.is-working {
+  box-shadow: 0 0 0 0 var(--good, #0ca30c);
+  animation: activity-pulse 1.6s ease-out infinite;
+}
+.status-dot.is-idle {
+  background: transparent !important;
+  border: 1.5px solid var(--good, #0ca30c);
+}
+@keyframes activity-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good, #0ca30c) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .badge-spinner,
+  .status-dot.is-working {
+    animation: none;
+  }
+}

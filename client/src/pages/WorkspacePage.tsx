@@ -26,6 +26,7 @@ import { api } from '../api';
 import { Dropdown } from '../components/Dropdown';
 import { InlineRename } from '../components/InlineRename';
 import { isTerminalReport } from '../../../shared/terminalReports';
+import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { RunCard } from '../components/RunCard';
@@ -599,7 +600,7 @@ function Pane({
           {index + 1}
         </span>
         <span
-          className="status-dot"
+          className={`status-dot${running ? ` is-${sessionActivity(s)}` : ''}`}
           style={{
             background: running
               ? 'var(--good)'
@@ -608,7 +609,8 @@ function Pane({
                 : 'var(--series-other)',
           }}
           role="img"
-          aria-label={running ? 'Running' : `Ended (${s.status})`}
+          aria-label={running ? ACTIVITY_LABEL[sessionActivity(s)] : `Ended (${s.status})`}
+          title={running ? ACTIVITY_LABEL[sessionActivity(s)] : `Ended (${s.status})`}
         />
         <InlineRename
           value={s.name}

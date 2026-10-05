@@ -303,6 +303,8 @@ export interface AgentSession {
   startedAt: string;
   endedAt: string | null;
   logBytes: number;
+  /** When the session last produced output (null before any). Tells working from idle. */
+  lastOutputAt: string | null;
 }
 
 export type AgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'killed';
