@@ -223,6 +223,9 @@ export interface AgentProvider {
   /** argv tail that pins a new interactive conversation to our own id ('{sessionId}'), so
       resume reopens exactly that conversation even with several sessions per project. */
   sessionIdArgs?: string[];
+  /** argv tail resuming the CLI's most recent conversation in the working folder. Only safe when
+      no other session of this CLI shares the folder, so it is used just in that case. */
+  resumeLatestArgs?: string[];
   /** Extra args per autonomy level for one-shot runs; a missing level is unsupported. */
   autonomyArgs?: Partial<Record<AgentAutonomy, string[]>>;
   /** argv tail that starts the interactive CLI with a first prompt ('{prompt}' placeholder).

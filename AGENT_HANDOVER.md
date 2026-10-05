@@ -38,11 +38,10 @@ read it before product work. `/References` is empty.
 
 ## Roadmap (owner-requested, in priority order)
 
-1. A theme toggle (the tokens already support `data-theme`).
-2. More client component tests: board drag/drop, card dialog flows, terminal input.
-3. Session resume for Codex/Gemini/OpenCode after a reboot. Today only Claude pins its own
-   conversation; the others start fresh, because they only offer "resume latest", which could
-   pick another pane's conversation.
+1. More client component tests: board drag/drop, card dialog flows, terminal input.
+
+Dropped on purpose: a theme toggle (it was our idea, not the owner's, and the owner asked for no
+rarely used features). The tokens still support `data-theme` if it's ever wanted.
 
 Owner preferences to keep applying (Research Addenda 4 and 7): simple over feature-rich, no rarely
 used options, never lose sessions, no layout shift.
@@ -86,7 +85,9 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
   skipped (it's optional), and sessions fall back to pipes, where interactive AI CLIs don't work.
 - Card IDs (`PM-n`) can be reused after deleting the newest card (no AUTOINCREMENT). Commit refs
   are protected by the card `createdAt` check; agent records by `log_path` identity.
-- OpenCode has no read-only mode. Gemini ignores `--approval-mode` in folders it doesn't trust yet.
+- After a reboot, Claude resumes its own pinned conversation. Codex, Gemini and OpenCode resume
+  their latest conversation only when they are the sole session of that CLI in the folder (else
+  they start fresh). OpenCode has no read-only mode. Gemini ignores `--approval-mode` in folders it doesn't trust yet.
 - `react-hooks/set-state-in-effect`: loaders only set state inside promise callbacks, and
   CardDialog resets its form during render. Keep to these patterns, or lint fails.
 

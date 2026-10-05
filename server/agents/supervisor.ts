@@ -1191,12 +1191,12 @@ export class AgentSupervisor {
       // so an AI conversation picks up instead of starting cold. Shells and
       // custom commands simply respawn.
       const resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
-      const argv = isRelaunch && resume ? resume : command;
+      const argv = isRelaunch ? (resume ?? this.resumeLatestArgv(row) ?? command) : command;
       const log = this.outputFor(key, row.log_path);
       if (isRelaunch) {
         log.append(
           `\r\n[supervisor] session relaunched after restart (restart ${row.restarts})` +
-            (resume ? ' — resuming conversation' : ' — fresh start') +
+            (argv !== command ? ' — resuming conversation' : ' — fresh start') +
             `\r\n$ ${argv.join(' ')}\r\n`,
         );
       }
@@ -1327,6 +1327,27 @@ export class AgentSupervisor {
         `UPDATE agent_sessions SET status = 'exited', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
       )
       .run(code, now(), id);
+  }
+
+  /**
+   * For CLIs that can only "resume the latest conversation" (Codex, Gemini, OpenCode): that is the
+   * right conversation only if this is the sole session of that CLI in the folder. Otherwise
+   * (or for explicit commands) relaunch fresh rather than risk resuming another pane's chat.
+   */
+  private resumeLatestArgv(row: SessionRow): string[] | null {
+    const provider = getProvider(row.provider_id);
+    if (!provider?.binary || !provider.resumeLatestArgs) return null;
+    const { command } = JSON.parse(row.command_json) as { command: string[] };
+    if (command[0] !== provider.binary) return null; // A custom command line: don't guess.
+    const siblings = (
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM agent_sessions
+            WHERE provider_id = ? AND cwd = ? AND id != ? AND desired_state = 'running'`,
+        )
+        .get(row.provider_id, row.cwd, row.id) as { n: number }
+    ).n;
+    return siblings === 0 ? [provider.binary, ...provider.resumeLatestArgs] : null;
   }
 
   private markSessionDead(id: number, error: string): void {

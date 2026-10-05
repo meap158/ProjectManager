@@ -468,3 +468,58 @@ describe('attaching a card to an existing session', () => {
     await call('DELETE', `/agent-sessions/${s.id}`);
   }, 30_000);
 });
+
+describe('resuming CLIs without pinned conversations after a reboot', () => {
+  it('resumes "latest" only when the session is the only one of its CLI in the folder', () => {
+    type Internals = {
+      db: {
+        prepare: (sql: string) => {
+          run: (...a: unknown[]) => { lastInsertRowid: number | bigint };
+        };
+      };
+      resumeLatestArgv: (row: Record<string, unknown>) => string[] | null;
+    };
+    const sup = app.supervisor as unknown as Internals;
+    const insert = (cwd: string, providerId = 'codex', command = ['codex']) => {
+      const id = Number(
+        sup.db
+          .prepare(
+            `INSERT INTO agent_sessions (project_id, name, provider_id, command_json, cwd, status,
+               desired_state, supervise, created_at, started_at, log_path, terminal)
+             VALUES (?, 'x', ?, ?, ?, 'exited', 'running', 1, '', '', ?, 'pty')`,
+          )
+          .run(
+            projectId,
+            providerId,
+            JSON.stringify({ command, env: {} }),
+            cwd,
+            `${cwd}-${Math.random()}`,
+          ).lastInsertRowid,
+      );
+      return {
+        id,
+        provider_id: providerId,
+        cwd,
+        command_json: JSON.stringify({ command, env: {} }),
+      };
+    };
+    const solo = insert('/repo-a');
+    expect(sup.resumeLatestArgv(solo)).toEqual(['codex', 'resume', '--last']);
+    // A second Codex session in the same folder: "latest" could be either one, so start fresh.
+    insert('/repo-b');
+    const b2 = insert('/repo-b');
+    expect(sup.resumeLatestArgv(b2)).toBeNull();
+    // Gemini / OpenCode use their own flags; explicit custom command lines are never guessed.
+    expect(sup.resumeLatestArgv(insert('/repo-c', 'gemini', ['gemini']))).toEqual([
+      'gemini',
+      '--resume',
+      'latest',
+    ]);
+    expect(sup.resumeLatestArgv(insert('/repo-d', 'codex', ['codex', '--model', 'x']))).toEqual([
+      'codex',
+      'resume',
+      '--last',
+    ]);
+    expect(sup.resumeLatestArgv(insert('/repo-e', 'codex', ['/opt/other-codex']))).toBeNull();
+  });
+});

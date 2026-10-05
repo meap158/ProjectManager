@@ -41,7 +41,8 @@ export const PROVIDERS: AgentProvider[] = [
     binary: 'codex',
     argsTemplate: ['exec', PROMPT_PLACEHOLDER],
     interactivePromptArgs: [PROMPT_PLACEHOLDER],
-    // Only "most recent session" resume exists, so it is not used (it could pick another pane's).
+    // Only "most recent session" resume exists: used when this is the folder's only Codex session.
+    resumeLatestArgs: ['resume', '--last'],
     // exec never prompts; the sandbox policy decides what is allowed.
     autonomyArgs: {
       read: ['--sandbox', 'read-only'],
@@ -57,6 +58,7 @@ export const PROVIDERS: AgentProvider[] = [
     binary: 'opencode',
     argsTemplate: ['run', PROMPT_PLACEHOLDER],
     interactivePromptArgs: ['--prompt', PROMPT_PLACEHOLDER],
+    resumeLatestArgs: ['--continue'],
     // No read-only switch; OpenCode's own permission config applies unless --auto.
     autonomyArgs: { edit: [], full: ['--auto'] },
     description: 'OpenCode agent runner, non-interactive run mode',
@@ -68,6 +70,7 @@ export const PROVIDERS: AgentProvider[] = [
     binary: 'gemini',
     argsTemplate: ['-p', PROMPT_PLACEHOLDER],
     interactivePromptArgs: ['--prompt-interactive', PROMPT_PLACEHOLDER],
+    resumeLatestArgs: ['--resume', 'latest'],
     autonomyArgs: {
       read: ['--approval-mode', 'plan'],
       edit: ['--approval-mode', 'auto_edit'],
