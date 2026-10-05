@@ -23,6 +23,7 @@ export function TerminalView({
   pollMs = 750,
   height = 320,
   fontSize = 12.5,
+  historyBytes = 0,
 }: {
   fetchOutput: (after: number) => Promise<AgentOutput>;
   /** Builds the SSE URL resuming from a byte offset; enables live streaming. */
@@ -36,9 +37,18 @@ export function TerminalView({
   height?: number | string;
   /** Changes apply live (no terminal re-creation, output is kept). */
   fontSize?: number;
+  /**
+   * Log bytes that already existed when this view mounted. Replaying them makes xterm answer
+   * the old terminal queries inside; those answers are dropped instead of sent as input, where
+   * they would reach the CLI as junk (or pile up in a stopped session's input queue).
+   */
+  historyBytes?: number;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
+  const historyRef = useRef(historyBytes);
+  // > 0 while xterm parses replayed history; anything it emits meanwhile is an automatic reply.
+  const replaying = useRef(0);
   // Keep the latest callbacks without re-creating the terminal.
   const callbacks = useRef({ fetchOutput, streamUrl, onInput, onResize, paused });
   useEffect(() => {
@@ -110,7 +120,11 @@ export function TerminalView({
       }
     };
     const resize = new ResizeObserver(refit);
-    const inputSub = interactive ? term.onData((data) => callbacks.current.onInput?.(data)) : null;
+    const inputSub = interactive
+      ? term.onData((data) => {
+          if (replaying.current === 0) callbacks.current.onInput?.(data);
+        })
+      : null;
     // Copy the controller: cleanup must not read a ref that may have changed by then.
     const controller = ctl.current;
 
@@ -122,8 +136,16 @@ export function TerminalView({
       if (cancelled) return;
       // Ignore anything older than what we've shown (e.g. a reconnect racing a poll).
       if (nextOffset <= offsetRef.current) return;
+      const start = offsetRef.current;
       offsetRef.current = nextOffset;
-      term.write(data);
+      if (start < historyRef.current) {
+        replaying.current++;
+        term.write(data, () => {
+          replaying.current--;
+        });
+      } else {
+        term.write(data);
+      }
     };
 
     function connect() {

@@ -9,6 +9,7 @@ import { Link } from 'react-router';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
 import { InlineRename } from './InlineRename';
+import { isTerminalReport } from '../terminalReports';
 import { AgentWorkList, mergeWork, workKey, type WorkItem, type WorkKey } from './AgentWorkList';
 import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -308,13 +309,19 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             <Suspense fallback={<div className="terminal skeleton" style={{ height: 380 }} />}>
               <TerminalView
                 key={`${active.id}-${active.terminal}`}
+                historyBytes={active.logBytes}
                 height={active.terminal === 'pty' ? 380 : 320}
                 fetchOutput={(after) => api.sessionOutput(active.id, after)}
                 streamUrl={(after) => api.sessionStreamUrl(active.id, after)}
                 paused={!visible}
                 {...(active.terminal === 'pty'
                   ? {
-                      onInput: (data: string) => sendKeys(active.id, data),
+                      // A stopped session only queues real typing, not the terminal's auto-replies.
+                      onInput: (data: string) => {
+                        if (active.status === 'running' || !isTerminalReport(data)) {
+                          sendKeys(active.id, data);
+                        }
+                      },
                       onResize: (cols: number, rows: number) => {
                         api.resizeSession(active.id, cols, rows).catch(() => undefined);
                       },

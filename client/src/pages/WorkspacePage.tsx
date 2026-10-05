@@ -24,6 +24,7 @@ import {
 import { api } from '../api';
 import { Dropdown } from '../components/Dropdown';
 import { InlineRename } from '../components/InlineRename';
+import { isTerminalReport } from '../terminalReports';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { RunCard } from '../components/RunCard';
@@ -680,13 +681,17 @@ function Pane({
         <Suspense fallback={<div className="terminal skeleton" style={{ height: '100%' }} />}>
           <TerminalView
             key={`${s.id}-${s.terminal}`}
+            historyBytes={s.logBytes}
             height="100%"
             fontSize={fontSize}
             fetchOutput={(after) => api.sessionOutput(s.id, after)}
             streamUrl={(after) => api.sessionStreamUrl(s.id, after)}
             {...(s.terminal === 'pty'
               ? {
-                  onInput: sendKeys,
+                  // A stopped session only queues real typing, not the terminal's auto-replies.
+                  onInput: (data: string) => {
+                    if (running || !isTerminalReport(data)) sendKeys(data);
+                  },
                   onResize: (cols: number, rows: number) => {
                     api.resizeSession(s.id, cols, rows).catch(() => undefined);
                   },
