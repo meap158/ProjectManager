@@ -387,7 +387,7 @@ export function WorkspacePage() {
           projectName={projectName}
           selected={selectedWork}
           onSelect={setSelectedWork}
-          renderSession={(session, close) => (
+          renderSession={(session, close, maximized, toggleMaximize) => (
             // The same pane as the grid, docked under the list like VS Code's panel.
             <Pane
               key={session.id}
@@ -405,11 +405,8 @@ export function WorkspacePage() {
                   ? (session.command[0] ?? 'Custom command')
                   : (providers.find((p) => p.id === session.providerId)?.name ?? session.providerId)
               }
-              maximized={false}
-              onToggleMaximize={() => {
-                update(placeSession(layout, session.id));
-                setView('panes');
-              }}
+              maximized={maximized}
+              onToggleMaximize={toggleMaximize}
               onClose={close}
               onChanged={(next) =>
                 setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
@@ -949,6 +946,18 @@ function PresetIcon({ preset }: { preset: WorkspacePreset }) {
   );
 }
 
+const DOCK_KEY = 'pm.workspace.dockHeight';
+const DOCK_DEFAULT = 380;
+const DOCK_MIN = 140;
+function readDockHeight(): number {
+  try {
+    const v = Number(localStorage.getItem(DOCK_KEY));
+    return Number.isFinite(v) && v >= DOCK_MIN ? v : DOCK_DEFAULT;
+  } catch {
+    return DOCK_DEFAULT;
+  }
+}
+
 /** List view: every session and run across projects. Sessions open into a pane; runs expand. */
 function WorkList({
   sessions,
@@ -974,7 +983,12 @@ function WorkList({
   selected: WorkKey | null;
   onSelect: (key: WorkKey | null) => void;
   /** The docked panel for a selected session (its live terminal). */
-  renderSession: (session: AgentSession, close: () => void) => ReactNode;
+  renderSession: (
+    session: AgentSession,
+    close: () => void,
+    maximized: boolean,
+    toggleMaximize: () => void,
+  ) => ReactNode;
   onShowInPane: (sessionId: number) => void;
   onSessionChanged: (s: AgentSession) => void;
   onSessionDeleted: (id: number) => void;
@@ -982,6 +996,19 @@ function WorkList({
   onRunDeleted: (id: number) => void;
   onError: (message: string) => void;
 }) {
+  const [dockHeight, setDockHeight] = useState<number>(readDockHeight);
+  const [dockMax, setDockMax] = useState(false);
+  const container = useRef<HTMLElement>(null);
+  const resizeTo = (height: number) => {
+    const total = container.current?.getBoundingClientRect().height ?? 800;
+    const next = Math.round(Math.min(Math.max(height, DOCK_MIN), Math.max(DOCK_MIN, total - 140)));
+    setDockHeight(next);
+    try {
+      localStorage.setItem(DOCK_KEY, String(next));
+    } catch {
+      // Remembering the height is a convenience only.
+    }
+  };
   if (!sessions || !runs) return <div className="skeleton" style={{ flex: 1 }} />;
   const items = mergeWork(sessions, runs);
   const run = runs.find((r) => `run:${r.id}` === selected) ?? null;
@@ -1037,7 +1064,11 @@ function WorkList({
   };
 
   return (
-    <section className="panel workspace-list" aria-label="All agent work">
+    <section
+      ref={container}
+      className={`panel workspace-list${dockMax && session ? ' is-dock-max' : ''}`}
+      aria-label="All agent work"
+    >
       <div className="panel-header">
         <h2>All agent work</h2>
         <span className="meta">
@@ -1070,9 +1101,53 @@ function WorkList({
         )}
       </div>
       {session && (
-        <div className="work-panel" aria-label={`Terminal: ${session.name}`}>
-          {renderSession(session, () => onSelect(null))}
-        </div>
+        <>
+          {/* Drag (or arrow keys) to resize the docked terminal, like VS Code's panel edge. */}
+          {!dockMax && (
+            <div
+              className="work-resizer"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize terminal panel"
+              aria-valuenow={dockHeight}
+              tabIndex={0}
+              title="Drag to resize · double-click to reset"
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                const bottom = container.current?.getBoundingClientRect().bottom ?? 0;
+                const onMove = (ev: PointerEvent) => resizeTo(bottom - ev.clientY - 12);
+                const onUp = () => {
+                  window.removeEventListener('pointermove', onMove);
+                  window.removeEventListener('pointerup', onUp);
+                };
+                window.addEventListener('pointermove', onMove);
+                window.addEventListener('pointerup', onUp);
+              }}
+              onDoubleClick={() => resizeTo(DOCK_DEFAULT)}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowUp') resizeTo(dockHeight + 24);
+                else if (e.key === 'ArrowDown') resizeTo(dockHeight - 24);
+                else return;
+                e.preventDefault();
+              }}
+            />
+          )}
+          <div
+            className="work-panel"
+            aria-label={`Terminal: ${session.name}`}
+            style={dockMax ? undefined : { height: dockHeight }}
+          >
+            {renderSession(
+              session,
+              () => {
+                setDockMax(false);
+                onSelect(null);
+              },
+              dockMax,
+              () => setDockMax((v) => !v),
+            )}
+          </div>
+        </>
       )}
       {run && (
         <div className="work-panel work-panel-run">
