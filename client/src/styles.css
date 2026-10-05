@@ -12,6 +12,9 @@
 /* Design tokens — see DESIGN.md. Components reference roles (var(--…)), never raw hex. */
 
 :root {
+  /* Vendor brand colours for official provider marks (identification only). */
+  --brand-claude: #d97757;
+  --brand-gemini: #8e75b2;
   color-scheme: light;
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
@@ -2398,6 +2401,32 @@ kbd {
   gap: 8px;
   min-width: 0;
   white-space: nowrap;
+}
+/* Agent work rows: card key in a fixed slot (rows align), provider mark right of the name. */
+.work-card-slot {
+  flex: none;
+  width: 52px;
+  display: inline-flex;
+}
+.work-card-tag {
+  height: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.work-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+.work-provider-icon {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
 }
 .work-kind {
   flex: none;

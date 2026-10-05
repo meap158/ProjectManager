@@ -10,6 +10,7 @@ import {
 } from '../format';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 import { InlineRename } from './InlineRename';
+import { PROVIDER_LABELS, ProviderIcon } from './icons';
 
 // One list for everything agents do in a project (or across projects on the workspace):
 // - Terminal: an interactive session. It keeps running (and relaunches after crashes) until you
@@ -183,6 +184,7 @@ export function AgentWorkList({
       {items.map((w) => {
         const key = workKey(w);
         const state = stateLabel(w, now);
+        const providerLabel = PROVIDER_LABELS[w.item.providerId] ?? w.item.providerId;
         const facts =
           w.kind === 'session'
             ? sessionFacts(w.item, now, tokens?.[w.item.id])
@@ -216,6 +218,14 @@ export function AgentWorkList({
                     aria-hidden="true"
                   />
                 </button>
+                {/* Fixed slot: names line up whether or not a row has a card. */}
+                <span className="work-card-slot">
+                  {w.item.cardKey && (
+                    <span className="badge mono work-card-tag" title="Card this work is on">
+                      {w.item.cardKey}
+                    </span>
+                  )}
+                </span>
                 {onRename ? (
                   <span className="work-name" onClick={(e) => e.stopPropagation()}>
                     <InlineRename
@@ -227,16 +237,20 @@ export function AgentWorkList({
                 ) : (
                   <b className="truncate">{w.item.name}</b>
                 )}
+                <span className="work-provider" title={`Agent: ${providerLabel}`}>
+                  <span className="work-provider-icon" aria-hidden="true">
+                    <ProviderIcon id={w.item.providerId} size={14} />
+                  </span>
+                  <span className="faint">{providerLabel}</span>
+                </span>
                 <span className="badge work-kind" title={KIND[w.kind].title}>
                   {KIND[w.kind].label}
                 </span>
-                <span className="faint">{w.item.providerId}</span>
                 {projectNames && (
                   <span className="faint truncate">
                     {projectNames.get(w.item.projectId) ?? '—'}
                   </span>
                 )}
-                {w.item.cardKey && <span className="mono faint">{w.item.cardKey}</span>}
               </span>
               <span className="work-facts faint num">
                 {facts.map((f, i) => (

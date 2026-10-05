@@ -55,52 +55,73 @@ export function TerminalIcon(props: IconProps) {
 }
 
 // ---- Provider brand marks -----------------------------------------------------------------------
-// Official marks are inlined (the app works offline, so no CDN links) from Simple Icons drawings
-// (CC0) for nominative identification only — trademarks belong to their owners. Only marks we
-// could verify as the right brand are used: OpenAI/xAI publish no redistributable mark, and the
-// "OpenCode" Simple Icons entry is not the opencode.ai brand, so Codex, Grok and OpenCode keep
-// the generic terminal glyph rather than a wrong "official" one.
+// Official marks inlined from Simple Icons (CC0; the app works offline, so no CDN) for nominative
+// identification only — trademarks belong to their owners. Only verified marks are used, in the
+// brand colour (tokens --brand-*): Claude Code (claudecode), Gemini (googlegemini) and OpenCode
+// (opencode, sourced from OpenCode's own identity mark). OpenAI asked Simple Icons to drop its
+// mark, and xAI/Grok and Antigravity have none published, so Codex, Grok and Antigravity keep the
+// generic terminal glyph rather than a wrong "official" one.
 
-function BrandBase({ size = 14, children }: IconProps) {
+function BrandBase({ size = 14, color, children }: IconProps & { color: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      style={{ color }}
+      aria-hidden="true"
+    >
       {children}
     </svg>
   );
 }
 
-/** Anthropic's "A" mark (Simple Icons `anthropic`, CC0). */
+/** Claude Code's mark (Simple Icons `claudecode`, CC0), in Claude orange. */
 export function ClaudeIcon(props: IconProps) {
   return (
-    <BrandBase {...props}>
-      <path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" />
+    <BrandBase {...props} color="var(--brand-claude)">
+      <path d="M21 10.5h3v3h-3v3h-1.5v3H18v-3h-1.5v3H15v-3H9v3H7.5v-3H6v3H4.5v-3H3v-3H0v-3h3v-6h18Zm-15 0h1.5v-3H6Zm10.5 0H18v-3h-1.5z" />
     </BrandBase>
   );
 }
 
-/** Google Gemini sparkle (Simple Icons `googlegemini`, CC0). */
+/** Google Gemini sparkle (Simple Icons `googlegemini`, CC0), in Gemini violet. */
 export function GeminiIcon(props: IconProps) {
   return (
-    <BrandBase {...props}>
+    <BrandBase {...props} color="var(--brand-gemini)">
       <path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" />
     </BrandBase>
   );
 }
 
-/** Google Antigravity mark (AGY levitation chevron star). */
-export function AntigravityIcon(props: IconProps) {
+/** OpenCode's mark (Simple Icons `opencode`, CC0). Its brand colour is black, so it follows
+    the text colour and stays visible in dark mode. */
+export function OpenCodeIcon(props: IconProps) {
   return (
-    <BrandBase {...props}>
-      <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+    <BrandBase {...props} color="var(--text)">
+      <path d="M22 24H2V0h20zM17 4.8H7v14.4h10z" />
     </BrandBase>
   );
 }
 
+/** Display names, so rows can name the CLI next to a generic glyph. */
+export const PROVIDER_LABELS: Record<string, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  grok: 'Grok',
+  antigravity: 'Antigravity',
+  opencode: 'OpenCode',
+  gemini: 'Gemini',
+  shell: 'Shell',
+  custom: 'Custom command',
+};
+
 /** Official mark where verified, generic terminal glyph otherwise (never a wrong mark). */
 export function ProviderIcon({ id, ...props }: IconProps & { id: string }) {
   if (id === 'claude') return <ClaudeIcon {...props} />;
-  if (id === 'antigravity' || id === 'agy') return <AntigravityIcon {...props} />;
   if (id === 'gemini') return <GeminiIcon {...props} />;
+  if (id === 'opencode') return <OpenCodeIcon {...props} />;
   return <TerminalIcon {...props} />;
 }
 
