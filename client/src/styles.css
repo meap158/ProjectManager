@@ -2554,3 +2554,33 @@ dialog.lightbox img {
 .dropdown-trigger-hint + .dropdown-caret {
   margin-left: 6px;
 }
+
+/* Project header: folder path opens the file manager, the remote opens in the browser. */
+.path-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1px 4px;
+  margin: 0 -4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+.path-link:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  text-decoration: none;
+}
+.path-icon {
+  flex: none;
+  color: var(--text-3);
+}
+.path-link:hover .path-icon {
+  color: var(--accent);
+}

@@ -42,6 +42,8 @@ export const api = {
     request<ProjectDetail>('PATCH', `/projects/${id}`, { name }),
   removeProject: (id: number) => request<void>('DELETE', `/projects/${id}`),
   scanProject: (id: number) => request<ProjectDetail>('POST', `/projects/${id}/scan`),
+  /** Opens the project folder in Explorer / Finder / the desktop file manager. */
+  openProjectFolder: (id: number) => request<void>('POST', `/projects/${id}/open-folder`, {}),
 
   listCardsInFlight: () => request<CardWithProject[]>('GET', '/cards/in-flight'),
   listCards: (projectId: number) => request<Card[]>('GET', `/projects/${projectId}/cards`),

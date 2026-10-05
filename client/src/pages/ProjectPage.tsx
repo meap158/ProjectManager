@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { CARD_STATUS_LABELS, type ProjectDetail } from '../../../shared/types';
 import { api } from '../api';
+import { remoteWebUrl } from '../gitRemote';
 import { rememberProjectTab } from '../projectTabs';
 import { AgentsPanel } from '../components/AgentsPanel';
 import {
@@ -106,15 +107,35 @@ export function ProjectPage() {
               showing the previous project's name. */}
           <ProjectTitle key={project.id} project={project} onRenamed={setProject} />
           <div className="subtitle">
-            <span className="mono truncate" title={project.path}>
-              {project.path}
-            </span>
+            <button
+              type="button"
+              className="path-link mono"
+              title={`Open ${project.path} in the file manager`}
+              onClick={() =>
+                api.openProjectFolder(project.id).catch((e: Error) => setError(e.message))
+              }
+            >
+              <FolderIcon />
+              <span className="truncate">{project.path}</span>
+            </button>
             {project.git?.branch && <span className="badge mono">⎇ {project.git.branch}</span>}
-            {project.git?.remoteUrl && (
-              <span className="faint mono truncate" title="origin">
-                {project.git.remoteUrl}
-              </span>
-            )}
+            {project.git?.remoteUrl &&
+              (remoteWebUrl(project.git.remoteUrl) ? (
+                <a
+                  className="path-link faint mono"
+                  href={remoteWebUrl(project.git.remoteUrl)!}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`Open ${remoteWebUrl(project.git.remoteUrl)} in your browser`}
+                >
+                  <span className="truncate">{project.git.remoteUrl}</span>
+                  <ExternalIcon />
+                </a>
+              ) : (
+                <span className="faint mono truncate" title="origin">
+                  {project.git.remoteUrl}
+                </span>
+              ))}
           </div>
         </div>
         <div className="actions" style={{ alignItems: 'center' }}>
@@ -482,5 +503,34 @@ function Overview({ project }: { project: ProjectDetail }) {
         </section>
       )}
     </>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true" className="path-icon">
+      <path
+        d="M1.75 3.5h4.2l1.5 1.6h6.8v7.4H1.75z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ExternalIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" className="path-icon">
+      <path
+        d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5v4H2.5V4h4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }

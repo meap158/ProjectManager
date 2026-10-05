@@ -10,6 +10,7 @@ import { Scanner } from './scanner.js';
 import * as store from './store.js';
 import { AgentError, AgentSupervisor } from './agents/supervisor.js';
 import { registerAgentRoutes } from './agents/routes.js';
+import { openInFileManager } from './openFolder.js';
 import { registerAttachmentRoutes, removeAttachments } from './attachments.js';
 
 const idParam = z.coerce.number().int().positive();
@@ -196,6 +197,15 @@ export function createApp(
     if (!existsSync(row.path)) throw new HttpError(409, 'Folder no longer exists on disk');
     scanner.start(id);
     return c.json(store.getProject(db, id, scanner.state(id)), 202);
+  });
+
+  // Opens the project folder in the OS file manager. Uses the stored path, never request data.
+  app.post('/projects/:id/open-folder', (c) => {
+    const row = store.getProjectRow(db, parseId(c));
+    if (!row) throw new HttpError(404, 'Project not found');
+    if (!existsSync(row.path)) throw new HttpError(409, 'Folder no longer exists on disk');
+    openInFileManager(row.path);
+    return c.body(null, 204);
   });
 
   // ---- Cards ----------------------------------------------------------------------------------
