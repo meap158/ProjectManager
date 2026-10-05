@@ -90,8 +90,9 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
   dedupe, keystrokes, polling, live font size), the commits chart and formatting.
 - **Linux:** `node-pty` has no Linux prebuild and compiles from source. Without build tools it's
   skipped (it's optional), and sessions fall back to pipes, where interactive AI CLIs don't work.
-- Card IDs (`PM-n`) can be reused after deleting the newest card (no AUTOINCREMENT). Commit refs
-  are protected by the card `createdAt` check; agent records by `log_path` identity.
+- Card IDs (`PM-n`) are never reused: `nextCardId()` keeps a high-water mark in `settings`
+  (`card_id_high_water`) because the table has no AUTOINCREMENT. Agent records rely on `log_path`
+  identity for the same reason.
 - After a reboot, Claude resumes its own pinned conversation. Codex, Gemini and OpenCode resume
   their latest conversation only when they are the sole session of that CLI in the folder (else
   they start fresh). OpenCode has no read-only mode. Gemini ignores `--approval-mode` in folders it doesn't trust yet.

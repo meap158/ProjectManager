@@ -147,3 +147,22 @@ describe('cards in flight', () => {
     await waitForScan(call, created.id); // Don't leave a scan running on the temp repo.
   });
 });
+
+describe('card keys', () => {
+  it('never reuses a card key, even after deleting the newest card', async () => {
+    const { call } = setup();
+    const created = (await (
+      await call('POST', '/projects', { path: dir })
+    ).json()) as ProjectDetail;
+    const add = async (title: string) =>
+      (await (await call('POST', `/projects/${created.id}/cards`, { title })).json()) as Card;
+    const a = await add('First');
+    const b = await add('Second');
+    expect((await call('DELETE', `/cards/${b.id}`)).status).toBe(204);
+    const c = await add('Third');
+    expect(c.id).toBeGreaterThan(b.id); // PM-<b> stays retired: old commit refs can't hit "Third".
+    expect(c.key).not.toBe(b.key);
+    expect(a.id).toBeLessThan(b.id);
+    await waitForScan(call, created.id);
+  });
+});

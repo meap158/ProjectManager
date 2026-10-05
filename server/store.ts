@@ -214,22 +214,34 @@ export function insertCard(
 ): Card {
   const position = topPosition(db, projectId, input.status); // New cards go on top.
   const ts = now();
-  const result = db
-    .prepare(
-      `INSERT INTO cards (project_id, title, description, status, position, created_at, updated_at, closed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      projectId,
-      input.title,
-      input.description,
-      input.status,
-      position,
-      ts,
-      ts,
-      input.status === 'done' ? ts : null,
-    );
-  return getCard(db, Number(result.lastInsertRowid))!;
+  const id = nextCardId(db);
+  db.prepare(
+    `INSERT INTO cards (id, project_id, title, description, status, position, created_at, updated_at, closed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    projectId,
+    input.title,
+    input.description,
+    input.status,
+    position,
+    ts,
+    ts,
+    input.status === 'done' ? ts : null,
+  );
+  return getCard(db, id)!;
+}
+
+/**
+ * Card keys (PM-<id>) appear in commit messages, so an id must never be handed out twice. The
+ * cards table has no AUTOINCREMENT (SQLite would reuse the highest id after a delete), so a
+ * high-water mark in settings keeps ids strictly increasing, also for existing databases.
+ */
+function nextCardId(db: Db): number {
+  const { max } = db.prepare('SELECT MAX(id) AS max FROM cards').get() as { max: number | null };
+  const next = Math.max(max ?? 0, getSetting<number>(db, 'card_id_high_water') ?? 0) + 1;
+  setSetting(db, 'card_id_high_water', next);
+  return next;
 }
 
 export function updateCard(
