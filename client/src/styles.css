@@ -725,6 +725,8 @@ a.t:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Same height as the header's buttons (32px), so title and actions share one centre line. */
+  line-height: 32px;
 }
 .page-header .subtitle {
   color: var(--text-2);
@@ -2301,9 +2303,16 @@ kbd {
   height: 18px;
   font-size: 11px;
 }
-.work-state {
-  margin-left: auto;
+.work-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex: none;
+  padding-right: 6px;
+}
+.work-state {
+  flex: none;
+  margin-right: 4px;
   font-size: 12px;
   color: var(--text-2);
 }

@@ -190,7 +190,6 @@ export function AgentWorkList({
                   </span>
                 )}
                 {w.item.cardKey && <span className="mono faint">{w.item.cardKey}</span>}
-                <span className={`work-state tone-${state.tone ?? 'idle'}`}>{state.text}</span>
               </span>
               <span className="work-facts faint num">
                 {facts.map((f, i) => (
@@ -200,7 +199,11 @@ export function AgentWorkList({
                 ))}
               </span>
             </button>
-            {actions && <span className="actions">{actions(w)}</span>}
+            {/* State and actions share one centre line, beside both text lines. */}
+            <span className="work-side">
+              <span className={`work-state tone-${state.tone ?? 'idle'}`}>{state.text}</span>
+              {actions?.(w)}
+            </span>
           </li>
         );
       })}
