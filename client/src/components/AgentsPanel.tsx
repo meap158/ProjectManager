@@ -34,7 +34,17 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
     () => sessionsCache.get(projectId) ?? null,
   );
   const [runs, setRuns] = useState<AgentRun[] | null>(() => runsCache.get(projectId) ?? null);
-  const [selected, setSelected] = useState<WorkKey | null>(null);
+  const [selected, setSelectedState] = useState<WorkKey | null>(() => readSelection(projectId));
+  // The selection is remembered per project (switching projects, reloads, restarts).
+  const setSelected = useCallback(
+    (next: WorkKey | null | ((prev: WorkKey | null) => WorkKey | null)) =>
+      setSelectedState((prev) => {
+        const value = typeof next === 'function' ? next(prev) : next;
+        saveSelection(projectId, value);
+        return value;
+      }),
+    [projectId],
+  );
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
   const [input, setInput] = useState('');
@@ -59,13 +69,17 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
           setError(null);
           setSelected((prev) => {
             const items = mergeWork(s, r);
-            if (prev && items.some((w) => workKey(w) === prev)) return prev;
+            const exists = (key: WorkKey | null) => !!key && items.some((w) => workKey(w) === key);
+            // This project's remembered choice first (prev may belong to the last project).
+            const stored = readSelection(projectId);
+            if (exists(stored)) return stored;
+            if (exists(prev)) return prev;
             return items[0] ? workKey(items[0]) : null;
           });
         },
         (e: Error) => setError(e.message),
       ),
-    [projectId],
+    [projectId, setSelected],
   );
 
   useEffect(() => {
@@ -530,4 +544,28 @@ function NewSessionForm({
       )}
     </form>
   );
+}
+
+const SELECTION_KEY = 'pm.agents.selected';
+
+/** The session or run last selected on this project's Agents tab (null if none). */
+function readSelection(projectId: number): WorkKey | null {
+  try {
+    const all = JSON.parse(localStorage.getItem(SELECTION_KEY) ?? '{}') as Record<string, string>;
+    const value = all[projectId];
+    return value && /^(session|run):\d+$/.test(value) ? (value as WorkKey) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSelection(projectId: number, key: WorkKey | null): void {
+  try {
+    const all = JSON.parse(localStorage.getItem(SELECTION_KEY) ?? '{}') as Record<string, string>;
+    if (key) all[projectId] = key;
+    else delete all[projectId];
+    localStorage.setItem(SELECTION_KEY, JSON.stringify(all));
+  } catch {
+    // Remembering the selection is a convenience only.
+  }
 }
