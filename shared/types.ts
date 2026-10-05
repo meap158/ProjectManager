@@ -117,6 +117,8 @@ export interface ProjectSummary {
   disk: DiskStats | null;
   git: GitStats | null;
   cardCounts: CardCounts;
+  /** Agent/terminal sessions currently running in this project. */
+  runningSessions: number;
   /** Set when the folder no longer exists on disk. */
   missing: boolean;
   scan: ScanState;

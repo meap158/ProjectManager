@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router';
+import { Link, NavLink, useNavigate } from 'react-router';
 import type { ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { formatCompact, formatRelative } from '../format';
+import { useProjectHref } from '../projectTabs';
 import { AddProjectDialog } from './AddProjectDialog';
 
 // Sorter modelled on the KDP Publishing Pipeline Library sorter: each mode has
@@ -61,6 +62,7 @@ function recentCommits(projects: ProjectSummary[], days: number): number {
 /** Left sidebar: every tracked project with at-a-glance status. */
 export function ProjectSidebar() {
   const navigate = useNavigate();
+  const projectHref = useProjectHref();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>(() =>
@@ -156,6 +158,7 @@ export function ProjectSidebar() {
     (s, p) => s + p.cardCounts.in_progress + p.cardCounts.review,
     0,
   );
+  const totalsRunning = (projects ?? []).reduce((s, p) => s + p.runningSessions, 0);
 
   return (
     <aside className="sidebar" aria-label="Tracked projects">
@@ -252,7 +255,7 @@ export function ProjectSidebar() {
           </div>
         )}
         {visible.map((p) => (
-          <SidebarItem key={p.id} project={p} />
+          <SidebarItem key={p.id} project={p} href={projectHref(p.id)} />
         ))}
         {projects !== null && visible.length === 0 && projects.length > 0 && (
           <div className="faint" style={{ fontSize: 13, padding: '4px 2px' }}>
@@ -277,6 +280,14 @@ export function ProjectSidebar() {
                 <b className="num">{totalsFlight}</b>
                 <span title="Tasks in progress or in review">active</span>
               </span>
+              <Link
+                to="/workspace"
+                className="t"
+                title="CLI sessions running in all projects. Open them in Agents."
+              >
+                <b className="num">{totalsRunning}</b>
+                <span>running</span>
+              </Link>
             </div>
           </div>
           <span className="faint">
@@ -305,13 +316,13 @@ export function ProjectSidebar() {
   );
 }
 
-function SidebarItem({ project: p }: { project: ProjectSummary }) {
+function SidebarItem({ project: p, href }: { project: ProjectSummary; href: string }) {
   const flight = p.cardCounts.in_progress + p.cardCounts.review;
   const planned = p.cardCounts.backlog + p.cardCounts.todo;
   const topLang = p.code?.languages[0]?.name;
   return (
     <NavLink
-      to={`/projects/${p.id}`}
+      to={href}
       className={({ isActive }) => `sidebar-item${isActive ? ' is-active' : ''}`}
       title={p.path}
       aria-label={`${p.name} — ${p.path}`}
@@ -319,6 +330,7 @@ function SidebarItem({ project: p }: { project: ProjectSummary }) {
       <span className="sidebar-name-row">
         <StatusDot project={p} />
         <span className="sidebar-name truncate">{p.name}</span>
+        {p.runningSessions > 0 && <RunningBadge count={p.runningSessions} />}
         {p.missing ? (
           <span className="badge badge-danger">missing</span>
         ) : p.scan.status === 'scanning' ? (
@@ -356,6 +368,26 @@ function SidebarItem({ project: p }: { project: ProjectSummary }) {
         )}
       </span>
     </NavLink>
+  );
+}
+
+/** Terminal glyph + count: CLI sessions running in this project (icon and text, never colour alone). */
+function RunningBadge({ count }: { count: number }) {
+  const label = `${count} CLI session${count === 1 ? '' : 's'} running`;
+  return (
+    <span className="badge badge-running" title={label} aria-label={label} role="img">
+      <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M3 4l4 4-4 4M8.5 12H13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      {count}
+    </span>
   );
 }
 

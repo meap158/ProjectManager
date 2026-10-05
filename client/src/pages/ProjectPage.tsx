@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { CARD_STATUS_LABELS, type ProjectDetail } from '../../../shared/types';
 import { api } from '../api';
+import { rememberProjectTab } from '../projectTabs';
 import { AgentsPanel } from '../components/AgentsPanel';
 import {
   HEAT_SCALE,
@@ -31,6 +32,8 @@ export function ProjectPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const tab = parseTab(params.get('tab'));
+  // Other projects open on this tab too (sidebar and dashboard links read it).
+  useEffect(() => rememberProjectTab(tab), [tab]);
 
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -7,6 +7,7 @@ import {
   type CardWithProject,
 } from '../../../shared/types';
 import { api } from '../api';
+import { useProjectHref } from '../projectTabs';
 import { AddProjectDialog } from '../components/AddProjectDialog';
 import { LanguageBar } from '../components/charts';
 import { CommitsByProject } from '../components/CommitsByProject';
@@ -26,6 +27,7 @@ function recentCommits(project: ProjectSummary, days: number): number {
 }
 
 export function ProjectsPage() {
+  const projectHref = useProjectHref();
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -206,7 +208,7 @@ export function ProjectsPage() {
                     >
                       {kind}
                     </span>
-                    <Link to={`/projects/${p.id}`} className="truncate" style={{ flex: 1 }}>
+                    <Link to={projectHref(p.id)} className="truncate" style={{ flex: 1 }}>
                       {p.name}
                     </Link>
                     <span className="faint truncate" style={{ flex: 2 }} title={detail}>
@@ -355,6 +357,7 @@ function rankValue(p: ProjectSummary, key: RankKey): number | string | null {
 }
 
 function RankingsTable({ projects }: { projects: ProjectSummary[] }) {
+  const projectHref = useProjectHref();
   const [sortKey, setSortKey] = useState<RankKey>(() => {
     try {
       const saved = localStorage.getItem('pm-rank-sort');
@@ -464,7 +467,7 @@ function RankingsTable({ projects }: { projects: ProjectSummary[] }) {
               <tr key={p.id}>
                 <td className="faint num">{i + 1}</td>
                 <td>
-                  <Link to={`/projects/${p.id}`} title={p.path}>
+                  <Link to={projectHref(p.id)} title={p.path}>
                     {p.name}
                   </Link>
                   {p.missing && <span className="badge badge-danger">missing</span>}
@@ -498,9 +501,10 @@ function RankingsTable({ projects }: { projects: ProjectSummary[] }) {
 }
 
 function ProjectCard({ project: p }: { project: ProjectSummary }) {
+  const projectHref = useProjectHref();
   const flight = p.cardCounts.in_progress + p.cardCounts.review;
   return (
-    <Link to={`/projects/${p.id}`} className="project-card">
+    <Link to={projectHref(p.id)} className="project-card">
       <div>
         <div
           style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}

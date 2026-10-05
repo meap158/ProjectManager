@@ -17,7 +17,7 @@
   --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
 
   --topbar-h: 48px;
-  --sidebar-w: 256px;
+  --sidebar-w: 272px;
 
   --bg: #f5f5f3;
   --surface: #fcfcfb;
@@ -306,7 +306,7 @@ code,
   scrollbar-gutter: stable; /* Same reason as .app-main: list length must not shift the rows. */
   background: var(--surface);
   border-right: 1px solid var(--border);
-  padding: 10px 8px;
+  padding: 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -521,8 +521,8 @@ code,
 .sidebar-item {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 6px 8px;
+  gap: 2px;
+  padding: 7px 10px;
   border-radius: var(--radius);
   border: 1px solid transparent;
   color: inherit;
@@ -592,7 +592,7 @@ code,
 .sidebar-name-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 .sidebar-name {
@@ -648,7 +648,16 @@ code,
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
+a.t {
+  color: inherit;
+  border-radius: var(--radius-sm);
+}
+a.t:hover {
+  text-decoration: none;
+  background: var(--surface-hover);
+}
 .sidebar-totals .t span {
+  white-space: nowrap;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -2144,4 +2153,13 @@ kbd {
   padding: 2px 8px;
   font-size: 13px;
   line-height: 1.2;
+}
+
+/* Sidebar: CLI sessions running in a project (terminal glyph + count). */
+.badge-running {
+  gap: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+  font-variant-numeric: tabular-nums;
 }

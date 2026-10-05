@@ -55,13 +55,21 @@ export function listProjects(db: Db, scanState: (id: number) => ScanState): Proj
     .prepare('SELECT * FROM projects ORDER BY name COLLATE NOCASE')
     .all() as unknown as ProjectRow[];
   const counts = cardCountsByProject(db);
-  return rows.map((row) => toSummary(row, counts.get(row.id), scanState(row.id)));
+  const running = runningSessionsByProject(db);
+  return rows.map((row) =>
+    toSummary(row, counts.get(row.id), scanState(row.id), running.get(row.id)),
+  );
 }
 
 export function getProject(db: Db, id: number, scan: ScanState): ProjectSummary | null {
   const row = getProjectRow(db, id);
   if (!row) return null;
-  return toSummary(row, cardCountsByProject(db, id).get(id), scan);
+  return toSummary(
+    row,
+    cardCountsByProject(db, id).get(id),
+    scan,
+    runningSessionsByProject(db, id).get(id),
+  );
 }
 
 export function getProjectRow(db: Db, id: number): ProjectRow | null {
@@ -135,6 +143,23 @@ function cardCountsByProject(db: Db, projectId?: number): Map<number, CardCounts
   return map;
 }
 
+function runningSessionsByProject(db: Db, projectId?: number): Map<number, number> {
+  const rows = (
+    projectId === undefined
+      ? db
+          .prepare(
+            `SELECT project_id, COUNT(*) AS n FROM agent_sessions WHERE status = 'running' GROUP BY project_id`,
+          )
+          .all()
+      : db
+          .prepare(
+            `SELECT project_id, COUNT(*) AS n FROM agent_sessions WHERE status = 'running' AND project_id = ?`,
+          )
+          .all(projectId)
+  ) as { project_id: number | null; n: number }[];
+  return new Map(rows.filter((r) => r.project_id !== null).map((r) => [r.project_id!, r.n]));
+}
+
 function emptyCounts(): CardCounts {
   return Object.fromEntries(CARD_STATUSES.map((s) => [s, 0])) as CardCounts;
 }
@@ -143,6 +168,7 @@ function toSummary(
   row: ProjectRow,
   counts: CardCounts | undefined,
   scan: ScanState,
+  runningSessions = 0,
 ): ProjectSummary {
   return {
     id: row.id,
@@ -154,6 +180,7 @@ function toSummary(
     disk: parseJson<DiskStats>(row.disk_json),
     git: parseJson<GitStats>(row.git_json),
     cardCounts: counts ?? emptyCounts(),
+    runningSessions,
     missing: !existsSync(row.path),
     scan,
   };
