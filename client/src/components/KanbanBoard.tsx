@@ -191,6 +191,7 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
       <CardDialog
         card={editing}
         projectId={projectId}
+        liveSessionId={editing ? (runSummary.get(editing.id)?.liveSessionId ?? null) : null}
         onClose={() => setEditing(null)}
         onSaved={(saved) => {
           setCards((prev) => prev?.map((c) => (c.id === saved.id ? saved : c)) ?? prev);
@@ -209,11 +210,16 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
   );
 }
 
-/** Quil-style attention badges: running, awaiting validation, failed. */
+/** Quil-style attention badges: live session, running, awaiting validation, failed. */
 function RunBadges({ summary }: { summary: CardRunSummary | undefined }) {
   if (!summary) return null;
   return (
     <>
+      {summary.liveSessionId !== null && (
+        <span className="badge badge-live" title="A live terminal session is working on this card">
+          ⌨ live
+        </span>
+      )}
       {summary.running > 0 && (
         <span className="badge" title={`${summary.running} agent run(s) in flight`}>
           ▶ {summary.running}

@@ -11,6 +11,7 @@ import type { AgentAutonomy, AgentProvider, AgentProviderStatus } from '../../sh
 import { ResolveError, resolveArgv } from './resolve.js';
 
 export const PROMPT_PLACEHOLDER = '{prompt}';
+export const SESSION_ID_PLACEHOLDER = '{sessionId}';
 
 // Autonomy flags were checked against each CLI's --help (Claude Code 2.1, codex-cli 0.160,
 // Gemini CLI, OpenCode). Print/exec modes can't ask for approval, so without these flags runs
@@ -21,9 +22,11 @@ export const PROVIDERS: AgentProvider[] = [
     name: 'Claude Code',
     binary: 'claude',
     argsTemplate: ['-p', PROMPT_PLACEHOLDER],
-    // `claude --continue` resumes the most recent conversation in place —
-    // the Quil-style resume path used when relaunching after a reboot.
-    resumeArgs: ['--continue'],
+    // Each session pins its own conversation id, and relaunches resume exactly that one, so
+    // several Claude panes in one project never collide after a reboot.
+    sessionIdArgs: ['--session-id', SESSION_ID_PLACEHOLDER],
+    resumeArgs: ['--resume', SESSION_ID_PLACEHOLDER],
+    interactivePromptArgs: [PROMPT_PLACEHOLDER],
     autonomyArgs: {
       read: ['--permission-mode', 'plan'],
       edit: ['--permission-mode', 'acceptEdits'],
@@ -37,6 +40,8 @@ export const PROVIDERS: AgentProvider[] = [
     name: 'Codex',
     binary: 'codex',
     argsTemplate: ['exec', PROMPT_PLACEHOLDER],
+    interactivePromptArgs: [PROMPT_PLACEHOLDER],
+    // Only "most recent session" resume exists, so it is not used (it could pick another pane's).
     // exec never prompts; the sandbox policy decides what is allowed.
     autonomyArgs: {
       read: ['--sandbox', 'read-only'],
@@ -51,6 +56,7 @@ export const PROVIDERS: AgentProvider[] = [
     name: 'OpenCode',
     binary: 'opencode',
     argsTemplate: ['run', PROMPT_PLACEHOLDER],
+    interactivePromptArgs: ['--prompt', PROMPT_PLACEHOLDER],
     // No read-only switch; OpenCode's own permission config applies unless --auto.
     autonomyArgs: { edit: [], full: ['--auto'] },
     description: 'OpenCode agent runner, non-interactive run mode',
@@ -61,6 +67,7 @@ export const PROVIDERS: AgentProvider[] = [
     name: 'Gemini',
     binary: 'gemini',
     argsTemplate: ['-p', PROMPT_PLACEHOLDER],
+    interactivePromptArgs: ['--prompt-interactive', PROMPT_PLACEHOLDER],
     autonomyArgs: {
       read: ['--approval-mode', 'plan'],
       edit: ['--approval-mode', 'auto_edit'],
@@ -126,11 +133,34 @@ function defaultShell(): string[] {
   return process.platform === 'win32' ? ['cmd.exe'] : [process.env.SHELL || '/bin/sh'];
 }
 
-/** argv for an interactive session: the bare binary starts its REPL. */
-export function buildInteractiveArgv(provider: AgentProvider): string[] {
+/** argv for an interactive session: the CLI's REPL, pinned to our session id when supported,
+    optionally starting on a first prompt (e.g. the Kanban card's task). */
+export function buildInteractiveArgv(
+  provider: AgentProvider,
+  options: { sessionId?: string; prompt?: string } = {},
+): string[] {
   if (provider.id === 'shell') return defaultShell();
   if (provider.id === 'custom' || !provider.binary) return [];
-  return [provider.binary];
+  const fill = (args: string[]) =>
+    args.map((a) =>
+      a === SESSION_ID_PLACEHOLDER
+        ? options.sessionId!
+        : a === PROMPT_PLACEHOLDER
+          ? options.prompt!
+          : a,
+    );
+  return [
+    provider.binary,
+    ...(options.sessionId && provider.sessionIdArgs ? fill(provider.sessionIdArgs) : []),
+    ...(options.prompt && provider.interactivePromptArgs
+      ? fill(provider.interactivePromptArgs)
+      : []),
+  ];
+}
+
+/** Whether the provider's interactive mode can start on a first prompt. */
+export function supportsInteractivePrompt(provider: AgentProvider): boolean {
+  return provider.interactivePromptArgs !== undefined;
 }
 
 /** Statuses for the whole catalog. Results are cached briefly to avoid probing on every poll. */
@@ -193,9 +223,15 @@ export function buildDispatchArgv(
   return [provider.binary, ...filled.slice(0, splitAt), ...extra, ...filled.slice(splitAt)];
 }
 
-/** argv for relaunching a supervised session after a crash/reboot, or null when
-    the provider has no known resume path (it simply starts fresh). */
-export function buildResumeArgv(provider: AgentProvider): string[] | null {
+/** argv for relaunching a supervised session after a crash/reboot, or null when the provider
+    has no safe resume path (it then starts fresh). Resume args that need a session id are only
+    used when one was pinned at start. */
+export function buildResumeArgv(provider: AgentProvider, sessionId?: string): string[] | null {
   if (!provider.binary || !provider.resumeArgs) return null;
-  return [provider.binary, ...provider.resumeArgs];
+  const needsId = provider.resumeArgs.includes(SESSION_ID_PLACEHOLDER);
+  if (needsId && !sessionId) return null;
+  return [
+    provider.binary,
+    ...provider.resumeArgs.map((a) => (a === SESSION_ID_PLACEHOLDER ? sessionId! : a)),
+  ];
 }

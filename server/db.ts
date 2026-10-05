@@ -106,6 +106,15 @@ const MIGRATIONS: string[] = [
   ALTER TABLE agent_sessions ADD COLUMN terminal TEXT NOT NULL DEFAULT 'pipe'
     CHECK (terminal IN ('pty', 'pipe'));
   `,
+  // Agent workspace: small key/value store for UI state that must survive restarts (pane
+  // layout), and an optional link from a session to the Kanban card it works on.
+  `
+  CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  ALTER TABLE agent_sessions ADD COLUMN card_id INTEGER REFERENCES cards(id) ON DELETE SET NULL;
+  `,
 ];
 
 export function openDb(dataDir: string): Db {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router';
 import {
   AGENT_AUTONOMY,
   AGENT_AUTONOMY_LABELS,
@@ -29,6 +30,7 @@ export function CardDialog({
   onSaved,
   onDeleted,
   onDispatched,
+  liveSessionId = null,
 }: {
   card: Card | null;
   projectId: number;
@@ -36,6 +38,8 @@ export function CardDialog({
   onSaved: (card: Card) => void;
   onDeleted: (id: number) => void;
   onDispatched?: () => void;
+  /** Running interactive session linked to this card, if any. */
+  liveSessionId?: number | null;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [title, setTitle] = useState('');
@@ -91,6 +95,27 @@ export function CardDialog({
   const selectedProvider = aiProviders.find((p) => p.id === dispatchProvider);
   const autonomySupported =
     !selectedProvider?.autonomyArgs || selectedProvider.autonomyArgs[autonomy] !== undefined;
+
+  const navigate = useNavigate();
+  /** Interactive alternative to a one-shot run: a live session primed with the card task. */
+  async function openInTerminal() {
+    if (!card) return;
+    setDispatching(true);
+    setDispatchError(null);
+    try {
+      const session = await api.createSession(projectId, {
+        providerId: dispatchProvider,
+        cardId: card.id,
+        ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
+      });
+      onDispatched?.();
+      navigate(`/workspace?open=${session.id}`);
+    } catch (e) {
+      setDispatchError((e as Error).message);
+    } finally {
+      setDispatching(false);
+    }
+  }
 
   async function dispatch() {
     if (!card) return;
@@ -199,6 +224,14 @@ export function CardDialog({
             )}
             <div className="field">
               <label>Run with an agent</label>
+              {liveSessionId !== null && (
+                <p style={{ margin: 0 }}>
+                  <Link to={`/workspace?open=${liveSessionId}`}>⌨ Open live terminal</Link>{' '}
+                  <span className="faint" style={{ fontSize: 12.5 }}>
+                    · a session is already working on this card
+                  </span>
+                </p>
+              )}
               <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
                 Dispatching moves the card to In progress and runs the prompt as a one-shot session.
                 Validate the run to move the card on.
@@ -248,6 +281,15 @@ export function CardDialog({
                   onClick={dispatch}
                 >
                   {dispatching ? 'Dispatching…' : 'Dispatch'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={dispatching || !selectedProvider?.available}
+                  onClick={openInTerminal}
+                  title="Start an interactive session on this card and open it in the Agents workspace"
+                >
+                  Work on it in a terminal
                 </button>
               </div>
               <textarea

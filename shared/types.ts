@@ -207,10 +207,17 @@ export interface AgentProvider {
   binary: string | null;
   /** Non-interactive argv; '{prompt}' is replaced by the dispatch prompt. */
   argsTemplate: string[];
-  /** argv tail for relaunching a supervised session with conversational continuity. */
+  /** argv tail for relaunching a supervised session with conversational continuity.
+      May contain '{sessionId}' (see sessionIdArgs). */
   resumeArgs?: string[];
+  /** argv tail that pins a new interactive conversation to our own id ('{sessionId}'), so
+      resume reopens exactly that conversation even with several sessions per project. */
+  sessionIdArgs?: string[];
   /** Extra args per autonomy level for one-shot runs; a missing level is unsupported. */
   autonomyArgs?: Partial<Record<AgentAutonomy, string[]>>;
+  /** argv tail that starts the interactive CLI with a first prompt ('{prompt}' placeholder).
+      Absent when the CLI can't take one; the user then types it in the terminal. */
+  interactivePromptArgs?: string[];
   description: string;
   /** Install link shown when the binary is missing (Quil-style). */
   installUrl?: string;
@@ -238,6 +245,9 @@ export interface AgentSession {
   cwd: string;
   /** 'pty' sessions take raw keystrokes and render full-screen CLIs; 'pipe' ones are line-based. */
   terminal: AgentTerminal;
+  /** Kanban card this session works on, if it was started from one. */
+  cardId: number | null;
+  cardKey: string | null;
   pid: number | null;
   status: AgentSessionStatus;
   exitCode: number | null;
@@ -309,4 +319,32 @@ export interface CardRunSummary {
   failed: number;
   /** Succeeded but not yet accepted/rejected. */
   awaitingValidation: number;
+  /** Running interactive session linked to the card (newest), for the board's live badge. */
+  liveSessionId: number | null;
+}
+
+// ---- Agent workspace -------------------------------------------------------------------------
+// One full-width page of terminal panes. Layout presets instead of free-form splitting keep it
+// dead simple; any pane can show any session from any project.
+
+export const WORKSPACE_PRESETS = ['1', '2v', '2h', '3v', '2x2'] as const;
+export type WorkspacePreset = (typeof WORKSPACE_PRESETS)[number];
+
+export const WORKSPACE_PRESET_INFO: Record<
+  WorkspacePreset,
+  { panes: number; columns: number; rows: number; label: string }
+> = {
+  '1': { panes: 1, columns: 1, rows: 1, label: 'Single pane' },
+  '2v': { panes: 2, columns: 2, rows: 1, label: 'Two side by side' },
+  '2h': { panes: 2, columns: 1, rows: 2, label: 'Two stacked' },
+  '3v': { panes: 3, columns: 3, rows: 1, label: 'Three side by side' },
+  '2x2': { panes: 4, columns: 2, rows: 2, label: 'Grid of four' },
+};
+
+export interface WorkspaceLayout {
+  preset: WorkspacePreset;
+  /** Session id shown in each pane (null = empty pane), length = preset pane count. */
+  panes: (number | null)[];
+  /** Pane index shown alone, or null. */
+  maximized: number | null;
 }

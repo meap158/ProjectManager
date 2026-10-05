@@ -4,9 +4,14 @@
 import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
-import { AGENT_AUTONOMY } from '../../shared/types.js';
+import {
+  AGENT_AUTONOMY,
+  WORKSPACE_PRESETS,
+  WORKSPACE_PRESET_INFO,
+  type WorkspaceLayout,
+} from '../../shared/types.js';
 import type { Db } from '../db.js';
-import { getProjectRow } from '../store.js';
+import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
 
@@ -25,6 +30,8 @@ const createSessionBody = z
     supervise: z.boolean().optional(),
     env: envSchema.optional(),
     terminal: z.enum(['pty', 'pipe']).optional(),
+    cardId: z.number().int().positive().optional(),
+    prompt: z.string().max(20_000).optional(),
   })
   .refine((b) => b.providerId || b.command, { message: 'providerId or command is required' });
 
@@ -39,6 +46,18 @@ const inputBody = z.object({
     .min(1)
     .max(64 * 1024),
 });
+
+const workspaceBody = z
+  .object({
+    preset: z.enum(WORKSPACE_PRESETS),
+    panes: z.array(z.number().int().positive().nullable()).max(4),
+    maximized: z.number().int().min(0).max(3).nullable(),
+  })
+  .refine((l) => l.panes.length === WORKSPACE_PRESET_INFO[l.preset].panes, {
+    message: 'panes must match the preset',
+  });
+
+const DEFAULT_WORKSPACE: WorkspaceLayout = { preset: '1', panes: [null], maximized: null };
 
 const resizeBody = z.object({
   cols: z.number().int().min(20).max(500),
@@ -104,6 +123,24 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
       if (e instanceof AgentError) throw e;
       throw new AgentError(400, (e as Error).message);
     }
+  });
+
+  app.get('/agent-sessions', (c) => c.json(supervisor.listAllSessions()));
+
+  // ---- Workspace layout (persisted server-side so it survives reloads, restarts, reboots) ----
+  app.get('/workspace', (c) => {
+    const saved = getSetting<WorkspaceLayout>(db, 'workspace');
+    const parsed = workspaceBody.safeParse(saved);
+    const layout = parsed.success ? parsed.data : DEFAULT_WORKSPACE;
+    // Self-heal: panes pointing at deleted sessions become empty.
+    const panes = layout.panes.map((id) => (id !== null && supervisor.getSession(id) ? id : null));
+    return c.json({ ...layout, panes });
+  });
+
+  app.put('/workspace', async (c) => {
+    const layout = await parseBody(c, workspaceBody);
+    setSetting(db, 'workspace', layout);
+    return c.json(layout);
   });
 
   app.get('/agent-sessions/:id', (c) => {

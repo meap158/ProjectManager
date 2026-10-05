@@ -4,13 +4,16 @@ _Current-state snapshot. Update it after every meaningful unit of work._
 
 ## State (2026-10-05)
 
-Milestone 1 and the agent CLI integration are implemented and verified.
+Milestone 1, a working agent CLI integration, and the multi-pane agent workspace are implemented
+and verified in the browser.
 
-- **First commit:** milestone 1 plus the original agent dispatch.
-- **Second unit (this one):** made the CLI integration actually work. Verified end to end on Windows:
-  - a real Claude dispatch edited a file and recorded the change as evidence
-  - Codex and Gemini now launch (they failed only on account limits and auth)
-  - interactive Claude runs in the browser terminal, with conversation resume after a server crash
+- **Commit 1:** milestone 1 plus the original agent dispatch.
+- **Commit 2:** made the CLI integration actually work (shims, autonomy, change evidence, PTY,
+  clean env, id-reuse fixes). Verified with real Claude, Codex and Gemini runs on Windows.
+- **Commit 3 (this one):** the Agents workspace. Verified in Chrome:
+  - card → "Work on it in a terminal" → Claude got the card's task and wrote the file
+  - two panes across two projects
+  - shell input, layout persisted across reload, maximise, live badge on the board
 
 ## Product brief
 
@@ -22,28 +25,24 @@ read it before product work. `/References` is empty.
   - code/disk/git stats and charts
   - per-project Kanban and commit-ref auto-moves
   - cross-project dashboard and project sidebar
-  - agent runs (dispatch from card → validate) and persistent PTY sessions
+  - agent runs (dispatch → evidence → validate)
+  - persistent PTY sessions
+  - multi-pane Agents workspace wired to the board (DESIGN.md §12.2)
 
 ## Roadmap (owner-requested, in priority order)
 
-1. **Agent workspace: multi-pane, dead simple, wired to the board** (Research Addendum 3).
-   - Goal: one workspace view with splittable panes. Show several sessions for one project, or
-     sessions across several projects at once.
-   - Layout persists across reloads and restarts (store it server-side).
-   - Minimal chrome to save screen space: collapsible pane headers, maximise a pane, keyboard
-     shortcuts.
-   - From a Kanban card: "open in pane" / dispatch straight into a pane. The card shows its live
-     session, and results flow back to the card.
-   - Efficiency: one SSE stream per visible pane, none for hidden ones; xterm instances only
-     for visible panes.
-   - Building blocks already exist: `TerminalView` (interactive SSE + PTY), supervisor sessions,
-     `GooeyNav`-style tabs.
-2. **Commits over time by project** on the All-projects dashboard (Research Addendum 2).
+1. **Commits over time by project** on the All-projects dashboard (Research Addendum 2).
    - Per-project series in fixed categorical order, top N + "Other", legend + direct labels,
      tooltip, and a table alternative.
    - Data: each project's `git.dailyCommits` is already stored per project.
+2. **Workspace polish** (follow-ups to Addendum 3):
+   - keyboard shortcuts (focus pane N, maximise)
+   - drag a session between panes
+   - per-pane font size
+   - a way to send a finished interactive session's outcome back to the card (e.g. a
+     "Mark card for review" action in the pane header)
 3. Portfolio status view: stale projects, uncommitted changes, everything in flight across projects.
-4. Client tests (Vitest + Testing Library) for the board, dialogs and terminal.
+4. Client tests (Vitest + Testing Library) for the board, dialogs, terminal and workspace.
 5. A theme toggle (the tokens already support `data-theme`).
 
 ## Architecture
@@ -60,8 +59,12 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
   - `gitChanges.ts`: run change evidence.
   - `supervisor.ts`: lifecycle, persistence, resume, input queue.
   - `routes.ts`: API including the SSE stream and resize.
-- Migrations are append-only in `server/db.ts`. Migration 3 added `agent_runs.autonomy`,
-  `agent_runs.changes_json` and `agent_sessions.terminal`.
+- Migrations are append-only in `server/db.ts`.
+  - Migration 3 added `agent_runs.autonomy`, `agent_runs.changes_json` and
+    `agent_sessions.terminal`.
+  - Migration 4 added the `settings` table (workspace layout) and `agent_sessions.card_id`.
+- **Workspace:** `client/src/pages/WorkspacePage.tsx` (presets, `placeSession`, panes). The API
+  is `GET /api/agent-sessions` (all projects) and `GET/PUT /api/workspace`.
 
 ## Launcher
 

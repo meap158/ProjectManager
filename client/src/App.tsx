@@ -1,9 +1,12 @@
-import { Link, NavLink, Route, Routes } from 'react-router';
+import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ProjectPage } from './pages/ProjectPage';
 import { ProjectsPage } from './pages/ProjectsPage';
+import { WorkspacePage } from './pages/WorkspacePage';
 
 export function App() {
+  // The agent workspace takes the full width: terminals need the screen space more than the list.
+  const fullWidth = useLocation().pathname === '/workspace';
   return (
     <>
       <header className="topbar">
@@ -15,14 +18,18 @@ export function App() {
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'is-active' : '')}>
             All projects
           </NavLink>
+          <NavLink to="/workspace" className={({ isActive }) => (isActive ? 'is-active' : '')}>
+            Agents
+          </NavLink>
         </nav>
       </header>
       <div className="app-shell">
-        <ProjectSidebar />
+        {!fullWidth && <ProjectSidebar />}
         <div className="app-main">
           <Routes>
             <Route path="/" element={<ProjectsPage />} />
             <Route path="/projects/:id" element={<ProjectPage />} />
+            <Route path="/workspace" element={<WorkspacePage />} />
             <Route
               path="*"
               element={
@@ -35,12 +42,14 @@ export function App() {
               }
             />
           </Routes>
-          <footer className="footer">
-            Animated components by{' '}
-            <a href="https://rareui.com" target="_blank" rel="noreferrer">
-              Rare UI
-            </a>
-          </footer>
+          {!fullWidth && (
+            <footer className="footer">
+              Animated components by{' '}
+              <a href="https://rareui.com" target="_blank" rel="noreferrer">
+                Rare UI
+              </a>
+            </footer>
+          )}
         </div>
       </div>
     </>

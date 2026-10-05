@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { AgentProviderStatus, AgentRun, AgentSession } from '../../../shared/types';
+import { Link } from 'react-router';
 import { api } from '../api';
 import { formatBytes } from '../format';
 import { RunCard } from './RunCard';
@@ -219,6 +220,13 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
                   </span>
                 </button>
                 <span className="actions">
+                  <Link
+                    className="btn btn-sm"
+                    to={`/workspace?open=${s.id}`}
+                    title="Show this session in the multi-pane Agents workspace"
+                  >
+                    Open in workspace
+                  </Link>
                   {s.status === 'running' ? (
                     <button
                       type="button"

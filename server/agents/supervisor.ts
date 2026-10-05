@@ -16,6 +16,7 @@
 //   argv arrays go straight to the OS, so prompts cannot inject shell commands.
 
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import {
   appendFileSync,
@@ -237,6 +238,7 @@ interface SessionRow {
   ended_at: string | null;
   log_path: string;
   terminal: AgentTerminal;
+  card_id: number | null;
 }
 
 interface RunRow {
@@ -330,6 +332,14 @@ export class AgentSupervisor {
     return rows.map((r) => this.toSession(r));
   }
 
+  /** Every session in every project, newest last (the workspace shows sessions side by side). */
+  listAllSessions(): AgentSession[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM agent_sessions ORDER BY id`)
+      .all() as unknown as SessionRow[];
+    return rows.map((r) => this.toSession(r));
+  }
+
   getSession(id: number, projectId?: number): AgentSession | null {
     const row = this.db.prepare(`SELECT * FROM agent_sessions WHERE id = ?`).get(id) as
       SessionRow | undefined;
@@ -348,10 +358,18 @@ export class AgentSupervisor {
       env?: Record<string, string>;
       /** Defaults to 'pty' when node-pty is available (needed for interactive AI CLIs). */
       terminal?: AgentTerminal;
+      /** Kanban card this session works on; it also primes the first prompt. */
+      cardId?: number;
+      /** First prompt for the interactive CLI (defaults to the card's task when cardId is set). */
+      prompt?: string;
     },
   ): Promise<AgentSession> {
     const project = getProjectRow(this.db, projectId);
     if (!project) throw new AgentError(404, 'Project not found');
+    const card = input.cardId !== undefined ? getCard(this.db, input.cardId) : null;
+    if (input.cardId !== undefined && (!card || card.projectId !== projectId)) {
+      throw new AgentError(404, 'Card not found');
+    }
     const count = (
       this.db
         .prepare(`SELECT COUNT(*) AS n FROM agent_sessions WHERE project_id = ?`)
@@ -373,9 +391,20 @@ export class AgentSupervisor {
     // Explicit commands win; otherwise an AI provider starts its interactive
     // REPL and a resume path is stored for crash/reboot relaunches.
     const explicit = input.command ? validateCommand(input.command) : null;
-    const command = explicit ?? buildInteractiveArgv(provider);
+    const prompt = (
+      input.prompt ?? (card ? defaultPrompt(card.key, card.title, card.description) : '')
+    ).slice(0, 20_000);
+    // Pin the conversation to our own id where the CLI supports it, so resume reopens exactly
+    // this conversation even when several sessions share a project.
+    const conversationId = !explicit && provider.sessionIdArgs ? randomUUID() : undefined;
+    const command =
+      explicit ??
+      buildInteractiveArgv(provider, {
+        sessionId: conversationId,
+        prompt: prompt.trim() ? prompt : undefined,
+      });
     if (command.length === 0) throw new AgentError(400, 'No command to run');
-    const resume = explicit ? null : buildResumeArgv(provider);
+    const resume = explicit ? null : buildResumeArgv(provider, conversationId);
     const cwd = resolveCwd(input.cwd ?? project.path);
     const env = validateEnv(input.env);
     const terminal: AgentTerminal = input.terminal ?? (ptyAvailable() ? 'pty' : 'pipe');
@@ -392,12 +421,12 @@ export class AgentSupervisor {
       .prepare(
         `INSERT INTO agent_sessions
            (project_id, name, provider_id, command_json, resume_json, cwd, status,
-            desired_state, supervise, created_at, started_at, log_path, terminal)
-         VALUES (?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?, ?)`,
+            desired_state, supervise, created_at, started_at, log_path, terminal, card_id)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         projectId,
-        input.name?.trim() || provider.name,
+        input.name?.trim() || (card ? `${card.key}: ${card.title}`.slice(0, 80) : provider.name),
         providerId,
         JSON.stringify({ command, env }),
         resume ? JSON.stringify(resume) : null,
@@ -407,8 +436,13 @@ export class AgentSupervisor {
         ts,
         logPath,
         terminal,
+        card?.id ?? null,
       );
     const id = Number(result.lastInsertRowid);
+    // Starting work on a card moves it to In progress, like a dispatch does.
+    if (card && (card.status === 'backlog' || card.status === 'todo')) {
+      updateCard(this.db, card.id, { status: 'in_progress' });
+    }
     const row = this.db
       .prepare(`SELECT * FROM agent_sessions WHERE id = ?`)
       .get(id) as unknown as SessionRow;
@@ -563,13 +597,41 @@ export class AgentSupervisor {
       failed: number;
       awaiting: number;
     }[];
-    return rows.map((r) => ({
-      cardId: r.card_id,
-      running: r.running,
-      succeeded: r.succeeded,
-      failed: r.failed,
-      awaitingValidation: r.awaiting,
-    }));
+    const summaries = new Map<number, CardRunSummary>(
+      rows.map((r) => [
+        r.card_id,
+        {
+          cardId: r.card_id,
+          running: r.running,
+          succeeded: r.succeeded,
+          failed: r.failed,
+          awaitingValidation: r.awaiting,
+          liveSessionId: null,
+        },
+      ]),
+    );
+    // Live interactive sessions linked to cards (newest wins) power the board's "live" badge.
+    const sessions = this.db
+      .prepare(
+        `SELECT id, card_id FROM agent_sessions
+          WHERE project_id = ? AND card_id IS NOT NULL AND desired_state = 'running'
+          ORDER BY id`,
+      )
+      .all(projectId) as { id: number; card_id: number }[];
+    for (const row of sessions) {
+      if (!this.live.has(`session:${row.id}`)) continue;
+      const summary = summaries.get(row.card_id) ?? {
+        cardId: row.card_id,
+        running: 0,
+        succeeded: 0,
+        failed: 0,
+        awaitingValidation: 0,
+        liveSessionId: null,
+      };
+      summary.liveSessionId = row.id;
+      summaries.set(row.card_id, summary);
+    }
+    return [...summaries.values()];
   }
 
   /** Push a card to an AI CLI: spawns a one-shot run and moves the card to In progress. */
@@ -1180,6 +1242,8 @@ export class AgentSupervisor {
       command,
       cwd: row.cwd,
       terminal: row.terminal,
+      cardId: row.card_id,
+      cardKey: row.card_id ? (getCard(this.db, row.card_id)?.key ?? null) : null,
       pid: live?.proc.pid ?? row.pid,
       status: live ? 'running' : row.status,
       exitCode: row.exit_code,

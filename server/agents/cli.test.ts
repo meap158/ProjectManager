@@ -6,11 +6,22 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AgentRun, AgentSession } from '../../shared/types.js';
+import type {
+  AgentRun,
+  AgentSession,
+  CardRunSummary,
+  WorkspaceLayout,
+} from '../../shared/types.js';
 import { createApp } from '../app.js';
 import { openDb } from '../db.js';
 import { processEnv, ptyAvailable } from './proc.js';
-import { buildDispatchArgv, getProvider, supportsAutonomy } from './providers.js';
+import {
+  buildDispatchArgv,
+  buildInteractiveArgv,
+  buildResumeArgv,
+  getProvider,
+  supportsAutonomy,
+} from './providers.js';
 import { parseNpmShim, resolveArgv } from './resolve.js';
 
 const NODE = process.execPath;
@@ -327,4 +338,91 @@ describe('run change tracking and autonomy', () => {
     });
     expect(bad.status).toBe(400);
   });
+});
+
+describe('interactive sessions: pinned conversations and first prompts', () => {
+  it('pins each Claude session to its own conversation id and resumes exactly that one', () => {
+    const claude = getProvider('claude')!;
+    const id = '11111111-2222-3333-4444-555555555555';
+    expect(buildInteractiveArgv(claude, { sessionId: id, prompt: PROMPT })).toEqual([
+      'claude',
+      '--session-id',
+      id,
+      PROMPT,
+    ]);
+    expect(buildResumeArgv(claude, id)).toEqual(['claude', '--resume', id]);
+    // Without a pinned id there is no safe resume (it could reopen another pane's conversation).
+    expect(buildResumeArgv(claude)).toBeNull();
+    expect(buildInteractiveArgv(getProvider('gemini')!, { prompt: 'hi' })).toEqual([
+      'gemini',
+      '--prompt-interactive',
+      'hi',
+    ]);
+  });
+});
+
+describe('workspace and card-linked sessions', () => {
+  it('persists a validated layout and heals panes whose session was deleted', async () => {
+    const empty = (await (await call('GET', '/workspace')).json()) as WorkspaceLayout;
+    expect(empty).toEqual({ preset: '1', panes: [null], maximized: null });
+
+    const s = (await (
+      await call('POST', `/projects/${projectId}/agent-sessions`, {
+        providerId: 'custom',
+        command: [NODE, '-e', 'setInterval(()=>{},1000)'],
+        supervise: false,
+        terminal: 'pipe',
+      })
+    ).json()) as AgentSession;
+    const layout: WorkspaceLayout = { preset: '2v', panes: [s.id, null], maximized: 0 };
+    expect((await call('PUT', '/workspace', layout)).status).toBe(200);
+    expect(await (await call('GET', '/workspace')).json()).toEqual(layout);
+    expect(
+      (await call('PUT', '/workspace', { preset: '2x2', panes: [null], maximized: null })).status,
+    ).toBe(400);
+
+    await call('DELETE', `/agent-sessions/${s.id}`);
+    const healed = (await (await call('GET', '/workspace')).json()) as WorkspaceLayout;
+    expect(healed.panes).toEqual([null, null]);
+  });
+
+  it('links a session to its card, moves the card to In progress, and badges it live', async () => {
+    const card = (await (
+      await call('POST', `/projects/${projectId}/cards`, { title: 'Pair on this' })
+    ).json()) as { id: number; key: string };
+    const s = (await (
+      await call('POST', `/projects/${projectId}/agent-sessions`, {
+        providerId: 'custom',
+        command: [NODE, '-e', 'setInterval(()=>{},1000)'],
+        cardId: card.id,
+        supervise: false,
+        terminal: 'pipe',
+      })
+    ).json()) as AgentSession;
+    expect(s).toMatchObject({
+      cardId: card.id,
+      cardKey: card.key,
+      name: `${card.key}: Pair on this`,
+    });
+    const cards = (await (await call('GET', `/projects/${projectId}/cards`)).json()) as {
+      id: number;
+      status: string;
+    }[];
+    expect(cards.find((c) => c.id === card.id)?.status).toBe('in_progress');
+    const summary = (await (
+      await call('GET', `/projects/${projectId}/agent-runs/summary`)
+    ).json()) as CardRunSummary[];
+    expect(summary.find((x) => x.cardId === card.id)?.liveSessionId).toBe(s.id);
+    const all = (await (await call('GET', '/agent-sessions')).json()) as AgentSession[];
+    expect(all.some((x) => x.id === s.id)).toBe(true);
+    expect(
+      (
+        await call('POST', `/projects/${projectId}/agent-sessions`, {
+          providerId: 'shell',
+          cardId: 999_999,
+        })
+      ).status,
+    ).toBe(404);
+    await call('DELETE', `/agent-sessions/${s.id}`);
+  }, 30_000);
 });

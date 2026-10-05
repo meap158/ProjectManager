@@ -253,3 +253,39 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   completion) therefore act only on the record whose unique `log_path` matches. Deleting a session
   evicts its live process and log immediately, so a new session with the same id can never inherit
   the old one's output or be killed by its late exit.
+
+### 12.2 Agent workspace (multi-pane)
+
+- **Where:** the top bar's **Agents** link opens `/workspace`. It's full width with no project
+  sidebar or footer, so terminals get the screen.
+- **Layouts are presets, not free-form splits** (`WORKSPACE_PRESETS`): 1 pane, 2 side by side,
+  2 stacked, 3 side by side, 2×2. One click switches layout. Sessions keep their order, and
+  sessions that no longer fit are only hidden (they keep running and stay in the empty-pane
+  picker).
+- **Chrome budget:** a single 40px toolbar (title, layout picker, inline "New session") and 28px
+  pane headers. A header shows a status dot, the session name, project link and card link, plus
+  stop/start, maximise (also by double-clicking the header) and remove-from-layout. Removing a
+  pane never kills the session.
+- **Opening sessions** (`placeSession`): a session already shown stays put. Otherwise it goes in
+  the first empty pane. If every pane is full, the layout grows (1 → 2 → 2×2), and at 2×2 it
+  replaces the last pane. Entry points:
+  - `?open=<sessionId>` from a card's "Work on it in a terminal"
+  - the card dialog's "Open live terminal"
+  - "Open in workspace" in a project's Agents tab
+- **Persistence:** the layout (preset, pane → session ids, maximised pane) is stored server-side
+  (`settings` table, `GET/PUT /api/workspace`), so it survives reloads, restarts and reboots.
+  Panes whose session was deleted heal to empty on load.
+- **Board integration:**
+  - "Work on it in a terminal" starts an interactive session linked to the card (`card_id`),
+    primed with the card's task. The card moves to In progress.
+  - While the session runs, the card shows a **⌨ live** badge, and its dialog links to the
+    terminal.
+  - Claude sessions pin their conversation id (`--session-id`), so after a reboot each pane
+    resumes _its own_ conversation (`--resume <id>`), even with several Claude panes in one
+    project.
+- **Efficiency:**
+  - Only visible panes mount xterm and open an output stream; a maximised pane hides the rest.
+  - The session list is polled every 4s for statuses only. Output is live over SSE.
+  - Keystrokes are batched per ~12ms and sent in order.
+- **Narrow screens** (< 900px): panes stack vertically with a minimum height and the grid
+  scrolls.

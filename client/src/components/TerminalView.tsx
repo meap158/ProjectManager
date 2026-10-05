@@ -29,7 +29,7 @@ export function TerminalView({
   onInput?: (data: string) => void;
   onResize?: (cols: number, rows: number) => void;
   pollMs?: number;
-  height?: number;
+  height?: number | string;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);

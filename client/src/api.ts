@@ -12,6 +12,7 @@ import type {
   DirectoryListing,
   ProjectDetail,
   ProjectSummary,
+  WorkspaceLayout,
 } from '../../shared/types';
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -58,6 +59,9 @@ export const api = {
 
   // ---- Agent CLI sessions and runs ------------------------------------------------------------
   listProviders: () => request<AgentProviderStatus[]>('GET', '/agents/providers'),
+  listAllSessions: () => request<AgentSession[]>('GET', '/agent-sessions'),
+  getWorkspace: () => request<WorkspaceLayout>('GET', '/workspace'),
+  saveWorkspace: (layout: WorkspaceLayout) => request<WorkspaceLayout>('PUT', '/workspace', layout),
   listSessions: (projectId: number) =>
     request<AgentSession[]>('GET', `/projects/${projectId}/agent-sessions`),
   createSession: (
@@ -70,6 +74,8 @@ export const api = {
       supervise?: boolean;
       env?: Record<string, string>;
       terminal?: AgentTerminal;
+      cardId?: number;
+      prompt?: string;
     },
   ) => request<AgentSession>('POST', `/projects/${projectId}/agent-sessions`, input),
   patchSession: (id: number, patch: { name?: string; supervise?: boolean }) =>
