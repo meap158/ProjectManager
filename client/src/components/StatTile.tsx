@@ -33,7 +33,7 @@ export function StatTile({
   return (
     <div className="stat">
       <div className="label">{label}</div>
-      <div className="value">
+      <div className={value === undefined ? 'value value-text' : 'value'}>
         {value !== undefined ? (
           <AnimatedCounter
             value={value}
@@ -44,7 +44,11 @@ export function StatTile({
           text
         )}
       </div>
-      {hint && <div className="hint">{hint}</div>}
+      {hint && (
+        <div className="hint" title={typeof hint === 'string' ? hint : undefined}>
+          {hint}
+        </div>
+      )}
     </div>
   );
 }

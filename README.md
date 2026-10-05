@@ -48,7 +48,7 @@ Everything runs on your machine. Nothing is uploaded anywhere.
 
 ![Feature board](docs/screenshots/project-board.png)
 
-![Agents workspace: Claude Code working on a card next to a shell for another project](docs/screenshots/agent-workspace.jpg)
+![Agents workspace: a shell for one project next to a Claude session that took card PM-4, then PM-5, in the same conversation](docs/screenshots/agent-workspace.jpg)
 
 ## Requirements
 
