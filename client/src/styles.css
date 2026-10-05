@@ -2409,11 +2409,13 @@ kbd {
   min-width: 0;
   white-space: nowrap;
 }
-/* Agent work rows: card key in a fixed slot (rows align), provider mark right of the name. */
+/* Agent work rows: names flush left; the card key sits in a fixed column on the right (beside
+   the state), so tags align; the provider mark follows the name. */
 .work-card-slot {
   flex: none;
   width: 52px;
   display: inline-flex;
+  justify-content: flex-end;
 }
 .work-card-tag {
   height: 18px;
@@ -2447,8 +2449,19 @@ kbd {
   flex: none;
   padding-right: 6px;
 }
+.work-actions {
+  flex: none;
+  min-width: 222px; /* fits Open in workspace + Start/Stop + delete */
+  display: inline-flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
 .work-state {
   flex: none;
+  /* Fixed width (fits "idle · waiting for you") so the card column never moves. */
+  min-width: 128px;
+  text-align: right;
   margin-right: 4px;
   font-size: 12px;
   color: var(--text-2);

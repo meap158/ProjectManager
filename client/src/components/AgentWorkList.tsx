@@ -218,14 +218,6 @@ export function AgentWorkList({
                     aria-hidden="true"
                   />
                 </button>
-                {/* Fixed slot: names line up whether or not a row has a card. */}
-                <span className="work-card-slot">
-                  {w.item.cardKey && (
-                    <span className="badge mono work-card-tag" title="Card this work is on">
-                      {w.item.cardKey}
-                    </span>
-                  )}
-                </span>
                 {onRename ? (
                   <span className="work-name" onClick={(e) => e.stopPropagation()}>
                     <InlineRename
@@ -262,8 +254,19 @@ export function AgentWorkList({
             </div>
             {/* State and actions share one centre line, beside both text lines. */}
             <span className="work-side">
+              {/* Card tag in a fixed right-hand column: tags line up, and names stay flush
+                  left right after the status dot whether or not a row has a card. */}
+              <span className="work-card-slot">
+                {w.item.cardKey && (
+                  <span className="badge mono work-card-tag" title="Card this work is on">
+                    {w.item.cardKey}
+                  </span>
+                )}
+              </span>
               <span className={`work-state tone-${state.tone ?? 'idle'}`}>{state.text}</span>
-              {actions?.(w)}
+              {/* Fixed-width actions group (empty for runs) keeps the card and state columns at
+                  the same x on every row. */}
+              <span className="work-actions">{actions?.(w)}</span>
             </span>
           </li>
         );
