@@ -76,6 +76,9 @@ The launcher prefers port **5180**. If that port is already in use, it automatic
 and so on, then prints the URL it actually used. You never need to free up a port yourself. To change
 the preferred port, set `PORT` in `.env`.
 
+If ProjectManager is already running for the same data folder, the launcher doesn't start a
+second copy. It prints the running URL and opens it.
+
 ### Configuration (optional)
 
 Copy `.env.example` to `.env` to override any of these:

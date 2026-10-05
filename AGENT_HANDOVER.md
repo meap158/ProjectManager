@@ -85,6 +85,13 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
 
 ## Gotchas
 
+- **One server per data folder** (`server/instance.ts`, record in `<dataDir>/server.json`).
+  - A second server exits with `[server] ALREADY_RUNNING <url>`, and the launcher just opens that URL.
+  - The launcher passes `PM_LAUNCHER_PID`. The server's watchdog exits (and kills its tsx watcher)
+    if the launcher dies, so a hard-killed launcher leaves no orphans.
+- **Schema repair** (`repairSchema` in `server/db.ts`): a shipped migration was once edited in
+  place, leaving real databases without `agent_sessions.resume_json`. Never edit shipped migrations.
+
 - **Test agent features against a scratch data dir**:
   `DATA_DIR=<tmp> npm run launch`. A second server on the real DB would also supervise
   (relaunch) the same agent sessions.

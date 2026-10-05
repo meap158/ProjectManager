@@ -44,7 +44,8 @@ anything.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
   the user explicitly starts may change project files.
 - **DB changes** go in a new migration appended to `MIGRATIONS` in `server/db.ts`. Never edit a
-  migration that has shipped.
+  migration that has shipped: real databases have already run the old text (this happened once, and
+  `repairSchema()` exists to clean up after it).
 - **UI:** follow `DESIGN.md`. Use token variables, not raw hex. Every drag interaction needs a
   keyboard alternative. Use Rare UI `DeleteButton` for destructive actions, never `window.confirm`.
 - **Rare UI attribution** (licence requirement): keep the footer link and the README credit.

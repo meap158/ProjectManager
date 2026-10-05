@@ -7,13 +7,31 @@ import { Hono } from 'hono';
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { openDb } from './db.js';
+import { ALREADY_RUNNING_MARKER, claimInstance, isAlive, releaseInstance } from './instance.js';
 
 /** scripts/launch.mjs watches for this line to retry on the next port. Keep in sync with it. */
 const PORT_IN_USE_MARKER = '[server] EADDRINUSE';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
+/** The launcher passes its PID: it owns this instance across dev restarts (tsx watch). */
+const launcherPid = Number(process.env.PM_LAUNCHER_PID) || null;
+
 async function main() {
+  // Must run before the database/supervisor start: a second server would relaunch the same
+  // supervised agent sessions as the first.
+  const other = await claimInstance(config.dataDir, {
+    pid: process.pid,
+    owner: launcherPid ?? process.pid,
+    url: `http://localhost:${config.port}`,
+    startedAt: new Date().toISOString(),
+  });
+  if (other) {
+    console.error(`${ALREADY_RUNNING_MARKER} ${other.url}`);
+    console.error(`ProjectManager is already running for this data folder at ${other.url}`);
+    process.exit(0);
+  }
+
   const db = openDb(config.dataDir);
   const root = new Hono();
   const api = createApp(db, { dataDir: config.dataDir });
@@ -46,6 +64,7 @@ async function main() {
 
   server.on('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE') {
+      releaseInstance(config.dataDir, process.pid);
       console.error(`${PORT_IN_USE_MARKER}: port ${config.port} is already in use.`);
       process.exit(1);
     }
@@ -66,6 +85,7 @@ async function main() {
       try {
         await api.supervisor.shutdown();
       } finally {
+        releaseInstance(config.dataDir, process.pid);
         server.close();
         server.closeAllConnections();
         db.close();
@@ -75,6 +95,25 @@ async function main() {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // Watchdog: if the launcher is killed hard (no chance to clean up), don't linger as an orphan.
+  // In dev our parent is the tsx watcher, which would otherwise outlive the launcher too.
+  if (launcherPid) {
+    setInterval(() => {
+      if (isAlive(launcherPid)) return;
+      // Release first: killing the watcher can cut our stdout pipe mid-shutdown.
+      releaseInstance(config.dataDir, process.pid);
+      console.log('[server] launcher is gone, shutting down');
+      if (process.ppid !== launcherPid && process.ppid > 1) {
+        try {
+          process.kill(process.ppid); // The tsx watcher.
+        } catch {
+          // Already gone.
+        }
+      }
+      shutdown();
+    }, 3000).unref();
+  }
 }
 
 main().catch((error) => {

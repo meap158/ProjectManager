@@ -22,6 +22,8 @@ const READY_TIMEOUT_MS = 60_000;
 /** Line the server prints on EADDRINUSE (see server/index.ts). Works under tsx watch too,
  *  where a crashed server doesn't exit but waits for file changes. */
 const PORT_IN_USE_MARKER = '[server] EADDRINUSE';
+/** Line the server prints when another instance already serves this data folder (+ URL). */
+const ALREADY_RUNNING_MARKER = '[server] ALREADY_RUNNING';
 
 const args = new Set(process.argv.slice(2));
 const prod = args.has('--prod');
@@ -74,6 +76,30 @@ function loadDotEnv(file) {
     const [, key, raw] = match;
     if (process.env[key] === undefined) process.env[key] = raw.replace(/^(['"])(.*)\1$/, '$2');
   }
+}
+
+// ---- Single instance ------------------------------------------------------------------------
+// One server per data folder (see server/instance.ts). If one is already running, just open it.
+
+const dataDir = path.resolve(ROOT, process.env.DATA_DIR || 'data');
+
+async function runningInstanceUrl() {
+  try {
+    const info = JSON.parse(readFileSync(path.join(dataDir, 'server.json'), 'utf8'));
+    process.kill(info.pid, 0);
+    const res = await fetch(`${info.url.replace('localhost', '127.0.0.1')}/api/health`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    return res.ok ? info.url : null;
+  } catch {
+    return null;
+  }
+}
+
+function handOver(url) {
+  console.log(`\n  \x1b[1mProjectManager is already running:\x1b[0m  \x1b[1m${url}\x1b[0m\n`);
+  if (shouldOpen) openBrowser(url);
+  process.exit(0);
 }
 
 // ---- Port selection -----------------------------------------------------------------------------
@@ -150,6 +176,7 @@ function startServer(port) {
     argv = [tsxCli, 'watch', '--clear-screen=false', 'server/index.ts'];
   }
   env.FORCE_COLOR ??= '1';
+  env.PM_LAUNCHER_PID = String(process.pid);
   const proc = spawn(process.execPath, argv, {
     cwd: ROOT,
     env,
@@ -163,7 +190,15 @@ function startServer(port) {
     [proc.stderr, process.stderr],
   ]) {
     stream.on('data', (chunk) => {
-      if (chunk.toString().includes(PORT_IN_USE_MARKER)) proc.portInUse = true;
+      const text = chunk.toString();
+      if (text.includes(PORT_IN_USE_MARKER)) proc.portInUse = true;
+      const at = text.indexOf(ALREADY_RUNNING_MARKER);
+      if (at !== -1) {
+        proc.alreadyRunning = text
+          .slice(at + ALREADY_RUNNING_MARKER.length)
+          .trim()
+          .split(/\s/)[0];
+      }
       target.write(chunk);
     });
   }
@@ -173,7 +208,7 @@ function startServer(port) {
 async function waitUntilReady(port, proc) {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (proc.exitCode !== null || proc.portInUse) return false;
+    if (proc.exitCode !== null || proc.portInUse || proc.alreadyRunning) return false;
     try {
       const res = await fetch(`http://127.0.0.1:${port}/api/health`);
       if (res.ok) return true;
@@ -198,6 +233,9 @@ function openBrowser(url) {
 }
 
 // ---- Main ---------------------------------------------------------------------------------------
+
+const existingUrl = await runningInstanceUrl();
+if (existingUrl) handOver(existingUrl);
 
 const triedPorts = new Set();
 for (let attempt = 0; attempt < 5; attempt++) {
@@ -228,6 +266,10 @@ for (let attempt = 0; attempt < 5; attempt++) {
     break;
   }
 
+  if (child.alreadyRunning) {
+    killTree(child);
+    handOver(child.alreadyRunning);
+  }
   if (child.portInUse) {
     killTree(child);
     log(`Port ${port} was taken just before startup, trying another...`);

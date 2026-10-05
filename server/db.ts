@@ -123,7 +123,28 @@ export function openDb(dataDir: string): Db {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   migrate(db);
+  repairSchema(db);
   return db;
+}
+
+/**
+ * Columns that were added to an already-shipped migration during early development. Databases
+ * created before the change ran the old version of that migration and are marked as migrated,
+ * so they lack these columns ("table agent_sessions has no column named resume_json").
+ * Repair is idempotent: a column is added only where it is missing. Don't grow this list; new
+ * columns belong in a new migration.
+ */
+const LATE_COLUMNS: { table: string; column: string; definition: string }[] = [
+  { table: 'agent_sessions', column: 'resume_json', definition: 'TEXT' },
+];
+
+export function repairSchema(db: Db): void {
+  for (const { table, column, definition } of LATE_COLUMNS) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (columns.length === 0 || columns.some((c) => c.name === column)) continue;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    console.warn(`[db] repaired schema: added ${table}.${column}`);
+  }
 }
 
 function migrate(db: Db): void {
