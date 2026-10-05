@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import type { AgentTerminal } from '../../shared/types.js';
+import { terminalInput } from './terminalInput.js';
 
 export interface AgentProc {
   readonly pid: number | undefined;
@@ -58,14 +59,15 @@ export function spawnPty(argv: string[], options: SpawnOptions): AgentProc {
     env: options.env,
   });
   let exited = false;
+  const input = terminalInput((data) => proc.write(data));
+  proc.onExit(() => {
+    exited = true;
+    input.close();
+  });
   return {
     pid: proc.pid,
     terminal: 'pty',
-    write: (data) => {
-      if (exited) return false;
-      proc.write(data);
-      return true;
-    },
+    write: input.write,
     resize: (cols, rows) => {
       if (!exited) proc.resize(Math.max(20, cols), Math.max(5, rows));
     },
@@ -74,7 +76,6 @@ export function spawnPty(argv: string[], options: SpawnOptions): AgentProc {
     },
     onExit: (listener) => {
       proc.onExit(({ exitCode, signal }) => {
-        exited = true;
         listener(exitCode, signal ? String(signal) : null);
       });
     },

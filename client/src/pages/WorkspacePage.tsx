@@ -27,6 +27,7 @@ import { Dropdown } from '../components/Dropdown';
 import { InlineRename } from '../components/InlineRename';
 import { readLastAgent, saveLastAgent } from '../lastAgent';
 import { isTerminalReport } from '../../../shared/terminalReports';
+import { splitSessionInput } from '../lib/sessionInput';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
@@ -545,8 +546,12 @@ function Pane({
       const chunk = buffer.current;
       buffer.current = '';
       timer.current = null;
+      if (!chunk) return;
+      // One batch can hold a whole paste: split it so no write exceeds the server's input cap.
       chain.current = chain.current
-        .then(() => api.sendSessionInput(s.id, chunk))
+        .then(async () => {
+          for (const part of splitSessionInput(chunk)) await api.sendSessionInput(s.id, part);
+        })
         .catch((e: Error) => onError(e.message));
     }, 12);
   };
