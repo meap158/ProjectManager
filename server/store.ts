@@ -3,8 +3,10 @@
 
 import { existsSync } from 'node:fs';
 import {
+  BOARD_PRESETS,
   CARD_KEY_PREFIX,
   CARD_STATUSES,
+  type BoardPreset,
   type Card,
   type CardWithProject,
   type CardCounts,
@@ -27,6 +29,7 @@ interface ProjectRow {
   disk_json: string | null;
   git_json: string | null;
   refs_cursor: string | null;
+  board_preset: string | null;
 }
 
 interface CardRow {
@@ -95,6 +98,17 @@ export function insertProject(db: Db, name: string, projectPath: string): number
 
 export function renameProject(db: Db, id: number, name: string): boolean {
   return db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id).changes > 0;
+}
+
+function isBoardPreset(value: string | null): value is BoardPreset {
+  return (BOARD_PRESETS as readonly string[]).includes(value ?? '');
+}
+
+/** Switches a project's board column preset. Cards keep their statuses. */
+export function setBoardPreset(db: Db, id: number, preset: BoardPreset): boolean {
+  return (
+    db.prepare('UPDATE projects SET board_preset = ? WHERE id = ?').run(preset, id).changes > 0
+  );
 }
 
 export function deleteProject(db: Db, id: number): boolean {
@@ -180,6 +194,7 @@ function toSummary(
     disk: parseJson<DiskStats>(row.disk_json),
     git: parseJson<GitStats>(row.git_json),
     cardCounts: counts ?? emptyCounts(),
+    boardPreset: isBoardPreset(row.board_preset) ? row.board_preset : 'full',
     runningSessions,
     missing: !existsSync(row.path),
     scan,

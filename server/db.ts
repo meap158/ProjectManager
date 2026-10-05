@@ -133,6 +133,11 @@ export const MIGRATIONS: string[] = [
 
   CREATE INDEX agent_installs_by_provider ON agent_installs (provider_id, id);
   `,
+  // Per-project board column preset (Settings → Boards).
+  `
+  ALTER TABLE projects ADD COLUMN board_preset TEXT NOT NULL DEFAULT 'full'
+    CHECK (board_preset IN ('full', 'simple', 'capture'));
+  `,
 ];
 
 export function openDb(dataDir: string): Db {

@@ -124,6 +124,29 @@ describe('projects and cards', () => {
     expect((await call('POST', '/projects/999/cards', { title: 'x' })).status).toBe(404);
     expect((await call('PATCH', '/cards/1', { status: 'nope' })).status).toBe(400);
   });
+
+  it('switches board column presets per project', async () => {
+    const { call } = setup();
+    const created = (await (
+      await call('POST', '/projects', { path: dir })
+    ).json()) as ProjectDetail;
+    expect(created.boardPreset).toBe('full');
+    expect((await call('PATCH', '/projects/999', { boardPreset: 'simple' })).status).toBe(404);
+    expect((await call('PATCH', `/projects/${created.id}`, { boardPreset: 'nope' })).status).toBe(
+      400,
+    );
+    expect((await call('PATCH', `/projects/${created.id}`, {})).status).toBe(400);
+    const simple = (await (
+      await call('PATCH', `/projects/${created.id}`, { boardPreset: 'simple' })
+    ).json()) as ProjectDetail;
+    expect(simple.boardPreset).toBe('simple');
+    // Renaming still works alongside, and the preset survives it.
+    const renamed = (await (
+      await call('PATCH', `/projects/${created.id}`, { name: 'Lean board' })
+    ).json()) as ProjectDetail;
+    expect(renamed).toMatchObject({ name: 'Lean board', boardPreset: 'simple' });
+    await call('DELETE', `/projects/${created.id}`);
+  });
 });
 
 describe('cards in flight', () => {

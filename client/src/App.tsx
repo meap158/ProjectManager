@@ -1,9 +1,12 @@
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ThemeSwitch } from './components/ThemeSwitch';
+import { BoardIcon, GridIcon, SettingsIcon, TerminalIcon } from './components/icons';
+import { RememberLastPage } from './lastPage';
 import { BoardPage } from './pages/BoardPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { ProjectsPage } from './pages/ProjectsPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 
 export function App() {
@@ -11,23 +14,50 @@ export function App() {
   const fullWidth = useLocation().pathname === '/workspace';
   return (
     <>
+      <RememberLastPage />
       <header className="topbar">
-        <Link to="/" className="brand">
+        <Link to="/" className="brand" aria-label="ProjectManager">
           <img src="/favicon.svg" alt="" />
-          ProjectManager
+          <span>ProjectManager</span>
         </Link>
         <nav className="topnav" aria-label="Primary">
-          <NavLink to="/" end className={({ isActive }) => (isActive ? 'is-active' : '')}>
-            All projects
+          <NavLink
+            to="/"
+            end
+            aria-label="All projects"
+            className={({ isActive }) => (isActive ? 'is-active' : '')}
+          >
+            <GridIcon />
+            <span>All projects</span>
           </NavLink>
-          <NavLink to="/board" className={({ isActive }) => (isActive ? 'is-active' : '')}>
-            Board
+          <NavLink
+            to="/board"
+            aria-label="Board"
+            className={({ isActive }) => (isActive ? 'is-active' : '')}
+          >
+            <BoardIcon />
+            <span>Board</span>
           </NavLink>
-          <NavLink to="/workspace" className={({ isActive }) => (isActive ? 'is-active' : '')}>
-            Agents
+          <NavLink
+            to="/workspace"
+            aria-label="Agents"
+            className={({ isActive }) => (isActive ? 'is-active' : '')}
+          >
+            <TerminalIcon />
+            <span>Agents</span>
           </NavLink>
         </nav>
-        <ThemeSwitch />
+        <div className="topbar-right">
+          <ThemeSwitch />
+          <NavLink
+            to="/settings"
+            aria-label="Settings"
+            className={({ isActive }) => (isActive ? 'is-active' : '')}
+          >
+            <SettingsIcon />
+            <span>Settings</span>
+          </NavLink>
+        </div>
       </header>
       <div className="app-shell">
         {!fullWidth && <ProjectSidebar />}
@@ -37,6 +67,7 @@ export function App() {
             <Route path="/board" element={<BoardPage />} />
             <Route path="/projects/:id" element={<ProjectPage />} />
             <Route path="/workspace" element={<WorkspacePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route
               path="*"
               element={

@@ -1,5 +1,6 @@
 import type {
   AgentAutonomy,
+  AgentInstall,
   AgentOutput,
   AgentProviderStatus,
   AgentTerminal,
@@ -7,6 +8,7 @@ import type {
   AgentSession,
   AgentTokenUsage,
   CardAttachment,
+  BoardPreset,
   BulkAddResult,
   Card,
   CardRunSummary,
@@ -40,6 +42,8 @@ export const api = {
   addProjects: (paths: string[]) => request<BulkAddResult>('POST', '/projects/batch', { paths }),
   renameProject: (id: number, name: string) =>
     request<ProjectDetail>('PATCH', `/projects/${id}`, { name }),
+  setBoardPreset: (id: number, boardPreset: BoardPreset) =>
+    request<ProjectDetail>('PATCH', `/projects/${id}`, { boardPreset }),
   removeProject: (id: number) => request<void>('DELETE', `/projects/${id}`),
   scanProject: (id: number) => request<ProjectDetail>('POST', `/projects/${id}/scan`),
   /** Opens the project folder in Explorer / Finder / the desktop file manager. */
@@ -155,4 +159,13 @@ export const api = {
   validateRun: (id: number, decision: 'accepted' | 'rejected', moveTo?: 'review' | 'done') =>
     request<AgentRun>('POST', `/agent-runs/${id}/validate`, { decision, moveTo }),
   deleteRun: (id: number) => request<void>('DELETE', `/agent-runs/${id}`),
+
+  // ---- Agent CLI installs (Settings) ------------------------------------------------------------
+  listProvidersRefresh: () => request<AgentProviderStatus[]>('GET', '/agents/providers?refresh=1'),
+  installProvider: (providerId: string) =>
+    request<AgentInstall>('POST', `/agents/providers/${providerId}/install`),
+  listInstalls: () => request<AgentInstall[]>('GET', '/agent-installs'),
+  installOutput: (id: number, after: number) =>
+    request<AgentOutput>('GET', `/agent-installs/${id}/output?after=${after}`),
+  deleteInstall: (id: number) => request<void>('DELETE', `/agent-installs/${id}`),
 };

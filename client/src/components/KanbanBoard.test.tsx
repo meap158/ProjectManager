@@ -48,11 +48,11 @@ const card = (id: number, projectId: number, title: string, status: Card['status
 });
 
 // Each test uses its own project id: the board caches cards per project at module scope.
-function renderBoard(projectId: number, cards: Card[]) {
+function renderBoard(projectId: number, cards: Card[], preset?: 'full' | 'simple' | 'capture') {
   vi.mocked(api.listCards).mockResolvedValue(cards);
   render(
     <MemoryRouter>
-      <KanbanBoard projectId={projectId} reloadKey={0} />
+      <KanbanBoard projectId={projectId} reloadKey={0} preset={preset} />
     </MemoryRouter>,
   );
 }
@@ -116,5 +116,23 @@ describe('KanbanBoard', () => {
       ),
     );
     await waitFor(() => expect(within(column('In progress')).getByText('Edit me')).toBeTruthy());
+  });
+
+  it('shows only preset columns and counts cards hidden elsewhere', async () => {
+    renderBoard(
+      5,
+      [
+        card(6, 5, 'Queued', 'backlog'),
+        card(7, 5, 'Planned', 'todo'),
+        card(8, 5, 'Held', 'review'),
+      ],
+      'simple',
+    );
+    await screen.findByText('Planned');
+    expect(screen.queryByRole('region', { name: 'Backlog' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Review' })).toBeNull();
+    expect(within(column('To do')).getByText('Planned')).toBeTruthy();
+    // Hidden cards keep their status and are counted, never lost.
+    expect(screen.getByText(/2 cards in hidden columns/)).toBeTruthy();
   });
 });

@@ -15,6 +15,24 @@ export const CARD_STATUS_LABELS: Record<CardStatus, string> = {
 /** Prefix used to reference cards from commit messages, e.g. "Fixes PM-12". */
 export const CARD_KEY_PREFIX = 'PM';
 
+/** Board column presets: which statuses get a visible column. Every preset keeps all
+    five statuses valid — cards in hidden columns keep their status and reappear when
+    the preset changes back. */
+export const BOARD_PRESETS = ['full', 'simple', 'capture'] as const;
+export type BoardPreset = (typeof BOARD_PRESETS)[number];
+
+export const BOARD_PRESET_LABELS: Record<BoardPreset, string> = {
+  full: 'Full flow',
+  simple: 'Simple',
+  capture: 'Capture flow',
+};
+
+export const BOARD_PRESET_COLUMNS: Record<BoardPreset, CardStatus[]> = {
+  full: ['backlog', 'todo', 'in_progress', 'review', 'done'],
+  simple: ['todo', 'in_progress', 'done'],
+  capture: ['backlog', 'in_progress', 'done'],
+};
+
 export interface LanguageStats {
   name: string;
   files: number;
@@ -117,6 +135,8 @@ export interface ProjectSummary {
   disk: DiskStats | null;
   git: GitStats | null;
   cardCounts: CardCounts;
+  /** Visible board columns. Cards in hidden statuses keep their status. */
+  boardPreset: BoardPreset;
   /** Agent/terminal sessions currently running in this project. */
   runningSessions: number;
   /** Set when the folder no longer exists on disk. */

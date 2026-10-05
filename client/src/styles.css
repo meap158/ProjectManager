@@ -121,11 +121,17 @@ body {
 
 /* Full-viewport shell (KDP pattern): the shell owns the viewport height and each
    pane scrolls on its own, so the sidebar never scrolls away and there is only
-   ever one page scrollbar — the one inside .app-main. */
+   ever one page scrollbar — the one inside .app-main. html/body never scroll:
+   even 1px of document overflow (borders, rounding, dvh) would paint a second
+   bar next to .app-main's. Dialogs are top-layer and unaffected. */
 html,
 body,
 #root {
   height: 100%;
+}
+html,
+body {
+  overflow: hidden;
 }
 #root {
   display: flex;
@@ -249,7 +255,19 @@ code,
   gap: 4px;
   align-items: center;
 }
-.topnav a {
+/* Right-side utility group: pushed to the far edge, theme control then settings. */
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: none;
+}
+.topnav a,
+.topbar-right a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 12px;
   border-radius: 999px;
   color: var(--text-2);
@@ -257,20 +275,52 @@ code,
   font-size: 13px;
   white-space: nowrap;
 }
-.topnav a:hover {
+.topnav a svg,
+.topbar-right a svg {
+  flex: none;
+}
+.topnav a:hover,
+.topbar-right a:hover {
   text-decoration: none;
   background: var(--surface-2);
   color: var(--text);
 }
-.topnav a.is-active {
+.topnav a.is-active,
+.topbar-right a.is-active {
   background: var(--accent-soft);
   color: var(--accent);
+}
+@media (max-width: 600px) {
+  .topbar {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+  .topnav a,
+  .topbar-right a {
+    padding: 5px 8px;
+  }
+  /* Icons carry the nav on narrow screens; full labels return above 600px. */
+  .brand span,
+  .topnav a span,
+  .topbar-right a span {
+    display: none;
+  }
+  .theme-switch {
+    max-width: 7.5rem;
+  }
+  .theme-switch .dropdown-trigger {
+    max-width: 7.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .page {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 16px var(--gutter);
+  /* Top padding is small on purpose: .sticky-head carries its own top breathing
+     room, so resting pages look unchanged while stuck bars never touch the edge. */
+  padding: 8px var(--gutter) 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -671,8 +721,12 @@ a.t:hover {
 @media (max-width: 900px) {
   /* On narrow screens the sidebar becomes a single horizontal strip — a tall
      stacked panel would eat the first screenful (KDP uses a 65px bottom bar
-     for the same reason). Filter + sort + Add share one row; projects scroll
-     sideways as compact chips; footer and totals stay out of the way. */
+     for the same reason). The shell stacks so that strip sits above the page.
+     Filter + sort + Add share one row; projects scroll sideways as compact
+     chips; footer and totals stay out of the way. */
+  .app-shell {
+    flex-direction: column;
+  }
   .sidebar {
     width: auto;
     flex: none;
@@ -693,6 +747,8 @@ a.t:hover {
   }
   .sidebar-list {
     flex-direction: row;
+    align-items: flex-start;
+    flex: none;
     gap: 6px;
     overflow-x: auto;
     overflow-y: hidden;
@@ -770,6 +826,23 @@ a.t:hover {
 }
 .tab-panel[hidden] {
   display: none;
+}
+
+/* Sticky page chrome: the dashboard/project headers (+ tabs) stay visible while the
+   tab content scrolls underneath. Opaque background, one rule line (it used to sit on
+   .tabs — moved here so header-only pages get the same separation). */
+.sticky-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Breathing room above the bar so stuck headers never touch the top edge;
+     .page compensates above, so resting pages are unchanged. */
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 .grid {
@@ -1051,7 +1124,6 @@ a.t:hover {
 .tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--border);
 }
 .tab {
   padding: 8px 12px;
@@ -1062,7 +1134,6 @@ a.t:hover {
   font-weight: 550;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   display: flex;
   gap: 6px;
   align-items: center;
@@ -1343,12 +1414,23 @@ a.t:hover {
   gap: 6px;
   flex-wrap: wrap;
 }
+/* Cards kept in statuses the preset hides: counted, never lost. */
+.hidden-strip {
+  margin: 0;
+  text-align: center;
+  font-size: 12.5px;
+}
+/* Board preset rows: fixed-width picker so rows stay aligned. */
+.board-preset-row .dropdown {
+  flex: none;
+  width: 170px;
+}
 
 /* ---- Kanban ------------------------------------------------------------------------------- */
 
 .board {
   display: grid;
-  grid-template-columns: repeat(5, minmax(220px, 1fr));
+  grid-template-columns: repeat(var(--board-cols, 5), minmax(220px, 1fr));
   gap: 12px;
   overflow-x: auto;
   padding-bottom: 8px;

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { CARD_STATUSES } from '../shared/types.js';
+import { BOARD_PRESETS, CARD_STATUSES } from '../shared/types.js';
 import type { DirectoryEntry, DirectoryListing } from '../shared/types.js';
 import type { Db } from './db.js';
 import { Scanner } from './scanner.js';
@@ -22,7 +22,14 @@ const createProjectBody = z.object({
 const createProjectsBatchBody = z.object({
   paths: z.array(z.string().trim().min(1, 'Folder path is required')).min(1).max(50),
 });
-const updateProjectBody = z.object({ name: z.string().trim().min(1).max(120) });
+const updateProjectBody = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    boardPreset: z.enum(BOARD_PRESETS).optional(),
+  })
+  .refine((b) => b.name !== undefined || b.boardPreset !== undefined, {
+    message: 'Nothing to update',
+  });
 const createCardBody = z.object({
   title: z.string().trim().min(1, 'Title is required').max(200),
   description: z.string().max(20_000).default(''),
@@ -177,7 +184,9 @@ export function createApp(
   app.patch('/projects/:id', async (c) => {
     const id = parseId(c);
     const body = await parseBody(c, updateProjectBody);
-    if (!store.renameProject(db, id, body.name)) throw new HttpError(404, 'Project not found');
+    if (!store.getProjectRow(db, id)) throw new HttpError(404, 'Project not found');
+    if (body.name !== undefined) store.renameProject(db, id, body.name);
+    if (body.boardPreset !== undefined) store.setBoardPreset(db, id, body.boardPreset);
     return c.json(store.getProject(db, id, scanner.state(id)));
   });
 

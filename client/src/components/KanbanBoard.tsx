@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type DragEvent } from 'react';
 import {
-  CARD_STATUSES,
+  BOARD_PRESET_COLUMNS,
   CARD_STATUS_LABELS,
+  type BoardPreset,
   type Card,
   type CardRunSummary,
   type CardStatus,
@@ -26,7 +27,15 @@ function positionBetween(before: Card | undefined, after: Card | undefined): num
 const cardCache = new Map<number, Card[]>();
 const runCache = new Map<number, CardRunSummary[]>();
 
-export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloadKey: number }) {
+export function KanbanBoard({
+  projectId,
+  reloadKey,
+  preset = 'full',
+}: {
+  projectId: number;
+  reloadKey: number;
+  preset?: BoardPreset;
+}) {
   const [cards, setCards] = useState<Card[] | null>(() => cardCache.get(projectId) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
@@ -123,11 +132,20 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
     setDropTarget(null);
   }
 
+  const columns = BOARD_PRESET_COLUMNS[preset] ?? BOARD_PRESET_COLUMNS.full;
+  // Cards in hidden statuses keep their status: they stay in the data (and in counts,
+  // auto-moves and validation) and reappear when the preset changes back.
+  const hidden = (cards ?? []).filter((c) => !columns.includes(c.status));
+
   if (error && !cards) return <div className="error-banner">{error}</div>;
   if (!cards) {
     return (
-      <div className="board" aria-busy="true">
-        {CARD_STATUSES.map((s) => (
+      <div
+        className="board"
+        aria-busy="true"
+        style={{ '--board-cols': columns.length } as CSSProperties}
+      >
+        {columns.map((s) => (
           <div key={s} className="column skeleton" />
         ))}
       </div>
@@ -137,8 +155,12 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
   return (
     <>
       {error && <div className="error-banner">{error}</div>}
-      <div className="board" onDragEnd={() => (setDragId(null), setDropTarget(null))}>
-        {CARD_STATUSES.map((status) => {
+      <div
+        className="board"
+        style={{ '--board-cols': columns.length } as CSSProperties}
+        onDragEnd={() => (setDragId(null), setDropTarget(null))}
+      >
+        {columns.map((status) => {
           const items = column(status);
           return (
             <section
@@ -204,6 +226,15 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
           );
         })}
       </div>
+
+      {hidden.length > 0 && (
+        <p className="faint hidden-strip" role="status">
+          {hidden.length} card{hidden.length === 1 ? '' : 's'} in hidden{' '}
+          {hidden.length === 1 ? 'column' : 'columns'} (
+          {[...new Set(hidden.map((c) => CARD_STATUS_LABELS[c.status]))].join(', ')}) — change the
+          board preset in Settings to show {hidden.length === 1 ? 'it' : 'them'}.
+        </p>
+      )}
 
       {/* + opens the full New card dialog (title, column, notes); creating it opens the card
           itself so images and "hand to an agent" are right there. */}
