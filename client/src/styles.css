@@ -1850,6 +1850,22 @@ dialog::backdrop {
 .pane-head b {
   font-weight: 600;
 }
+/* Project · card key · unlink: one line; the project name truncates first. */
+.pane-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.pane-meta .mono {
+  flex: none;
+}
+.icon-btn.icon-btn-sm {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
 .icon-btn {
   display: grid;
   place-items: center;

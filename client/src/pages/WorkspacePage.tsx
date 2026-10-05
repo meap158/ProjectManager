@@ -455,17 +455,19 @@ function Pane({
           aria-label={running ? 'Running' : `Ended (${s.status})`}
         />
         <b className="truncate">{s.name}</b>
-        <span className="faint truncate">
-          <Link to={`/projects/${s.projectId}?tab=agents`}>{projectName}</Link>
+        <span className="pane-meta faint">
+          <Link to={`/projects/${s.projectId}?tab=agents`} className="truncate">
+            {projectName}
+          </Link>
           {s.cardKey && (
             <>
-              {' · '}
+              <span aria-hidden="true">·</span>
               <Link to={`/projects/${s.projectId}?tab=board`} className="mono">
                 {s.cardKey}
               </Link>
               <button
                 type="button"
-                className="icon-btn"
+                className="icon-btn icon-btn-sm"
                 title={`Unlink ${s.cardKey} from this session (the session keeps running)`}
                 aria-label={`Unlink ${s.cardKey}`}
                 onClick={() =>
