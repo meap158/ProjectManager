@@ -1,0 +1,42 @@
+// Light / dark theme. The stylesheet only knows `data-theme="light" | "dark"` on <html>; this module
+// (and the inline script in index.html, which applies it before first paint so there is no flash)
+// resolves the viewer's choice, including "system", which follows the OS setting live.
+
+export type ThemePreference = 'system' | 'light' | 'dark';
+
+const KEY = 'pm-theme';
+const media = () => window.matchMedia('(prefers-color-scheme: dark)');
+
+export function readThemePreference(): ThemePreference {
+  try {
+    const value = localStorage.getItem(KEY);
+    return value === 'light' || value === 'dark' ? value : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+export function applyTheme(preference: ThemePreference): void {
+  const dark = preference === 'dark' || (preference === 'system' && media().matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+}
+
+export function setThemePreference(preference: ThemePreference): void {
+  try {
+    if (preference === 'system') localStorage.removeItem(KEY);
+    else localStorage.setItem(KEY, preference);
+  } catch {
+    // A per-browser convenience: the theme still applies for this visit.
+  }
+  applyTheme(preference);
+}
+
+/** Keep "system" in sync when the OS switches between light and dark. Returns an unsubscribe. */
+export function followSystemTheme(getPreference: () => ThemePreference): () => void {
+  const query = media();
+  const onChange = () => {
+    if (getPreference() === 'system') applyTheme('system');
+  };
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}

@@ -1,5 +1,6 @@
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
 import { ProjectSidebar } from './components/ProjectSidebar';
+import { ThemeSwitch } from './components/ThemeSwitch';
 import { ProjectPage } from './pages/ProjectPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { WorkspacePage } from './pages/WorkspacePage';
@@ -22,6 +23,7 @@ export function App() {
             Agents
           </NavLink>
         </nav>
+        <ThemeSwitch />
       </header>
       <div className="app-shell">
         {!fullWidth && <ProjectSidebar />}

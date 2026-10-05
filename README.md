@@ -104,6 +104,9 @@ Copy `.env.example` to `.env` to override any of these:
 
 "Remove" (the bin icon) only stops tracking a project. It never touches your files.
 
+The switch at the top right picks **Match system**, **Light** or **Dark**. It's remembered
+per browser.
+
 ## Development
 
 | Command          | What it does                                       |

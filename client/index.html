@@ -6,6 +6,20 @@
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>ProjectManager</title>
+    <script>
+      // Apply the theme before first paint so the page never flashes the wrong colours.
+      // Mirrors client/src/theme.ts (which takes over once the app loads).
+      (function () {
+        var pref = 'system';
+        try {
+          pref = localStorage.getItem('pm-theme') || 'system';
+        } catch (e) {}
+        var dark =
+          pref === 'dark' ||
+          (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

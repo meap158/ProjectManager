@@ -86,9 +86,14 @@ The home page is the master dashboard for all tracked folders, top to bottom:
 
 ## 4. Colour
 
-All colours are CSS custom properties on `:root` in `client/src/styles.css`. Dark values are defined under
-`@media (prefers-color-scheme: dark)`, guarded by `:root:not([data-theme='light'])` so that a future
-theme toggle can override them. Components reference roles, never raw hex. (Rare UI components contain
+All colours are CSS custom properties on `:root` in `client/src/styles.css`. Dark values live in one block,
+`:root[data-theme='dark']`, with no media query.
+  - `<html data-theme>` is always `light` or `dark`. An inline script in `index.html` sets it
+    before first paint, so the page never flashes the wrong theme.
+  - `client/src/theme.ts` keeps it in sync with the top-bar switch (Match system / Light / Dark,
+    saved per browser). "Match system" follows the OS setting live.
+  - Tailwind's `dark:` variant (used by Rare UI components) is bound to the same attribute
+    (`@custom-variant dark`). Components reference roles, never raw hex. (Rare UI components contain
 some of their own fixed colours, which is accepted.)
 
 | Role                               | Use                                              |

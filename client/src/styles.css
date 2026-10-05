@@ -1,7 +1,8 @@
 @import 'tailwindcss';
 
 /* Map the shadcn colour names used by Rare UI components onto our tokens, so they follow the
-   same light/dark themes. Tailwind's `dark:` variant uses prefers-color-scheme, like we do. */
+   same light/dark themes. Tailwind's `dark:` variant follows our theme switch (data-theme). */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 @theme inline {
   --color-foreground: var(--text);
   --color-background: var(--surface);
@@ -61,41 +62,41 @@
   --gutter: 24px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-    --bg: #121211;
-    --surface: #1a1a19;
-    --surface-2: #232321;
-    --surface-hover: #2a2a28;
-    --border: #2e2e2b;
-    --border-strong: #3d3d39;
-    --text: #f4f4f1;
-    --text-2: #c3c2b7;
-    --text-3: #8f8e86;
-    --accent: #3987e5;
-    --accent-hover: #5598e7;
-    --accent-text: #ffffff;
-    --accent-soft: #17293f;
-    --danger: #e66767;
-    --danger-soft: #3a1d1d;
-    --focus: #5598e7;
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-5: #d55181;
-    --series-6: #008300;
-    --series-7: #9085e9;
-    --series-other: #6b6a64;
-    --heat-0: #262624;
-    --heat-1: #104281;
-    --heat-2: #1c5cab;
-    --heat-3: #3987e5;
-    --heat-4: #9ec5f4;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
-    --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.5);
-  }
+/* Dark theme. <html data-theme> is always "light" or "dark": index.html sets it before first paint
+   and theme.ts keeps it in sync (System follows the OS setting live). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #121211;
+  --surface: #1a1a19;
+  --surface-2: #232321;
+  --surface-hover: #2a2a28;
+  --border: #2e2e2b;
+  --border-strong: #3d3d39;
+  --text: #f4f4f1;
+  --text-2: #c3c2b7;
+  --text-3: #8f8e86;
+  --accent: #3987e5;
+  --accent-hover: #5598e7;
+  --accent-text: #ffffff;
+  --accent-soft: #17293f;
+  --danger: #e66767;
+  --danger-soft: #3a1d1d;
+  --focus: #5598e7;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-other: #6b6a64;
+  --heat-0: #262624;
+  --heat-1: #104281;
+  --heat-2: #1c5cab;
+  --heat-3: #3987e5;
+  --heat-4: #9ec5f4;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.5);
 }
 
 * {
@@ -973,16 +974,14 @@ code,
   color: #b06000;
   border: 1px solid #fde293;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .badge-done {
-    background: #12341f;
-    color: #7bd88f;
-  }
-  :root:not([data-theme='light']) .badge-attention {
-    background: #3a2c10;
-    color: #f2c14e;
-    border-color: #6b5416;
-  }
+:root[data-theme='dark'] .badge-done {
+  background: #12341f;
+  color: #7bd88f;
+}
+:root[data-theme='dark'] .badge-attention {
+  background: #3a2c10;
+  color: #f2c14e;
+  border-color: #6b5416;
 }
 .status-dot.green {
   background: var(--good, #0ca30c);
@@ -2113,4 +2112,14 @@ kbd {
 .workspace-new .bar-label:first-child {
   padding-left: 12px;
   border-left: 1px solid var(--border);
+}
+
+/* Theme switch (top bar, right). */
+.theme-switch {
+  margin-left: auto;
+}
+.theme-switch button {
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 1.2;
 }
