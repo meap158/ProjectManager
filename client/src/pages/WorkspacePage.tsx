@@ -21,6 +21,7 @@ import {
 } from '../../../shared/types';
 import { api } from '../api';
 import { Dropdown } from '../components/Dropdown';
+import { InlineRename } from '../components/InlineRename';
 
 // xterm is heavy: it loads only when a pane actually shows a terminal.
 const TerminalView = lazy(() =>
@@ -397,6 +398,7 @@ function Pane({
     }, 12);
   };
   const [line, setLine] = useState('');
+  const [renaming, setRenaming] = useState(false);
   const [cardNote, setCardNote] = useState<string | null>(null);
 
   /** Hand the linked card on to Review once the work in this session looks done. */
@@ -431,7 +433,7 @@ function Pane({
         className="pane-head"
         onDoubleClick={onToggleMaximize}
         title="Double-click to maximise · drag onto another pane to swap"
-        draggable
+        draggable={!renaming}
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = 'move';
           event.dataTransfer.setData('text/plain', s.name);
@@ -454,7 +456,14 @@ function Pane({
           role="img"
           aria-label={running ? 'Running' : `Ended (${s.status})`}
         />
-        <b className="truncate">{s.name}</b>
+        <InlineRename
+          value={s.name}
+          label="session"
+          onEditingChange={setRenaming}
+          onSave={(name) =>
+            api.patchSession(s.id, { name }).then(onChanged, (e: Error) => onError(e.message))
+          }
+        />
         <span className="pane-meta faint">
           <Link to={`/projects/${s.projectId}?tab=agents`} className="truncate">
             {projectName}

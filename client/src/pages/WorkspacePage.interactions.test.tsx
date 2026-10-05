@@ -61,7 +61,7 @@ async function renderWorkspace(layout: WorkspaceLayout) {
 }
 const paneNames = () =>
   [...document.querySelectorAll('[data-pane]')].map(
-    (p) => p.querySelector('.pane-head b')?.textContent ?? 'empty',
+    (p) => p.querySelector('.pane-head .inline-rename')?.textContent ?? 'empty',
   );
 
 describe('Agents workspace interactions', () => {

@@ -3,6 +3,7 @@ import type { AgentProviderStatus, AgentRun, AgentSession } from '../../../share
 import { Link } from 'react-router';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
+import { InlineRename } from './InlineRename';
 import { formatBytes } from '../format';
 import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -285,7 +286,19 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
         {active && (
           <div className="terminal-wrap">
             <div className="terminal-head">
-              <b className="truncate">{active.name}</b>
+              <InlineRename
+                value={active.name}
+                label="session"
+                onSave={(name) =>
+                  api.patchSession(active.id, { name }).then(
+                    (next) =>
+                      setSessions(
+                        (prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev,
+                      ),
+                    (e: Error) => setError(e.message),
+                  )
+                }
+              />
               <span className="faint mono truncate" title={active.cwd}>
                 {active.cwd}
               </span>

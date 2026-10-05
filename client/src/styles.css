@@ -2201,3 +2201,27 @@ kbd {
   border-color: transparent;
   font-variant-numeric: tabular-nums;
 }
+
+/* Click-to-rename names (sessions): looks like text, hover shows it is editable. */
+.inline-rename {
+  min-width: 0;
+  padding: 0 3px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: text;
+}
+.inline-rename:hover {
+  background: var(--surface-hover);
+}
+.input.inline-rename-input {
+  width: 220px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: inherit;
+  font-weight: 600;
+}
