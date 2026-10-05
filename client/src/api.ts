@@ -1,6 +1,8 @@
 import type {
+  AgentAutonomy,
   AgentOutput,
   AgentProviderStatus,
+  AgentTerminal,
   AgentRun,
   AgentSession,
   BulkAddResult,
@@ -67,6 +69,7 @@ export const api = {
       cwd?: string;
       supervise?: boolean;
       env?: Record<string, string>;
+      terminal?: AgentTerminal;
     },
   ) => request<AgentSession>('POST', `/projects/${projectId}/agent-sessions`, input),
   patchSession: (id: number, patch: { name?: string; supervise?: boolean }) =>
@@ -77,6 +80,11 @@ export const api = {
     }),
   sessionOutput: (id: number, after: number) =>
     request<AgentOutput>('GET', `/agent-sessions/${id}/output?after=${after}`),
+  resizeSession: (id: number, cols: number, rows: number) =>
+    request<{ ok: boolean }>('POST', `/agent-sessions/${id}/resize`, { cols, rows }),
+  /** URL for the live server-sent-events output stream of a session. */
+  sessionStreamUrl: (id: number, after: number) =>
+    `/api/agent-sessions/${id}/stream?after=${after}`,
   startSession: (id: number) => request<AgentSession>('POST', `/agent-sessions/${id}/start`),
   stopSession: (id: number) => request<AgentSession>('POST', `/agent-sessions/${id}/stop`),
   deleteSession: (id: number) => request<void>('DELETE', `/agent-sessions/${id}`),
@@ -97,6 +105,7 @@ export const api = {
       prompt?: string;
       timeoutMin?: number;
       maxAttempts?: number;
+      autonomy?: AgentAutonomy;
     },
   ) => request<AgentRun>('POST', `/projects/${projectId}/cards/${cardId}/dispatch`, input),
   runOutput: (id: number, after: number) =>

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { AgentProviderStatus, AgentRun, AgentSession } from '../../../shared/types';
 import { api } from '../api';
 import { formatBytes } from '../format';
@@ -74,6 +74,29 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
     }
   }
 
+  // Keystrokes from interactive (PTY) terminals: batched per ~frame and sent strictly in order,
+  // so fast typing or pastes arrive intact.
+  const keyBuffer = useRef('');
+  const keyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keyChain = useRef<Promise<void>>(Promise.resolve());
+  function sendKeys(sessionId: number, data: string) {
+    keyBuffer.current += data;
+    if (keyTimer.current) return;
+    keyTimer.current = setTimeout(() => {
+      const chunk = keyBuffer.current;
+      keyBuffer.current = '';
+      keyTimer.current = null;
+      keyChain.current = keyChain.current
+        .then(() => api.sendSessionInput(sessionId, chunk))
+        .then(
+          ({ queued }) => {
+            if (queued) setQueuedNote(true);
+          },
+          (e: Error) => setError(e.message),
+        );
+    }, 12);
+  }
+
   function upsertRun(next: AgentRun) {
     setRuns((prev) => {
       if (!prev) return [next];
@@ -115,7 +138,11 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
                   )}
                 </span>
                 <span style={{ flex: 1 }} />
-                {!p.available && p.binary && <span className="badge">not on PATH</span>}
+                {!p.available && p.binary && (
+                  <span className="badge" title={p.unavailableReason}>
+                    unavailable
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -155,7 +182,15 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
                 >
                   <SessionDot session={s} />
                   <span className="truncate" style={{ flex: 1 }}>
-                    <b>{s.name}</b> <span className="faint">· {s.providerId}</span>
+                    <b>{s.name}</b> <span className="faint">· {s.providerId}</span>{' '}
+                    {s.terminal === 'pipe' && (
+                      <span
+                        className="badge"
+                        title="Line-based pipes: full-screen CLIs won't render"
+                      >
+                        pipe
+                      </span>
+                    )}
                   </span>
                   {s.supervise && s.desiredState === 'running' && (
                     <span
@@ -248,45 +283,64 @@ export function AgentsPanel({ projectId }: { projectId: number }) {
                 {active.pid ? ` · pid ${active.pid}` : ''}
               </span>
             </div>
-            <Suspense fallback={<div className="terminal skeleton" style={{ height: 320 }} />}>
+            <Suspense fallback={<div className="terminal skeleton" style={{ height: 380 }} />}>
               <TerminalView
-                key={active.id}
+                key={`${active.id}-${active.terminal}`}
+                height={active.terminal === 'pty' ? 380 : 320}
                 fetchOutput={(after) => api.sessionOutput(active.id, after)}
+                streamUrl={(after) => api.sessionStreamUrl(active.id, after)}
+                {...(active.terminal === 'pty'
+                  ? {
+                      onInput: (data: string) => sendKeys(active.id, data),
+                      onResize: (cols: number, rows: number) => {
+                        api.resizeSession(active.id, cols, rows).catch(() => undefined);
+                      },
+                    }
+                  : {})}
               />
             </Suspense>
-            <form className="terminal-input" onSubmit={sendInput}>
-              <input
-                className="input mono"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={
-                  active.status === 'running'
-                    ? 'Type input for the session… (Enter to send)'
-                    : 'Session is down — input will queue for relaunch'
-                }
-                spellCheck={false}
-                autoComplete="off"
-                aria-label="Session input"
-              />
-              <button
-                type="button"
-                className="btn"
-                title="Send Ctrl+C (interrupt)"
-                onClick={async () => {
-                  try {
-                    const { queued } = await api.sendSessionInput(active.id, '\x03');
-                    setQueuedNote(queued);
-                  } catch (e) {
-                    setError((e as Error).message);
+            {active.terminal === 'pty' ? (
+              <p className="faint" style={{ margin: '6px 0 0', fontSize: 12.5 }}>
+                Click the terminal and type: keystrokes (including Ctrl+C and arrow keys) go
+                straight to the session.
+                {active.status !== 'running' &&
+                  ' The session is down; input queues until it restarts.'}
+              </p>
+            ) : (
+              <form className="terminal-input" onSubmit={sendInput}>
+                <input
+                  className="input mono"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={
+                    active.status === 'running'
+                      ? 'Type input for the session… (Enter to send)'
+                      : 'Session is down — input will queue for relaunch'
                   }
-                }}
-              >
-                ^C
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={!input}>
-                Send
-              </button>
-            </form>
+                  spellCheck={false}
+                  autoComplete="off"
+                  aria-label="Session input"
+                />
+                <button
+                  type="button"
+                  className="btn"
+                  title="Send Ctrl+C (interrupt)"
+                  onClick={async () => {
+                    try {
+                      const { queued } = await api.sendSessionInput(active.id, '\x03');
+                      setQueuedNote(queued);
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
+                  }}
+                >
+                  ^C
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={!input}>
+                  Send
+                </button>
+              </form>
+            )}
             {queuedNote && (
               <div className="notice" role="status">
                 <span>Queued — it flushes into the session when the process is back.</span>

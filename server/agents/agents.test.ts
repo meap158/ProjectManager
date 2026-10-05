@@ -131,6 +131,7 @@ describe('sessions', () => {
         providerId: 'custom',
         command: [NODE, '-e', ECHO_STDIN],
         supervise: false,
+        terminal: 'pipe',
       })
     ).json()) as AgentSession;
     const sent = await call('POST', `/agent-sessions/${created.id}/input`, { data: 'ping\n' });
@@ -155,6 +156,7 @@ describe('sessions', () => {
         providerId: 'custom',
         command: [NODE, '-e', ECHO_STDIN],
         supervise: false,
+        terminal: 'pipe',
       })
     ).json()) as AgentSession;
     expect((await call('POST', `/agent-sessions/${created.id}/stop`)).status).toBe(200);

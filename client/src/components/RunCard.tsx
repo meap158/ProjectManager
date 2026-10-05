@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState } from 'react';
-import type { AgentRun } from '../../../shared/types';
+import { AGENT_AUTONOMY_LABELS, type AgentRun } from '../../../shared/types';
 import { api } from '../api';
 import { formatBytes, formatRelative } from '../format';
 import { DeleteButton } from './ui/delete-button';
@@ -96,6 +96,8 @@ export function RunCard({
       <div className="run-meta faint">
         <span>{run.providerId}</span>
         <span aria-hidden="true">·</span>
+        <span title="What the agent was allowed to do">{AGENT_AUTONOMY_LABELS[run.autonomy]}</span>
+        <span aria-hidden="true">·</span>
         <span className="num">{elapsed(run, now)}</span>
         <span aria-hidden="true">·</span>
         <span className="num">{formatBytes(run.logBytes)}</span>
@@ -111,6 +113,8 @@ export function RunCard({
       </div>
 
       {run.error && <div className="error-banner">{run.error}</div>}
+
+      {run.changes && !active && <RunChangesSummary run={run} />}
 
       {run.validation && (
         <div className="notice" role="status">
@@ -218,5 +222,41 @@ export function RunCard({
         </Suspense>
       )}
     </div>
+  );
+}
+
+/** Evidence for validation: what the run actually changed in the project's git work tree. */
+function RunChangesSummary({ run }: { run: AgentRun }) {
+  const changes = run.changes!;
+  const nothing = changes.files.length === 0 && changes.commits === 0;
+  if (nothing) {
+    return run.autonomy === 'read' ? (
+      <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+        No files changed (read-only run).
+      </p>
+    ) : (
+      <div className="notice notice-warn" role="status">
+        <span>
+          ⚠ No files changed. The agent may have been blocked or only answered: read the output
+          before accepting.
+        </span>
+      </div>
+    );
+  }
+  const label = [
+    `${changes.files.length} file${changes.files.length === 1 ? '' : 's'} changed`,
+    changes.commits > 0 && `${changes.commits} commit${changes.commits === 1 ? '' : 's'}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <details className="run-changes">
+      <summary>{label}</summary>
+      <ul className="mono">
+        {changes.files.map((f) => (
+          <li key={f}>{f}</li>
+        ))}
+      </ul>
+    </details>
   );
 }

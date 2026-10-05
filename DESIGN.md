@@ -222,3 +222,34 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
 - **Trust model:** same-machine only (existing Host allowlist + JSON-write guard). Sessions
   run as your user with your environment; logs live under `data/agent-logs/` (gitignored).
   Caps: 8 sessions/project, 3 concurrent runs/project, 8MB logs, 20min default run timeout.
+
+### 12.1 How the CLI integration works (verified 2026-10-05 on Windows)
+
+- **Terminals are real PTYs.** Sessions run in a pseudo-terminal (`node-pty`, an optional dependency
+  with prebuilt Windows/macOS binaries). Interactive CLIs such as `claude` need a TTY: over plain
+  pipes they wait for EOF and show nothing. The browser terminal is interactive: click it and
+  type. Every keystroke (Ctrl+C, arrows, Tab) goes to the process. Output streams live over
+  server-sent events (`GET /agent-sessions/:id/stream`), and the PTY is resized to match the
+  visible terminal. Without node-pty, sessions fall back to line-based pipes, shown with a
+  `pipe` badge and a line input.
+- **Launching without a shell.** On Windows, npm-installed CLIs (`codex`, `gemini`,
+  `opencode`) are `.cmd` shims, which Node can't spawn without cmd.exe. cmd.exe would mangle
+  prompts and can't pass newlines at all. `server/agents/resolve.ts` reads the npm shim and runs
+  its target directly (`node <cli.js>` or the bundled `.exe`). "Available" in the provider list
+  means "resolves to something launchable", and the reason is shown when it doesn't.
+- **Autonomy per run.** Print/exec modes can't ask for approval, so without a flag an agent's
+  edits are silently declined and the run still exits 0. Every dispatch picks a level:
+  **Read-only** / **Edit files** (default) / **Full access**, mapped to each CLI's own flags
+  (`--permission-mode`, `--sandbox`, `--approval-mode`, `--auto`). Levels a CLI lacks are disabled.
+- **Evidence before validation.** The supervisor snapshots `git status`/HEAD before a run and
+  records the files changed and commits made afterwards. The run card shows "3 files changed ·
+  1 commit" (expandable). A successful run that changed nothing gets a warning so it isn't
+  accepted blindly.
+- **Clean agent environment.** Agents never inherit the _launching_ session's markers
+  (`CLAUDECODE`, `CLAUDE_CODE_SESSION_*`, `CLAUDE_CODE_MESSAGING_*`, …). Inheriting them makes
+  `claude` behave as a nested child session and would hand it the parent's messaging token. User
+  configuration (`ANTHROPIC_*`, `CLAUDE_CODE_USE_BEDROCK`, …) is kept.
+- **Record identity.** SQLite reuses row ids after deletes. Async callbacks (process exit, run
+  completion) therefore act only on the record whose unique `log_path` matches. Deleting a session
+  evicts its live process and log immediately, so a new session with the same id can never inherit
+  the old one's output or be killed by its late exit.

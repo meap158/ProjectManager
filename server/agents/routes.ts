@@ -2,7 +2,9 @@
 // boundary (pstack boundary-discipline); the supervisor trusts internal types.
 
 import { Hono, type Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
+import { AGENT_AUTONOMY } from '../../shared/types.js';
 import type { Db } from '../db.js';
 import { getProjectRow } from '../store.js';
 import { providerStatuses } from './providers.js';
@@ -22,6 +24,7 @@ const createSessionBody = z
     cwd: z.string().min(1).max(1024).optional(),
     supervise: z.boolean().optional(),
     env: envSchema.optional(),
+    terminal: z.enum(['pty', 'pipe']).optional(),
   })
   .refine((b) => b.providerId || b.command, { message: 'providerId or command is required' });
 
@@ -37,8 +40,14 @@ const inputBody = z.object({
     .max(64 * 1024),
 });
 
+const resizeBody = z.object({
+  cols: z.number().int().min(20).max(500),
+  rows: z.number().int().min(5).max(200),
+});
+
 const dispatchBody = z.object({
   providerId: z.string().min(1).max(40).optional(),
+  autonomy: z.enum(AGENT_AUTONOMY).optional(),
   command: commandSchema.optional(),
   prompt: z.string().max(20_000).optional(),
   timeoutMin: z.number().positive().max(240).optional(),
@@ -134,9 +143,78 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     return c.json(output);
   });
 
-  app.post('/agent-sessions/:id/start', (c) => {
+  app.post('/agent-sessions/:id/resize', async (c) => {
+    const body = await parseBody(c, resizeBody);
+    if (!supervisor.resizeSession(parseId(c), body.cols, body.rows)) {
+      throw new AgentError(404, 'Session not found');
+    }
+    return c.json({ ok: true });
+  });
+
+  // Live output as server-sent events: `output` events carry { data, nextOffset }, a `state`
+  // event reports when the process stops. Resumes from ?after= so reconnects never duplicate.
+  app.get('/agent-sessions/:id/stream', (c) => {
+    const id = parseId(c);
+    const start = offsetParam.safeParse(c.req.query('after') ?? '0');
+    if (!supervisor.getSession(id)) throw new AgentError(404, 'Session not found');
+    return streamSSE(c, async (stream) => {
+      let offset = start.success ? start.data : 0;
+      // `pending` makes wake-ups sticky: output that lands while we're busy writing (not yet
+      // waiting) must not be lost, or the stream would stall until the next timeout.
+      let pending = false;
+      let wake: (() => void) | null = null;
+      const notify = () => {
+        pending = true;
+        wake?.();
+      };
+      const event = `output:session:${id}`;
+      supervisor.events.on(event, notify);
+      let aborted = false;
+      stream.onAbort(() => {
+        aborted = true;
+        notify();
+      });
+      let lastRunning: boolean | null = null;
+      try {
+        while (!aborted) {
+          pending = false;
+          const out = supervisor.readSessionOutput(id, offset);
+          if (!out) break; // Session deleted.
+          if (out.data) {
+            offset = out.nextOffset;
+            await stream.writeSSE({
+              event: 'output',
+              data: JSON.stringify({ data: out.data, nextOffset: offset }),
+            });
+            continue; // Drain everything available before waiting.
+          }
+          if (out.running !== lastRunning) {
+            lastRunning = out.running;
+            await stream.writeSSE({
+              event: 'state',
+              data: JSON.stringify({ running: out.running, exitCode: out.exitCode }),
+            });
+          }
+          // Wait for new output, or wake periodically to notice state changes / keep alive.
+          await new Promise<void>((resolve) => {
+            if (pending || aborted) return resolve();
+            const timer = setTimeout(resolve, out.running ? 15_000 : 2_000);
+            wake = () => {
+              clearTimeout(timer);
+              resolve();
+            };
+          });
+          wake = null;
+        }
+      } finally {
+        supervisor.events.off(event, notify);
+      }
+    });
+  });
+
+  app.post('/agent-sessions/:id/start', async (c) => {
     try {
-      return c.json(supervisor.startSession(parseId(c)));
+      return c.json(await supervisor.startSession(parseId(c)));
     } catch (e) {
       if (e instanceof AgentError) throw e;
       throw new AgentError(400, (e as Error).message);

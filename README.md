@@ -26,10 +26,13 @@ Everything runs on your machine. Nothing is uploaded anywhere.
   - A commit saying `Fixes PM-12` (also `closes` / `resolves` / `completes`) moves it to **Done**.
   - Moves happen on the next refresh.
 - **AI agents:** dispatch a card to Claude Code, Codex, OpenCode or Gemini CLI (whichever is installed).
+  - Choose what the agent may do: **Read-only**, **Edit files** (default) or **Full access**.
   - Dispatching moves the card to In progress.
-  - When the run finishes, you **Accept** (the card moves to Review) or **Reject** (it goes back to
-    To do).
-  - The **Agents** tab also hosts persistent terminal sessions. They survive restarts and reboots.
+  - When the run finishes you see what it changed ("3 files changed · 1 commit"), then
+    **Accept** (the card moves to Review) or **Reject** (it goes back to To do).
+  - The **Agents** tab hosts real interactive terminals. Click and type, and full-screen CLIs
+    like `claude` work in the browser. Sessions survive restarts and reboots and resume the
+    conversation where supported.
 
 ![Project overview: stats, commit heatmap, monthly commits and languages](docs/screenshots/project-overview.png)
 

@@ -5,28 +5,41 @@ import '@xterm/xterm/css/xterm.css';
 import type { AgentOutput } from '../../../shared/types';
 
 /**
- * Read-only terminal rendering a session/run log via xterm.js (the same
- * renderer VS Code uses), so ANSI colours and cursor motion from AI CLIs
- * display faithfully. Output streams in by byte offset; the host polls while
- * the process is alive.
+ * Terminal rendering a session/run log via xterm.js (the same renderer VS Code uses), so ANSI
+ * colours and cursor motion from AI CLIs display faithfully.
+ *
+ * Two modes:
+ *  - Read-only (runs): output is polled by byte offset while the process is alive.
+ *  - Interactive (PTY sessions, `streamUrl` + `onInput`): output arrives live over server-sent
+ *    events, every keystroke is forwarded (so full-screen CLIs like `claude` work), and the
+ *    terminal size is reported so the remote PTY matches what you see.
  */
 export function TerminalView({
   fetchOutput,
+  streamUrl,
+  onInput,
+  onResize,
   pollMs = 750,
   height = 320,
 }: {
   fetchOutput: (after: number) => Promise<AgentOutput>;
+  /** Builds the SSE URL resuming from a byte offset; enables live streaming. */
+  streamUrl?: (after: number) => string;
+  /** Receives raw keystrokes; makes the terminal interactive. */
+  onInput?: (data: string) => void;
+  onResize?: (cols: number, rows: number) => void;
   pollMs?: number;
   height?: number;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
-  const fetchRef = useRef(fetchOutput);
-
-  // Keep the latest fetcher without re-subscribing the terminal.
+  // Keep the latest callbacks without re-creating the terminal.
+  const callbacks = useRef({ fetchOutput, streamUrl, onInput, onResize });
   useEffect(() => {
-    fetchRef.current = fetchOutput;
+    callbacks.current = { fetchOutput, streamUrl, onInput, onResize };
   });
+  const interactive = onInput !== undefined;
+  const streaming = streamUrl !== undefined;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -34,10 +47,12 @@ export function TerminalView({
     const term = new Terminal({
       fontFamily: "ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace",
       fontSize: 12.5,
-      lineHeight: 1.4,
+      lineHeight: 1.25,
       scrollback: 5000,
-      cursorBlink: false,
-      disableStdin: true,
+      cursorBlink: interactive,
+      disableStdin: !interactive,
+      // PTY output already carries CRLF; plain pipe/run logs often have bare LF.
+      convertEol: !interactive,
       theme: {
         background: '#121211',
         foreground: '#f4f4f1',
@@ -47,38 +62,64 @@ export function TerminalView({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.open(host);
-    fit.fit();
     offsetRef.current = 0;
 
-    const resize = new ResizeObserver(() => {
+    // Guards every async path: React StrictMode (dev) disposes and re-creates the terminal, and
+    // xterm throws if written to or resized after dispose.
+    let cancelled = false;
+    let lastSize = '';
+    const refit = () => {
+      if (cancelled) return;
       try {
         fit.fit();
       } catch {
-        // Host collapsed (e.g. closed <details>): refit on reopen.
+        return; // Host collapsed (e.g. closed <details>): refit when visible again.
       }
-    });
-    resize.observe(host);
-    const onWindowResize = () => {
-      try {
-        fit.fit();
-      } catch {
-        // Ignore until visible again.
+      const size = `${term.cols}x${term.rows}`;
+      if (size !== lastSize) {
+        lastSize = size;
+        callbacks.current.onResize?.(term.cols, term.rows);
       }
     };
-    window.addEventListener('resize', onWindowResize);
+    const resize = new ResizeObserver(refit);
+    const inputSub = interactive ? term.onData((data) => callbacks.current.onInput?.(data)) : null;
 
-    let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let source: EventSource | null = null;
+
+    const write = (data: string, nextOffset: number) => {
+      if (cancelled) return;
+      // Ignore anything older than what we've shown (e.g. a reconnect racing a poll).
+      if (nextOffset <= offsetRef.current) return;
+      offsetRef.current = nextOffset;
+      term.write(data);
+    };
+
+    function connect() {
+      if (cancelled) return;
+      // Reconnect manually from our own offset: EventSource's built-in retry would replay the
+      // original URL and duplicate output.
+      source = new EventSource(callbacks.current.streamUrl!(offsetRef.current));
+      source.addEventListener('output', (event) => {
+        const { data, nextOffset } = JSON.parse((event as MessageEvent<string>).data) as {
+          data: string;
+          nextOffset: number;
+        };
+        write(data, nextOffset);
+      });
+      source.onerror = () => {
+        source?.close();
+        source = null;
+        timer = setTimeout(connect, 1000);
+      };
+    }
+
     async function poll() {
       if (cancelled) return;
       try {
-        const out = await fetchRef.current(offsetRef.current);
+        const out = await callbacks.current.fetchOutput(offsetRef.current);
         if (cancelled) return;
-        if (out.data) {
-          term.write(out.data, () => term.scrollToBottom());
-        }
-        offsetRef.current = out.nextOffset;
+        if (out.data) write(out.data, out.nextOffset);
         // A finished process drains first: keep reading while bytes arrive.
         if (!out.running && !out.data) return;
         timer = setTimeout(poll, out.running ? pollMs : 250);
@@ -87,23 +128,43 @@ export function TerminalView({
         timer = setTimeout(poll, pollMs);
       }
     }
-    poll();
+
+    // Open on the next frame: xterm schedules viewport work right after open(), which throws if
+    // the terminal is disposed first — exactly what StrictMode's throwaway mount does. A mount
+    // that is cleaned up before this frame never opens at all.
+    const openFrame = requestAnimationFrame(() => {
+      if (cancelled) return;
+      term.open(host);
+      refit();
+      resize.observe(host);
+      window.addEventListener('resize', refit);
+      if (interactive) term.focus();
+      if (streaming) connect();
+      else poll();
+    });
+
     return () => {
       cancelled = true;
+      cancelAnimationFrame(openFrame);
       if (timer) clearTimeout(timer);
-      window.removeEventListener('resize', onWindowResize);
+      source?.close();
+      inputSub?.dispose();
+      window.removeEventListener('resize', refit);
       resize.disconnect();
       term.dispose();
     };
-  }, [pollMs]);
+  }, [pollMs, interactive, streaming]);
 
   return (
     <div
       ref={hostRef}
-      className="terminal"
+      className={`terminal${interactive ? ' is-interactive' : ''}`}
       style={{ height }}
-      role="log"
-      aria-label="Terminal output"
+      role={interactive ? 'application' : 'log'}
+      aria-label={
+        interactive ? 'Interactive terminal (keystrokes go to the session)' : 'Terminal output'
+      }
+      onClick={() => hostRef.current?.querySelector('textarea')?.focus()}
     />
   );
 }

@@ -15,7 +15,8 @@
 // - Only node builtins are used (child_process, fs). No shell is ever spawned:
 //   argv arrays go straight to the OS, so prompts cannot inject shell commands.
 
-import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import {
   appendFileSync,
   mkdirSync,
@@ -28,24 +29,31 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import type {
+  AgentAutonomy,
   AgentDesiredState,
   AgentOutput,
   AgentRun,
   AgentRunStatus,
   AgentSession,
   AgentSessionStatus,
+  AgentTerminal,
   CardRunSummary,
   CardStatus,
+  RunChanges,
 } from '../../shared/types.js';
 import type { Db } from '../db.js';
 import { getCard, getProjectRow, updateCard } from '../store.js';
+import { diffSince, snapshotTree } from './gitChanges.js';
+import { processEnv, ptyAvailable, spawnPipe, spawnPty, type AgentProc } from './proc.js';
 import {
   buildDispatchArgv,
   buildInteractiveArgv,
   buildResumeArgv,
   getProvider,
   providerAvailable,
+  supportsAutonomy,
 } from './providers.js';
+import { resolveArgv } from './resolve.js';
 
 const now = () => new Date().toISOString();
 
@@ -87,7 +95,10 @@ class OutputLog {
   private capped = false;
   totalBytes = 0;
 
-  constructor(private file: string) {
+  constructor(
+    readonly file: string,
+    private onAppend?: () => void,
+  ) {
     mkdirSync(path.dirname(file), { recursive: true });
   }
 
@@ -110,6 +121,7 @@ class OutputLog {
   }
 
   private push(text: string): void {
+    this.onAppend?.();
     const bytes = Buffer.byteLength(text);
     this.chunks.push({ text, bytes });
     this.memBytes += bytes;
@@ -197,7 +209,7 @@ export function killTree(pid: number): Promise<void> {
 // ---- Supervisor -------------------------------------------------------------------------------
 
 interface LiveProc {
-  proc: ChildProcess;
+  proc: AgentProc;
   log: OutputLog;
   stoppedByUser: boolean;
   timer?: NodeJS.Timeout;
@@ -224,6 +236,7 @@ interface SessionRow {
   started_at: string;
   ended_at: string | null;
   log_path: string;
+  terminal: AgentTerminal;
 }
 
 interface RunRow {
@@ -246,12 +259,18 @@ interface RunRow {
   started_at: string | null;
   ended_at: string | null;
   log_path: string;
+  autonomy: AgentAutonomy;
+  changes_json: string | null;
 }
 
 export class AgentSupervisor {
   private live = new Map<string, LiveProc>();
   private logs = new Map<string, OutputLog>();
+  /** Keys whose spawn is in flight (argv resolution is async): guards double starts. */
+  private starting = new Set<string>();
   private closed = false;
+  /** Emits `output:<kind>:<id>` whenever a log grows, for live streaming to the GUI. */
+  readonly events = new EventEmitter().setMaxListeners(0);
 
   constructor(
     private db: Db,
@@ -293,7 +312,7 @@ export class AgentSupervisor {
           row.log_path,
           `\n[supervisor] server restarted — relaunching run (attempt ${row.attempts + 1}/${row.max_attempts})\n`,
         );
-        this.spawnRun({ ...row, attempts: row.attempts }, true);
+        void this.spawnRun(row, true);
       } else {
         this.db
           .prepare(`UPDATE agent_runs SET status = 'failed', error = ?, ended_at = ? WHERE id = ?`)
@@ -327,6 +346,8 @@ export class AgentSupervisor {
       cwd?: string;
       supervise?: boolean;
       env?: Record<string, string>;
+      /** Defaults to 'pty' when node-pty is available (needed for interactive AI CLIs). */
+      terminal?: AgentTerminal;
     },
   ): Promise<AgentSession> {
     const project = getProjectRow(this.db, projectId);
@@ -357,6 +378,10 @@ export class AgentSupervisor {
     const resume = explicit ? null : buildResumeArgv(provider);
     const cwd = resolveCwd(input.cwd ?? project.path);
     const env = validateEnv(input.env);
+    const terminal: AgentTerminal = input.terminal ?? (ptyAvailable() ? 'pty' : 'pipe');
+    if (terminal === 'pty' && !ptyAvailable()) {
+      throw new AgentError(400, 'Terminal sessions need node-pty, which is not installed here');
+    }
 
     const ts = now();
     const logPath = path.join(
@@ -367,8 +392,8 @@ export class AgentSupervisor {
       .prepare(
         `INSERT INTO agent_sessions
            (project_id, name, provider_id, command_json, resume_json, cwd, status,
-            desired_state, supervise, created_at, started_at, log_path)
-         VALUES (?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?)`,
+            desired_state, supervise, created_at, started_at, log_path, terminal)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?, ?)`,
       )
       .run(
         projectId,
@@ -381,12 +406,14 @@ export class AgentSupervisor {
         ts,
         ts,
         logPath,
+        terminal,
       );
     const id = Number(result.lastInsertRowid);
     const row = this.db
       .prepare(`SELECT * FROM agent_sessions WHERE id = ?`)
       .get(id) as unknown as SessionRow;
-    this.spawnSession(row, false).catch((e) => this.markSessionDead(id, String(e)));
+    // Await the spawn so the response reports the live process (spawn failures mark it dead).
+    await this.spawnSession(row, false).catch((e) => this.markSessionDead(id, String(e)));
     return this.toSession(
       this.db.prepare(`SELECT * FROM agent_sessions WHERE id = ?`).get(id) as unknown as SessionRow,
     );
@@ -416,14 +443,7 @@ export class AgentSupervisor {
     if (Buffer.byteLength(data) > 64 * 1024)
       throw new AgentError(400, 'Input too large (64KB max)');
     const live = this.live.get(`session:${id}`);
-    if (live && live.proc.stdin?.writable && live.proc.exitCode === null && !live.proc.killed) {
-      try {
-        live.proc.stdin.write(data);
-        return { queued: false, session: this.getSession(id) };
-      } catch {
-        // Fall through to queueing.
-      }
-    }
+    if (live && live.proc.write(data)) return { queued: false, session: this.getSession(id) };
     const usage = this.db
       .prepare(
         `SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM agent_input_queue WHERE session_id = ?`,
@@ -436,6 +456,13 @@ export class AgentSupervisor {
       .prepare(`INSERT INTO agent_input_queue (session_id, data, created_at) VALUES (?, ?, ?)`)
       .run(id, data, now());
     return { queued: true, session: this.getSession(id) };
+  }
+
+  /** Resize a PTY session's terminal to match the viewer (no-op for pipe sessions). */
+  resizeSession(id: number, cols: number, rows: number): boolean {
+    if (!this.getSessionRow(id)) return false;
+    this.live.get(`session:${id}`)?.proc.resize(cols, rows);
+    return true;
   }
 
   readSessionOutput(id: number, after: number): AgentOutput | null {
@@ -458,7 +485,7 @@ export class AgentSupervisor {
     if (live) {
       live.stoppedByUser = true;
       if (live.timer) clearTimeout(live.timer);
-      await killTree(live.proc.pid!);
+      if (live.proc.pid) await killTree(live.proc.pid);
     } else if (row.status === 'running') {
       this.db
         .prepare(
@@ -470,7 +497,7 @@ export class AgentSupervisor {
   }
 
   /** (Re)start a stopped/dead/exited session. Resets the restart counter. */
-  startSession(id: number): AgentSession {
+  async startSession(id: number): Promise<AgentSession> {
     const row = this.getSessionRow(id);
     if (!row) throw new AgentError(404, 'Session not found');
     if (this.live.has(`session:${id}`)) throw new AgentError(409, 'Session is already running');
@@ -478,7 +505,7 @@ export class AgentSupervisor {
       .prepare(`UPDATE agent_sessions SET desired_state = 'running', restarts = 0 WHERE id = ?`)
       .run(id);
     const fresh = this.getSessionRow(id)!;
-    this.spawnSession(fresh, false).catch((e) => this.markSessionDead(id, String(e)));
+    await this.spawnSession(fresh, false).catch((e) => this.markSessionDead(id, String(e)));
     return this.getSession(id)!;
   }
 
@@ -487,6 +514,10 @@ export class AgentSupervisor {
     if (!row) return false;
     await this.stopSession(id);
     this.db.prepare(`DELETE FROM agent_sessions WHERE id = ?`).run(id);
+    // Forget the record's process and log now: SQLite reuses ids, and a new session with this id
+    // must not be mistaken for the old one while the old process is still exiting.
+    this.live.delete(`session:${id}`);
+    this.logs.delete(`session:${id}`);
     try {
       rmSync(row.log_path, { force: true });
     } catch {
@@ -551,6 +582,7 @@ export class AgentSupervisor {
       prompt?: string;
       timeoutMin?: number;
       maxAttempts?: number;
+      autonomy?: AgentAutonomy;
     },
   ): Promise<AgentRun> {
     const project = getProjectRow(this.db, projectId);
@@ -591,9 +623,13 @@ export class AgentSupervisor {
       20_000,
     );
     if (!prompt.trim()) throw new AgentError(400, 'Prompt is empty');
+    const autonomy = input.autonomy ?? 'edit';
+    if (!input.command && !supportsAutonomy(provider, autonomy)) {
+      throw new AgentError(400, `${provider.name} has no "${autonomy}" mode`);
+    }
     const command = input.command
       ? validateCommand(input.command)
-      : buildDispatchArgv(provider, prompt);
+      : buildDispatchArgv(provider, prompt, autonomy);
     if (command.length === 0) throw new AgentError(400, 'Command is empty');
     const timeoutMs =
       input.timeoutMin === undefined ? RUN_DEFAULT_TIMEOUT_MS : input.timeoutMin * 60_000;
@@ -615,8 +651,8 @@ export class AgentSupervisor {
         .prepare(
           `INSERT INTO agent_runs
              (project_id, card_id, name, provider_id, command_json, prompt, status,
-              attempts, max_attempts, created_at, log_path)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?)`,
+              attempts, max_attempts, created_at, log_path, autonomy)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?)`,
         )
         .run(
           projectId,
@@ -628,6 +664,7 @@ export class AgentSupervisor {
           maxAttempts,
           ts,
           logPath,
+          autonomy,
         ).lastInsertRowid,
     );
     // Dispatching work starts it: backlog/todo cards move to In progress.
@@ -637,7 +674,7 @@ export class AgentSupervisor {
     const row = this.db
       .prepare(`SELECT * FROM agent_runs WHERE id = ?`)
       .get(id) as unknown as RunRow;
-    this.spawnRun(row, false);
+    void this.spawnRun(row, false);
     return this.toRun(
       this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as RunRow,
     );
@@ -659,7 +696,7 @@ export class AgentSupervisor {
     if (live) {
       live.stoppedByUser = true;
       if (live.timer) clearTimeout(live.timer);
-      await killTree(live.proc.pid!);
+      if (live.proc.pid) await killTree(live.proc.pid);
     } else if (row.status === 'queued' || row.status === 'running') {
       this.db
         .prepare(`UPDATE agent_runs SET status = 'killed', ended_at = ? WHERE id = ?`)
@@ -685,8 +722,8 @@ export class AgentSupervisor {
         .prepare(
           `INSERT INTO agent_runs
              (project_id, card_id, name, provider_id, command_json, prompt, status,
-              attempts, max_attempts, created_at, log_path)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?)`,
+              attempts, max_attempts, created_at, log_path, autonomy)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?)`,
         )
         .run(
           row.project_id,
@@ -698,12 +735,13 @@ export class AgentSupervisor {
           row.max_attempts,
           ts,
           logPath,
+          row.autonomy,
         ).lastInsertRowid,
     );
     const fresh = this.db
       .prepare(`SELECT * FROM agent_runs WHERE id = ?`)
       .get(next) as unknown as RunRow;
-    this.spawnRun(fresh, false);
+    void this.spawnRun(fresh, false);
     return this.toRun(
       this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(next) as unknown as RunRow,
     );
@@ -745,6 +783,8 @@ export class AgentSupervisor {
     if (!row) return false;
     await this.stopRun(id);
     this.db.prepare(`DELETE FROM agent_runs WHERE id = ?`).run(id);
+    this.live.delete(`run:${id}`);
+    this.logs.delete(`run:${id}`);
     try {
       rmSync(row.log_path, { force: true });
     } catch {
@@ -764,7 +804,7 @@ export class AgentSupervisor {
         live.stoppedByUser = true;
         if (live.timer) clearTimeout(live.timer);
         try {
-          await killTree(live.proc.pid!);
+          if (live.proc.pid) await killTree(live.proc.pid);
         } catch {
           // Already gone.
         }
@@ -780,7 +820,7 @@ export class AgentSupervisor {
       // If a process was mid-restart-backoff it never spawned: leave the row as
       // 'running' + wanted so the next boot picks it up.
       try {
-        await killTree(live.proc.pid!);
+        if (live.proc.pid) await killTree(live.proc.pid);
       } catch {
         // Already gone.
       }
@@ -797,8 +837,10 @@ export class AgentSupervisor {
 
   private outputFor(key: string, file: string): OutputLog {
     let log = this.logs.get(key);
-    if (!log) {
-      log = new OutputLog(file);
+    // Row ids are reused after deletes (no AUTOINCREMENT), so a cached log only counts if it is
+    // for the same log file; otherwise a new session would inherit a deleted one's output.
+    if (!log || log.file !== file) {
+      log = new OutputLog(file, () => this.events.emit(`output:${key}`));
       this.logs.set(key, log);
     }
     return log;
@@ -820,7 +862,8 @@ export class AgentSupervisor {
     exitCode: number | null,
     after: number,
   ): AgentOutput {
-    const log = this.logs.get(key);
+    const cached = this.logs.get(key);
+    const log = cached?.file === file ? cached : undefined;
     const safeAfter = Number.isFinite(after) && after >= 0 ? Math.floor(after) : 0;
     if (log) {
       const { data, nextOffset } = log.read(safeAfter);
@@ -838,19 +881,15 @@ export class AgentSupervisor {
     return { data, nextOffset, running, exitCode, logBytes };
   }
 
-  private flushInputQueue(sessionId: number, proc: ChildProcess): void {
+  private flushInputQueue(sessionId: number, proc: AgentProc): void {
     const queued = this.db
       .prepare(`SELECT id, data FROM agent_input_queue WHERE session_id = ? ORDER BY id`)
       .all(sessionId) as { id: number; data: string }[];
     if (queued.length === 0) return;
     let flushed = 0;
     for (const item of queued) {
-      try {
-        proc.stdin!.write(item.data);
-        flushed++;
-      } catch {
-        break;
-      }
+      if (!proc.write(item.data)) break;
+      flushed++;
     }
     if (flushed > 0) {
       const ids = queued.slice(0, flushed).map((q) => q.id);
@@ -860,10 +899,11 @@ export class AgentSupervisor {
     }
   }
 
-  private spawnSession(row: SessionRow, isRelaunch: boolean): Promise<void> {
-    return new Promise((resolve) => {
-      const key = this.logPathFor('session', row.id);
-      if (this.live.has(key)) return resolve();
+  private async spawnSession(row: SessionRow, isRelaunch: boolean): Promise<void> {
+    const key = this.logPathFor('session', row.id);
+    if (this.live.has(key) || this.starting.has(key)) return;
+    this.starting.add(key);
+    try {
       const { command, env } = JSON.parse(row.command_json) as {
         command: string[];
         env: Record<string, string>;
@@ -876,25 +916,30 @@ export class AgentSupervisor {
       const log = this.outputFor(key, row.log_path);
       if (isRelaunch) {
         log.append(
-          `\n[supervisor] session relaunched after restart (restart ${row.restarts})` +
+          `\r\n[supervisor] session relaunched after restart (restart ${row.restarts})` +
             (resume ? ' — resuming conversation' : ' — fresh start') +
-            `\n$ ${argv.join(' ')}\n`,
+            `\r\n$ ${argv.join(' ')}\r\n`,
         );
       }
-      let proc: ChildProcess;
+
+      let proc: AgentProc;
       try {
-        proc = spawn(argv[0]!, argv.slice(1), {
-          cwd: row.cwd,
-          env: { ...process.env, ...env },
-          stdio: ['pipe', 'pipe', 'pipe'],
-          detached: true,
-          windowsHide: true,
-        });
+        const resolved = await resolveArgv(argv);
+        const options = { cwd: row.cwd, env: processEnv(env) };
+        proc =
+          row.terminal === 'pty' && ptyAvailable()
+            ? spawnPty(resolved, options)
+            : spawnPipe(resolved, { ...options, stdin: true });
       } catch (e) {
         this.markSessionDead(row.id, `spawn failed: ${(e as Error).message}`);
-        return resolve();
+        return;
       }
-      if (!isRelaunch) log.append(`$ ${argv.join(' ')}\n(cd ${row.cwd})\n`);
+      if (this.closed) {
+        // Shut down while resolving: don't leave an orphan behind.
+        if (proc.pid) await killTree(proc.pid);
+        return;
+      }
+      if (!isRelaunch) log.append(`$ ${argv.join(' ')}\r\n(cd ${row.cwd})\r\n`);
 
       const live: LiveProc = { proc, log, stoppedByUser: false, kind: 'session', id: row.id };
       this.live.set(key, live);
@@ -904,164 +949,206 @@ export class AgentSupervisor {
         )
         .run(proc.pid ?? null, now(), row.id);
 
-      proc.stdout!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
-      proc.stderr!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
-      proc.on('error', (e) => {
-        log.append(`\n[process error: ${e.message}]\n`);
-      });
-      proc.on('exit', (code, signal) => {
-        this.live.delete(key);
-        if (live.stoppedByUser) {
-          this.db
-            .prepare(
-              `UPDATE agent_sessions SET status = 'killed', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
-            )
-            .run(code, now(), row.id);
-          return resolve();
-        }
-        if (this.closed) {
-          // Shutdown kills everything: leave the row 'running' + wanted so the
-          // next boot relaunches it (reboot-proof by design).
-          return resolve();
-        }
-        const current = this.getSessionRow(row.id);
-        if (!current || current.desired_state !== 'running') {
-          this.db
-            .prepare(
-              `UPDATE agent_sessions SET status = 'exited', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
-            )
-            .run(code, now(), row.id);
-          return resolve();
-        }
-        if (current.supervise && current.restarts < MAX_RESTARTS) {
-          const restarts = current.restarts + 1;
-          const delay = Math.min(RESTART_BASE_MS * 2 ** Math.min(restarts - 1, 5), RESTART_CAP_MS);
-          log.append(
-            `\n[supervisor] process exited (code ${code ?? signal}) — relaunching in ${(delay / 1000).toFixed(0)}s (restart ${restarts}/${MAX_RESTARTS})\n`,
-          );
-          this.db
-            .prepare(`UPDATE agent_sessions SET restarts = ?, last_restart_at = ? WHERE id = ?`)
-            .run(restarts, now(), row.id);
-          const timer = setTimeout(() => {
-            const fresh = this.getSessionRow(row.id);
-            if (fresh && fresh.desired_state === 'running') {
-              this.spawnSession(fresh, true).catch((e) => this.markSessionDead(row.id, String(e)));
-            }
-            resolve();
-          }, delay);
-          timer.unref?.();
-          live.timer = timer;
-        } else {
-          if (current.supervise && current.restarts >= MAX_RESTARTS) {
-            log.append(
-              `\n[supervisor] restart budget exhausted (${MAX_RESTARTS}) — leaving session down; press Start to retry\n`,
-            );
-          }
-          this.db
-            .prepare(
-              `UPDATE agent_sessions SET status = 'exited', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
-            )
-            .run(code, now(), row.id);
-          resolve();
-        }
-      });
+      proc.onData((text) => log.append(text));
+      proc.onError((e) => log.append(`\r\n[process error: ${e.message}]\r\n`));
+      proc.onExit((code, signal) => this.onSessionExit(row, key, live, code, signal));
 
       // Flush stdin queued while the session was down (reboot-proof inbox).
       this.flushInputQueue(row.id, proc);
-      resolve();
-    });
+    } finally {
+      this.starting.delete(key);
+    }
+  }
+
+  private onSessionExit(
+    row: SessionRow,
+    key: string,
+    live: LiveProc,
+    code: number | null,
+    signal: string | null,
+  ): void {
+    if (this.live.get(key) === live) this.live.delete(key);
+    // Shutdown kills everything: leave the row 'running' + wanted so the next boot relaunches
+    // it (reboot-proof by design). The DB may already be closed, so touch nothing.
+    if (this.closed) return;
+    const id = row.id;
+    // Row ids are reused after deletes. If this record was deleted (maybe replaced by a new
+    // session with the same id), a late exit must not touch the newcomer: log paths are unique.
+    const current = this.getSessionRow(id);
+    if (!current || current.log_path !== row.log_path) return;
+    const log = live.log;
+    if (live.stoppedByUser) {
+      this.db
+        .prepare(
+          `UPDATE agent_sessions SET status = 'killed', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
+        )
+        .run(code, now(), id);
+      return;
+    }
+    if (current.desired_state !== 'running') {
+      this.db
+        .prepare(
+          `UPDATE agent_sessions SET status = 'exited', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
+        )
+        .run(code, now(), id);
+      return;
+    }
+    if (current.supervise && current.restarts < MAX_RESTARTS) {
+      const restarts = current.restarts + 1;
+      const delay = Math.min(RESTART_BASE_MS * 2 ** Math.min(restarts - 1, 5), RESTART_CAP_MS);
+      log.append(
+        `\r\n[supervisor] process exited (code ${code ?? signal}) — relaunching in ${(delay / 1000).toFixed(0)}s (restart ${restarts}/${MAX_RESTARTS})\r\n`,
+      );
+      this.db
+        .prepare(`UPDATE agent_sessions SET restarts = ?, last_restart_at = ? WHERE id = ?`)
+        .run(restarts, now(), id);
+      const timer = setTimeout(() => {
+        const fresh = this.getSessionRow(id);
+        if (
+          fresh &&
+          fresh.log_path === row.log_path &&
+          fresh.desired_state === 'running' &&
+          !this.closed
+        ) {
+          this.spawnSession(fresh, true).catch((e) => this.markSessionDead(id, String(e)));
+        }
+      }, delay);
+      timer.unref?.();
+      live.timer = timer;
+      return;
+    }
+    if (current.supervise && current.restarts >= MAX_RESTARTS) {
+      log.append(
+        `\r\n[supervisor] restart budget exhausted (${MAX_RESTARTS}) — leaving session down; press Start to retry\r\n`,
+      );
+    }
+    this.db
+      .prepare(
+        `UPDATE agent_sessions SET status = 'exited', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
+      )
+      .run(code, now(), id);
   }
 
   private markSessionDead(id: number, error: string): void {
-    this.log(
-      this.getSessionRow(id)?.log_path ?? '',
-      `\n[supervisor] session could not start: ${error}\n`,
-    );
+    const row = this.getSessionRow(id);
+    if (row) {
+      this.outputFor(`session:${id}`, row.log_path).append(
+        `\r\n[supervisor] session could not start: ${error}\r\n`,
+      );
+    }
     this.db
       .prepare(`UPDATE agent_sessions SET status = 'dead', pid = NULL, ended_at = ? WHERE id = ?`)
       .run(now(), id);
   }
 
-  private spawnRun(row: RunRow, isRelaunch: boolean): void {
+  private async spawnRun(row: RunRow, isRelaunch: boolean): Promise<void> {
     const key = this.logPathFor('run', row.id);
-    if (this.live.has(key)) return;
-    const { command, timeoutMs } = JSON.parse(row.command_json) as {
-      command: string[];
-      timeoutMs: number;
-    };
-    const project = getProjectRow(this.db, row.project_id);
-    const cwd = project?.path ?? process.cwd();
-    let proc: ChildProcess;
+    if (this.live.has(key) || this.starting.has(key)) return;
+    this.starting.add(key);
     try {
-      proc = spawn(command[0]!, command.slice(1), {
-        cwd,
-        env: { ...process.env },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true,
-        windowsHide: true,
-      });
-    } catch (e) {
-      this.finishRun(row.id, 'failed', null, `spawn failed: ${(e as Error).message}`);
-      return;
-    }
-    const attempts = row.attempts + 1;
-    this.db
-      .prepare(
-        `UPDATE agent_runs SET status = 'running', started_at = ?, attempts = ? WHERE id = ?`,
-      )
-      .run(now(), attempts, row.id);
-    const log = this.outputFor(key, row.log_path);
-    if (!isRelaunch) log.append(`$ ${command.join(' ')}\n(cd ${cwd})\n`);
+      const { command, timeoutMs } = JSON.parse(row.command_json) as {
+        command: string[];
+        timeoutMs: number;
+      };
+      const project = getProjectRow(this.db, row.project_id);
+      const cwd = project?.path ?? process.cwd();
+      const log = this.outputFor(key, row.log_path);
 
-    const live: LiveProc = { proc, log, stoppedByUser: false, kind: 'run', id: row.id };
-    this.live.set(key, live);
-    const timer = setTimeout(() => {
-      const stillLive = this.live.get(key);
-      if (!stillLive) return;
-      stillLive.stoppedByUser = false;
-      log.append(`\n[supervisor] timed out after ${Math.round(timeoutMs / 60000)}m — killing\n`);
-      killTree(proc.pid!).catch(() => undefined);
-      this.finishRun(row.id, 'failed', null, `Timed out after ${Math.round(timeoutMs / 60000)}m`);
-    }, timeoutMs);
-    timer.unref?.();
-    live.timer = timer;
-
-    proc.stdout!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
-    proc.stderr!.on('data', (d: Buffer) => log.append(d.toString('utf8')));
-    proc.on('error', (e) => log.append(`\n[process error: ${e.message}]\n`));
-    proc.on('exit', (code) => {
-      if (live.timer) clearTimeout(live.timer);
-      this.live.delete(key);
-      if (this.closed) {
-        // Shutdown kills everything: leave wanted rows alone so the next boot
-        // relaunches them; finished rows already carry their terminal state.
+      let proc: AgentProc;
+      let before: Awaited<ReturnType<typeof snapshotTree>> = null;
+      try {
+        const resolved = await resolveArgv(command);
+        // Snapshot the work tree so validation can show what the agent actually changed.
+        before = await snapshotTree(cwd);
+        proc = spawnPipe(resolved, { cwd, env: processEnv(), stdin: false });
+      } catch (e) {
+        log.append(`\n[supervisor] could not start: ${(e as Error).message}\n`);
+        this.finishRun(row, 'failed', null, `spawn failed: ${(e as Error).message}`);
         return;
       }
-      const current = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(row.id) as
-        RunRow | undefined;
-      if (!current || (current.status !== 'running' && current.status !== 'queued')) return;
-      if (live.stoppedByUser) {
-        this.finishRun(row.id, 'killed', code, null);
-      } else if (code === 0) {
-        log.append(`\n[run succeeded — awaiting validation]\n`);
-        this.finishRun(row.id, 'succeeded', code, null);
-      } else {
-        this.finishRun(row.id, 'failed', code, `Exited with code ${code}`);
+      if (this.closed) {
+        if (proc.pid) await killTree(proc.pid);
+        return;
       }
-    });
+      const attempts = row.attempts + 1;
+      this.db
+        .prepare(
+          `UPDATE agent_runs SET status = 'running', started_at = ?, attempts = ? WHERE id = ?`,
+        )
+        .run(now(), attempts, row.id);
+      if (!isRelaunch) log.append(`$ ${command.join(' ')}\n(cd ${cwd})\n`);
+
+      const live: LiveProc = { proc, log, stoppedByUser: false, kind: 'run', id: row.id };
+      this.live.set(key, live);
+      let timedOut = false;
+      const minutes = Math.round(timeoutMs / 60000);
+      const timer = setTimeout(() => {
+        if (!this.live.has(key)) return;
+        timedOut = true;
+        log.append(`\n[supervisor] timed out after ${minutes}m — killing\n`);
+        if (proc.pid) killTree(proc.pid).catch(() => undefined);
+      }, timeoutMs);
+      timer.unref?.();
+      live.timer = timer;
+
+      proc.onData((text) => log.append(text));
+      proc.onError((e) => log.append(`\n[process error: ${e.message}]\n`));
+      proc.onExit((code) => {
+        clearTimeout(timer);
+        if (this.live.get(key) === live) this.live.delete(key);
+        // Shutdown kills everything: leave wanted rows alone so the next boot relaunches them.
+        if (this.closed) return;
+        const current = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(row.id) as
+          RunRow | undefined;
+        if (!current || current.log_path !== row.log_path) return; // Deleted (id maybe reused).
+        if (current.status !== 'running' && current.status !== 'queued') return;
+        const changes = before ? diffSince(cwd, before).catch(() => null) : Promise.resolve(null);
+        void changes.then((diff) => {
+          if (live.stoppedByUser) {
+            this.finishRun(row, 'killed', code, null, diff);
+          } else if (timedOut) {
+            this.finishRun(row, 'failed', code, `Timed out after ${minutes}m`, diff);
+          } else if (code === 0) {
+            const untouched = diff !== null && diff.files.length === 0 && diff.commits === 0;
+            log.append(
+              untouched && current.autonomy !== 'read'
+                ? `\n[run exited 0 but changed no files — read the output before accepting]\n`
+                : `\n[run succeeded — awaiting validation]\n`,
+            );
+            this.finishRun(row, 'succeeded', code, null, diff);
+          } else {
+            this.finishRun(row, 'failed', code, `Exited with code ${code}`, diff);
+          }
+        });
+      });
+    } finally {
+      this.starting.delete(key);
+    }
   }
 
+  /** Records a run's outcome, only on the run's own record (log paths are unique per run). */
   private finishRun(
-    id: number,
+    row: { id: number; log_path: string },
     status: AgentRunStatus,
     exitCode: number | null,
     error: string | null,
+    changes: RunChanges | null = null,
   ): void {
+    if (this.closed) return;
     this.db
       .prepare(
-        `UPDATE agent_runs SET status = ?, exit_code = ?, error = ?, ended_at = ? WHERE id = ?`,
+        `UPDATE agent_runs SET status = ?, exit_code = ?, error = ?, ended_at = ?, changes_json = ?
+         WHERE id = ? AND log_path = ?`,
       )
-      .run(status, exitCode, error, now(), id);
+      .run(
+        status,
+        exitCode,
+        error,
+        now(),
+        changes ? JSON.stringify(changes) : null,
+        row.id,
+        row.log_path,
+      );
   }
 
   // ---- Row mapping --------------------------------------------------------------------------------
@@ -1092,6 +1179,7 @@ export class AgentSupervisor {
       providerId: row.provider_id,
       command,
       cwd: row.cwd,
+      terminal: row.terminal,
       pid: live?.proc.pid ?? row.pid,
       status: live ? 'running' : row.status,
       exitCode: row.exit_code,
@@ -1125,6 +1213,8 @@ export class AgentSupervisor {
       providerId: row.provider_id,
       command,
       prompt: row.prompt,
+      autonomy: row.autonomy,
+      changes: row.changes_json ? (JSON.parse(row.changes_json) as RunChanges) : null,
       status: row.status,
       exitCode: row.exit_code,
       error: row.error,

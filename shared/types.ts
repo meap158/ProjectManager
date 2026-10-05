@@ -186,6 +186,19 @@ export interface BulkAddResult {
 // Runs are one-shot dispatches, usually of a Kanban card, with a validate step that
 // moves the card through its lifecycle.
 
+/**
+ * How much a one-shot run may do without asking. Each provider maps these onto its own flags:
+ * read = look but don't touch, edit = change files in the project, full = also run commands freely.
+ */
+export const AGENT_AUTONOMY = ['read', 'edit', 'full'] as const;
+export type AgentAutonomy = (typeof AGENT_AUTONOMY)[number];
+
+export const AGENT_AUTONOMY_LABELS: Record<AgentAutonomy, string> = {
+  read: 'Read-only',
+  edit: 'Edit files',
+  full: 'Full access',
+};
+
 export interface AgentProvider {
   /** Stable id: 'shell' and 'custom' are built in, the rest name an AI CLI. */
   id: string;
@@ -196,6 +209,8 @@ export interface AgentProvider {
   argsTemplate: string[];
   /** argv tail for relaunching a supervised session with conversational continuity. */
   resumeArgs?: string[];
+  /** Extra args per autonomy level for one-shot runs; a missing level is unsupported. */
+  autonomyArgs?: Partial<Record<AgentAutonomy, string[]>>;
   description: string;
   /** Install link shown when the binary is missing (Quil-style). */
   installUrl?: string;
@@ -204,7 +219,12 @@ export interface AgentProvider {
 export interface AgentProviderStatus extends AgentProvider {
   available: boolean;
   resolvedPath: string | null;
+  /** Why the provider can't be used, when it is unavailable. */
+  unavailableReason?: string;
 }
+
+/** How a session talks to its process: a pseudo-terminal (full TUI) or plain pipes. */
+export type AgentTerminal = 'pty' | 'pipe';
 
 export type AgentSessionStatus = 'running' | 'exited' | 'killed' | 'dead';
 export type AgentDesiredState = 'running' | 'stopped';
@@ -216,6 +236,8 @@ export interface AgentSession {
   providerId: string;
   command: string[];
   cwd: string;
+  /** 'pty' sessions take raw keystrokes and render full-screen CLIs; 'pipe' ones are line-based. */
+  terminal: AgentTerminal;
   pid: number | null;
   status: AgentSessionStatus;
   exitCode: number | null;
@@ -246,6 +268,9 @@ export interface AgentRun {
   providerId: string;
   command: string[];
   prompt: string;
+  autonomy: AgentAutonomy;
+  /** What the run changed in the project's git working tree (null if not a repo or unknown). */
+  changes: RunChanges | null;
   status: AgentRunStatus;
   exitCode: number | null;
   error: string | null;
@@ -258,6 +283,13 @@ export interface AgentRun {
   startedAt: string | null;
   endedAt: string | null;
   logBytes: number;
+}
+
+export interface RunChanges {
+  /** Files that changed during the run (working tree or committed), project-relative. */
+  files: string[];
+  /** Commits the run created. */
+  commits: number;
 }
 
 /** A slice of a session/run log, addressed by byte offset. */

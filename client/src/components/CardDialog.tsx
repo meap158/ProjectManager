@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
+  AGENT_AUTONOMY,
+  AGENT_AUTONOMY_LABELS,
   CARD_STATUSES,
   CARD_STATUS_LABELS,
+  type AgentAutonomy,
   type AgentProviderStatus,
   type AgentRun,
   type Card,
@@ -11,6 +14,12 @@ import { api } from '../api';
 import { formatDate } from '../format';
 import { RunCard } from './RunCard';
 import { DeleteButton } from './ui/delete-button';
+
+const AUTONOMY_HINTS: Record<AgentAutonomy, string> = {
+  read: 'Read-only: the agent can look around and answer, but not change files or run commands.',
+  edit: 'Edit files: the agent can change files in this project; risky commands still need approval or are blocked.',
+  full: 'Full access: no approvals. The agent can run any command as you. Use only on work you can revert.',
+};
 
 /** Edit a card's title, description and column. The column select is the keyboard alternative to drag-and-drop. */
 export function CardDialog({
@@ -37,6 +46,7 @@ export function CardDialog({
   const [providers, setProviders] = useState<AgentProviderStatus[] | null>(null);
   const [dispatchProvider, setDispatchProvider] = useState('claude');
   const [prompt, setPrompt] = useState('');
+  const [autonomy, setAutonomy] = useState<AgentAutonomy>('edit');
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [runs, setRuns] = useState<AgentRun[] | null>(null);
@@ -76,6 +86,12 @@ export function CardDialog({
     }
   }, [card, projectId]);
 
+  // One-shot dispatch needs a CLI with a prompt mode; Shell/Custom are for sessions.
+  const aiProviders = (providers ?? []).filter((p) => p.binary !== null);
+  const selectedProvider = aiProviders.find((p) => p.id === dispatchProvider);
+  const autonomySupported =
+    !selectedProvider?.autonomyArgs || selectedProvider.autonomyArgs[autonomy] !== undefined;
+
   async function dispatch() {
     if (!card) return;
     setDispatching(true);
@@ -83,6 +99,7 @@ export function CardDialog({
     try {
       const run = await api.dispatchCard(projectId, card.id, {
         providerId: dispatchProvider,
+        autonomy,
         ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
       });
       setRuns((prev) => [run, ...(prev ?? [])]);
@@ -193,19 +210,41 @@ export function CardDialog({
                   value={dispatchProvider}
                   onChange={(e) => setDispatchProvider(e.target.value)}
                 >
-                  {(providers ?? []).map((p) => (
-                    <option key={p.id} value={p.id} disabled={!p.available}>
+                  {aiProviders.map((p) => (
+                    <option
+                      key={p.id}
+                      value={p.id}
+                      disabled={!p.available}
+                      title={p.unavailableReason}
+                    >
                       {p.name}
-                      {!p.available ? ' (not on PATH)' : ''}
+                      {!p.available ? ' (unavailable)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="select"
+                  aria-label="What the agent may do"
+                  value={autonomy}
+                  onChange={(e) => setAutonomy(e.target.value as AgentAutonomy)}
+                >
+                  {AGENT_AUTONOMY.map((level) => (
+                    <option
+                      key={level}
+                      value={level}
+                      disabled={
+                        !!selectedProvider?.autonomyArgs &&
+                        selectedProvider.autonomyArgs[level] === undefined
+                      }
+                    >
+                      {AGENT_AUTONOMY_LABELS[level]}
                     </option>
                   ))}
                 </select>
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  disabled={
-                    dispatching || !providers?.some((p) => p.id === dispatchProvider && p.available)
-                  }
+                  disabled={dispatching || !selectedProvider?.available || !autonomySupported}
                   onClick={dispatch}
                 >
                   {dispatching ? 'Dispatching…' : 'Dispatch'}
@@ -219,6 +258,9 @@ export function CardDialog({
                 placeholder={`Leave empty to use the card title + notes as the prompt.`}
                 aria-label="Custom run prompt (optional)"
               />
+              <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+                {AUTONOMY_HINTS[autonomy]}
+              </p>
               {dispatchError && (
                 <div className="error-banner" role="alert">
                   {dispatchError}

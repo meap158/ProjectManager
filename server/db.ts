@@ -98,6 +98,14 @@ const MIGRATIONS: string[] = [
   CREATE INDEX agent_runs_by_project ON agent_runs (project_id, id);
   CREATE INDEX agent_runs_by_card ON agent_runs (card_id, id);
   `,
+  // Run autonomy level + recorded git changes; session terminal mode (pty vs pipe).
+  `
+  ALTER TABLE agent_runs ADD COLUMN autonomy TEXT NOT NULL DEFAULT 'edit'
+    CHECK (autonomy IN ('read', 'edit', 'full'));
+  ALTER TABLE agent_runs ADD COLUMN changes_json TEXT;
+  ALTER TABLE agent_sessions ADD COLUMN terminal TEXT NOT NULL DEFAULT 'pipe'
+    CHECK (terminal IN ('pty', 'pipe'));
+  `,
 ];
 
 export function openDb(dataDir: string): Db {

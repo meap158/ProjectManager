@@ -4,13 +4,17 @@
 // its binary (PATH-probed, greyed with an install link when missing), its
 // non-interactive invocation, and its own resume strategy for reboots.
 // Only stdlib is used (no new dependencies): availability is probed with
-// `where` (Windows) or `command -v` (POSIX).
+// the same resolver the supervisor spawns with (Windows) or `command -v` (POSIX).
 
 import { execFile } from 'node:child_process';
-import type { AgentProvider, AgentProviderStatus } from '../../shared/types.js';
+import type { AgentAutonomy, AgentProvider, AgentProviderStatus } from '../../shared/types.js';
+import { ResolveError, resolveArgv } from './resolve.js';
 
 export const PROMPT_PLACEHOLDER = '{prompt}';
 
+// Autonomy flags were checked against each CLI's --help (Claude Code 2.1, codex-cli 0.160,
+// Gemini CLI, OpenCode). Print/exec modes can't ask for approval, so without these flags runs
+// silently decline every edit and still exit 0.
 export const PROVIDERS: AgentProvider[] = [
   {
     id: 'claude',
@@ -20,6 +24,11 @@ export const PROVIDERS: AgentProvider[] = [
     // `claude --continue` resumes the most recent conversation in place —
     // the Quil-style resume path used when relaunching after a reboot.
     resumeArgs: ['--continue'],
+    autonomyArgs: {
+      read: ['--permission-mode', 'plan'],
+      edit: ['--permission-mode', 'acceptEdits'],
+      full: ['--permission-mode', 'bypassPermissions'],
+    },
     description: 'Anthropic Claude Code, non-interactive print mode',
     installUrl: 'https://docs.anthropic.com/en/docs/claude-code',
   },
@@ -28,6 +37,12 @@ export const PROVIDERS: AgentProvider[] = [
     name: 'Codex',
     binary: 'codex',
     argsTemplate: ['exec', PROMPT_PLACEHOLDER],
+    // exec never prompts; the sandbox policy decides what is allowed.
+    autonomyArgs: {
+      read: ['--sandbox', 'read-only'],
+      edit: ['--sandbox', 'workspace-write'],
+      full: ['--sandbox', 'danger-full-access'],
+    },
     description: 'OpenAI Codex CLI, non-interactive exec mode',
     installUrl: 'https://github.com/openai/codex',
   },
@@ -36,6 +51,8 @@ export const PROVIDERS: AgentProvider[] = [
     name: 'OpenCode',
     binary: 'opencode',
     argsTemplate: ['run', PROMPT_PLACEHOLDER],
+    // No read-only switch; OpenCode's own permission config applies unless --auto.
+    autonomyArgs: { edit: [], full: ['--auto'] },
     description: 'OpenCode agent runner, non-interactive run mode',
     installUrl: 'https://opencode.ai',
   },
@@ -44,6 +61,11 @@ export const PROVIDERS: AgentProvider[] = [
     name: 'Gemini',
     binary: 'gemini',
     argsTemplate: ['-p', PROMPT_PLACEHOLDER],
+    autonomyArgs: {
+      read: ['--approval-mode', 'plan'],
+      edit: ['--approval-mode', 'auto_edit'],
+      full: ['--approval-mode', 'yolo'],
+    },
     description: 'Google Gemini CLI, non-interactive prompt mode',
     installUrl: 'https://github.com/google-gemini/gemini-cli',
   },
@@ -67,21 +89,35 @@ export function getProvider(id: string): AgentProvider | null {
   return PROVIDERS.find((p) => p.id === id) ?? null;
 }
 
-function lookupBinary(binary: string): Promise<string | null> {
+/**
+ * Finds what would actually be executed for a binary. On Windows this uses the same resolver the
+ * supervisor spawns with, so "available" means "can really be launched" (a batch file that can't
+ * be unwrapped is unavailable, with the reason).
+ */
+async function lookupBinary(binary: string): Promise<{ path: string | null; reason?: string }> {
+  if (process.platform === 'win32') {
+    try {
+      const argv = await resolveArgv([binary]);
+      return { path: argv[argv.length - 1]! };
+    } catch (e) {
+      return { path: null, reason: e instanceof ResolveError ? e.message : String(e) };
+    }
+  }
   return new Promise((resolve) => {
-    const probe =
-      process.platform === 'win32'
-        ? { file: 'where', args: [binary] }
-        : { file: '/bin/sh', args: ['-c', `command -v ${JSON.stringify(binary)}`] };
-    execFile(probe.file, probe.args, { timeout: 5000 }, (error, stdout) => {
-      if (error) return resolve(null);
-      const first =
-        stdout
-          .split(/\r?\n/)
+    execFile(
+      '/bin/sh',
+      ['-c', `command -v ${JSON.stringify(binary)}`],
+      { timeout: 5000 },
+      (error, stdout) => {
+        const first = stdout
+          ?.split(/\r?\n/)
           .map((l) => l.trim())
-          .find(Boolean) ?? null;
-      resolve(first);
-    });
+          .find(Boolean);
+        resolve(
+          error || !first ? { path: null, reason: `${binary} is not on PATH` } : { path: first },
+        );
+      },
+    );
   });
 }
 
@@ -104,7 +140,7 @@ const CACHE_MS = 30_000;
 export async function providerStatuses(force = false): Promise<AgentProviderStatus[]> {
   if (!force && cache && Date.now() - cache.at < CACHE_MS) return cache.statuses;
   const statuses = await Promise.all(
-    PROVIDERS.map(async (p) => {
+    PROVIDERS.map(async (p): Promise<AgentProviderStatus> => {
       if (p.id === 'shell' || p.id === 'custom') {
         return {
           ...p,
@@ -112,8 +148,13 @@ export async function providerStatuses(force = false): Promise<AgentProviderStat
           resolvedPath: p.id === 'shell' ? defaultShell()[0]! : null,
         };
       }
-      const resolvedPath = await lookupBinary(p.binary!);
-      return { ...p, available: resolvedPath !== null, resolvedPath };
+      const found = await lookupBinary(p.binary!);
+      return {
+        ...p,
+        available: found.path !== null,
+        resolvedPath: found.path,
+        ...(found.reason ? { unavailableReason: found.reason } : {}),
+      };
     }),
   );
   cache = { at: Date.now(), statuses };
@@ -125,14 +166,31 @@ export async function providerAvailable(id: string): Promise<boolean> {
   return found?.available ?? false;
 }
 
-/** Build the argv for a dispatch: substitute the prompt, or append it when the
-    template carries no placeholder. Never uses a shell: no shell injection. */
-export function buildDispatchArgv(provider: AgentProvider, prompt: string): string[] {
+/** Whether a provider supports an autonomy level for one-shot runs. */
+export function supportsAutonomy(provider: AgentProvider, autonomy: AgentAutonomy): boolean {
+  return provider.autonomyArgs === undefined || provider.autonomyArgs[autonomy] !== undefined;
+}
+
+/** Build the full argv for a dispatch (binary first). The prompt is substituted for the
+    placeholder, or appended when there is none; autonomy flags go before the prompt so
+    subcommand CLIs (`codex exec <prompt>`) parse them. Never uses a shell: no shell injection. */
+export function buildDispatchArgv(
+  provider: AgentProvider,
+  prompt: string,
+  autonomy: AgentAutonomy = 'edit',
+): string[] {
   if (provider.id === 'shell') return defaultShell();
-  if (provider.argsTemplate.includes(PROMPT_PLACEHOLDER)) {
-    return provider.argsTemplate.map((a) => (a === PROMPT_PLACEHOLDER ? prompt : a));
-  }
-  return [...provider.argsTemplate, prompt];
+  if (!provider.binary) return [];
+  const extra = provider.autonomyArgs?.[autonomy] ?? [];
+  const hasPlaceholder = provider.argsTemplate.includes(PROMPT_PLACEHOLDER);
+  const template = hasPlaceholder
+    ? provider.argsTemplate
+    : [...provider.argsTemplate, PROMPT_PLACEHOLDER];
+  const at = template.indexOf(PROMPT_PLACEHOLDER);
+  // `-p <prompt>` style: keep the flag glued to its value and put extras before the pair.
+  const splitAt = at > 0 && template[at - 1]!.startsWith('-') ? at - 1 : at;
+  const filled = template.map((a) => (a === PROMPT_PLACEHOLDER ? prompt : a));
+  return [provider.binary, ...filled.slice(0, splitAt), ...extra, ...filled.slice(splitAt)];
 }
 
 /** argv for relaunching a supervised session after a crash/reboot, or null when
