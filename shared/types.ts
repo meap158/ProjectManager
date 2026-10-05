@@ -361,6 +361,8 @@ export interface AgentSession {
   logBytes: number;
   /** When the session last produced output (null before any). Tells working from idle. */
   lastOutputAt: string | null;
+  /** True when the log tail ends at an input prompt newer than any busy signal. */
+  awaitingInput: boolean;
 }
 
 export type AgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'killed';

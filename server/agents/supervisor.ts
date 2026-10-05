@@ -52,6 +52,7 @@ import { withAttachments, listAttachments, cardAttachmentsDir } from '../attachm
 import type { Db } from '../db.js';
 import { getCard, getProjectRow, updateCard } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
+import { isAwaitingInput } from './activity.js';
 import { HostClient } from './host/client.js';
 import type { HostSessionInfo } from './host/protocol.js';
 import { fetchScript, recipeFor } from './install.js';
@@ -1846,6 +1847,7 @@ export class AgentSupervisor {
       endedAt: row.ended_at,
       logBytes: live ? live.log.totalBytes : this.fileSize(row.log_path),
       lastOutputAt: this.fileModifiedAt(row.log_path),
+      awaitingInput: row.status === 'running' && this.sessionAwaitingInput(row.log_path),
     };
   }
 
@@ -1889,6 +1891,25 @@ export class AgentSupervisor {
       return statSync(file).mtime.toISOString();
     } catch {
       return null;
+    }
+  }
+
+  /** True when the log tail ends at an input prompt newer than any busy signal. */
+  private sessionAwaitingInput(file: string): boolean {
+    try {
+      const fd = openSync(file, 'r');
+      try {
+        const size = statSync(file).size;
+        const len = Math.min(4096, size);
+        if (len === 0) return false;
+        const buf = Buffer.alloc(len);
+        readSync(fd, buf, 0, len, size - len);
+        return isAwaitingInput(buf.toString('utf8'));
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      return false;
     }
   }
 

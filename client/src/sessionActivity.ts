@@ -4,7 +4,9 @@ import type { AgentSession } from '../../shared/types';
  * What a session is doing right now:
  * - working: running and produced output in the last few seconds (busy CLIs stream spinners,
  *   progress and text continuously);
- * - idle: running but quiet, i.e. waiting for you;
+ * - idle: running but quiet, i.e. waiting for you — including when the log tail ends at an
+ *   input prompt newer than any busy signal (TUI status redraws keep the file fresh for hours
+ *   while the agent waits, so recency alone would lie);
  * - stopped: no process.
  */
 export type SessionActivity = 'working' | 'idle' | 'stopped';
@@ -14,6 +16,7 @@ export const WORKING_WINDOW_MS = 8_000;
 
 export function sessionActivity(s: AgentSession, now = Date.now()): SessionActivity {
   if (s.status !== 'running') return 'stopped';
+  if (s.awaitingInput) return 'idle';
   const last = s.lastOutputAt ? Date.parse(s.lastOutputAt) : 0;
   return now - last <= WORKING_WINDOW_MS ? 'working' : 'idle';
 }
