@@ -1416,11 +1416,6 @@ a.t:hover {
   color: var(--text-3);
   font-size: 12px;
 }
-.quick-add {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
 /* ---- Dialog ------------------------------------------------------------------------------- */
 

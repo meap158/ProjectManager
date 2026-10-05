@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type DragEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type DragEvent } from 'react';
 import {
   CARD_STATUSES,
   CARD_STATUS_LABELS,
@@ -9,6 +9,7 @@ import {
 import { api } from '../api';
 import { formatRelative } from '../format';
 import { CardDialog } from './CardDialog';
+import { NewCardDialog } from './NewCardDialog';
 
 /** Midpoint ordering: a card's position sits between its neighbours, so a move is one update. */
 function positionBetween(before: Card | undefined, after: Card | undefined): number {
@@ -160,16 +161,6 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
                 </button>
               </div>
 
-              {adding === status && (
-                <QuickAdd
-                  onCancel={() => setAdding(null)}
-                  onSubmit={async (title) => {
-                    const card = await api.addCard(projectId, { title, status });
-                    updateCards((prev) => [...(prev ?? []), card]);
-                  }}
-                />
-              )}
-
               {items.map((card) => (
                 <button
                   key={card.id}
@@ -204,7 +195,7 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
                 </button>
               ))}
 
-              {items.length === 0 && adding !== status && (
+              {items.length === 0 && (
                 <p className="faint" style={{ margin: '4px', fontSize: 12.5 }}>
                   {status === 'backlog' ? 'Capture upcoming features here.' : 'Drop cards here.'}
                 </p>
@@ -214,6 +205,19 @@ export function KanbanBoard({ projectId, reloadKey }: { projectId: number; reloa
         })}
       </div>
 
+      {/* + opens the full New card dialog (title, column, notes); creating it opens the card
+          itself so images and "hand to an agent" are right there. */}
+      <NewCardDialog
+        open={adding !== null}
+        status={adding ?? 'backlog'}
+        projectId={projectId}
+        onClose={() => setAdding(null)}
+        onCreated={(card) => {
+          updateCards((prev) => [...(prev ?? []), card]);
+          setAdding(null);
+          setEditing(card);
+        }}
+      />
       <CardDialog
         card={editing}
         projectId={projectId}
@@ -262,56 +266,5 @@ function RunBadges({ summary }: { summary: CardRunSummary | undefined }) {
         </span>
       )}
     </>
-  );
-}
-
-function QuickAdd({
-  onSubmit,
-  onCancel,
-}: {
-  onSubmit: (title: string) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!title.trim()) return;
-    setBusy(true);
-    try {
-      await onSubmit(title.trim());
-      setTitle(''); // Stay open for rapid entry.
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form className="quick-add" onSubmit={submit}>
-      <input
-        className="input"
-        autoFocus
-        placeholder="Feature title…"
-        aria-label="New card title"
-        value={title}
-        maxLength={200}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === 'Escape' && onCancel()}
-      />
-      {error && <span className="faint">{error}</span>}
-      <div className="actions">
-        <button className="btn btn-primary btn-sm" disabled={busy || !title.trim()}>
-          Add
-        </button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
-          Done
-        </button>
-      </div>
-    </form>
   );
 }

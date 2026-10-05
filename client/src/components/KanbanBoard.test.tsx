@@ -81,16 +81,20 @@ describe('KanbanBoard', () => {
     expect(api.updateCard).toHaveBeenCalledWith(3, expect.objectContaining({ status: 'done' }));
   });
 
-  it('adds a card to the chosen column with quick add', async () => {
+  it('adds a card to the chosen column through the New card dialog', async () => {
     renderBoard(3, []);
     vi.mocked(api.addCard).mockImplementation(async (_projectId, input) =>
       card(9, 3, input.title, input.status),
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Add card to To do' }));
-    fireEvent.change(screen.getByLabelText('New card title'), { target: { value: 'New idea' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'New idea' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create card' }));
     await waitFor(() => expect(within(column('To do')).getByText('New idea')).toBeTruthy());
-    expect(api.addCard).toHaveBeenCalledWith(3, { title: 'New idea', status: 'todo' });
+    expect(api.addCard).toHaveBeenCalledWith(3, {
+      title: 'New idea',
+      description: '',
+      status: 'todo',
+    });
   });
 
   it('changes the column from the card dialog (keyboard alternative to dragging)', async () => {
