@@ -279,6 +279,11 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             now={now}
             tokens={usage}
             actions={sessionActions}
+            onRename={(w, name) =>
+              w.kind === 'session'
+                ? changeSession(() => api.patchSession(w.item.id, { name }))
+                : api.renameRun(w.item.id, name).then(upsertRun, (e: Error) => setError(e.message))
+            }
           />
         )}
 

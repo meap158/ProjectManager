@@ -643,6 +643,12 @@ export class AgentSupervisor {
     return this.getSession(id);
   }
 
+  renameRun(id: number, name: string): AgentRun | null {
+    if (!this.getRun(id)) return null;
+    this.db.prepare(`UPDATE agent_runs SET name = ? WHERE id = ?`).run(name, id);
+    return this.getRun(id);
+  }
+
   setSupervise(id: number, supervise: boolean): AgentSession | null {
     const row = this.getSessionRow(id);
     if (!row) return null;

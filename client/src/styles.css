@@ -2771,3 +2771,25 @@ dialog.lightbox img {
   border-color: var(--accent);
   text-decoration: none;
 }
+
+/* Work rows: the row selects on click; the status dot is its keyboard-reachable select button;
+   the name renames in place. */
+.work-select {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 0 -3px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.work-name {
+  min-width: 0;
+  display: flex;
+}
+.work-row {
+  cursor: pointer;
+}

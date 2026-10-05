@@ -127,6 +127,8 @@ export const api = {
 
   /** Newest runs across every project. */
   listAllRuns: () => request<AgentRun[]>('GET', '/agent-runs'),
+  renameRun: (id: number, name: string) =>
+    request<AgentRun>('PATCH', `/agent-runs/${id}`, { name }),
   listRuns: (projectId: number, cardId?: number) =>
     request<AgentRun[]>(
       'GET',

@@ -9,6 +9,7 @@ import {
   formatRelative,
 } from '../format';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
+import { InlineRename } from './InlineRename';
 
 // One list for everything agents do in a project (or across projects on the workspace):
 // - Terminal: an interactive session. It keeps running (and relaunches after crashes) until you
@@ -163,6 +164,7 @@ export function AgentWorkList({
   tokens,
   projectNames,
   actions,
+  onRename,
 }: {
   items: WorkItem[];
   selected: WorkKey | null;
@@ -173,6 +175,8 @@ export function AgentWorkList({
   /** Shown when the list spans several projects. */
   projectNames?: Map<number, string>;
   actions?: (w: WorkItem) => ReactNode;
+  /** Rename a session or run straight from its row (click its name). */
+  onRename?: (w: WorkItem, name: string) => Promise<unknown>;
 }) {
   return (
     <ul className="list work-list">
@@ -185,10 +189,10 @@ export function AgentWorkList({
             : runFacts(w.item, now);
         return (
           <li key={key} className={key === selected ? 'selected' : undefined}>
-            <button
-              type="button"
+            {/* Clicking the row selects it; the name renames in place (its click stops here);
+                the select button keeps the row reachable from the keyboard. */}
+            <div
               className="work-row"
-              aria-current={key === selected || undefined}
               onClick={() => onSelect(key)}
               title={
                 w.kind === 'session'
@@ -197,11 +201,32 @@ export function AgentWorkList({
               }
             >
               <span className="work-line">
-                <span
-                  className={`status-dot tone-${state.tone ?? 'idle'}${state.activity ? ` is-${state.activity}` : ''}`}
-                  aria-hidden="true"
-                />
-                <b className="truncate">{w.item.name}</b>
+                <button
+                  type="button"
+                  className="work-select"
+                  aria-current={key === selected || undefined}
+                  aria-label={`Show ${w.item.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(key);
+                  }}
+                >
+                  <span
+                    className={`status-dot tone-${state.tone ?? 'idle'}${state.activity ? ` is-${state.activity}` : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                {onRename ? (
+                  <span className="work-name" onClick={(e) => e.stopPropagation()}>
+                    <InlineRename
+                      value={w.item.name}
+                      label={w.kind === 'session' ? 'session' : 'run'}
+                      onSave={(name) => onRename(w, name)}
+                    />
+                  </span>
+                ) : (
+                  <b className="truncate">{w.item.name}</b>
+                )}
                 <span className="badge work-kind" title={KIND[w.kind].title}>
                   {KIND[w.kind].label}
                 </span>
@@ -220,7 +245,7 @@ export function AgentWorkList({
                   </span>
                 ))}
               </span>
-            </button>
+            </div>
             {/* State and actions share one centre line, beside both text lines. */}
             <span className="work-side">
               <span className={`work-state tone-${state.tone ?? 'idle'}`}>{state.text}</span>

@@ -1059,6 +1059,13 @@ function WorkList({
             tokens={usage}
             projectNames={projectName}
             actions={actions}
+            onRename={(w, name) =>
+              w.kind === 'session'
+                ? change(() => api.patchSession(w.item.id, { name }))
+                : api
+                    .renameRun(w.item.id, name)
+                    .then(onRunChanged, (e: Error) => onError(e.message))
+            }
           />
         )}
       </div>

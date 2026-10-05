@@ -299,6 +299,13 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   // ---- Runs -----------------------------------------------------------------------------------
   app.get('/agent-runs', (c) => c.json(supervisor.listAllRuns()));
 
+  app.patch('/agent-runs/:id', async (c) => {
+    const body = await parseBody(c, z.object({ name: z.string().trim().min(1).max(80) }));
+    const run = supervisor.renameRun(parseId(c), body.name);
+    if (!run) throw new AgentError(404, 'Run not found');
+    return c.json(run);
+  });
+
   app.get('/projects/:id/agent-runs', (c) => {
     const projectId = requireProject(db, c);
     const cardId = c.req.query('cardId');
