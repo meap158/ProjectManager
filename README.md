@@ -158,7 +158,7 @@ and rejects requests from other sites. Don't expose it to a network.
 Animated components by [Rare UI](https://rareui.com) (MIT + Commons Clause; attribution required).
 
 Agent CLI marks: Claude Code and OpenCode from [Simple Icons](https://simpleicons.org) (CC0);
-Codex, Grok and Antigravity from [LobeHub Icons](https://github.com/lobehub/lobe-icons)
+Codex (the OpenAI mark), Grok and Antigravity from [LobeHub Icons](https://github.com/lobehub/lobe-icons)
 (MIT, Copyright (c) 2023 LobeHub). They identify each CLI only; the trademarks belong to their
 owners.
 
