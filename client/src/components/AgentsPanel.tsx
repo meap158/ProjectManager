@@ -236,37 +236,35 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             <div className="skeleton" style={{ height: 40 }} />
           ) : (
             <ul className="list provider-list">
-              {providers
-                .filter((p) => !p.retired)
-                .map((p) => (
-                  <li key={p.id}>
-                    <span
-                      className={`status-dot ${p.available ? 'green' : ''}`}
-                      role="img"
-                      aria-label={p.available ? 'Available' : 'Not available'}
-                    />
-                    <span style={{ minWidth: 0 }}>
-                      <b>{p.name}</b>{' '}
-                      <span className="faint" style={{ fontSize: 12 }}>
-                        {p.description}
-                      </span>
-                      {!p.available && p.installUrl && (
-                        <>
-                          {' '}
-                          <a href={p.installUrl} target="_blank" rel="noreferrer">
-                            install
-                          </a>
-                        </>
-                      )}
+              {providers.map((p) => (
+                <li key={p.id}>
+                  <span
+                    className={`status-dot ${p.available ? 'green' : ''}`}
+                    role="img"
+                    aria-label={p.available ? 'Available' : 'Not available'}
+                  />
+                  <span style={{ minWidth: 0 }}>
+                    <b>{p.name}</b>{' '}
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      {p.description}
                     </span>
-                    <span style={{ flex: 1 }} />
-                    {!p.available && p.binary && (
-                      <span className="badge" title={p.unavailableReason}>
-                        unavailable
-                      </span>
+                    {!p.available && p.installUrl && (
+                      <>
+                        {' '}
+                        <a href={p.installUrl} target="_blank" rel="noreferrer">
+                          install
+                        </a>
+                      </>
                     )}
-                  </li>
-                ))}
+                  </span>
+                  <span style={{ flex: 1 }} />
+                  {!p.available && p.binary && (
+                    <span className="badge" title={p.unavailableReason}>
+                      unavailable
+                    </span>
+                  )}
+                </li>
+              ))}
             </ul>
           )}
         </details>
@@ -485,15 +483,13 @@ function NewSessionForm({
             id="agent-provider"
             label="Agent"
             value={providerId}
-            options={providers
-              .filter((p) => !p.retired)
-              .map((p) => ({
-                value: p.id,
-                icon: <ProviderIcon id={p.id} size={14} />,
-                label: p.name,
-                disabled: !p.available,
-                ...(p.available ? {} : { hint: 'not on PATH', title: `${p.name} isn’t on PATH` }),
-              }))}
+            options={providers.map((p) => ({
+              value: p.id,
+              icon: <ProviderIcon id={p.id} size={14} />,
+              label: p.name,
+              disabled: !p.available,
+              ...(p.available ? {} : { hint: 'not on PATH', title: `${p.name} isn’t on PATH` }),
+            }))}
             onChange={setProviderId}
           />
           <input

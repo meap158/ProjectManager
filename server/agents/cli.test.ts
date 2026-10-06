@@ -43,13 +43,6 @@ describe('buildDispatchArgv', () => {
       'danger-full-access',
       PROMPT,
     ]);
-    expect(buildDispatchArgv(getProvider('gemini')!, PROMPT, 'read')).toEqual([
-      'gemini',
-      '--approval-mode',
-      'plan',
-      '-p',
-      PROMPT,
-    ]);
     expect(buildDispatchArgv(getProvider('antigravity')!, PROMPT, 'edit')).toEqual([
       'agy',
       '--mode',
@@ -377,9 +370,9 @@ describe('interactive sessions: pinned conversations and first prompts', () => {
     expect(buildResumeArgv(claude, id)).toEqual(['claude', '--resume', id]);
     // Without a pinned id there is no safe resume (it could reopen another pane's conversation).
     expect(buildResumeArgv(claude)).toBeNull();
-    expect(buildInteractiveArgv(getProvider('gemini')!, { prompt: 'hi' })).toEqual([
-      'gemini',
-      '--prompt-interactive',
+    expect(buildInteractiveArgv(getProvider('antigravity')!, { prompt: 'hi' })).toEqual([
+      'agy',
+      '-i',
       'hi',
     ]);
   });
@@ -533,11 +526,10 @@ describe('resuming CLIs without pinned conversations after a reboot', () => {
     insert('/repo-b');
     const b2 = insert('/repo-b');
     expect(sup.resumeLatestArgv(b2)).toBeNull();
-    // Gemini / OpenCode use their own flags; explicit custom command lines are never guessed.
-    expect(sup.resumeLatestArgv(insert('/repo-c', 'gemini', ['gemini']))).toEqual([
-      'gemini',
-      '--resume',
-      'latest',
+    // Antigravity / OpenCode use their own flags; explicit custom command lines are never guessed.
+    expect(sup.resumeLatestArgv(insert('/repo-c', 'opencode', ['opencode']))).toEqual([
+      'opencode',
+      '--continue',
     ]);
     expect(sup.resumeLatestArgv(insert('/repo-c2', 'antigravity', ['agy']))).toEqual(['agy', '-c']);
     expect(sup.resumeLatestArgv(insert('/repo-d', 'codex', ['codex', '--model', 'x']))).toEqual([

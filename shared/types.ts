@@ -225,7 +225,7 @@ export interface BulkAddResult {
 
 // ---- Agent CLI sessions and runs ------------------------------------------------------------
 // Persistent, server-side processes for driving AI coding CLIs (Claude Code, Codex,
-// OpenCode, Gemini, …) or any shell command. Sessions are interactive terminals that
+// OpenCode, Antigravity, …) or any shell command. Sessions are interactive terminals that
 // survive GUI navigation; the supervisor relaunches them after server restarts and
 // machine reboots when they are supervised and still wanted (desiredState).
 // Runs are one-shot dispatches, usually of a Kanban card, with a validate step that
@@ -307,9 +307,6 @@ export interface AgentProvider {
   description: string;
   /** Install link shown when the binary is missing (Quil-style). */
   installUrl?: string;
-  /** Replaced by another provider: never offered for new sessions or runs, but existing
-      sessions keep their name, open, and relaunch as before. */
-  retired?: boolean;
 }
 
 export interface AgentProviderStatus extends AgentProvider {

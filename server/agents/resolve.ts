@@ -1,7 +1,7 @@
 // Turns an argv into something the OS can execute directly, without a shell.
 //
 // On Windows, Node can only spawn real executables (.exe/.com) without a shell, but npm-installed
-// CLIs (codex, gemini, opencode, ...) are `.cmd` shims, and an extensionless sh script sits next to
+// CLIs (codex, opencode, ...) are `.cmd` shims, and an extensionless sh script sits next to
 // each one. Running a .cmd through cmd.exe would expose prompts to cmd's quoting rules (and cmd
 // cannot pass newlines at all), so instead we read the npm shim and launch what it points at:
 // `node <script.js>` or the bundled `.exe`. Elsewhere, argv is returned as is.

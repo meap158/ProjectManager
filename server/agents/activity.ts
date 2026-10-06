@@ -14,7 +14,7 @@ export type TailState = 'running' | 'idle';
 const PROMPT_PATTERNS = [
   // Codex: "Ask Codex to do anything" placeholder in its input line.
   /ask\s+\S+\s+to\s+do\s+anything/gi,
-  // Claude Code / Gemini: a bare ❯ prompt as the last thing on a line.
+  // Claude Code: a bare ❯ prompt as the last thing on a line.
   /❯[ \t]*$/gm,
 ];
 

@@ -57,7 +57,7 @@ export function TerminalIcon(props: IconProps) {
 // ---- Provider brand marks -----------------------------------------------------------------------
 // Official marks inlined from Simple Icons (CC0; the app works offline, so no CDN) for nominative
 // identification only — trademarks belong to their owners. Only verified marks are used, in the
-// brand colour (tokens --brand-*): Claude Code (claudecode), Gemini (googlegemini) and OpenCode
+// brand colour (tokens --brand-*): Claude Code (claudecode) and OpenCode
 // (opencode, sourced from OpenCode's own identity mark). OpenAI asked Simple Icons to drop its
 // mark, and xAI/Grok and Antigravity have none published, so Codex, Grok and Antigravity keep the
 // generic terminal glyph rather than a wrong "official" one.
@@ -86,15 +86,6 @@ export function ClaudeIcon(props: IconProps) {
   );
 }
 
-/** Google Gemini sparkle (Simple Icons `googlegemini`, CC0), in Gemini violet. */
-export function GeminiIcon(props: IconProps) {
-  return (
-    <BrandBase {...props} color="var(--brand-gemini)">
-      <path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" />
-    </BrandBase>
-  );
-}
-
 /** OpenCode's mark (Simple Icons `opencode`, CC0). Its brand colour is black, so it follows
     the text colour and stays visible in dark mode. */
 export function OpenCodeIcon(props: IconProps) {
@@ -112,7 +103,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
   grok: 'Grok',
   antigravity: 'Antigravity',
   opencode: 'OpenCode',
-  gemini: 'Gemini',
   shell: 'Shell',
   custom: 'Custom command',
 };
@@ -120,7 +110,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
 /** Official mark where verified, generic terminal glyph otherwise (never a wrong mark). */
 export function ProviderIcon({ id, ...props }: IconProps & { id: string }) {
   if (id === 'claude') return <ClaudeIcon {...props} />;
-  if (id === 'gemini') return <GeminiIcon {...props} />;
   if (id === 'opencode') return <OpenCodeIcon {...props} />;
   return <TerminalIcon {...props} />;
 }

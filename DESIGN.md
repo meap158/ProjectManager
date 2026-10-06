@@ -352,8 +352,7 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   backlog/todo cards to In progress; a finished run awaits **validation**: Accept moves the
   card to Review (or Done), Reject sends it back to To do. Kanban cards carry Quil-style
   attention badges (▶ running, ✓ awaiting validation, ✗ failed).
-- **Providers** (Claude Code, Codex, Grok, Antigravity, OpenCode, shell, custom; Gemini is
-  `retired`: never offered for new work, existing sessions still relaunch) are PATH-probed with
+- **Providers** (Claude Code, Codex, Grok, Antigravity, OpenCode, shell, custom) are PATH-probed with
   install links when missing; dispatches use argv arrays, never a shell. xterm.js renders
   terminal output and is code-split so it loads only with a terminal.
 - **Honest activity:** a session reads "running" while the CLI is busy or a shell/subagent it
@@ -361,13 +360,13 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   prompt draws); a prompt with neither reads "idle · waiting for you". Log recency alone lies
   (TUI redraws keep the file fresh for hours) and is only the fallback for unknown CLIs.
 - **Agent work rows:** title flush left right after the status dot, provider mark + name after
-  it (official Claude Code, Gemini and OpenCode marks in brand colours, generic terminal glyph
+  it (official Claude Code and OpenCode marks in brand colours, generic terminal glyph
   otherwise — never a wrong "official" mark); card tag, state word and actions sit in fixed
   right-hand columns so they line up on every row.
 - **Settings (/settings):** one section per concern. First section is agent CLIs: availability,
   and one-click **Install** for whatever is missing, using each vendor's official method
   (native installer scripts for Claude/Codex/Grok/OpenCode-posix; npm globals for
-  OpenCode-Windows and Gemini everywhere). The recipe (label, what it downloads, docs link)
+  OpenCode-Windows and Antigravity). The recipe (label, what it downloads, docs link)
   shows before anything runs; execution needs the explicit Install POST; output streams live
   and availability re-probes past the status cache on success. Installs never relaunch after
   a restart — retry by hand. Same-machine trust model and caps apply.
@@ -384,7 +383,7 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   server-sent events (`GET /agent-sessions/:id/stream`), and the PTY is resized to match the
   visible terminal. Without node-pty, sessions fall back to line-based pipes, shown with a
   `pipe` badge and a line input.
-- **Launching without a shell.** On Windows, npm-installed CLIs (`codex`, `gemini`,
+- **Launching without a shell.** On Windows, npm-installed CLIs (`codex`,
   `opencode`) are `.cmd` shims, which Node can't spawn without cmd.exe. cmd.exe would mangle
   prompts and can't pass newlines at all. `server/agents/resolve.ts` reads the npm shim and runs
   its target directly (`node <cli.js>` or the bundled `.exe`). "Available" in the provider list

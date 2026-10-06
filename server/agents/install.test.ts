@@ -83,12 +83,7 @@ describe('recipeFor', () => {
       '-g',
       '@google/antigravity-cli',
     ]);
-    expect(recipeFor(getProvider('gemini')!, 'linux')?.command).toEqual([
-      'npm',
-      'install',
-      '-g',
-      '@google/gemini-cli',
-    ]);
+    expect(getProvider('gemini')).toBeNull(); // Removed: Antigravity replaced it.
     expect(recipeFor(getProvider('shell')!)).toBeNull();
     expect(recipeFor(getProvider('custom')!)).toBeNull();
     expect(recipeFor(getProvider('claude')!, 'sunos')).toBeNull();
@@ -185,10 +180,10 @@ describe('install lifecycle', () => {
 
   it('pipes a downloaded script to the interpreter', async () => {
     const sup2 = new AgentSupervisor(db, logs, {
-      installRecipes: { gemini: SCRIPT_RECIPE },
+      installRecipes: { grok: SCRIPT_RECIPE },
     });
     try {
-      const created = await sup2.startInstall('gemini');
+      const created = await sup2.startInstall('grok');
       const done = await waitFor(
         async () => sup2.getInstall(created.id)!,
         (i) => i.status !== 'running',

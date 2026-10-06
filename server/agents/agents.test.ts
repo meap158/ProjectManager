@@ -71,20 +71,6 @@ afterAll(async () => {
 });
 
 describe('providers', () => {
-  it('never starts new work on a retired provider (Gemini, replaced by Antigravity)', async () => {
-    const providers = (await (await call('GET', '/agents/providers')).json()) as {
-      id: string;
-      retired?: boolean;
-    }[];
-    // Still listed (old sessions keep their name and relaunch), but marked retired.
-    expect(providers.find((p) => p.id === 'gemini')?.retired).toBe(true);
-    const res = await call('POST', `/projects/${projectId}/agent-sessions`, {
-      providerId: 'gemini',
-    });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toMatch(/replaced/);
-  });
-
   it('lists the catalog with availability', async () => {
     const res = await call('GET', '/agents/providers');
     expect(res.status).toBe(200);
@@ -97,11 +83,11 @@ describe('providers', () => {
         'grok',
         'antigravity',
         'opencode',
-        'gemini',
         'shell',
         'custom',
       ]),
     );
+    expect(ids).not.toContain('gemini'); // Removed: Antigravity replaced it.
     // Grok sits below Codex and above Antigravity; Antigravity sits above OpenCode.
     expect(ids.indexOf('grok')).toBeGreaterThan(ids.indexOf('codex'));
     expect(ids.indexOf('antigravity')).toBeGreaterThan(ids.indexOf('grok'));

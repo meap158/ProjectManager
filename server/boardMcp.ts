@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Hono } from 'hono';
@@ -89,7 +89,7 @@ export function boardConnection(
   env: Record<string, string>,
 ): { command: string[]; env: Record<string, string> } {
   if (
-    !['claude', 'codex', 'opencode', 'antigravity', 'gemini'].includes(providerId) ||
+    !['claude', 'codex', 'opencode', 'antigravity'].includes(providerId) ||
     (command[0] !== providerId && (providerId !== 'antigravity' || command[0] !== 'agy'))
   )
     return { command, env };
@@ -102,40 +102,6 @@ export function boardConnection(
   }
   const args = [siblingScript('board-mcp.mjs'), dataDir];
   const nextEnv = { ...env, PM_BOARD_TOKEN: token };
-  if (providerId === 'gemini') {
-    const original =
-      env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH ||
-      process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH ||
-      (process.platform === 'win32'
-        ? path.join(process.env.ProgramData || 'C:\\ProgramData', 'gemini-cli/system-defaults.json')
-        : process.platform === 'darwin'
-          ? '/Library/Application Support/GeminiCli/system-defaults.json'
-          : '/etc/gemini-cli/system-defaults.json');
-    const defaults = existsSync(original)
-      ? (JSON.parse(readFileSync(original, 'utf8')) as Record<string, unknown>)
-      : {};
-    const folder = path.join(dataDir, 'agent-config');
-    mkdirSync(folder, { recursive: true });
-    const file = path.join(
-      folder,
-      `gemini-${createHash('sha256').update(owner.logPath).digest('hex').slice(0, 20)}.json`,
-    );
-    writeFileSync(
-      file,
-      JSON.stringify({
-        ...defaults,
-        mcpServers: {
-          ...((defaults.mcpServers as object) ?? {}),
-          projectmanager: {
-            command: process.execPath,
-            args,
-            env: { PM_BOARD_TOKEN: '${PM_BOARD_TOKEN}' },
-          },
-        },
-      }),
-    );
-    return { command, env: { ...nextEnv, GEMINI_CLI_SYSTEM_DEFAULTS_PATH: file } };
-  }
   if (providerId === 'claude') {
     const config = {
       mcpServers: {

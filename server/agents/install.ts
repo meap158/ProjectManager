@@ -1,6 +1,6 @@
 // Official install recipes for the agent CLIs, verified against each vendor's own
 // docs (Claude Code setup, Codex README, Grok Build overview, OpenCode README,
-// Gemini CLI README). One recommended method per OS — no alternatives menu.
+// Antigravity README). One recommended method per OS — no alternatives menu.
 //
 // Security model: the recipe (label, detail, URL/command) is shown in the Settings UI
 // *before* anything runs, and nothing executes without the explicit Install POST.
@@ -38,7 +38,6 @@ const CODEX_DOCS = 'https://github.com/openai/codex#readme';
 const GROK_DOCS = 'https://docs.x.ai/build/overview';
 const OPENCODE_DOCS = 'https://opencode.ai/docs';
 const ANTIGRAVITY_DOCS = 'https://github.com/google/antigravity#readme';
-const GEMINI_DOCS = 'https://github.com/google-gemini/gemini-cli#readme';
 
 export const INSTALL_RECIPES: Record<string, Partial<Record<Platform, InstallRecipe>>> = {
   claude: {
@@ -131,11 +130,6 @@ export const INSTALL_RECIPES: Record<string, Partial<Record<Platform, InstallRec
       OPENCODE_DOCS,
       'Downloads the installer from opencode.ai and runs it via bash.',
     ),
-  },
-  gemini: {
-    win32: npmGlobal('@google/gemini-cli', GEMINI_DOCS),
-    darwin: npmGlobal('@google/gemini-cli', GEMINI_DOCS),
-    linux: npmGlobal('@google/gemini-cli', GEMINI_DOCS),
   },
 };
 

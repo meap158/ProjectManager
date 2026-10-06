@@ -44,7 +44,7 @@ ProjectManager stores its data locally. GitHub PR queries use your gh login; age
   - Moves apply automatically within about 15 seconds of the commit (no Refresh needed); a card
     you move back by hand stays put.
 - **AI agents:** dispatch a card to Claude Code, Codex, Grok, Antigravity or OpenCode (whichever is
-  installed). Gemini has been replaced by Antigravity; existing Gemini sessions still open.
+  installed).
   - Choose what the agent may do: **Read-only**, **Edit files** (default) or **Full access**.
   - Dispatching moves the card to In progress.
   - When the run finishes you see what it changed ("3 files changed · 1 commit"), then
@@ -162,7 +162,7 @@ Windows may ask to allow Node.js the first time: allow it on Private networks on
 
 ## Agent board tools and images
 
-Claude Code, Codex, OpenCode and (existing) Gemini sessions/runs launched by ProjectManager receive a
+Claude Code, Codex and OpenCode sessions/runs launched by ProjectManager receive a
 `projectmanager` MCP server automatically. It provides `get_card`, `update_status`, `add_note`,
 `read_image` and `create_card`. It can access only the owner's currently assigned card in that project;
 a session started without a card (directly in a terminal) can call `create_card` once to make one for
@@ -174,7 +174,6 @@ before moving it to Review; Done means the task is complete.
 
 The stdio bridge (`scripts/board-mcp.mjs`) finds the live local server on each request, including
 after port fallback. CLI config is injected per process; project and global CLI files are not edited.
-Gemini receives a generated system-defaults file in the data directory, preserving existing defaults.
 Capabilities are stored in the local database and passed through environment variables, never task text.
 Existing terminals started before this integration need a stop/start to load MCP configuration.
 
@@ -186,5 +185,4 @@ configuration has not been verified for those providers. Clipboard image shortcu
 
 References: [Codex CLI](https://developers.openai.com/codex/cli/reference),
 [Claude CLI](https://code.claude.com/docs/en/cli-reference),
-[OpenCode CLI](https://opencode.ai/docs/cli/),
-[Gemini settings](https://geminicli.com/docs/reference/configuration/).
+[OpenCode CLI](https://opencode.ai/docs/cli/).

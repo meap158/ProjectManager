@@ -16,7 +16,7 @@ export const PROMPT_PLACEHOLDER = '{prompt}';
 export const SESSION_ID_PLACEHOLDER = '{sessionId}';
 
 // Autonomy flags were checked against each CLI's --help (Claude Code 2.1, codex-cli 0.160,
-// Gemini CLI, OpenCode). Print/exec modes can't ask for approval, so without these flags runs
+// OpenCode). Print/exec modes can't ask for approval, so without these flags runs
 // silently decline every edit and still exit 0.
 export const PROVIDERS: AgentProvider[] = [
   {
@@ -94,23 +94,6 @@ export const PROVIDERS: AgentProvider[] = [
     autonomyArgs: { edit: [], full: ['--auto'] },
     description: 'OpenCode agent runner, non-interactive run mode',
     installUrl: 'https://opencode.ai',
-  },
-  {
-    id: 'gemini',
-    name: 'Gemini',
-    binary: 'gemini',
-    argsTemplate: ['-p', PROMPT_PLACEHOLDER],
-    interactivePromptArgs: ['--prompt-interactive', PROMPT_PLACEHOLDER],
-    resumeLatestArgs: ['--resume', 'latest'],
-    autonomyArgs: {
-      read: ['--approval-mode', 'plan'],
-      edit: ['--approval-mode', 'auto_edit'],
-      full: ['--approval-mode', 'yolo'],
-    },
-    description: 'Google Gemini CLI, non-interactive prompt mode',
-    installUrl: 'https://github.com/google-gemini/gemini-cli',
-    // Replaced by Antigravity (owner request PM-13); old Gemini sessions still open.
-    retired: true,
   },
   {
     id: 'shell',
@@ -297,11 +280,6 @@ export function nativeImageArgs(
   if (providerId === 'antigravity')
     return [...new Set(images.map((file) => path.dirname(file)))].flatMap((dir) => [
       '--add-dir',
-      dir,
-    ]);
-  if (providerId === 'gemini')
-    return [...new Set(images.map((file) => path.dirname(file)))].flatMap((dir) => [
-      '--include-directories',
       dir,
     ]);
   if (providerId === 'claude')

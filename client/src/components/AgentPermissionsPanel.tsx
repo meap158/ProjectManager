@@ -81,7 +81,7 @@ export function AgentPermissionsPanel({
     });
   };
 
-  const clis = (providers ?? []).filter((p) => CLI_FLAGS[p.id] && !p.retired);
+  const clis = (providers ?? []).filter((p) => CLI_FLAGS[p.id]);
 
   return (
     <section className="panel" aria-label="Agent permissions">

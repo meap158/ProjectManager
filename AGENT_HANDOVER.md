@@ -29,15 +29,14 @@ atomic commits). Nothing is pending in the working tree.
   /board?show=planned|active. Card images: data folder only, lightbox preview.
 - **Agents:** one Agent work list (sessions + runs) with facts, token usage (Claude), rename in
   place, names flush left with the card tag, state and actions in fixed right-hand columns, and
-  official provider marks where verified (Claude Code, Gemini, OpenCode; others the generic
+  official provider marks where verified (Claude Code, OpenCode; others the generic
   glyph). Workspace Panes / List with a resizable, maximisable docked terminal.
 - **State (PM-14):** "running" means the CLI's last screen frame shows busy chrome or a still-
   running background shell/subagent; "idle" means it is at its prompt; unknown CLIs (shell,
   custom) fall back to output recency (`server/agents/activity.ts`, `tailState`).
-- **Providers:** Antigravity (`agy`, flags from `agy --help`) replaces Gemini (PM-13). Gemini is
-  `retired`: hidden from new-session/run/install menus and refused by the API, while existing
-  Gemini sessions keep their name and relaunch.
-- **Board MCP** (card-scoped get_card / update_status / add_note / read_image, audited, migration 7) is injected for Claude, Codex, OpenCode and Gemini. Native images: Codex --image, Claude
+- **Providers:** Antigravity (`agy`, flags from `agy --help`) replaced Gemini, which is removed
+  entirely (old Gemini rows still relaunch from their saved command, without provider extras).
+- **Board MCP** (card-scoped get_card / update_status / add_note / read_image, audited, migration 7) is injected for Claude, Codex and OpenCode. Native images: Codex --image, Claude
   --add-dir, OpenCode run --file; Grok/custom keep the path list.
 - **Claude resume:** if the pinned conversation has no transcript, a relaunch starts a fresh
   conversation under a new pinned id (and stores it) instead of crash-looping on
@@ -82,7 +81,7 @@ and verified in the browser.
 
 - **Commit 1:** milestone 1 plus the original agent dispatch.
 - **Commit 2:** made the CLI integration actually work (shims, autonomy, change evidence, PTY,
-  clean env, id-reuse fixes). Verified with real Claude, Codex and Gemini runs on Windows.
+  clean env, id-reuse fixes). Verified with real Claude and Codex runs on Windows.
 - **Commit 3 (this one):** the Agents workspace. Verified in Chrome:
   - card → "Work on it in a terminal" → Claude got the card's task and wrote the file
   - two panes across two projects
@@ -178,9 +177,9 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
 - Card IDs (`PM-n`) are never reused: `nextCardId()` keeps a high-water mark in `settings`
   (`card_id_high_water`) because the table has no AUTOINCREMENT. Agent records rely on `log_path`
   identity for the same reason.
-- After a reboot, Claude resumes its own pinned conversation. Codex, Gemini and OpenCode resume
+- After a reboot, Claude resumes its own pinned conversation. Codex, Antigravity and OpenCode resume
   their latest conversation only when they are the sole session of that CLI in the folder (else
-  they start fresh). OpenCode has no read-only mode. Gemini ignores `--approval-mode` in folders it doesn't trust yet.
+  they start fresh). OpenCode has no read-only mode.
 - `react-hooks/set-state-in-effect`: loaders only set state inside promise callbacks, and
   CardDialog resets its form during render. Keep to these patterns, or lint fails.
 

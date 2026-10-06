@@ -14,7 +14,6 @@
 :root {
   /* Vendor brand colours for official provider marks (identification only). */
   --brand-claude: #d97757;
-  --brand-gemini: #8e75b2;
   color-scheme: light;
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;

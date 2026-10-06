@@ -400,7 +400,7 @@ export class AgentSupervisor {
   private withImages(prompt: string, cardId: number, providerId?: string): string {
     return withAttachments(
       prompt +
-        (['claude', 'codex', 'opencode', 'antigravity', 'gemini'].includes(providerId ?? '')
+        (['claude', 'codex', 'opencode', 'antigravity'].includes(providerId ?? '')
           ? boardTaskNote
           : ''),
       path.join(path.dirname(this.logDir), 'attachments'),
@@ -629,9 +629,6 @@ export class AgentSupervisor {
     const providerId = input.providerId ?? (input.command ? 'custom' : 'shell');
     const provider = getProvider(providerId);
     if (!provider) throw new AgentError(400, `Unknown provider: ${providerId}`);
-    if (provider.retired) {
-      throw new AgentError(400, `${provider.name} has been replaced; pick another agent`);
-    }
     if (provider.binary && !(await providerAvailable(providerId))) {
       throw new AgentError(
         400,
@@ -988,9 +985,6 @@ export class AgentSupervisor {
     const providerId = input.providerId ?? (input.command ? 'custom' : 'claude');
     const provider = getProvider(providerId);
     if (!provider) throw new AgentError(400, `Unknown provider: ${providerId}`);
-    if (provider.retired) {
-      throw new AgentError(400, `${provider.name} has been replaced; pick another agent`);
-    }
     if (provider.binary && !(await providerAvailable(providerId))) {
       throw new AgentError(
         400,
@@ -1522,7 +1516,7 @@ export class AgentSupervisor {
   }
 
   /**
-   * For CLIs that can only "resume the latest conversation" (Codex, Gemini, OpenCode): that is the
+   * For CLIs that can only "resume the latest conversation" (Codex, OpenCode, Antigravity): that is the
    * right conversation only if this is the sole session of that CLI in the folder. Otherwise
    * (or for explicit commands) relaunch fresh rather than risk resuming another pane's chat.
    */
