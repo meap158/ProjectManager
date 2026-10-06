@@ -2334,6 +2334,13 @@ kbd {
   font-size: 11px;
   color: var(--text-3);
 }
+/* A value or axis label wider than a narrow column (30 days on a phone) must never widen the
+   page (PM-55): the plot and the x-axis row clip sideways only (values above the bars stay
+   visible); the hover tooltip is position: fixed, so it isn't clipped. */
+.colchart-plot,
+.colchart-x {
+  overflow-x: clip;
+}
 .colchart-ytitle {
   grid-column: 1 / -1;
   margin-bottom: 2px;
@@ -2413,6 +2420,16 @@ kbd {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+/* Edge columns: the value aligns with its bar's outer edge instead of centring past the plot. */
+.colchart-col:first-of-type .colchart-val {
+  left: 0;
+  transform: none;
+}
+.colchart-col:last-of-type .colchart-val {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 .colchart-x {
   grid-column: 2;
