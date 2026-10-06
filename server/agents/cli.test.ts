@@ -63,7 +63,13 @@ describe('buildDispatchArgv', () => {
       PROMPT,
     ]);
     // Grok headless flags are documented at https://docs.x.ai/build/overview.
-    expect(buildDispatchArgv(getProvider('grok')!, PROMPT, 'edit')).toEqual(['grok', '-p', PROMPT]);
+    expect(buildDispatchArgv(getProvider('grok')!, PROMPT, 'edit')).toEqual([
+      'grok',
+      '--permission-mode',
+      'acceptEdits',
+      '-p',
+      PROMPT,
+    ]);
     expect(buildInteractiveArgv(getProvider('grok')!)).toEqual(['grok']);
     expect(buildResumeArgv(getProvider('grok')!)).toBeNull();
     expect(supportsAutonomy(getProvider('grok')!, 'read')).toBe(true);

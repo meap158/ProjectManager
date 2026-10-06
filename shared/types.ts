@@ -244,6 +244,20 @@ export const AGENT_AUTONOMY_LABELS: Record<AgentAutonomy, string> = {
   full: 'Full access',
 };
 
+/** A permission choice: one of the levels, or 'cli' = pass no flags, the CLI's own settings apply. */
+export type PermissionLevel = 'cli' | AgentAutonomy;
+
+/** Global agent permissions, with per-CLI overrides ('inherit' follows the global level). */
+export interface AgentPermissions {
+  global: PermissionLevel;
+  providers: Record<string, PermissionLevel | 'inherit'>;
+}
+
+export const PERMISSION_LEVEL_LABELS: Record<PermissionLevel, string> = {
+  cli: "CLI's own settings",
+  ...AGENT_AUTONOMY_LABELS,
+};
+
 export interface AgentProvider {
   /** Stable id: 'shell' and 'custom' are built in, the rest name an AI CLI. */
   id: string;

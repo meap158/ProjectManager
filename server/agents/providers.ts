@@ -59,6 +59,12 @@ export const PROVIDERS: AgentProvider[] = [
     name: 'Grok',
     binary: 'grok',
     argsTemplate: ['-p', PROMPT_PLACEHOLDER],
+    // From `grok --help`: --permission-mode default|acceptEdits|auto|dontAsk|bypassPermissions|plan.
+    autonomyArgs: {
+      read: ['--permission-mode', 'plan'],
+      edit: ['--permission-mode', 'acceptEdits'],
+      full: ['--permission-mode', 'bypassPermissions'],
+    },
     description: 'xAI Grok Build coding agent, non-interactive print mode',
     installUrl: 'https://docs.x.ai/build/overview',
   },

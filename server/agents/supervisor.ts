@@ -54,6 +54,7 @@ import { getCard, getProjectRow, updateCard } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
 import { tailState } from './activity.js';
 import { codexSessionFor, staleClaudeResume } from './usage.js';
+import { effectiveLevel, getPermissions, withPermissions } from './permissions.js';
 import { HostClient } from './host/client.js';
 import type { HostSessionInfo } from './host/protocol.js';
 import { fetchScript, recipeFor } from './install.js';
@@ -1367,6 +1368,15 @@ export class AgentSupervisor {
             env,
           )
         : { command: baseArgv, env };
+      // Global / per-CLI permission level (Settings), applied at every launch and relaunch.
+      const permitted = withPermissions(
+        row.provider_id,
+        effectiveLevel(getPermissions(this.db), row.provider_id),
+        connection.command,
+        connection.env,
+      );
+      connection.command = permitted.command;
+      connection.env = permitted.env;
       const argv = connection.command;
       const log = this.outputFor(key, row.log_path);
       if (isRelaunch) {

@@ -14,6 +14,7 @@ import type { Db } from '../db.js';
 import { sessionUsage } from './usage.js';
 import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
+import { getPermissions, PERMISSION_PROVIDERS, setPermissions } from './permissions.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
 
 const idParam = z.coerce.number().int().positive();
@@ -113,6 +114,25 @@ function requireProject(db: Db, c: Context): number {
 
 export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervisor): void {
   // ---- Providers ------------------------------------------------------------------------------
+  // Global agent permissions + per-CLI overrides (Settings). Applied at each session launch.
+  app.get('/agents/permissions', (c) => c.json(getPermissions(db)));
+
+  app.put('/agents/permissions', async (c) => {
+    const level = z.enum(['cli', 'read', 'edit', 'full']);
+    const body = await parseBody(
+      c,
+      z.object({
+        global: level,
+        providers: z
+          .record(z.string(), z.union([level, z.literal('inherit')]))
+          .refine((r) => Object.keys(r).every((id) => PERMISSION_PROVIDERS.includes(id)), {
+            message: 'Unknown agent CLI',
+          }),
+      }),
+    );
+    return c.json(setPermissions(db, body));
+  });
+
   app.get('/agents/providers', async (c) => {
     const refresh = c.req.query('refresh');
     return c.json(await providerStatuses(refresh !== undefined));
