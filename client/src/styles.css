@@ -499,7 +499,7 @@ code,
   margin: 0;
   padding: 4px;
   list-style: none;
-  max-height: 240px;
+  max-height: 360px; /* Narrowed to the room on screen when opened (Dropdown.tsx). */
   overflow-y: auto;
   background: var(--surface-raised);
   border: 1px solid var(--border);

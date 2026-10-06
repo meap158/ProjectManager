@@ -1,4 +1,9 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+
+/** Gap kept between an open menu and the window edge. */
+const EDGE = 8;
+/** Tallest an open menu gets before it scrolls (rows with a description need the room). */
+const MAX_MENU_HEIGHT = 360;
 
 export interface DropdownOption<T extends string | number> {
   value: T;
@@ -44,6 +49,7 @@ export function Dropdown<T extends string | number>({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const listRef = useRef<HTMLUListElement>(null);
   const listId = useId();
   const selected = options.find((o) => o.value === value) ?? options[0];
 
@@ -61,7 +67,7 @@ export function Dropdown<T extends string | number>({
       const bounds = triggerRef.current!.closest('.dialog-body')?.getBoundingClientRect();
       const bottom = bounds?.bottom ?? window.innerHeight;
       const top = bounds?.top ?? 0;
-      const menuHeight = Math.min(240, options.length * 32 + 10);
+      const menuHeight = Math.min(MAX_MENU_HEIGHT, options.length * 32 + 10);
       setDropUp(trigger.bottom + 4 + menuHeight > bottom && trigger.top - 4 - menuHeight >= top);
     }
     setOpen(true);
@@ -109,6 +115,28 @@ export function Dropdown<T extends string | number>({
     };
   }, [open]);
 
+  // Keep the whole menu on screen: right-align it when it would run past the window's right edge,
+  // never wider than the window, and as tall as the room above/below allows (up to a cap). Done
+  // on the element before paint, so it never flashes in the wrong place.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const trigger = triggerRef.current?.getBoundingClientRect();
+    if (!open || !list || !trigger) return;
+    const room = window.innerWidth - 2 * EDGE;
+    list.style.maxWidth = `${room}px`;
+    list.style.left = '0px';
+    list.style.right = 'auto';
+    const box = list.getBoundingClientRect();
+    if (box.right > window.innerWidth - EDGE) {
+      // Right-aligned with the trigger, nudged back in if that runs off the left edge instead.
+      const overLeft = trigger.right - box.width - EDGE;
+      list.style.left = 'auto';
+      list.style.right = `${Math.min(0, overLeft)}px`;
+    }
+    const space = dropUp ? trigger.top - EDGE : window.innerHeight - trigger.bottom - EDGE;
+    list.style.maxHeight = `${Math.max(120, Math.min(MAX_MENU_HEIGHT, space - 4))}px`;
+  }, [open, dropUp]);
+
   // Focus follows the keyboard cursor while open.
   useEffect(() => {
     if (open) optionRefs.current[focusIndex]?.focus();
@@ -144,6 +172,7 @@ export function Dropdown<T extends string | number>({
       </button>
       {open && (
         <ul
+          ref={listRef}
           className={`dropdown-list${dropUp ? ' drop-up' : ''}`}
           role="listbox"
           aria-label={label}
