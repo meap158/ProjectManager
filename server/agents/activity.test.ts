@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stripTerminal, tailState } from './activity.js';
+import { stripTerminal, tailState, workingInTail } from './activity.js';
 
 const ESC = '\x1b';
 
@@ -87,5 +87,34 @@ ${ESC}[0mThinking…`),
     expect(tailState('')).toBeNull();
     expect(tailState('C:\\proj> dir\nfile1.txt\nC:\\proj> ')).toBeNull();
     expect(tailState('some random output')).toBeNull();
+  });
+
+  it('a choice the CLI asks you to make needs your input (PM-47)', () => {
+    // Claude Code permission prompt.
+    const claude =
+      'Edit file src/app.ts\n Do you want to make this edit to app.ts?\n ❯ 1. Yes\n   2. Yes, allow all edits during this session (shift+tab)\n   3. No, and tell Claude what to do differently (esc)\n';
+    expect(tailState(claude)).toBe('input');
+    // Codex approval.
+    const codex =
+      'Allow command?\n › 1. Yes, proceed (y)\n   2. No, and tell Codex what to do differently (esc)\n Press enter to confirm or esc to cancel';
+    expect(tailState(codex)).toBe('input');
+    // Grok menu (radio buttons, key hints) and Antigravity's trust question.
+    expect(
+      tailState('1 (○) Upgrade tier\n2 (○) Buy more credits\n↑/↓ navigate · Enter:submit'),
+    ).toBe('input');
+    expect(tailState('> Yes, I trust this folder\n  No, exit  ↑/↓ Navigate · enter Confirm')).toBe(
+      'input',
+    );
+  });
+
+  it('plain numbered lists in an answer are not a choice', () => {
+    expect(tailState('Steps:\n1. Install\n2. Run tests\n❯ ')).toBe('idle');
+  });
+
+  it('spots Claude\'s working line (newer versions drop "esc to interrupt")', () => {
+    expect(
+      workingInTail('● Reading files\n✱ Tinkering… (3m 22s · ↓ 12.1k tokens · thinking)\n❯ '),
+    ).toBe(true);
+    expect(workingInTail('✻ Worked for 3m 12s\n❯ ')).toBe(false);
   });
 });

@@ -401,9 +401,10 @@ export interface AgentSession {
   logBytes: number;
   /** When the session last produced output (null before any). Tells working from idle. */
   lastOutputAt: string | null;
-  /** What the CLI's last screen frame says: 'running' (busy, or a shell/subtask it started is
-      still going), 'idle' (at its prompt), or null (unknown: fall back to output recency). */
-  tailState: 'running' | 'idle' | null;
+  /** What the CLI is doing: 'running' (busy, or a shell/subtask it started is still going),
+      'input' (asking you to choose or approve something), 'idle' (at its prompt), or null
+      (unknown: fall back to output recency). */
+  tailState: 'running' | 'idle' | 'input' | null;
 }
 
 export type AgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'killed';

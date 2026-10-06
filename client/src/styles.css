@@ -2895,6 +2895,43 @@ span.path-link:hover .path-icon {
   }
 }
 
+/* Needs your input (PM-47): the CLI asks you to choose or approve something. Amber, with a
+   word and a dot, never colour alone; such sessions are also listed first. */
+.input-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--status-review) 18%, transparent);
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.input-badge > span {
+  color: var(--status-review);
+  font-size: 9px;
+  animation: input-blink 1.4s ease-in-out infinite;
+}
+.status-dot.is-input {
+  background: var(--status-review) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-review) 30%, transparent);
+}
+.badge-session.is-input {
+  background: color-mix(in srgb, var(--status-review) 18%, transparent);
+  color: var(--text);
+}
+@keyframes input-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .input-badge > span {
+    animation: none;
+  }
+}
+
 /* Global board: columns of project-tagged cards across all projects. */
 .gboard {
   display: grid;

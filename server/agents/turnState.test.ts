@@ -18,12 +18,16 @@ describe('turnState', () => {
     expect(turnState(1, null)).toBeNull();
   });
 
-  it('a waiting notification means idle; other notifications change nothing', () => {
+  it('asking you (permission, question) means input; idle_prompt means idle; others nothing', () => {
     recordEvent(2, 'UserPromptSubmit', null, 0);
     recordEvent(2, 'Notification', 'agent_completed', 100);
     expect(turnState(2, iso(100), 200)).toBe('running');
     recordEvent(2, 'Notification', 'permission_prompt', 300);
-    expect(turnState(2, iso(300), 400)).toBe('idle');
+    expect(turnState(2, iso(300), 400)).toBe('input');
+    recordEvent(2, 'UserPromptSubmit', null, 500); // Answered and back to work.
+    expect(turnState(2, iso(500), 600)).toBe('running');
+    recordEvent(2, 'Notification', 'idle_prompt', 700);
+    expect(turnState(2, iso(700), 800)).toBe('idle');
   });
 
   it('subagents keep it running after the turn ends, until they stop', () => {

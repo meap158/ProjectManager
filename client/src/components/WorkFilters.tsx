@@ -98,7 +98,7 @@ export function WorkFilters({
   return (
     <div className="work-filters" role="search" aria-label="Filter agent work">
       <div className="work-status-chips" role="group" aria-label="Status">
-        {(['all', 'running', 'idle', 'review', 'ended'] as const).map((s) => (
+        {(['all', 'input', 'running', 'idle', 'review', 'ended'] as const).map((s) => (
           <button
             key={s}
             type="button"

@@ -37,6 +37,9 @@ const KIND = {
   },
 } as const;
 
+const needsInput = (w: WorkItem) =>
+  w.kind === 'session' && w.item.status === 'running' && w.item.tailState === 'input';
+
 const isActive = (w: WorkItem) =>
   w.kind === 'session'
     ? w.item.status === 'running'
@@ -55,9 +58,9 @@ export function mergeWork(sessions: AgentSession[], runs: AgentRun[]): WorkItem[
     ...sessions.map((item) => ({ kind: 'session' as const, item })),
     ...runs.map((item) => ({ kind: 'run' as const, item })),
   ];
-  return all.sort(
-    (a, b) => Number(isActive(b)) - Number(isActive(a)) || lastActivity(b) - lastActivity(a),
-  );
+  // Sessions asking you to choose something come first, then live work, then the rest.
+  const rank = (w: WorkItem) => (needsInput(w) ? 2 : isActive(w) ? 1 : 0);
+  return all.sort((a, b) => rank(b) - rank(a) || lastActivity(b) - lastActivity(a));
 }
 
 interface Fact {
@@ -140,9 +143,10 @@ export function runFacts(r: AgentRun, now: number): Fact[] {
 }
 
 /** Filter buckets for the list view; one per item. */
-export type WorkStatus = 'running' | 'idle' | 'review' | 'ended';
+export type WorkStatus = 'input' | 'running' | 'idle' | 'review' | 'ended';
 
 export const WORK_STATUS_LABELS: Record<WorkStatus, string> = {
+  input: 'Needs input',
   running: 'Running',
   idle: 'Idle',
   review: 'Needs review',
@@ -165,10 +169,15 @@ export function workStatus(w: WorkItem, now: number): WorkStatus {
 function stateLabel(
   w: WorkItem,
   now: number,
-): { text: string; tone?: 'good' | 'bad' | 'attention'; activity?: 'running' | 'idle' } {
+): {
+  text: string;
+  tone?: 'good' | 'bad' | 'attention';
+  activity?: 'running' | 'idle' | 'input';
+} {
   if (w.kind === 'session') {
     const s = w.item;
     const activity = sessionActivity(s, now);
+    if (activity === 'input') return { text: ACTIVITY_LABEL.input, tone: 'attention', activity };
     if (activity !== 'stopped') return { text: ACTIVITY_LABEL[activity], tone: 'good', activity };
     if (s.status === 'dead') return { text: 'crashed', tone: 'bad' };
     return { text: s.status === 'killed' ? 'stopped' : 'ended' };
@@ -288,7 +297,15 @@ export function AgentWorkList({
                   </span>
                 )}
               </span>
-              <span className={`work-state tone-${state.tone ?? 'idle'}`}>{state.text}</span>
+              {state.activity === 'input' ? (
+                <span className="work-state">
+                  <span className="input-badge" title="The agent is asking you to choose something">
+                    <span aria-hidden="true">●</span> {state.text}
+                  </span>
+                </span>
+              ) : (
+                <span className={`work-state tone-${state.tone ?? 'idle'}`}>{state.text}</span>
+              )}
               {/* Fixed-width actions group (empty for runs) keeps the card and state columns at
                   the same x on every row. */}
               <span className="work-actions">{actions?.(w)}</span>

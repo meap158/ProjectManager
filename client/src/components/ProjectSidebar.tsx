@@ -96,6 +96,14 @@ function recentCommits(projects: ProjectSummary[], days: number): number {
   );
 }
 
+/** CLI sessions in a project by what they're doing (see sessionActivity). */
+interface Activity {
+  running: number;
+  idle: number;
+  /** Asking you to choose or approve something (PM-47). */
+  input: number;
+}
+
 /** Left sidebar: every tracked project with at-a-glance status. */
 /**
  * `panelOpen` / `onNavigate` drive the phone layout, where the sidebar is a full-screen panel opened
@@ -220,17 +228,17 @@ export function ProjectSidebar({
   // the reverse, so a flip can never disagree with the forward ordering.
   const flip = sortDirection === SORT_DEFAULT_DIRECTION[sortMode] ? 1 : -1;
   // Per project: how many CLI sessions are running (busy, or a shell/subtask going) vs idle (waiting for you).
-  const activity = new Map<number, { running: number; idle: number }>();
+  const activity = new Map<number, Activity>();
   for (const x of sessions) {
     const state = sessionActivity(x, now);
     if (state === 'stopped') continue;
-    const entry = activity.get(x.projectId) ?? { running: 0, idle: 0 };
+    const entry = activity.get(x.projectId) ?? { running: 0, idle: 0, input: 0 };
     entry[state]++;
     activity.set(x.projectId, entry);
   }
   const open = (p: ProjectSummary) => {
     const a = activity.get(p.id);
-    return a ? a.running + a.idle : p.runningSessions;
+    return a ? a.running + a.idle + a.input : p.runningSessions;
   };
   const planned = (p: ProjectSummary) => p.cardCounts.backlog + p.cardCounts.todo;
   const inProgress = (p: ProjectSummary) => p.cardCounts.in_progress + p.cardCounts.review;
@@ -427,7 +435,7 @@ export function ProjectSidebar({
             <SidebarItem
               project={p}
               href={projectHref(p.id)}
-              activity={activity.get(p.id) ?? { running: 0, idle: p.runningSessions }}
+              activity={activity.get(p.id) ?? { running: 0, idle: p.runningSessions, input: 0 }}
             />
           );
           if (!reorderable) return <Fragment key={p.id}>{item}</Fragment>;
@@ -576,7 +584,7 @@ function SidebarItem({
 }: {
   project: ProjectSummary;
   href: string;
-  activity: { running: number; idle: number };
+  activity: Activity;
 }) {
   const flight = p.cardCounts.in_progress + p.cardCounts.review;
   const planned = p.cardCounts.backlog + p.cardCounts.todo;
@@ -608,9 +616,7 @@ function SidebarItem({
         ) : null}
         {/* Rightmost fixed slot: session counts share one right edge; empty rows keep it. */}
         <span className="sidebar-session-slot">
-          {activity.running + activity.idle > 0 && (
-            <SessionBadge running={activity.running} idle={activity.idle} />
-          )}
+          {activity.running + activity.idle + activity.input > 0 && <SessionBadge {...activity} />}
         </span>
       </span>
       <span className="sidebar-stats">
@@ -642,17 +648,23 @@ function SidebarItem({
  * accent badge with a spinning ring. Idle (open, waiting for you): neutral badge with a
  * terminal glyph. Icon + count + text label, never colour alone.
  */
-function SessionBadge({ running, idle }: { running: number; idle: number }) {
-  const total = running + idle;
+function SessionBadge({ running, idle, input }: Activity) {
+  const total = running + idle + input;
   const parts = [
+    input > 0 ? `${input} asking you to choose something` : null,
     running > 0 ? `${running} running` : null,
     idle > 0 ? `${idle} open, waiting for you` : null,
   ].filter(Boolean);
   const label = `${total} CLI session${total === 1 ? '' : 's'}: ${parts.join(', ')}`;
-  const state = running > 0 ? 'running' : 'idle';
+  // Asking you comes first: it's the one thing here that waits on you specifically.
+  const state = input > 0 ? 'input' : running > 0 ? 'running' : 'idle';
   return (
     <span className={`badge badge-session is-${state}`} title={label} aria-label={label} role="img">
-      {state === 'running' ? (
+      {state === 'input' ? (
+        <span aria-hidden="true" style={{ fontWeight: 800 }}>
+          !
+        </span>
+      ) : state === 'running' ? (
         <span className="badge-spinner" aria-hidden="true" />
       ) : (
         <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">

@@ -11,18 +11,15 @@
 // Kept in memory: events arrive many times a minute, and after a server restart the next event
 // refreshes it (until then the screen-based detector applies).
 
-export type TurnState = 'running' | 'idle';
+export type TurnState = 'running' | 'idle' | 'input';
 
 /** If Claude says "running" but its screen has been silent this long, it isn't (e.g. Esc). */
 export const SILENT_MS = 60_000;
 
 /** Notification kinds that mean "waiting for you" (others, e.g. agent_completed, don't). */
-const WAITING = new Set([
-  'permission_prompt',
-  'idle_prompt',
-  'agent_needs_input',
-  'elicitation_dialog',
-]);
+const WAITING = new Set(['idle_prompt']);
+/** ...and the ones where Claude asks you to decide something (approve a tool, answer a question). */
+const ASKING = new Set(['permission_prompt', 'agent_needs_input', 'elicitation_dialog']);
 
 interface Entry {
   turn: TurnState;
@@ -45,7 +42,8 @@ export function recordEvent(
   else if (event === 'Stop') next.turn = 'idle';
   else if (event === 'SessionStart' || !event) next.turn = 'idle';
   else if (event === 'Notification') {
-    if (!notificationType || WAITING.has(notificationType)) next.turn = 'idle';
+    if (notificationType && ASKING.has(notificationType)) next.turn = 'input';
+    else if (!notificationType || WAITING.has(notificationType)) next.turn = 'idle';
   } else if (event === 'SubagentStart') next.subagents++;
   else if (event === 'SubagentStop') next.subagents = Math.max(0, next.subagents - 1);
   else return;
@@ -69,6 +67,7 @@ export function turnState(
 ): TurnState | null {
   const entry = states.get(sessionId);
   if (!entry) return null;
+  if (entry.turn === 'input') return 'input';
   if (entry.turn === 'running' || entry.subagents > 0) {
     const last = lastOutputAt ? Date.parse(lastOutputAt) : entry.at;
     return now - Math.max(last, entry.at) > SILENT_MS ? 'idle' : 'running';

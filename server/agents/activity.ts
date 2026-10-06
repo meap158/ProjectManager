@@ -6,9 +6,10 @@
 // "a prompt is on screen" doesn't mean idle either. What counts is the *last frame* (the text
 // between the last two prompt draws): busy chrome or a still-running background job there
 // means running (owner rule PM-14: a shell or subtask the session started keeps it running);
-// a prompt with neither means the agent is waiting for you.
+// a prompt with neither means the agent is waiting for you. A choice the CLI asks you to make
+// (a numbered list with a cursor, "Enter to confirm") is its own state: it needs your input.
 
-export type TailState = 'running' | 'idle';
+export type TailState = 'running' | 'idle' | 'input';
 
 /** The vendors' own input prompts (tested against real terminal dumps). */
 const PROMPT_PATTERNS = [
@@ -22,6 +23,28 @@ const PROMPT_PATTERNS = [
 // Spacing is optional throughout: full-screen CLIs redraw with cursor moves, so the log often
 // holds words run together ("esctointerrupt").
 const BUSY_PATTERNS = [/esc\s*to\s*interrupt/i, /working\s*\(\s*\d+[smh]/i];
+
+/**
+ * A live "working" line: Claude Code's spinner word with its timer ("Tinkering… (3m 22s · ↓ 12k
+ * tokens"), which newer versions show without "esc to interrupt". Old frames linger in the log,
+ * so callers only trust this together with fresh output (see workingInTail).
+ */
+const WORKING_LINE = /…\s*\(\s*\d+[smh]\b/;
+
+/**
+ * The CLI asks you to pick something: an option list with a cursor on "1." (Claude ❯, Codex ›,
+ * Antigravity >), or the menus' own key hints, radio buttons, yes/no questions.
+ */
+const CHOICE_PATTERNS = [
+  /[❯›>]\s*1\.\s*\S[^\n]*\n[^\n]*\b2\.\s*\S/,
+  /press\s*enter\s*to\s*(?:confirm|select|continue)/i,
+  /enter\s*(?:to\s*)?(?:select|confirm|submit)\b/i,
+  /↑\s*\/\s*↓\s*(?:to\s*)?(?:navigate|select|choose)/i,
+  /\((?:○|●)\)/,
+  /[[(]\s*y\s*\/\s*n\s*[\])]/i,
+];
+/** Choices count only near the end of the tail (the current screen, not scrollback). */
+const CHOICE_TAIL_CHARS = 900;
 
 /** Something the session started is still going (background shells, terminals, subagents). */
 const BACKGROUND_PATTERNS = [
@@ -69,6 +92,11 @@ export function tailState(logTail: string): TailState | null {
   // no letters or digits at all is redraw chrome, not work. Busy CLIs always print words.
   const words = text.replace(/[⠀-⣿─-▟\s]/g, '');
   if (text.trim().length > 0 && !/[\p{L}\p{N}]/u.test(words)) return 'idle';
+  // A choice on screen, with no turn running below it, needs you.
+  const end = text.slice(-CHOICE_TAIL_CHARS);
+  if (CHOICE_PATTERNS.some((p) => p.test(end)) && !BUSY_PATTERNS.some((p) => p.test(end))) {
+    return 'input';
+  }
   const prompts = promptOffsets(text);
   const last = prompts.at(-1);
   if (last === undefined || text.length - last > PROMPT_TAIL_CHARS) return null;
@@ -77,6 +105,15 @@ export function tailState(logTail: string): TailState | null {
   const frame = text.slice(Math.max(previous + 1, last - FRAME_CHARS));
   const busy = [...BUSY_PATTERNS, ...BACKGROUND_PATTERNS].some((p) => p.test(frame));
   return busy ? 'running' : 'idle';
+}
+
+/**
+ * A working line in the last part of the tail. Only meaningful with output in the last few
+ * seconds: a busy CLI redraws its timer constantly, while an idle one leaves old frames behind.
+ */
+export function workingInTail(logTail: string): boolean {
+  const end = stripTerminal(logTail).slice(-1500);
+  return WORKING_LINE.test(end) || BUSY_PATTERNS.some((p) => p.test(end));
 }
 
 /** True when the tail ends at an input prompt with nothing running (kept for callers). */

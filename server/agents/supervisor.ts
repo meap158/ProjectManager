@@ -59,7 +59,7 @@ import {
   updateCard,
 } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
-import { tailState } from './activity.js';
+import { tailState, workingInTail } from './activity.js';
 import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
 import {
   antigravityConversationFor,
@@ -384,6 +384,8 @@ interface RunRow {
   changes_json: string | null;
 }
 
+/** A working line counts only with output this recent (a busy CLI redraws its timer constantly). */
+const FRESH_OUTPUT_MS = 6_000;
 /** CLIs with a /rename command whose names we keep in sync with the session's. */
 const RENAMABLE = new Set(['claude', 'codex', 'grok']);
 /** A rename made here, waiting until the CLI is idle to be typed in as /rename. */
@@ -2067,11 +2069,7 @@ export class AgentSupervisor {
       endedAt: row.ended_at,
       logBytes: live ? live.log.totalBytes : this.fileSize(row.log_path),
       lastOutputAt,
-      tailState:
-        row.status === 'running' || live
-          ? // Claude reports its turns through hooks (exact); others fall back to the screen.
-            (turnState(row.id, lastOutputAt) ?? this.sessionTailState(row.log_path))
-          : null,
+      tailState: row.status === 'running' || live ? this.sessionActivity(row, lastOutputAt) : null,
     };
   }
 
@@ -2118,8 +2116,24 @@ export class AgentSupervisor {
     }
   }
 
-  /** What the last screen frame in the log says (see activity.ts). */
-  private sessionTailState(file: string): AgentSession['tailState'] {
+  /**
+   * What a live session is doing (PM-14, PM-47). In order:
+   * 1. A choice on screen (option list, "Enter to confirm") needs your input.
+   * 2. A working line with output in the last few seconds is running, whatever the hooks last
+   *    said (hooks miss some turns, e.g. a queued prompt or a turn after a tool approval).
+   * 3. Claude's hooks (exact turn state), else the screen, else null (recency decides).
+   */
+  private sessionActivity(row: SessionRow, lastOutputAt: string | null): AgentSession['tailState'] {
+    const tail = this.logTail(row.log_path);
+    const screen = tail ? tailState(tail) : null;
+    if (screen === 'input') return 'input';
+    const fresh = !!lastOutputAt && Date.now() - Date.parse(lastOutputAt) < FRESH_OUTPUT_MS;
+    if (fresh && tail && workingInTail(tail)) return 'running';
+    return turnState(row.id, lastOutputAt) ?? screen;
+  }
+
+  /** The last 4 KB of a session log (the current screen and a little scrollback). */
+  private logTail(file: string): string | null {
     try {
       const fd = openSync(file, 'r');
       try {
@@ -2128,7 +2142,7 @@ export class AgentSupervisor {
         if (len === 0) return null;
         const buf = Buffer.alloc(len);
         readSync(fd, buf, 0, len, size - len);
-        return tailState(buf.toString('utf8'));
+        return buf.toString('utf8');
       } finally {
         closeSync(fd);
       }

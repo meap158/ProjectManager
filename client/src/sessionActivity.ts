@@ -5,10 +5,11 @@ import type { AgentSession } from '../../shared/types';
  * - running: the CLI is busy, or a shell or subtask it started is still going. Judged from the
  *   CLI's last screen frame on the server (tailState); TUI redraws alone never count. For CLIs
  *   whose screen we can't read (shells, custom commands), output in the last few seconds;
+ * - input: the CLI asks you to choose or approve something (PM-47); listed first, badged;
  * - idle: running but quiet, i.e. waiting for you;
  * - stopped: no process.
  */
-export type SessionActivity = 'running' | 'idle' | 'stopped';
+export type SessionActivity = 'running' | 'input' | 'idle' | 'stopped';
 
 /** For unknown CLIs: output within this window counts as running. */
 export const RUNNING_WINDOW_MS = 8_000;
@@ -22,6 +23,7 @@ export function sessionActivity(s: AgentSession, now = Date.now()): SessionActiv
 
 export const ACTIVITY_LABEL: Record<SessionActivity, string> = {
   running: 'running',
+  input: 'needs your input',
   idle: 'idle · waiting for you',
   stopped: 'stopped',
 };

@@ -393,6 +393,9 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   it (each CLI's own mark: Claude Code and Antigravity in brand colours; Codex (the OpenAI
   mark), Grok and OpenCode in the text colour; generic terminal glyph for shells and custom commands); card tag, state word and actions sit in fixed
   right-hand columns so they line up on every row.
+  A session asking you to choose or approve something (option list, "Enter to confirm", Claude
+  permission/question notifications) shows an amber **needs your input** badge with a dot, sorts
+  first, has its own "Needs input" filter chip, and turns the sidebar's session badge amber ("!").
   Start / Stop carry an icon as well as the word: a green play triangle and a red square
   (`SessionToggle`), so the two read apart at a glance.
 - **Settings (/settings):** one section per concern. First section is agent CLIs: availability,
