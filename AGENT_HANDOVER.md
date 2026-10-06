@@ -99,9 +99,12 @@ atomic commits). Nothing is pending in the working tree.
   and local files don't. Next step would be a recorder status line for launched Claude sessions
   that chains to the user's own `statusLine` command; deferred while another session reworks
   session launching (supervisor/providers). PM-18 (limits on Agent work rows) builds on this.
-- **LAN devices stay signed in (PM-37, `server/lan.ts`):** the listener remembers its port in
-  `lan_access.port` and retries it for ~3s on restart (old process releasing it) before falling
-  back to app port + 100…109; page loads re-send the device cookie (sliding one-year expiry);
+- **LAN port (PM-49):** the listener binds the app's own port on each LAN address (specific
+  addresses never clash with the loopback listeners, on any OS), re-binding when the addresses
+  change (30s check); only if that fails does it fall back to the remembered/+100 port below.
+- **LAN devices stay signed in (PM-37, `server/lan.ts`):** the fallback listener remembers its
+  port in `lan_access.port` and retries it for ~3s on restart (old process releasing it) before
+  falling back to app port + 100…109; page loads re-send the device cookie (sliding one-year expiry);
   signing in again on a device replaces its entry; `<hostname>.local` is listed after the IPs as
   an address that survives DHCP changes. Not live-restarted here (another session had server
   work in progress); covered by real-socket tests in `server/lan.test.ts`.

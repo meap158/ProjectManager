@@ -257,8 +257,8 @@ Your CLI config files are never edited: the tools are passed to each process whe
 <summary><b>How it stays safe</b></summary>
 <br>
 
-- LAN access is **off by default** and runs on its own port. The normal app only listens on your
-  own computer.
+- LAN access is **off by default**. It uses the same port as the app (e.g. `192.168.1.20:5180`)
+  but is a separate, guarded listener: the normal app still only listens on your own computer.
 - A code works **once**, expires after **10 minutes**, and is thrown away after 5 wrong tries.
   Too many wrong tries from one device are blocked for a while.
 - Each signed-in device gets its own secure cookie and appears in Settings, where you can sign it

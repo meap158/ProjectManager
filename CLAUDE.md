@@ -44,7 +44,8 @@ anything.
 - **Security model:** the server binds `127.0.0.1`, only accepts allowlisted `Host` headers, and
   requires `Content-Type: application/json` on writes. Keep all three. It can read any folder and run
   agent CLIs, so it must never be exposed to the network, except through the **opt-in LAN listener**
-  (`server/lan.ts`): a separate port, off by default, devices sign in with a single-use expiring
+  (`server/lan.ts`): a separate listener (the app's port on this machine's LAN addresses, or app
+  port + 100 as a fallback), off by default, devices sign in with a single-use expiring
   code (retired after 5 wrong tries) and then carry their own hashed device token, this machine's
   own LAN addresses only as Host, rate-limited sign-ins, and LAN settings refused from LAN clients. Never weaken that gate or bind the main server wider.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs

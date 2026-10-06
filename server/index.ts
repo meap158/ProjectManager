@@ -43,7 +43,9 @@ async function main() {
     db,
     (req, res) => handle(req, res),
     () => `http://localhost:${config.port}`,
-    config.port + 100,
+    config.port + 100, // Fallback when the app's own port can't be had on the LAN addresses.
+    '0.0.0.0',
+    config.port,
   );
   const api = createApp(db, {
     lan,

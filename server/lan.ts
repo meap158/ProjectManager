@@ -165,8 +165,15 @@ ${message ? `<p class="err" role="alert">${escapeHtml(message)}</p>` : ''}
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void;
 
+/** How often the bound LAN addresses are compared with the machine's current ones. */
+const ADDRESS_CHECK_MS = 30_000;
+
 export class LanAccess {
-  private server: Server | null = null;
+  /** One server per LAN address on the app's own port, or one on all interfaces (fallback). */
+  private servers: Server[] = [];
+  /** The LAN addresses bound individually (empty in the all-interfaces fallback). */
+  private boundIps: string[] = [];
+  private addressWatch: ReturnType<typeof setInterval> | null = null;
   private port: number | null = null;
   private error: string | null = null;
   private failures = new Map<string, { count: number; since: number }>();
@@ -179,6 +186,12 @@ export class LanAccess {
     private basePort: number,
     /** All interfaces in production; tests pass loopback (no OS firewall prompt). */
     private bindHost = '0.0.0.0',
+    /**
+     * The app's own port (PM-49): tried first on each of this machine's LAN addresses, so a
+     * phone uses the same port as this computer. Specific addresses never clash with the app's
+     * loopback listeners on any OS (all interfaces would on Linux/macOS).
+     */
+    private appPort: number | null = null,
   ) {}
 
   private settings(): LanSettings {
@@ -204,7 +217,7 @@ export class LanAccess {
 
   status(): LanStatus {
     const { enabled, devices } = this.settings();
-    const running = !!this.server;
+    const running = this.servers.length > 0;
     const pairing = running ? this.code() : null;
     const ips = lanAddresses();
     const name = localName();
@@ -254,13 +267,19 @@ export class LanAccess {
   }
 
   async stop(): Promise<void> {
-    const server = this.server;
-    this.server = null;
+    const servers = this.servers;
+    this.servers = [];
+    this.boundIps = [];
     this.port = null;
     this.pairing = null;
-    if (!server) return;
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (this.addressWatch) clearInterval(this.addressWatch);
+    this.addressWatch = null;
+    await Promise.all(
+      servers.map((server) => {
+        server.closeAllConnections();
+        return new Promise<void>((resolve) => server.close(() => resolve()));
+      }),
+    );
   }
 
   private signedInDevice(req: IncomingMessage): StoredDevice | null {
@@ -389,8 +408,11 @@ export class LanAccess {
   };
 
   private async start(): Promise<void> {
-    if (this.server) return;
+    if (this.servers.length > 0) return;
     this.error = null;
+    if (this.appPort && this.bindHost === '0.0.0.0' && (await this.startOnAppPort(this.appPort))) {
+      return;
+    }
     const saved = this.settings().port;
     const range = Array.from({ length: 10 }, (_, i) => this.basePort + i);
     const candidates = saved ? [saved, ...range.filter((p) => p !== saved)] : range;
@@ -399,9 +421,9 @@ export class LanAccess {
       const tries = port === saved ? PORT_RETRIES : 1;
       for (let attempt = 0; attempt < tries; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, PORT_RETRY_MS));
-        const server = await this.listen(port);
+        const server = await this.listen(port, this.bindHost);
         if (!server) continue;
-        this.server = server;
+        this.servers = [server];
         this.port = port;
         if (saved !== port) this.save({ ...this.settings(), port });
         console.log(`[lan] listening on port ${port} (sign-in required)`);
@@ -411,8 +433,40 @@ export class LanAccess {
     this.error = `No free port: tried ${candidates.join(', ')}`;
   }
 
+  /**
+   * The same port as the app, on each of this machine's LAN addresses. All of them or none: a
+   * half-bound set would leave some addresses unreachable. Re-binds when the addresses change
+   * (new Wi-Fi, new DHCP lease), checked every 30 seconds.
+   */
+  private async startOnAppPort(port: number): Promise<boolean> {
+    const ips = lanAddresses();
+    if (ips.length === 0) return false;
+    const servers: Server[] = [];
+    for (const ip of ips) {
+      const server = await this.listen(port, ip);
+      if (server) servers.push(server);
+    }
+    if (servers.length !== ips.length) {
+      for (const server of servers) server.close();
+      return false;
+    }
+    this.servers = servers;
+    this.boundIps = ips;
+    this.port = port;
+    console.log(
+      `[lan] listening on ${ips.join(', ')} port ${port}, as this computer (sign-in required)`,
+    );
+    this.addressWatch = setInterval(() => {
+      if (lanAddresses().join() === this.boundIps.join()) return;
+      console.log('[lan] network addresses changed; listening again');
+      void this.stop().then(() => this.start());
+    }, ADDRESS_CHECK_MS);
+    this.addressWatch.unref();
+    return true;
+  }
+
   /** One listen attempt: the server on success, null when the port is taken. */
-  private async listen(port: number): Promise<Server | null> {
+  private async listen(port: number, host: string): Promise<Server | null> {
     const server = createServer((req, res) => {
       setHeader(req, LAN_HEADER, null); // Never trust a client-sent marker.
       this.gate(req, res).catch((e: Error) => {
@@ -424,7 +478,7 @@ export class LanAccess {
     server.requestTimeout = 60_000; // Request bodies only; live output streams are unaffected.
     const ok = await new Promise<boolean>((resolve) => {
       server.once('error', () => resolve(false));
-      server.listen(port, this.bindHost, () => resolve(true));
+      server.listen(port, host, () => resolve(true));
     });
     if (ok) return server;
     server.close();
