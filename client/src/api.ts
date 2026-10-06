@@ -22,6 +22,7 @@ import type {
   ProjectSummary,
   WorkspaceLayout,
 } from '../../shared/types';
+import { handleSignedOut } from './remote';
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${url}`, {
@@ -31,6 +32,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     body: method === 'GET' || method === 'DELETE' ? undefined : JSON.stringify(body ?? {}),
   });
   if (!res.ok) {
+    if (res.status === 401) handleSignedOut();
     const data = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(data?.error ?? `Request failed (${res.status})`);
   }

@@ -322,9 +322,18 @@ tokens and touch targets.
   pane-header icon buttons 32px, and 16px text in fields so iOS doesn't zoom on focus. Nothing in
   the app is hover-only, so touch sees every control.
 - **Browser chrome:** `theme-color` follows the active `--surface` token (`syncThemeColor`).
-- **Reachability:** the server binds 127.0.0.1 only (CLAUDE.md security model), so a phone reaches
-  the app only through a channel you control on the same machine (e.g. remote desktop). The
-  phone layout also serves narrow desktop windows and split screens.
+- **Reachability:** phones use **LAN access** (opt-in, `server/lan.ts`, README): same app, same
+  layout, behind a sign-in code. The phone layout also serves narrow desktop windows.
+- **On another device** (`isRemoteClient()` in `client/src/remote.ts`: the page's host isn't a
+  loopback name): computer-only controls step aside. The project path is plain text (folders open
+  on the computer; the API refuses it from LAN too), and Settings → LAN access is a short note
+  instead of the code and device list. A 401 can only come from the LAN gate (signed out), so the
+  API client reloads, at most once per 10s, and the gate's sign-in page takes over (AdRelay's
+  stale-session screen).
+- **Home screen:** `apple-touch-icon.png` (180px, full bleed; iOS rounds it) plus the
+  `apple-mobile-web-app-*` / `mobile-web-app-capable` metas, so Add to Home Screen opens full screen
+  with safe areas already handled. No manifest or service worker: LAN access is plain HTTP, where
+  browsers don't install PWAs anyway.
 - The heatmap (Rare UI) fits as many weeks as the panel width allows and drops the oldest weeks first.
 
 ## 11. Platform notes

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Card, ProjectDetail } from '../shared/types.js';
 import { createApp } from './app.js';
 import { openDb } from './db.js';
+import { LAN_HEADER } from './lan.js';
 
 const HOST = { host: 'localhost:5180' };
 
@@ -68,6 +69,12 @@ describe('security guards', () => {
     const { call } = setup();
     const res = await call('POST', '/projects', undefined, { 'content-type': 'text/plain' });
     expect(res.status).toBe(415);
+  });
+
+  it('never opens a folder on this computer for a LAN device', async () => {
+    const { call } = setup();
+    const res = await call('POST', '/projects/1/open-folder', {}, { [LAN_HEADER]: '1' });
+    expect(res.status).toBe(403);
   });
 });
 

@@ -231,6 +231,9 @@ export function createApp(
 
   // Opens the project folder in the OS file manager. Uses the stored path, never request data.
   app.post('/projects/:id/open-folder', (c) => {
+    // A window opening on this computer would surprise whoever tapped it on their phone.
+    if (c.req.header(LAN_HEADER))
+      throw new HttpError(403, 'Folders open on the computer running ProjectManager');
     const row = store.getProjectRow(db, parseId(c));
     if (!row) throw new HttpError(404, 'Project not found');
     if (!existsSync(row.path)) throw new HttpError(409, 'Folder no longer exists on disk');

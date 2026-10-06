@@ -20,6 +20,7 @@ import { BytesTile, StatTile } from '../components/StatTile';
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { GitHubActivity } from '../components/ui/github-activity';
 import { formatBytes, formatDate, formatNumber, formatRelative } from '../format';
+import { isRemoteClient } from '../remote';
 
 const POLL_MS = 1000;
 const TABS = ['overview', 'board', 'agents', 'pull-requests'] as const;
@@ -124,17 +125,25 @@ export function ProjectPage() {
                 showing the previous project's name. */}
             <ProjectTitle key={project.id} project={project} onRenamed={setProject} />
             <div className="subtitle">
-              <button
-                type="button"
-                className="path-link mono"
-                title={`Open ${project.path} in the file manager`}
-                onClick={() =>
-                  api.openProjectFolder(project.id).catch((e: Error) => setError(e.message))
-                }
-              >
-                <FolderIcon />
-                <span className="truncate">{project.path}</span>
-              </button>
+              {/* The file manager opens on the computer, so another device just sees the path. */}
+              {isRemoteClient() ? (
+                <span className="path-link mono" title={project.path}>
+                  <FolderIcon />
+                  <span className="truncate">{project.path}</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="path-link mono"
+                  title={`Open ${project.path} in the file manager`}
+                  onClick={() =>
+                    api.openProjectFolder(project.id).catch((e: Error) => setError(e.message))
+                  }
+                >
+                  <FolderIcon />
+                  <span className="truncate">{project.path}</span>
+                </button>
+              )}
               {project.git?.branch && <span className="badge mono">⎇ {project.git.branch}</span>}
               {project.git?.remoteUrl &&
                 (remoteWebUrl(project.git.remoteUrl) ? (

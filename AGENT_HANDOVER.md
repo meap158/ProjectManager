@@ -68,6 +68,13 @@ atomic commits). Nothing is pending in the working tree.
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.
 - **LAN access** (Settings, opt-in): separate listener, devices sign in with a 4-character
   single-use code (`server/lan.ts`); see CLAUDE.md security model.
+- **Phone over LAN (PM-32):** verified end to end with a scripted iPhone client through the real
+  gate: sign-in page, 303 + cookie, shell with mobile metas, app modules, every main API, live SSE
+  output, writes, LAN settings refused, device signed out after. Phone-side fixes: LAN panel is a
+  note on remote devices, project path is plain text there (open-folder refused from LAN), a
+  signed-out device reloads into the sign-in page, Add to Home Screen icon + metas. Not covered:
+  Vite HMR WebSocket over the LAN port (no upgrade proxy; phones reload by hand in dev), and a
+  real handset (this machine's network profile is Public, with Node allowed inbound on Public).
 - **Also:** Ctrl+V pastes in terminals; agent icons in pickers; sticky global Board header;
   workspace list filters (status chips with counts, agent, project, kind, search).
 - **Verification (this snapshot):** both typechecks, lint on every changed file, Prettier, and

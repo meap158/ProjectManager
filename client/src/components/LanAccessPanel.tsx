@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { LanStatus } from '../../../shared/types';
 import { api } from '../api';
 import { formatRelative } from '../format';
+import { isRemoteClient } from '../remote';
 
 /**
  * Settings → LAN access (opt-in). Other devices open the address below and type the short code,
@@ -9,6 +10,27 @@ import { formatRelative } from '../format';
  * after 5 wrong tries. Each signed-in device is listed and can be signed out.
  */
 export function LanAccessPanel({ onError }: { onError: (message: string) => void }) {
+  // Managed on the computer only (the API refuses LAN clients), so a phone gets a note, not an
+  // error every 5 seconds.
+  if (isRemoteClient()) {
+    return (
+      <section className="panel" aria-label="LAN access">
+        <div className="panel-header">
+          <h2>LAN access</h2>
+          <span className="meta">this device is signed in</span>
+        </div>
+        <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+          You're using ProjectManager over your local network. Sign-in codes and signed-in devices
+          are managed in Settings on the computer running it; signing this device out there brings
+          you back to the sign-in page.
+        </p>
+      </section>
+    );
+  }
+  return <LocalLanAccessPanel onError={onError} />;
+}
+
+function LocalLanAccessPanel({ onError }: { onError: (message: string) => void }) {
   const [status, setStatus] = useState<LanStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);

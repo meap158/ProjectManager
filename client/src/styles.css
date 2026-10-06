@@ -2703,6 +2703,17 @@ dialog.lightbox img {
 .path-link:hover .path-icon {
   color: var(--accent);
 }
+/* On another device (LAN access) the path is plain text: the folder can only open on the computer. */
+span.path-link {
+  cursor: default;
+}
+span.path-link:hover {
+  background: none;
+  color: inherit;
+}
+span.path-link:hover .path-icon {
+  color: var(--text-3);
+}
 
 /* Workspace list view: the list scrolls on top; a selected session's pane (or a run) docks
    below it, like VS Code's bottom panel. */

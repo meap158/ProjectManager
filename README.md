@@ -162,6 +162,17 @@ in Settings, where you can sign it (or all devices) out. Only this computer's ow
 devices can read your tracked folders and drive agents, so only sign in devices you trust.
 Windows may ask to allow Node.js the first time: allow it on Private networks only.
 
+**On a phone** you get the phone layout (bottom tab bar, Projects panel, List view for boards).
+Add it to your home screen (Safari: Share → Add to Home Screen; Chrome: ⋮ → Add to Home screen) to
+open it full screen with its own icon; a home-screen app keeps its own sign-in, so type a fresh code
+once more there. Folders open only on the computer, so the project path is plain text on the phone.
+If a device is signed out in Settings, it lands back on the sign-in page by itself.
+
+If the phone can't load the address: it must be on the same network as the computer (not a guest
+Wi-Fi, which usually isolates devices), and Windows Firewall must allow Node.js on that network's
+profile (Settings → Network shows whether it is Private or Public). With `npm run launch` (dev
+mode) pages load and work, but live reload doesn't reach the phone; reload by hand after changes.
+
 ## Agent board tools and images
 
 Claude Code, Codex and OpenCode sessions/runs launched by ProjectManager receive a
