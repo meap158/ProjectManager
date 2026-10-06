@@ -183,6 +183,7 @@ export function BoardPage() {
           cards={visible}
           onOpen={setOpenCard}
           onAdd={setAddingTo}
+          onToggleDone={(card, done) => void move(card, done ? 'done' : 'todo')}
           meta={(c) => (
             <>
               <span

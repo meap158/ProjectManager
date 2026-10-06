@@ -3310,8 +3310,8 @@ span.path-link:hover .path-icon {
 .blist-rows > li {
   border-bottom: 1px solid var(--border);
 }
-/* One card per row: page glyph, title (two lines at most), then its properties. 44px minimum
-   height keeps every row an easy tap. */
+/* One card per row: a done checkbox, title (two lines at most), then its properties. 44px
+   minimum height keeps every row an easy tap. */
 .blist-row,
 .blist-new {
   display: flex;
@@ -3334,10 +3334,62 @@ span.path-link:hover .path-icon {
 .blist-new:hover {
   background: var(--surface-hover);
 }
-.blist-icon {
+.blist-item {
+  display: flex;
+  align-items: flex-start;
+}
+.blist-item > .blist-row {
+  flex: 1;
+  min-width: 0;
+  padding-left: 4px;
+}
+/* Round "mark done" checkbox, as in to-do lists; a 32px hit area around the 18px circle. */
+.blist-check {
   flex: none;
-  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 36px;
+  margin: 4px 0 0 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: transparent;
+  cursor: pointer;
+}
+.blist-check::before {
+  content: '';
+  grid-area: 1 / 1;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  transition:
+    border-color 120ms,
+    background 120ms;
+}
+.blist-check > svg {
+  grid-area: 1 / 1;
+  position: relative;
+}
+.blist-check:hover::before,
+.blist-check:focus-visible::before {
+  border-color: var(--status-done);
+}
+.blist-check:hover {
+  color: var(--status-done);
+}
+.blist-check.is-done::before {
+  border-color: var(--status-done);
+  background: var(--status-done);
+}
+.blist-check.is-done {
+  color: #fff;
+}
+.blist-item:has(.blist-check.is-done) .blist-title {
   color: var(--text-3);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--text-3) 60%, transparent);
 }
 .blist-text {
   min-width: 0;

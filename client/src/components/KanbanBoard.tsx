@@ -177,6 +177,7 @@ export function KanbanBoard({
           cards={columns.flatMap(column)}
           onOpen={setEditing}
           onAdd={setAdding}
+          onToggleDone={(card, done) => void moveCard(card.id, done ? 'done' : 'todo', null)}
           meta={(card) => (
             <>
               <span className="mono">{card.key}</span>

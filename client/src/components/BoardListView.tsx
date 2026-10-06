@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { CARD_STATUS_LABELS, type Card, type CardStatus } from '../../../shared/types';
 import { useCollapsedGroups, type BoardView } from '../boardView';
-import { BoardIcon, ListIcon, PageIcon } from './icons';
+import { BoardIcon, ListIcon } from './icons';
 
 /**
  * Notion-style database view tabs above a board: Board (the Kanban columns) or List. Plain text
@@ -37,7 +37,9 @@ export function BoardViewTabs({
 /**
  * The List view: one collapsible group per status (Notion's grouped list), a full-width row per
  * card and a "New" row closing each group. It's the touch-friendly way through a board: no
- * sideways scrolling, 44px rows, and cards move through their dialog's Column dropdown.
+ * sideways scrolling, 44px rows, and cards move through their dialog's Column dropdown. Each row
+ * starts with a round checkbox (PM-48): tick to mark the card done, untick to send it back to
+ * To do, the way to-do lists work.
  */
 export function BoardListView<C extends Card>({
   columns,
@@ -45,6 +47,7 @@ export function BoardListView<C extends Card>({
   onOpen,
   onAdd,
   meta,
+  onToggleDone,
 }: {
   columns: readonly CardStatus[];
   /** Cards in display order within their status. */
@@ -53,6 +56,8 @@ export function BoardListView<C extends Card>({
   onAdd: (status: CardStatus) => void;
   /** The properties line under a title (key, project tag, badges, time). */
   meta: (card: C) => ReactNode;
+  /** Ticks a card done (true) or sends it back to To do (false). */
+  onToggleDone: (card: C, done: boolean) => void;
 }) {
   const [collapsed, toggle] = useCollapsedGroups();
   return (
@@ -87,14 +92,39 @@ export function BoardListView<C extends Card>({
             {open && (
               <ul className="blist-rows">
                 {items.map((card) => (
-                  <li key={card.id}>
+                  <li key={card.id} className="blist-item">
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={card.status === 'done'}
+                      className={`blist-check${card.status === 'done' ? ' is-done' : ''}`}
+                      aria-label={
+                        card.status === 'done'
+                          ? `Done: ${card.title}. Untick to move it back to To do`
+                          : `Mark done: ${card.title}`
+                      }
+                      title={
+                        card.status === 'done' ? 'Done · untick to move back to To do' : 'Mark done'
+                      }
+                      onClick={() => onToggleDone(card, card.status !== 'done')}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
+                        <path
+                          d="M2.5 6.2l2.4 2.3 4.6-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.9"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
                     <button
                       type="button"
                       className="blist-row"
                       onClick={() => onOpen(card)}
                       title="Open to edit, change its column or hand it to an agent"
                     >
-                      <PageIcon size={16} className="blist-icon" />
                       <span className="blist-text">
                         <span className="blist-title">{card.title}</span>
                         <span className="blist-meta">{meta(card)}</span>

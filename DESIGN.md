@@ -215,7 +215,8 @@ adjacent-pair CVD separation in both modes).
   - **List view** (`BoardListView`): one collapsible group per visible column, headed by a
     disclosure triangle, a Notion-style status pill (tinted background, coloured dot; `--status-*`
     tokens: grey Backlog, purple To do, blue In progress, amber Review, green Done) and the count,
-    with ＋ on the right. Rows are full width, 44px minimum: page glyph, title (two lines max),
+    with ＋ on the right. Rows are full width, 44px minimum: a round done checkbox (tick = Done, untick = back to
+    To do; done titles are struck through), title (two lines max),
     then a properties line (key, project tag on the global board, run badges, time). Each group
     ends in a faint "＋ New" row. Done starts collapsed; collapsed groups are saved per browser
     (`pm.board.collapsed`). Cards move through the card dialog's Column dropdown; the list has no
