@@ -70,6 +70,14 @@ export function issueBoardGrant(db: Db, owner: Owner): string {
   return token;
 }
 
+/** A file in the repo's scripts folder (the compiled server lives in dist/server). */
+function siblingScript(name: string): string {
+  const file = fileURLToPath(new URL(`../scripts/${name}`, import.meta.url));
+  return file.includes(`${path.sep}dist${path.sep}`)
+    ? path.resolve(path.dirname(file), `../../scripts/${name}`)
+    : file;
+}
+
 /** Inject per-process stdio configuration, without changing a project's/global CLI config. */
 export function boardConnection(
   db: Db,
@@ -91,12 +99,7 @@ export function boardConnection(
     token = issueBoardGrant(db, owner);
     setSetting(db, secretKey, token);
   }
-  const bridge = fileURLToPath(new URL('../scripts/board-mcp.mjs', import.meta.url));
-  // Compiled server lives in dist/server; the bridge remains in the repo's scripts folder.
-  const script = bridge.includes(`${path.sep}dist${path.sep}`)
-    ? path.resolve(path.dirname(bridge), '../../scripts/board-mcp.mjs')
-    : bridge;
-  const args = [script, dataDir];
+  const args = [siblingScript('board-mcp.mjs'), dataDir];
   const nextEnv = { ...env, PM_BOARD_TOKEN: token };
   if (providerId === 'gemini') {
     const original =
@@ -142,8 +145,34 @@ export function boardConnection(
         },
       },
     };
+    // Sessions also get a SessionStart hook that reports the live conversation id (Claude
+    // switches on /resume, /clear and compaction), so relaunches resume the right conversation.
+    const hook =
+      owner.kind === 'session'
+        ? [
+            '--settings',
+            JSON.stringify({
+              hooks: {
+                SessionStart: [
+                  {
+                    hooks: [
+                      {
+                        type: 'command',
+                        // A bare `node` first: Claude runs hooks through PowerShell on Windows
+                        // (where a quoted program path is only a string) and sh elsewhere; this
+                        // form works in both, and in cmd. Paths with spaces stay quoted arguments.
+                        command: `node "${siblingScript('claude-session-hook.mjs')}" "${dataDir}"`,
+                        timeout: 10,
+                      },
+                    ],
+                  },
+                ],
+              },
+            }),
+          ]
+        : [];
     return {
-      command: [command[0]!, '--mcp-config', JSON.stringify(config), ...command.slice(1)],
+      command: [command[0]!, '--mcp-config', JSON.stringify(config), ...hook, ...command.slice(1)],
       env: nextEnv,
     };
   }
@@ -345,6 +374,30 @@ export function registerBoardMcp(app: Hono, db: Db, attachmentsRoot: string): vo
     }
   });
   app.get('/board-mcp', (c) => c.body(null, 405));
+
+  // Claude SessionStart hook (scripts/claude-session-hook.mjs): the conversation a session is
+  // in right now. Stored as its resume target, so restarts reopen that conversation, not the
+  // one it was launched with (Claude switches on /resume, /clear and compaction).
+  app.post('/agent-hooks/claude-session', async (c) => {
+    const token = c.req.header('authorization')?.replace(/^Bearer /, '') ?? '';
+    const owner = token ? getSetting<Owner>(db, tokenKey(token)) : null;
+    if (!owner || owner.kind !== 'session') return c.json({ error: 'Invalid capability' }, 403);
+    const row = db
+      .prepare('SELECT provider_id, log_path, command_json FROM agent_sessions WHERE id = ?')
+      .get(owner.id) as { provider_id: string; log_path: string; command_json: string } | undefined;
+    if (!row || row.log_path !== owner.logPath || row.provider_id !== 'claude')
+      return c.json({ error: 'Capability revoked' }, 403);
+    const body = z
+      .object({ sessionId: z.string().uuid(), source: z.string().max(40).nullable().optional() })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'Expected { sessionId }' }, 400);
+    const binary = (JSON.parse(row.command_json) as { command: string[] }).command[0] ?? 'claude';
+    db.prepare('UPDATE agent_sessions SET resume_json = ? WHERE id = ?').run(
+      JSON.stringify([binary, '--resume', body.data.sessionId]),
+      owner.id,
+    );
+    return c.body(null, 204);
+  });
   app.get('/cards/:id/agent-audit', (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id) || !getCard(db, id)) return c.json({ error: 'Card not found' }, 404);
