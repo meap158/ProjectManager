@@ -247,6 +247,10 @@ export function setSetting(db: Db, key: string, value: unknown): void {
   ).run(key, JSON.stringify(value));
 }
 
+export function deleteSetting(db: Db, key: string): void {
+  db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+}
+
 // ---- Cards ------------------------------------------------------------------------------------
 
 export function listCards(db: Db, projectId: number): Card[] {

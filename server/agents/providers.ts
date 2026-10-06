@@ -28,6 +28,7 @@ export const PROVIDERS: AgentProvider[] = [
     // several Claude panes in one project never collide after a reboot.
     sessionIdArgs: ['--session-id', SESSION_ID_PLACEHOLDER],
     resumeArgs: ['--resume', SESSION_ID_PLACEHOLDER],
+    nameArg: '--name',
     interactivePromptArgs: [PROMPT_PLACEHOLDER],
     autonomyArgs: {
       read: ['--permission-mode', 'plan'],
@@ -58,6 +59,10 @@ export const PROVIDERS: AgentProvider[] = [
     id: 'grok',
     name: 'Grok',
     binary: 'grok',
+    // Like Claude: each session pins its own conversation id (`grok --help`: --session-id names a
+    // new conversation) and relaunches resume exactly that one.
+    sessionIdArgs: ['--session-id', SESSION_ID_PLACEHOLDER],
+    resumeArgs: ['--resume', SESSION_ID_PLACEHOLDER],
     argsTemplate: ['-p', PROMPT_PLACEHOLDER],
     // From `grok --help`: --permission-mode default|acceptEdits|auto|dontAsk|bypassPermissions|plan.
     autonomyArgs: {
@@ -156,7 +161,7 @@ function defaultShell(): string[] {
     optionally starting on a first prompt (e.g. the Kanban card's task). */
 export function buildInteractiveArgv(
   provider: AgentProvider,
-  options: { sessionId?: string; prompt?: string; images?: string[] } = {},
+  options: { sessionId?: string; name?: string; prompt?: string; images?: string[] } = {},
 ): string[] {
   if (provider.id === 'shell') return defaultShell();
   if (provider.id === 'custom' || !provider.binary) return [];
@@ -172,6 +177,7 @@ export function buildInteractiveArgv(
     provider.binary,
     ...nativeImageArgs(provider.id, options.images ?? [], true),
     ...(options.sessionId && provider.sessionIdArgs ? fill(provider.sessionIdArgs) : []),
+    ...(options.name && provider.nameArg ? [provider.nameArg, options.name] : []),
     ...(options.prompt && provider.interactivePromptArgs
       ? [
           ...(provider.id === 'claude' && options.images?.length ? ['--'] : []),

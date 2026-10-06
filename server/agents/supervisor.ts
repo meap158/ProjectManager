@@ -50,10 +50,25 @@ import { isTerminalReport, stripTerminalReports } from '../../shared/terminalRep
 import { boardConnection, boardTaskNote } from '../boardMcp.js';
 import { withAttachments, listAttachments, cardAttachmentsDir } from '../attachments.js';
 import type { Db } from '../db.js';
-import { getCard, getProjectRow, updateCard } from '../store.js';
+import {
+  deleteSetting,
+  getCard,
+  getProjectRow,
+  getSetting,
+  setSetting,
+  updateCard,
+} from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
 import { tailState } from './activity.js';
-import { codexSessionFor, staleClaudeResume } from './usage.js';
+import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
+import {
+  antigravityConversationFor,
+  claudeCustomTitle,
+  codexThreadName,
+  grokManualTitle,
+  grokSessionExists,
+  openCodeSessionFor,
+} from './conversations.js';
 import { effectiveLevel, getPermissions, withPermissions } from './permissions.js';
 import { forgetTurn, turnState } from './turnState.js';
 import { HostClient } from './host/client.js';
@@ -369,6 +384,13 @@ interface RunRow {
   changes_json: string | null;
 }
 
+/** CLIs with a /rename command whose names we keep in sync with the session's. */
+const RENAMABLE = new Set(['claude', 'codex', 'grok']);
+/** A rename made here, waiting until the CLI is idle to be typed in as /rename. */
+const renameKey = (id: number) => `session-rename:${id}`;
+/** The CLI name last seen or sent, so a change made in the CLI is told apart from ours. */
+const seenTitleKey = (id: number) => `session-cli-title:${id}`;
+
 export class AgentSupervisor {
   private live = new Map<string, LiveProc>();
   private logs = new Map<string, OutputLog>();
@@ -650,10 +672,15 @@ export class AgentSupervisor {
     // Pin the conversation to our own id where the CLI supports it, so resume reopens exactly
     // this conversation even when several sessions share a project.
     const conversationId = !explicit && provider.sessionIdArgs ? randomUUID() : undefined;
+    const name =
+      input.name?.trim() || (card ? `${card.key}: ${card.title}`.slice(0, 80) : provider.name);
+    // A chosen name (not just the CLI's) names the CLI's conversation too (PM-33).
+    const chosenName = name !== provider.name ? name : undefined;
     const command =
       explicit ??
       buildInteractiveArgv(provider, {
         sessionId: conversationId,
+        name: chosenName,
         images: card ? this.imagePaths(card.id) : [],
         prompt: prompt.trim() ? prompt : undefined,
       });
@@ -680,7 +707,7 @@ export class AgentSupervisor {
       )
       .run(
         projectId,
-        input.name?.trim() || (card ? `${card.key}: ${card.title}`.slice(0, 80) : provider.name),
+        name,
         providerId,
         JSON.stringify({ command, env }),
         resume ? JSON.stringify(resume) : null,
@@ -693,6 +720,10 @@ export class AgentSupervisor {
         card?.id ?? null,
       );
     const id = Number(result.lastInsertRowid);
+    // CLIs without a launch flag for the name get it by /rename once they're ready.
+    if (chosenName && !explicit && !provider.nameArg && RENAMABLE.has(providerId)) {
+      setSetting(this.db, renameKey(id), chosenName);
+    }
     // Starting work on a card moves it to In progress, like a dispatch does.
     if (card && (card.status === 'backlog' || card.status === 'todo')) {
       updateCard(this.db, card.id, { status: 'in_progress' });
@@ -711,6 +742,8 @@ export class AgentSupervisor {
     const row = this.getSessionRow(id);
     if (!row) return null;
     this.db.prepare(`UPDATE agent_sessions SET name = ? WHERE id = ?`).run(name, id);
+    // The CLI gets it by /rename as soon as it's ready (syncTitles), even after a restart.
+    if (RENAMABLE.has(row.provider_id)) setSetting(this.db, renameKey(id), name);
     return this.getSession(id);
   }
 
@@ -848,7 +881,9 @@ export class AgentSupervisor {
       .prepare(`UPDATE agent_sessions SET desired_state = 'running', restarts = 0 WHERE id = ?`)
       .run(id);
     const fresh = this.getSessionRow(id)!;
-    await this.spawnSession(fresh, false).catch((e) => this.markSessionDead(id, String(e)));
+    // Starting a stopped session continues its conversation, like a relaunch: launching the
+    // original command again would replay its first prompt or reuse a pinned id (which CLIs refuse).
+    await this.spawnSession(fresh, true, true).catch((e) => this.markSessionDead(id, String(e)));
     return this.getSession(id)!;
   }
 
@@ -857,6 +892,8 @@ export class AgentSupervisor {
     if (!row) return false;
     await this.stopSession(id);
     this.db.prepare(`DELETE FROM agent_sessions WHERE id = ?`).run(id);
+    deleteSetting(this.db, renameKey(id));
+    deleteSetting(this.db, seenTitleKey(id));
     // Forget the record's process and log now: SQLite reuses ids, and a new session with this id
     // must not be mistaken for the old one while the old process is still exiting.
     this.live.delete(`session:${id}`);
@@ -1295,7 +1332,7 @@ export class AgentSupervisor {
     }
   }
 
-  private async spawnSession(row: SessionRow, isRelaunch: boolean): Promise<void> {
+  private async spawnSession(row: SessionRow, isRelaunch: boolean, byUser = false): Promise<void> {
     const key = this.logPathFor('session', row.id);
     if (this.live.has(key) || this.starting.has(key)) return;
     this.starting.add(key);
@@ -1326,22 +1363,35 @@ export class AgentSupervisor {
         }
       }
       if (isRelaunch && !resume && row.provider_id === 'codex' && command[0] === 'codex') {
-        const claimed = new Set(
-          (
-            this.db
-              .prepare(
-                `SELECT resume_json FROM agent_sessions WHERE provider_id = 'codex' AND id != ? AND resume_json IS NOT NULL`,
-              )
-              .all(row.id) as { resume_json: string }[]
-          ).flatMap((r) => (JSON.parse(r.resume_json) as string[]).slice(-1)),
-        );
-        const id = codexSessionFor(row.cwd, row.created_at, claimed);
-        if (id) {
-          resume = [command[0], 'resume', id];
-          this.db
-            .prepare('UPDATE agent_sessions SET resume_json = ? WHERE id = ?')
-            .run(JSON.stringify(resume), row.id);
+        const id = codexSessionFor(row.cwd, row.created_at, this.claimedConversations(row));
+        if (id) resume = this.saveResume(row.id, [command[0], 'resume', id]);
+      }
+      // Grok saves a pinned conversation only once it has one; until then start fresh.
+      if (isRelaunch && resume && row.provider_id === 'grok') {
+        const id = claudeSessionId(resume);
+        if (id && !grokSessionExists(row.cwd, id)) {
+          note(`Grok has no saved conversation ${id} yet — starting fresh`);
+          resume = null;
         }
+      }
+      // OpenCode and Antigravity can't be told an id up front: look the conversation up each
+      // relaunch (so it follows a conversation switched to inside the CLI), never another
+      // session's. Nothing found: their "latest" fallback below, when that is safe.
+      if (isRelaunch && row.provider_id === 'opencode' && command[0] === 'opencode') {
+        const id = await openCodeSessionFor(
+          row.cwd,
+          row.created_at,
+          this.claimedConversations(row),
+        );
+        if (id) resume = this.saveResume(row.id, [command[0], '--session', id]);
+      }
+      if (isRelaunch && row.provider_id === 'antigravity' && command[0] === 'agy') {
+        const id = antigravityConversationFor(
+          row.cwd,
+          row.created_at,
+          this.claimedConversations(row),
+        );
+        if (id) resume = this.saveResume(row.id, [command[0], '--conversation', id]);
       }
       // The last resume attempt died within seconds (e.g. "No conversation found"): start
       // fresh instead of burning the restart budget on the same failure.
@@ -1377,7 +1427,9 @@ export class AgentSupervisor {
       const log = this.outputFor(key, row.log_path);
       if (isRelaunch) {
         log.append(
-          `\r\n[supervisor] session relaunched after restart (restart ${row.restarts})` +
+          (byUser
+            ? '\r\n[supervisor] session started again'
+            : `\r\n[supervisor] session relaunched after restart (restart ${row.restarts})`) +
             (baseArgv !== launch ? ' — resuming conversation' : ' — fresh start') +
             `\r\n$ ${argv.join(' ')}\r\n`,
         );
@@ -1513,6 +1565,105 @@ export class AgentSupervisor {
         `UPDATE agent_sessions SET status = 'exited', exit_code = ?, pid = NULL, ended_at = ? WHERE id = ?`,
       )
       .run(code, now(), id);
+  }
+
+  /** Conversation ids other sessions of this CLI already resume (never take one of those). */
+  private claimedConversations(row: SessionRow): Set<string> {
+    return new Set(
+      (
+        this.db
+          .prepare(
+            `SELECT resume_json FROM agent_sessions WHERE provider_id = ? AND id != ? AND resume_json IS NOT NULL`,
+          )
+          .all(row.provider_id, row.id) as { resume_json: string }[]
+      ).flatMap((r) => (JSON.parse(r.resume_json) as string[]).slice(-1)),
+    );
+  }
+
+  private saveResume(id: number, resume: string[]): string[] {
+    this.db
+      .prepare('UPDATE agent_sessions SET resume_json = ? WHERE id = ?')
+      .run(JSON.stringify(resume), id);
+    return resume;
+  }
+
+  // ---- Names, in sync with the CLIs' own (/rename) ----------------------------------------
+  // App -> CLI: a name chosen at creation goes in as a launch flag (Claude --name) or, like any
+  // rename here, is typed into the CLI as `/rename <name>` once it is idle (kept in settings
+  // until then, so it survives restarts). CLI -> app: a /rename made in the CLI (Claude's
+  // transcript, Codex's session index, Grok's manual title) renames the session here. Automatic
+  // titles never do. While a rename from here is pending, the CLI's old name is ignored.
+
+  /** Keeps names in sync every `intervalMs` (server/index.ts). */
+  syncTitlesPeriodically(intervalMs = 10_000): void {
+    const timer = setInterval(() => {
+      try {
+        this.syncTitles();
+      } catch (e) {
+        console.error('[agents] name sync failed:', e);
+      }
+    }, intervalMs);
+    timer.unref();
+  }
+
+  syncTitles(now = Date.now()): void {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM agent_sessions WHERE status = 'running' AND provider_id IN ('claude', 'codex', 'grok')`,
+      )
+      .all() as unknown as SessionRow[];
+    for (const row of rows) {
+      if (!this.live.has(`session:${row.id}`)) continue;
+      const pending = getSetting<string>(this.db, renameKey(row.id));
+      if (pending) {
+        if (!this.readyForCommand(row, now)) continue;
+        // One line of plain text: control characters could end the paste or send keys.
+        const clean = [...pending]
+          .map((ch) => (ch < ' ' || ch === '\x7f' ? ' ' : ch))
+          .join('')
+          .trim();
+        this.sendInput(row.id, `\x1b[200~/rename ${clean}\x1b[201~\r`);
+        setSetting(this.db, seenTitleKey(row.id), pending);
+        deleteSetting(this.db, renameKey(row.id));
+        continue;
+      }
+      const id = this.conversationOf(row);
+      const title = id ? this.cliTitle(row, id) : null;
+      if (!title || title === getSetting<string>(this.db, seenTitleKey(row.id))) continue;
+      setSetting(this.db, seenTitleKey(row.id), title);
+      if (title !== row.name) {
+        this.db
+          .prepare('UPDATE agent_sessions SET name = ? WHERE id = ?')
+          .run(title.slice(0, 80), row.id);
+      }
+    }
+  }
+
+  /** At its prompt with nothing running: safe to type a command without interrupting work. */
+  private readyForCommand(row: SessionRow, now: number): boolean {
+    const session = this.toSession(row);
+    if (session.tailState === 'idle') return true;
+    // Unknown (no hook yet, no clear prompt): quiet for 20s counts as idle.
+    const last = session.lastOutputAt ? Date.parse(session.lastOutputAt) : 0;
+    return session.tailState === null && now - last > 20_000;
+  }
+
+  /** The CLI conversation a running session is in (Codex: found once, then remembered). */
+  private conversationOf(row: SessionRow): string | null {
+    const resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
+    const { command } = JSON.parse(row.command_json) as { command: string[] };
+    if (row.provider_id !== 'codex') return claudeSessionId(resume, command);
+    if (resume?.[1] === 'resume' && resume[2] && resume[2] !== '--last') return resume[2];
+    if (command[0] !== 'codex') return null;
+    const id = codexSessionFor(row.cwd, row.created_at, this.claimedConversations(row));
+    if (id) this.saveResume(row.id, [command[0], 'resume', id]);
+    return id;
+  }
+
+  private cliTitle(row: SessionRow, id: string): string | null {
+    if (row.provider_id === 'claude') return claudeCustomTitle(row.cwd, id);
+    if (row.provider_id === 'codex') return codexThreadName(id);
+    return grokManualTitle(row.cwd, id);
   }
 
   /**

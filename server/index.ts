@@ -56,6 +56,8 @@ async function main() {
   api.scanner.watchCommits();
   // Stats stay fresh on their own: the stalest project is rescanned once it is 15+ minutes old.
   api.scanner.refreshPeriodically();
+  // Session names follow /rename in the CLIs, and renames here reach the CLIs.
+  api.supervisor.syncTitlesPeriodically();
 
   const server = createServer();
 

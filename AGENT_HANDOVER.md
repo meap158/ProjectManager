@@ -53,7 +53,15 @@ atomic commits). Nothing is pending in the working tree.
 - **CLI resume:** Claude sessions get a per-process SessionStart hook
   (`scripts/claude-session-hook.mjs`) that reports the live conversation id (follows /resume,
   /clear, compaction) to `/api/agent-hooks/claude-session`; Codex resumes its own rollout from
-  `~/.codex/sessions`; any resume that dies within 20s is followed by a fresh start.
+  `~/.codex/sessions`; Grok pins `--session-id` and resumes it (fresh if Grok never saved it);
+  OpenCode (`opencode session list` from the session's folder) and Antigravity (its per-
+  conversation databases name the workspace) are looked up at each relaunch
+  (`server/agents/conversations.ts`). Any resume that dies within 20s is followed by a fresh
+  start. Manual **Start** resumes too (it used to relaunch the original command, replaying the
+  first prompt).
+- **Names ↔ CLI /rename:** `syncTitles` (every 10s) sends pending app renames as `/rename` when the
+  CLI is idle and adopts manual CLI renames (Claude custom-title, Codex session_index, Grok
+  title_is_manual). State in settings `session-rename:<id>` / `session-cli-title:<id>`.
 - **Running vs idle:** Claude sessions report turns through the same hook (UserPromptSubmit, Stop,
   waiting Notifications, Subagent start/stop) into `server/agents/turnState.ts` (in memory; a
   "running" with a screen silent for 60s counts as idle, since Esc skips Stop). Other CLIs use the
@@ -208,9 +216,9 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
 - Card IDs (`PM-n`) are never reused: `nextCardId()` keeps a high-water mark in `settings`
   (`card_id_high_water`) because the table has no AUTOINCREMENT. Agent records rely on `log_path`
   identity for the same reason.
-- After a reboot, Claude resumes its own pinned conversation. Codex, Antigravity and OpenCode resume
-  their latest conversation only when they are the sole session of that CLI in the folder (else
-  they start fresh). OpenCode has no read-only mode.
+- When a CLI's own conversation can't be found (never saved), OpenCode and Antigravity fall back to
+  "latest" only when they are the sole session of that CLI in the folder (else they start fresh).
+  OpenCode has no read-only mode.
 - `react-hooks/set-state-in-effect`: loaders only set state inside promise callbacks, and
   CardDialog resets its form during render. Keep to these patterns, or lint fails.
 

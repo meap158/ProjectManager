@@ -62,8 +62,13 @@ ProjectManager stores its data locally. GitHub PR queries use your gh login; age
     Alt+1…4 to jump between panes, and drag a header to swap panes. Your layout is
     saved and comes back after reloads and restarts.
   - Terminals are real and interactive. Click and type, and full-screen CLIs
-    like `claude` work in the browser. Sessions survive restarts and reboots and resume the
-    conversation where supported.
+    like `claude` work in the browser. Sessions survive restarts and reboots, and **Start** on a
+    stopped session continues its own conversation: Claude Code, Codex, Grok, OpenCode and
+    Antigravity each reopen exactly the conversation that session was in, even with several
+    sessions of one CLI in the same project.
+  - Session names stay in sync with the CLIs' own `/rename` (Claude Code, Codex, Grok): a name
+    you give a session here is passed on to the CLI (at launch, or as `/rename` once it's idle),
+    and a `/rename` typed in the CLI renames the session here. Automatic titles never do.
 
 ![Project overview: stats, commit heatmap, monthly commits and languages](docs/screenshots/project-overview.png)
 
