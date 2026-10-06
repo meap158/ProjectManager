@@ -6,7 +6,7 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import { CARD_STATUSES } from '../shared/types.js';
 import type { Db } from './db.js';
-import { getCard, getSetting, setSetting, updateCard } from './store.js';
+import { getCard, getSetting, insertCard, setSetting, updateCard } from './store.js';
 import { cardAttachmentsDir, listAttachments } from './attachments.js';
 
 type Owner = { kind: 'session' | 'run'; id: number; logPath: string };
@@ -15,7 +15,8 @@ const object = { type: 'object', properties: {}, additionalProperties: false };
 export const BOARD_TOOLS = [
   {
     name: 'get_card',
-    description: 'Read your currently assigned card and its image attachments.',
+    description:
+      'Read your currently assigned card and its image attachments. Reference its key in commit messages ("Refs PM-12" while working, "Fixes PM-12" when complete) so the board follows.',
     inputSchema: object,
   },
   {
@@ -34,6 +35,20 @@ export const BOARD_TOOLS = [
       ...object,
       properties: { note: { type: 'string', minLength: 1, maxLength: 4000 } },
       required: ['note'],
+    },
+  },
+  {
+    name: 'create_card',
+    description:
+      'Only when you have no card yet (work started directly in a terminal): create a card for it in this project. It becomes your card, so update_status and add_note apply to it.',
+    inputSchema: {
+      ...object,
+      properties: {
+        title: { type: 'string', minLength: 1, maxLength: 200 },
+        notes: { type: 'string', maxLength: 4000 },
+        status: { type: 'string', enum: CARD_STATUSES },
+      },
+      required: ['title'],
     },
   },
   {
@@ -171,7 +186,8 @@ export function boardConnection(
 }
 
 export const boardTaskNote =
-  '\n\nProjectManager board tools: call projectmanager get_card to read your current task and image list, read_image for each attachment, add_note for progress/validation evidence, and update_status to review after validating. Use done only when all requirements are fulfilled.';
+  '\n\nProjectManager board tools: call projectmanager get_card to read your current task and image list, read_image for each attachment, add_note for progress/validation evidence, and update_status to review after validating. Use done only when all requirements are fulfilled.' +
+  ' Commit atomically, one coherent change per commit with a descriptive message, and reference your card key in it ("Refs PM-12" while working, "Fixes PM-12" when complete): the board follows your commits automatically.';
 
 export function registerBoardMcp(app: Hono, db: Db, attachmentsRoot: string): void {
   app.post('/board-mcp', async (c) => {
@@ -215,9 +231,48 @@ export function registerBoardMcp(app: Hono, db: Db, attachmentsRoot: string): vo
       const call = z
         .object({ name: z.string(), arguments: z.record(z.string(), z.unknown()).default({}) })
         .parse(params);
-      const card = row.card_id ? getCard(db, row.card_id) : null;
+      const assigned = row.card_id ? getCard(db, row.card_id) : null;
+      if (call.name === 'create_card') {
+        if (assigned) throw new Error(`You already have a card (${assigned.key}); use it.`);
+        const input = z
+          .object({
+            title: z.string().trim().min(1).max(200),
+            notes: z.string().max(4000).default(''),
+            status: z.enum(CARD_STATUSES).default('in_progress'),
+          })
+          .strict()
+          .parse(call.arguments);
+        // One transaction: the card, its assignment to this session/run, and the audit record.
+        db.exec('BEGIN');
+        try {
+          const created = insertCard(db, row.project_id, {
+            title: input.title,
+            description: input.notes,
+            status: input.status,
+          });
+          db.prepare(`UPDATE ${table} SET card_id = ? WHERE id = ?`).run(created.id, owner.id);
+          db.prepare(
+            'INSERT INTO board_agent_audit (card_id, owner_kind, owner_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+          ).run(
+            created.id,
+            owner.kind,
+            owner.id,
+            'create_card',
+            JSON.stringify(input),
+            new Date().toISOString(),
+          );
+          db.exec('COMMIT');
+          return reply({ content: [{ type: 'text', text: JSON.stringify(created) }] });
+        } catch (e) {
+          db.exec('ROLLBACK');
+          throw e;
+        }
+      }
+      const card = assigned;
       if (!card || card.projectId !== row.project_id)
-        throw new Error('No card assigned. Attach a card to this session first.');
+        throw new Error(
+          'No card assigned. If this work has no card yet, call create_card to make one.',
+        );
       let value: unknown;
       if (call.name === 'get_card') {
         z.object({}).strict().parse(call.arguments);

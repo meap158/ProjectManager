@@ -35,7 +35,8 @@ ProjectManager stores its data locally. GitHub PR queries use your gh login; age
 - **Automatic card moves.** Every card has a key like `PM-12`.
   - A commit that mentions `PM-12` moves it to **In progress**.
   - A commit saying `Fixes PM-12` (also `closes` / `resolves` / `completes`) moves it to **Done**.
-  - Moves happen on the next refresh.
+  - Moves apply automatically within about 15 seconds of the commit (no Refresh needed); a card
+    you move back by hand stays put.
 - **AI agents:** dispatch a card to Claude Code, Codex, Grok, Antigravity or OpenCode (whichever is
   installed). Gemini has been replaced by Antigravity; existing Gemini sessions still open.
   - Choose what the agent may do: **Read-only**, **Edit files** (default) or **Full access**.
@@ -143,8 +144,11 @@ Animated components by [Rare UI](https://rareui.com) (MIT + Commons Clause; attr
 ## Agent board tools and images
 
 Claude Code, Codex, OpenCode and (existing) Gemini sessions/runs launched by ProjectManager receive a
-`projectmanager` MCP server automatically. It provides `get_card`, `update_status`, `add_note`
-and `read_image`. It can access only the owner's currently assigned card in that project;
+`projectmanager` MCP server automatically. It provides `get_card`, `update_status`, `add_note`,
+`read_image` and `create_card`. It can access only the owner's currently assigned card in that project;
+a session started without a card (directly in a terminal) can call `create_card` once to make one for
+its work, which then becomes its card. Agents are told to commit atomically and reference their card
+(`Refs PM-12` while working, `Fixes PM-12` when complete), so the board follows their commits.
 reattaching changes that scope, detaching removes card access, and deleting the owner revokes it.
 Card dialogs show **Agent board history** for audited status changes and notes. Validate work
 before moving it to Review; Done means the task is complete.

@@ -57,6 +57,37 @@ describe('card-scoped board MCP', () => {
     expect((await call('get_card')).status).toBe(403);
     db.close();
   });
+  it('lets a session without a card create one, then scopes it to that card', async () => {
+    const { db, call } = setup();
+    db.prepare('UPDATE agent_sessions SET card_id = NULL WHERE id = 1').run();
+    const result = async (name: string, args: object = {}) =>
+      (await (await call(name, args)).json()).result as {
+        isError?: boolean;
+        content: { text: string }[];
+      };
+
+    expect((await result('get_card')).content[0]!.text).toMatch(/create_card/);
+    const created = await result('create_card', {
+      title: 'Fix flaky login',
+      notes: 'From terminal',
+    });
+    expect(created.isError).toBeUndefined();
+    const card = JSON.parse(created.content[0]!.text) as { id: number; status: string };
+    expect(card.status).toBe('in_progress');
+    // Assigned to the session, audited, and now the card its other tools act on.
+    expect(
+      (db.prepare('SELECT card_id FROM agent_sessions WHERE id = 1').get() as { card_id: number })
+        .card_id,
+    ).toBe(card.id);
+    expect(
+      db.prepare('SELECT action FROM board_agent_audit WHERE card_id = ?').all(card.id),
+    ).toEqual([{ action: 'create_card' }]);
+    expect((await result('update_status', { status: 'review' })).isError).toBeUndefined();
+    expect(getCard(db, card.id)?.status).toBe('review');
+    // No hopping: with a card assigned, create_card is refused.
+    expect((await result('create_card', { title: 'Another' })).isError).toBe(true);
+  });
+
   it('keeps tokens out of argv and preserves existing CLI configuration', () => {
     const { db } = setup();
     const owner = { kind: 'session' as const, id: 1, logPath: 'test-log' };
