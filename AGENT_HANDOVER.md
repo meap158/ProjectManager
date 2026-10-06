@@ -55,6 +55,10 @@ atomic commits). Nothing is pending in the working tree.
   (`scripts/claude-session-hook.mjs`) that reports the live conversation id (follows /resume,
   /clear, compaction) to `/api/agent-hooks/claude-session`; Codex resumes its own rollout from
   `~/.codex/sessions`; any resume that dies within 20s is followed by a fresh start.
+- **Running vs idle:** Claude sessions report turns through the same hook (UserPromptSubmit, Stop,
+  waiting Notifications, Subagent start/stop) into `server/agents/turnState.ts` (in memory; a
+  "running" with a screen silent for 60s counts as idle, since Esc skips Stop). Other CLIs use the
+  screen patterns in `server/agents/activity.ts`. Sessions started before this need one restart.
 - **Auto refresh:** the stalest project is rescanned once 15+ minutes old (one scan at a time).
 - **Agent permissions** (Settings): global level + per-CLI inherit/own, translated into each CLI's
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.

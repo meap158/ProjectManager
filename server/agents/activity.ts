@@ -19,16 +19,18 @@ const PROMPT_PATTERNS = [
 ];
 
 /** The CLI is working on a turn right now. */
-const BUSY_PATTERNS = [/esc to interrupt/i, /working\s*\(\s*\d+[smh]/i];
+// Spacing is optional throughout: full-screen CLIs redraw with cursor moves, so the log often
+// holds words run together ("esctointerrupt").
+const BUSY_PATTERNS = [/esc\s*to\s*interrupt/i, /working\s*\(\s*\d+[smh]/i];
 
 /** Something the session started is still going (background shells, terminals, subagents). */
 const BACKGROUND_PATTERNS = [
-  /\b\d+\s+background\s+(?:terminals?|shells?|agents?|tasks?)\s+running/i,
-  /waiting for \d+ background/i,
-  /\b\d+\s+shells?\s+still\s+running/i,
-  // Claude Code's footer: "auto mode on · 1 shell · ← 1 agent · ↓ to manage".
-  /·\s*\d+\s+shells?\s*·/,
-  /←\s*\d+\s+agents?\b/,
+  /\b\d+\s*background\s*(?:terminals?|shells?|agents?|tasks?)\s*running/i,
+  /waiting\s*for\s*\d+\s*background/i,
+  /\b\d+\s*shells?\s*still\s*running/i,
+  // Claude Code's footer: "auto mode on · 1 shell · ↓ to manage". (Its "← 1 agent" hint stays
+  // after the agent finished, so it is not a signal.)
+  /·\s*\d+\s*shells?\s*·/,
 ];
 
 /** The last frame is at most this long when only one prompt draw is in the tail. */

@@ -55,6 +55,7 @@ import { diffSince, snapshotTree } from './gitChanges.js';
 import { tailState } from './activity.js';
 import { codexSessionFor, staleClaudeResume } from './usage.js';
 import { effectiveLevel, getPermissions, withPermissions } from './permissions.js';
+import { forgetTurn, turnState } from './turnState.js';
 import { HostClient } from './host/client.js';
 import type { HostSessionInfo } from './host/protocol.js';
 import { fetchScript, recipeFor } from './install.js';
@@ -1358,6 +1359,7 @@ export class AgentSupervisor {
           : (resume ?? this.resumeLatestArgv(row) ?? launch)
         : launch;
       this.lastSpawn.set(key, { at: Date.now(), resumed: baseArgv !== launch });
+      forgetTurn(row.id); // A new process: its hooks report afresh.
       const connection = this.dataDir
         ? boardConnection(
             this.db,
@@ -1894,6 +1896,7 @@ export class AgentSupervisor {
   private toSession(row: SessionRow): AgentSession {
     const { command } = JSON.parse(row.command_json) as { command: string[] };
     const live = this.live.get(`session:${row.id}`);
+    const lastOutputAt = this.fileModifiedAt(row.log_path);
     return {
       id: row.id,
       projectId: row.project_id,
@@ -1917,8 +1920,12 @@ export class AgentSupervisor {
       startedAt: row.started_at,
       endedAt: row.ended_at,
       logBytes: live ? live.log.totalBytes : this.fileSize(row.log_path),
-      lastOutputAt: this.fileModifiedAt(row.log_path),
-      tailState: row.status === 'running' ? this.sessionTailState(row.log_path) : null,
+      lastOutputAt,
+      tailState:
+        row.status === 'running' || live
+          ? // Claude reports its turns through hooks (exact); others fall back to the screen.
+            (turnState(row.id, lastOutputAt) ?? this.sessionTailState(row.log_path))
+          : null,
     };
   }
 

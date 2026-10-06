@@ -50,6 +50,17 @@ describe('tailState', () => {
     );
   });
 
+  it('Claude idle with the leftover "← 1 agent" footer hint is idle (owner report)', () => {
+    const footer =
+      '✻ Churned for 54m 43s · done\n❯ \n⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent';
+    expect(tailState(footer)).toBe('idle');
+  });
+
+  it('busy phrases still match when redraws run the words together', () => {
+    expect(tailState('✻ Zigzagging… (esctointerrupt)\n❯ ')).toBe('running');
+    expect(tailState('✻ Worked for 3m ·1shellstill running\n❯ ')).toBe('running');
+  });
+
   it('Grok idle: a tail that only redraws its braille logo is idle, not running', () => {
     const logo = '⣀⣀⡀⠀⠀⠀⢀⠄⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀⠀⠀⣼⡟⠁';
     const tail = Array.from({ length: 40 }, () => `${ESC}[38;2;114;114;114m${logo}${ESC}[H`).join(

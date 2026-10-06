@@ -8,6 +8,7 @@ import { CARD_STATUSES } from '../shared/types.js';
 import type { Db } from './db.js';
 import { getCard, getSetting, insertCard, setSetting, updateCard } from './store.js';
 import { cardAttachmentsDir, listAttachments } from './attachments.js';
+import { recordEvent } from './agents/turnState.js';
 
 type Owner = { kind: 'session' | 'run'; id: number; logPath: string };
 const tokenKey = (token: string) => `board-mcp:${createHash('sha256').update(token).digest('hex')}`;
@@ -152,22 +153,32 @@ export function boardConnection(
         ? [
             '--settings',
             JSON.stringify({
-              hooks: {
-                SessionStart: [
-                  {
-                    hooks: [
-                      {
-                        type: 'command',
-                        // A bare `node` first: Claude runs hooks through PowerShell on Windows
-                        // (where a quoted program path is only a string) and sh elsewhere; this
-                        // form works in both, and in cmd. Paths with spaces stay quoted arguments.
-                        command: `node "${siblingScript('claude-session-hook.mjs')}" "${dataDir}"`,
-                        timeout: 10,
-                      },
-                    ],
-                  },
-                ],
-              },
+              hooks: Object.fromEntries(
+                [
+                  'SessionStart',
+                  'UserPromptSubmit',
+                  'Stop',
+                  'Notification',
+                  'SubagentStart',
+                  'SubagentStop',
+                ].map((event) => [
+                  event,
+                  [
+                    {
+                      hooks: [
+                        {
+                          type: 'command',
+                          // A bare `node` first: Claude runs hooks through PowerShell on Windows
+                          // (where a quoted program path is only a string) and sh elsewhere; this
+                          // form works in both, and in cmd. Paths with spaces stay quoted arguments.
+                          command: `node "${siblingScript('claude-session-hook.mjs')}" "${dataDir}"`,
+                          timeout: 10,
+                        },
+                      ],
+                    },
+                  ],
+                ]),
+              ),
             }),
           ]
         : [];
@@ -388,7 +399,12 @@ export function registerBoardMcp(app: Hono, db: Db, attachmentsRoot: string): vo
     if (!row || row.log_path !== owner.logPath || row.provider_id !== 'claude')
       return c.json({ error: 'Capability revoked' }, 403);
     const body = z
-      .object({ sessionId: z.string().uuid(), source: z.string().max(40).nullable().optional() })
+      .object({
+        sessionId: z.string().uuid(),
+        source: z.string().max(40).nullable().optional(),
+        event: z.string().max(40).nullable().optional(),
+        notificationType: z.string().max(60).nullable().optional(),
+      })
       .safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'Expected { sessionId }' }, 400);
     const binary = (JSON.parse(row.command_json) as { command: string[] }).command[0] ?? 'claude';
@@ -396,6 +412,8 @@ export function registerBoardMcp(app: Hono, db: Db, attachmentsRoot: string): vo
       JSON.stringify([binary, '--resume', body.data.sessionId]),
       owner.id,
     );
+    // Working vs idle, exactly as Claude reports it (no event name: an older hook = SessionStart).
+    recordEvent(owner.id, body.data.event ?? 'SessionStart', body.data.notificationType);
     return c.body(null, 204);
   });
   app.get('/cards/:id/agent-audit', (c) => {
