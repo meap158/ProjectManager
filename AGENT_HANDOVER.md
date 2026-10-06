@@ -82,7 +82,9 @@ atomic commits). Nothing is pending in the working tree.
   signing in again on a device replaces its entry; `<hostname>.local` is listed after the IPs as
   an address that survives DHCP changes. Not live-restarted here (another session had server
   work in progress); covered by real-socket tests in `server/lan.test.ts`.
-- **Phone space savers (PM-36, DESIGN.md §10.1):** headers scroll away (tabs stick), tighter
+- **Phone sticky tops (PM-39):** Home/Board/Settings headers stay sticky on phones, compact
+  (no subtitle); project pages pin only their tabs (`phone-tabs-only`).
+- **Phone space savers (PM-36, DESIGN.md §10.1):** project headers scroll away (tabs stick), tighter
   gutters/panels, 3-across stats, capped dashboard lists, one-row Agents toolbars, aligned work
   rows. Verified at 390px on Home, Agents (workspace + project tab), project, Board, Settings.
 - **Phone over LAN (PM-32):** verified end to end with a scripted iPhone client through the real

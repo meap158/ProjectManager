@@ -322,7 +322,11 @@ tokens and touch targets.
   pane-header icon buttons 32px, and 16px text in fields so iOS doesn't zoom on focus. Nothing in
   the app is hover-only, so touch sees every control.
 - **Browser chrome:** `theme-color` follows the active `--surface` token (`syncThemeColor`).
-- **Space savers (PM-36):** page headers scroll away and only the page tabs stick; title and
+- **Sticky tops (PM-39):** Home, Board and Settings keep their sticky header on phones, compact:
+  8px padding and no descriptive subtitle (Home is title + Add project, about 50px; Board keeps
+  New card, filters and the Board/List switch). Project pages (`.sticky-head.phone-tabs-only`)
+  let the tall header scroll away and pin only the tab bar.
+- **Space savers (PM-36):** project headers scroll away (only the tabs stick, see above); title and
   actions share a row (title keeps ≥ 160px, actions align to the title line; "Scanned …" hides);
   12px gutter and panel padding; stat tiles three across without hints; dashboard lists show five
   rows and a "Show all N" link. Agents: the sentence labels hide so New session is one row

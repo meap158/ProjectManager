@@ -118,7 +118,9 @@ export function ProjectPage() {
   return (
     <main className="page">
       {/* Sticky chrome: title, actions and tabs stay put while the tab content scrolls. */}
-      <div className="sticky-head">
+      {/* On phones only the tabs stick: the path, branch and actions would take a third of the
+          screen (DESIGN.md §10.1). */}
+      <div className="sticky-head phone-tabs-only">
         <div className="page-header">
           <div style={{ minWidth: 0 }}>
             {/* Keyed by project: switching projects resets the rename box instead of

@@ -3492,11 +3492,24 @@ span.path-link:hover .path-icon {
     padding-top: 12px;
     gap: 12px;
   }
-  /* Header scrolls away with the page; the tab bar alone sticks (it's what you switch with). */
+  /* A sticky header brings its own 8px above the title. */
+  .page:has(> .sticky-head:not(.phone-tabs-only)) {
+    padding-top: 4px;
+  }
+  /* Sticky headers stay (Home, Board, Settings: PM-39) but compact: the descriptive subtitle
+     scrolls out of the way by not being there. Project pages are taller (path, branch, actions),
+     so there the header scrolls away and the tab bar alone sticks (it's what you switch with). */
   .sticky-head {
+    padding: 8px 0;
+    gap: 8px;
+  }
+  .sticky-head:not(.phone-tabs-only) .page-header .subtitle {
+    display: none;
+  }
+  .sticky-head.phone-tabs-only {
     display: contents;
   }
-  .sticky-head > .tabs {
+  .sticky-head.phone-tabs-only > .tabs {
     position: sticky;
     top: 0;
     z-index: 5;
