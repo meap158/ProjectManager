@@ -15,6 +15,10 @@ import { getSetting, setSetting } from './store.js';
 //    code is only ever shown on this computer). Wrong tries are also rate-limited per client.
 //  - A successful sign-in gives the device its own long random token (stored hashed) in an
 //    HttpOnly, SameSite=Strict cookie; Settings lists devices and can sign each (or all) out.
+//  - Signed-in devices stay signed in (PM-37): devices live in the settings table, the cookie is
+//    renewed on every page load (a year from last use, not from sign-in), the listener reuses
+//    its last port across restarts so saved links and home-screen icons keep working, and the
+//    computer's name (<name>.local) is offered as an address that survives an IP change.
 //  - Only this machine's own LAN addresses/name are accepted as Host (DNS-rebinding guard).
 //  - LAN requests are marked (x-pm-lan) so the API refuses LAN-settings requests from them.
 // After the gate, requests are handled like local ones (Host rewritten in req.headers and
@@ -39,6 +43,8 @@ interface StoredDevice extends LanDevice {
 interface LanSettings {
   enabled: boolean;
   devices: StoredDevice[];
+  /** The last port the listener used: tried first so a device's saved address keeps working. */
+  port?: number;
 }
 
 /** Virtual adapters that are not "the network" (after AdRelay's lan-access.mjs). */
@@ -60,6 +66,12 @@ export function lanAddresses(): string[] {
     .sort((a, b) => rank(a) - rank(b));
 }
 
+/** This computer's mDNS name (`<hostname>.local`), when the hostname is a valid DNS label. */
+function localName(): string | null {
+  const name = os.hostname().toLowerCase();
+  return /^[a-z0-9-]{1,63}$/.test(name) ? `${name}.local` : null;
+}
+
 /** Host names a LAN device may use for this machine (DNS-rebinding guard). */
 function allowedHosts(): Set<string> {
   const name = os.hostname().toLowerCase();
@@ -79,6 +91,12 @@ const MAX_FAILURES = 10;
 const FAILURE_WINDOW_MS = 10 * 60_000;
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
+/** The device cookie, valid a year from now (re-sent on page loads, so a year from last use). */
+const deviceCookie = (token: string) =>
+  `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;
+/** EADDRINUSE retries for the remembered port: a restarting server may still be releasing it. */
+const PORT_RETRIES = 6;
+const PORT_RETRY_MS = 500;
 const newCode = () =>
   Array.from({ length: CODE_LENGTH }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
 /** What a person typed, normalised: case, spaces and dashes don't matter. */
@@ -165,7 +183,11 @@ export class LanAccess {
 
   private settings(): LanSettings {
     const saved = getSetting<Partial<LanSettings>>(this.db, SETTINGS_KEY);
-    return { enabled: saved?.enabled ?? false, devices: saved?.devices ?? [] };
+    return {
+      enabled: saved?.enabled ?? false,
+      devices: saved?.devices ?? [],
+      ...(saved?.port ? { port: saved.port } : {}),
+    };
   }
 
   private save(next: LanSettings): void {
@@ -184,11 +206,15 @@ export class LanAccess {
     const { enabled, devices } = this.settings();
     const running = !!this.server;
     const pairing = running ? this.code() : null;
+    const ips = lanAddresses();
+    const name = localName();
+    // IP addresses first (always work); the name last (survives IP changes where .local resolves).
+    const hosts = ips.length > 0 && name ? [...ips, name] : ips;
     return {
       enabled,
       running,
       port: this.port,
-      urls: running && this.port ? lanAddresses().map((ip) => `http://${ip}:${this.port}/`) : [],
+      urls: running && this.port ? hosts.map((host) => `http://${host}:${this.port}/`) : [],
       code: pairing?.code ?? null,
       codeExpiresAt: pairing ? new Date(pairing.expiresAt).toISOString() : null,
       devices: devices.map((d) => ({
@@ -308,6 +334,8 @@ export class LanAccess {
       const token = randomBytes(32).toString('base64url');
       const now = new Date().toISOString();
       const settings = this.settings();
+      // Signing in again on a device that still has a cookie replaces its entry, not adds one.
+      const previous = this.signedInDevice(req);
       const device: StoredDevice = {
         id: randomBytes(6).toString('hex'),
         label: deviceLabel(req.headers['user-agent'] ?? ''),
@@ -316,13 +344,14 @@ export class LanAccess {
         lastSeenAt: now,
         tokenHash: hash(token),
       };
-      this.save({ ...settings, devices: [...settings.devices, device].slice(-MAX_DEVICES) });
+      const others = settings.devices.filter((d) => d.id !== previous?.id);
+      this.save({ ...settings, devices: [...others, device].slice(-MAX_DEVICES) });
       // 303 from a same-origin form POST: the navigation is same-site, so the Strict cookie
       // is sent on the very next request.
       res
         .writeHead(303, {
           ...HARDENING,
-          'set-cookie': `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`,
+          'set-cookie': deviceCookie(token),
           location: safeNext,
         })
         .end();
@@ -347,6 +376,10 @@ export class LanAccess {
       return;
     }
     this.touch(device);
+    // Sliding expiry: page loads renew the cookie, so a device in use never reaches the end.
+    if (req.method === 'GET' && (req.headers.accept ?? '').includes('text/html')) {
+      res.setHeader('set-cookie', deviceCookie(cookieValue(req, COOKIE)!));
+    }
     res.setHeader('x-frame-options', 'DENY');
     res.setHeader('referrer-policy', 'no-referrer');
     // Signed in: handle like a local request, but marked as coming from the LAN.
@@ -358,28 +391,43 @@ export class LanAccess {
   private async start(): Promise<void> {
     if (this.server) return;
     this.error = null;
-    for (let port = this.basePort; port < this.basePort + 10; port++) {
-      const server = createServer((req, res) => {
-        setHeader(req, LAN_HEADER, null); // Never trust a client-sent marker.
-        this.gate(req, res).catch((e: Error) => {
-          console.error('[lan]', e.message);
-          if (!res.headersSent) res.writeHead(500).end();
-        });
-      });
-      server.headersTimeout = 10_000; // Slow-header clients don't hold sockets open.
-      server.requestTimeout = 60_000; // Request bodies only; live output streams are unaffected.
-      const ok = await new Promise<boolean>((resolve) => {
-        server.once('error', () => resolve(false));
-        server.listen(port, this.bindHost, () => resolve(true));
-      });
-      if (ok) {
+    const saved = this.settings().port;
+    const range = Array.from({ length: 10 }, (_, i) => this.basePort + i);
+    const candidates = saved ? [saved, ...range.filter((p) => p !== saved)] : range;
+    for (const port of candidates) {
+      // The remembered port gets a few retries: after a restart the old process may still hold it.
+      const tries = port === saved ? PORT_RETRIES : 1;
+      for (let attempt = 0; attempt < tries; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, PORT_RETRY_MS));
+        const server = await this.listen(port);
+        if (!server) continue;
         this.server = server;
         this.port = port;
+        if (saved !== port) this.save({ ...this.settings(), port });
         console.log(`[lan] listening on port ${port} (sign-in required)`);
         return;
       }
-      server.close();
     }
-    this.error = `No free port between ${this.basePort} and ${this.basePort + 9}`;
+    this.error = `No free port: tried ${candidates.join(', ')}`;
+  }
+
+  /** One listen attempt: the server on success, null when the port is taken. */
+  private async listen(port: number): Promise<Server | null> {
+    const server = createServer((req, res) => {
+      setHeader(req, LAN_HEADER, null); // Never trust a client-sent marker.
+      this.gate(req, res).catch((e: Error) => {
+        console.error('[lan]', e.message);
+        if (!res.headersSent) res.writeHead(500).end();
+      });
+    });
+    server.headersTimeout = 10_000; // Slow-header clients don't hold sockets open.
+    server.requestTimeout = 60_000; // Request bodies only; live output streams are unaffected.
+    const ok = await new Promise<boolean>((resolve) => {
+      server.once('error', () => resolve(false));
+      server.listen(port, this.bindHost, () => resolve(true));
+    });
+    if (ok) return server;
+    server.close();
+    return null;
   }
 }

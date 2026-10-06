@@ -1,4 +1,4 @@
-import { request } from 'node:http';
+import { createServer, request } from 'node:http';
 import os from 'node:os';
 import { getRequestListener } from '@hono/node-server';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -127,6 +127,57 @@ describe.skipIf(!ip)('LAN access', () => {
     expect((await post(`http://${host}`)).status).toBe(200);
     const name = `${os.hostname().toLowerCase()}.local:${port}`;
     expect((await send(port, 'GET', '/', { host: name, cookie })).status).toBe(200);
+  });
+
+  it('keeps a device signed in: sliding cookie, one entry per device, name address', async () => {
+    const { lan, host, port, signIn } = await setup(47_490);
+    const cookie = cookieOf(await signIn(lan.status().code!));
+    // Page loads renew the cookie (a year from last use); API calls and assets don't need to.
+    const page = await send(port, 'GET', '/board', { host, cookie, accept: 'text/html' });
+    expect(cookieOf(page)).toBe(cookie);
+    expect(String(page.headers['set-cookie'])).toMatch(/Max-Age=31536000/);
+    expect((await send(port, 'GET', '/api/x', { host, cookie })).headers['set-cookie']).toBe(
+      undefined,
+    );
+    // Signing in again on the same device replaces its entry.
+    const again = await send(
+      port,
+      'POST',
+      '/__pm/sign-in',
+      { host, cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      new URLSearchParams({ code: lan.status().code!, next: '/' }).toString(),
+    );
+    expect(again.status).toBe(303);
+    expect(lan.status().devices).toHaveLength(1);
+    // The computer's name is offered last: it survives an IP change.
+    const name = `${os.hostname().toLowerCase()}.local`;
+    if (/^[a-z0-9-]+\.local$/.test(name)) {
+      expect(lan.status().urls.at(-1)).toBe(`http://${name}:${port}/`);
+    }
+  });
+
+  it('reuses its last port after a restart, waiting for the old process to let go', async () => {
+    const db = openDb(':memory:');
+    const make = (base: number) => {
+      const lan = new LanAccess(
+        db,
+        (_q, r) => r.end(),
+        () => 'http://localhost:5180',
+        base,
+        '127.0.0.1',
+      );
+      open.push(lan);
+      return lan;
+    };
+    const first = make(47_510);
+    expect((await first.setEnabled(true)).port).toBe(47_510);
+    await first.stop();
+    // The previous server still holds the port for a moment, and the app port moved meanwhile.
+    const holder = createServer().listen(47_510, '127.0.0.1');
+    setTimeout(() => holder.close(), 700);
+    const second = make(47_530);
+    await second.restore();
+    expect(second.status().port).toBe(47_510); // Same address: saved links keep working.
   });
 
   it('through the real app: the API works, LAN settings stay local-only', async () => {

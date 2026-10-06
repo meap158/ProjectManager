@@ -123,6 +123,14 @@ function LocalLanAccessPanel({ onError }: { onError: (message: string) => void }
                         <button type="button" className="btn btn-sm" onClick={() => copy(url)}>
                           {copied === url ? 'Copied' : 'Copy'}
                         </button>
+                        {/* The name address survives this computer's IP changing (DHCP), so a
+                            saved link or home-screen icon keeps working. */}
+                        {new URL(url).hostname.endsWith('.local') && (
+                          <span className="faint lan-url-note">
+                            this computer's name: keeps working if its IP changes, on phones that
+                            resolve .local names (iPhones do)
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>

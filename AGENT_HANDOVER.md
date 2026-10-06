@@ -68,6 +68,12 @@ atomic commits). Nothing is pending in the working tree.
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.
 - **LAN access** (Settings, opt-in): separate listener, devices sign in with a 4-character
   single-use code (`server/lan.ts`); see CLAUDE.md security model.
+- **LAN devices stay signed in (PM-37, `server/lan.ts`):** the listener remembers its port in
+  `lan_access.port` and retries it for ~3s on restart (old process releasing it) before falling
+  back to app port + 100…109; page loads re-send the device cookie (sliding one-year expiry);
+  signing in again on a device replaces its entry; `<hostname>.local` is listed after the IPs as
+  an address that survives DHCP changes. Not live-restarted here (another session had server
+  work in progress); covered by real-socket tests in `server/lan.test.ts`.
 - **Phone space savers (PM-36, DESIGN.md §10.1):** headers scroll away (tabs stick), tighter
   gutters/panels, 3-across stats, capped dashboard lists, one-row Agents toolbars, aligned work
   rows. Verified at 390px on Home, Agents (workspace + project tab), project, Board, Settings.

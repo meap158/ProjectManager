@@ -3738,8 +3738,13 @@ span.path-link:hover .path-icon {
 }
 .lan-links li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 4px 10px;
+}
+.lan-url-note {
+  flex-basis: 100%;
+  font-size: 12px;
 }
 .lan-links code {
   flex: 1;

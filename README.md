@@ -168,6 +168,12 @@ open it full screen with its own icon; a home-screen app keeps its own sign-in, 
 once more there. Folders open only on the computer, so the project path is plain text on the phone.
 If a device is signed out in Settings, it lands back on the sign-in page by itself.
 
+A signed-in device **stays signed in** across browser restarts, server restarts and reboots: its
+cookie is renewed whenever you use it, and the LAN listener reuses the same port after a restart,
+so saved links and home-screen icons keep working. If your router hands this computer a new IP
+address, use the second address in Settings (this computer's name, `<name>.local`, which iPhones
+resolve) or reserve the IP in your router (DHCP reservation).
+
 If the phone can't load the address: it must be on the same network as the computer (not a guest
 Wi-Fi, which usually isolates devices), and Windows Firewall must allow Node.js on that network's
 profile (Settings → Network shows whether it is Private or Public). With `npm run launch` (dev
