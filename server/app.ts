@@ -37,6 +37,9 @@ const createCardBody = z.object({
   description: z.string().max(20_000).default(''),
   status: z.enum(CARD_STATUSES).default('backlog'),
 });
+const themeBody = z.object({ theme: z.enum(['system', 'light', 'dark']) });
+type ThemePreference = z.infer<typeof themeBody>['theme'];
+
 const updateCardBody = z
   .object({
     title: z.string().trim().min(1).max(200),
@@ -258,6 +261,21 @@ export function createApp(
     // A deleted card's images go with it (no orphaned files in the data folder).
     removeAttachments(attachmentsRoot, id);
     return c.body(null, 204);
+  });
+
+  // ---- Preferences ------------------------------------------------------------------------------
+  // The colour theme lives in the database as well as the browser: browser storage is tied to the
+  // exact origin, so a launcher port fallback (5180 → 5181) or a cleared browser would lose it.
+
+  app.get('/preferences/theme', (c) =>
+    // null until first saved: the client then uploads its browser copy instead of being reset.
+    c.json({ theme: store.getSetting<ThemePreference>(db, 'theme') ?? null }),
+  );
+
+  app.put('/preferences/theme', async (c) => {
+    const { theme } = await parseBody(c, themeBody);
+    store.setSetting(db, 'theme', theme);
+    return c.json({ theme });
   });
 
   // ---- Folder browser (for the "Add project" dialog) -----------------------------------------

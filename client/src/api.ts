@@ -69,6 +69,11 @@ export const api = {
   ) => request<Card>('PATCH', `/cards/${id}`, patch),
   deleteCard: (id: number) => request<void>('DELETE', `/cards/${id}`),
 
+  /** The colour theme, stored server-side so it survives restarts and port changes. */
+  getTheme: () =>
+    request<{ theme: 'system' | 'light' | 'dark' | null }>('GET', '/preferences/theme'),
+  saveTheme: (theme: 'system' | 'light' | 'dark') =>
+    request<{ theme: string }>('PUT', '/preferences/theme', { theme }),
   browse: (path?: string) =>
     request<DirectoryListing>(
       'GET',

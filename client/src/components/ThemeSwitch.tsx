@@ -5,6 +5,7 @@ import {
   setThemePreference,
   type ThemePreference,
 } from '../theme';
+import { api } from '../api';
 import { Dropdown } from './Dropdown';
 
 const OPTIONS: { value: ThemePreference; label: string; title: string }[] = [
@@ -21,6 +22,28 @@ export function ThemeSwitch() {
     current.current = preference;
   }, [preference]);
   useEffect(() => followSystemTheme(() => current.current), []);
+  // The saved choice on the server wins (survives restarts, port fallback and cleared browser
+  // storage); the browser copy only exists so the first paint is already right.
+  useEffect(() => {
+    let active = true;
+    api.getTheme().then(
+      ({ theme }) => {
+        if (!active) return;
+        // Nothing saved yet (first run after this change): keep and upload this browser's choice.
+        if (theme === null) {
+          api.saveTheme(current.current).catch(() => undefined);
+          return;
+        }
+        if (theme === current.current) return;
+        setPreference(theme);
+        setThemePreference(theme);
+      },
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="theme-switch">
@@ -31,6 +54,7 @@ export function ThemeSwitch() {
         onChange={(value) => {
           setPreference(value);
           setThemePreference(value);
+          api.saveTheme(value).catch(() => undefined);
         }}
       />
     </div>

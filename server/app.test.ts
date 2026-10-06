@@ -125,6 +125,15 @@ describe('projects and cards', () => {
     expect((await call('PATCH', '/cards/1', { status: 'nope' })).status).toBe(400);
   });
 
+  it('keeps the colour theme server-side (survives restarts and port changes)', async () => {
+    const { call } = setup();
+    // Unset until first saved, so the client can upload its browser copy.
+    expect(await (await call('GET', '/preferences/theme')).json()).toEqual({ theme: null });
+    expect((await call('PUT', '/preferences/theme', { theme: 'dark' })).status).toBe(200);
+    expect(await (await call('GET', '/preferences/theme')).json()).toEqual({ theme: 'dark' });
+    expect((await call('PUT', '/preferences/theme', { theme: 'neon' })).status).toBe(400);
+  });
+
   it('switches board column presets per project', async () => {
     const { call } = setup();
     const created = (await (
