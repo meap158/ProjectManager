@@ -125,6 +125,38 @@ export function TerminalView({
           if (replaying.current === 0) callbacks.current.onInput?.(data);
         })
       : null;
+    // Ctrl+V pastes text like any app (xterm would otherwise send a raw ^V control character, so
+    // only Ctrl+Shift+V worked). Returning false leaves the keystroke to the browser, whose paste
+    // event xterm handles (with bracketed paste). If the clipboard holds no text (e.g. only an
+    // image), ^V is still sent: CLIs like OpenCode read image pastes from the clipboard themselves.
+    let pasteViaBrowser = false;
+    if (interactive) {
+      term.attachCustomKeyEventHandler((e) => {
+        if (
+          e.type === 'keydown' &&
+          e.ctrlKey &&
+          !e.shiftKey &&
+          !e.altKey &&
+          !e.metaKey &&
+          e.key.toLowerCase() === 'v'
+        ) {
+          pasteViaBrowser = true;
+          // No paste event (empty clipboard / non-text only): fall back to ^V for the CLI.
+          setTimeout(() => {
+            if (pasteViaBrowser && replaying.current === 0) callbacks.current.onInput?.('\x16');
+            pasteViaBrowser = false;
+          }, 50);
+          return false;
+        }
+        return true;
+      });
+    }
+    const onPaste = (event: ClipboardEvent) => {
+      const text = event.clipboardData?.getData('text/plain') ?? '';
+      // Text: xterm's own paste handling takes it from here. No text: keep the ^V fallback.
+      if (text) pasteViaBrowser = false;
+    };
+    host.addEventListener('paste', onPaste, true);
     // Copy the controller: cleanup must not read a ref that may have changed by then.
     const controller = ctl.current;
 
@@ -224,6 +256,7 @@ export function TerminalView({
       controller.source?.close();
       controller.source = null;
       inputSub?.dispose();
+      host.removeEventListener('paste', onPaste, true);
       window.removeEventListener('resize', refit);
       resize.disconnect();
       term.dispose();
