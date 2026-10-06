@@ -3532,3 +3532,49 @@ dialog.lightbox img {
   min-width: 0;
   font-size: 12px;
 }
+
+/* Workspace list filters: status chips with counts, then pickers and search on one row. */
+.work-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.work-status-chips {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.work-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.work-chip.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.work-chip-count {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.work-chip.active .work-chip-count {
+  color: inherit;
+}
+.input.work-search {
+  width: 200px;
+  height: 32px;
+}

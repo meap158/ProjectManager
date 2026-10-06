@@ -26,6 +26,12 @@ import {
 import { api } from '../api';
 import { Dropdown } from '../components/Dropdown';
 import { InlineRename } from '../components/InlineRename';
+import {
+  NO_FILTERS,
+  WorkFilters,
+  applyWorkFilters,
+  useWorkFilters,
+} from '../components/WorkFilters';
 import { readLastAgent, saveLastAgent } from '../lastAgent';
 import { isTerminalReport } from '../../../shared/terminalReports';
 import { splitSessionInput } from '../lib/sessionInput';
@@ -1009,6 +1015,7 @@ function WorkList({
   onError: (message: string) => void;
 }) {
   const [dockHeight, setDockHeight] = useState<number>(readDockHeight);
+  const [filters, setFilters] = useWorkFilters();
   const [dockMax, setDockMax] = useState(false);
   const container = useRef<HTMLElement>(null);
   const resizeTo = (height: number) => {
@@ -1022,7 +1029,8 @@ function WorkList({
     }
   };
   if (!sessions || !runs) return <div className="skeleton" style={{ flex: 1 }} />;
-  const items = mergeWork(sessions, runs);
+  const allItems = mergeWork(sessions, runs);
+  const items = applyWorkFilters(allItems, filters, now);
   const run = runs.find((r) => `run:${r.id}` === selected) ?? null;
   const session = sessions.find((x) => `session:${x.id}` === selected) ?? null;
   const change = (fn: () => Promise<AgentSession>) =>
@@ -1088,10 +1096,26 @@ function WorkList({
           {runs.length === 1 ? '' : 's'} across projects
         </span>
       </div>
+      {allItems.length > 0 && (
+        <WorkFilters
+          items={allItems}
+          filters={filters}
+          onChange={setFilters}
+          now={now}
+          projectNames={projectName}
+        />
+      )}
       <div className={`work-list-scroll${session || run ? ' is-docked' : ''}`}>
-        {items.length === 0 ? (
+        {allItems.length === 0 ? (
           <p className="faint" style={{ margin: 0 }}>
             Nothing yet. Start a session from the toolbar, or hand a card to an agent from a board.
+          </p>
+        ) : items.length === 0 ? (
+          <p className="faint" style={{ margin: 0 }}>
+            No agent work matches these filters ·{' '}
+            <button type="button" className="link-button" onClick={() => setFilters(NO_FILTERS)}>
+              Clear filters
+            </button>
           </p>
         ) : (
           <AgentWorkList

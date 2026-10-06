@@ -136,6 +136,28 @@ export function runFacts(r: AgentRun, now: number): Fact[] {
   return facts;
 }
 
+/** Filter buckets for the list view; one per item. */
+export type WorkStatus = 'running' | 'idle' | 'review' | 'ended';
+
+export const WORK_STATUS_LABELS: Record<WorkStatus, string> = {
+  running: 'Running',
+  idle: 'Idle',
+  review: 'Needs review',
+  ended: 'Ended',
+};
+
+/** Which status bucket an item is in (same rules as the row's state word). */
+export function workStatus(w: WorkItem, now: number): WorkStatus {
+  if (w.kind === 'session') {
+    const activity = sessionActivity(w.item, now);
+    return activity === 'stopped' ? 'ended' : activity;
+  }
+  const r = w.item;
+  if (r.status === 'running' || r.status === 'queued') return 'running';
+  if ((r.status === 'succeeded' || r.status === 'failed') && !r.validation) return 'review';
+  return 'ended';
+}
+
 /** What the row says about state, in words (never colour alone). */
 function stateLabel(
   w: WorkItem,
