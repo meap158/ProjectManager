@@ -11,6 +11,7 @@ const terms = vi.hoisted(
       options: { fontSize?: number; disableStdin?: boolean };
       written: string;
       onDataCb: ((d: string) => void) | null;
+      keyHandler: ((e: KeyboardEvent) => boolean) | null;
     }[],
 );
 vi.mock('@xterm/xterm', () => ({
@@ -20,6 +21,10 @@ vi.mock('@xterm/xterm', () => ({
     rows = 24;
     written = '';
     onDataCb: ((d: string) => void) | null = null;
+    keyHandler: ((e: KeyboardEvent) => boolean) | null = null;
+    attachCustomKeyEventHandler(handler: (e: KeyboardEvent) => boolean) {
+      this.keyHandler = handler;
+    }
     constructor(options: Record<string, unknown>) {
       this.options = options;
       terms.push(this as never);
@@ -101,6 +106,29 @@ describe('TerminalView', () => {
 
     term.onDataCb!('ls\r');
     expect(onInput).toHaveBeenCalledWith('ls\r');
+  });
+
+  it('leaves Ctrl+V to the browser paste, and sends ^V only when nothing was pasted', async () => {
+    const onInput = vi.fn();
+    const { container } = render(
+      <TerminalView fetchOutput={noFetch} streamUrl={() => '/s'} onInput={onInput} />,
+    );
+    await waitFor(() => expect(terms.at(-1)?.keyHandler).not.toBeNull());
+    const term = terms.at(-1)!;
+    const ctrlV = () => term.keyHandler!(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true }));
+    // Text on the clipboard: the browser paste event carries it, nothing extra is sent.
+    expect(ctrlV()).toBe(false);
+    const paste = new Event('paste', { bubbles: true }) as Event & { clipboardData: unknown };
+    paste.clipboardData = { getData: () => 'hello' };
+    container.querySelector('.terminal')!.dispatchEvent(paste);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(onInput).not.toHaveBeenCalled();
+    // Nothing pasted (empty or image-only clipboard): ^V goes to the CLI.
+    expect(ctrlV()).toBe(false);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(onInput).toHaveBeenCalledWith('\x16');
+    // Other keys are untouched.
+    expect(term.keyHandler!(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))).toBe(true);
   });
 
   it('polls read-only output until the finished process is drained', async () => {
