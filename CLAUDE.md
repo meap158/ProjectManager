@@ -81,7 +81,9 @@ anything.
 6. Review `git status` / `git diff --cached`. No `data/`, `.env`, `dist/`, `Research/`,
    `References/`, logs or temp files.
 7. **Commit atomically**, one coherent change per commit, with a descriptive message (what changed
-   and why). Leave the repo resumable for the next agent.
+   and why). Reference the board card it serves: `Refs PM-12` while working, `Fixes PM-12` when
+   it's complete (the commit watcher moves the card within ~15s). No card for the work yet? Create
+   one on the board (or via the `create_card` MCP tool) first. Leave the repo resumable.
 
 ## Gotchas
 

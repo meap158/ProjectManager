@@ -42,6 +42,10 @@ atomic commits). Nothing is pending in the working tree.
   idle: a tail with no letters or digits is redraw chrome, not work.
 - **Agents tab selection** is remembered per project (`pm.agents.selected`), across project
   switches and restarts.
+- **Boards follow commits:** a commit watcher (`Scanner.watchCommits`, started in index.ts)
+  checks each project's HEAD every 15s and applies new commits' card refs (`PM-n` → In progress,
+  `Fixes PM-n` → Done), idempotent across same-second commits; no Refresh needed. Agents get a
+  `create_card` MCP tool for terminal-started work and are told to reference cards in commits.
 - **Pull requests** tab via `gh pr list`.
 - **Verification (this snapshot):** both typechecks, lint on every changed file, Prettier, and
   154+ tests pass (`npx vitest run --maxWorkers=1`). Browser QA in Chrome on a scratch instance
