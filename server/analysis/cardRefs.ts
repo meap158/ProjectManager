@@ -39,7 +39,10 @@ export function computeMoves(cards: CardRefTarget[], commits: CommitMessage[]): 
   for (const commit of commits) {
     const { closes, mentions } = parseRefs(commit.message);
     const committed = Date.parse(commit.committedAt);
-    const applies = (card: CardRefTarget) => committed >= Date.parse(card.createdAt);
+    // Git keeps whole seconds and cards keep milliseconds: a commit made in the same second as
+    // the card (e.g. card created, then committed right away) must still count.
+    const applies = (card: CardRefTarget) =>
+      committed >= Math.floor(Date.parse(card.createdAt) / 1000) * 1000;
 
     for (const id of closes) {
       const card = state.get(id);
