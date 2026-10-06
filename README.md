@@ -1,228 +1,348 @@
+<div align="center">
+
+<img src="client/public/favicon.svg" width="88" alt="ProjectManager logo">
+
 # ProjectManager
 
-A local dashboard for all the code projects on your computer. Point it at your project folders and it
-shows how big each one is, what it's written in and how active it is, much like a GitHub repo page.
-Each project also gets a Trello-style board for planning upcoming features, and cards can be handed to
-an AI coding agent.
+**One home for every code project on your computer.**<br>
+See what each project is made of, plan the work on a board, and let AI coding agents do the tasks,
+all in your browser, all on your machine.
 
-ProjectManager stores its data locally. GitHub PR queries use your gh login; agent CLIs use their configured providers.
+[![Node 22.13+](https://img.shields.io/badge/node-22.13%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev)
+[![Local-first](https://img.shields.io/badge/data-stays%20on%20your%20machine-8A63D2)](#-your-data-stays-yours)
+[![Windows · macOS · Linux](https://img.shields.io/badge/runs%20on-Windows%20·%20macOS%20·%20Linux-555)](#-quick-start)
 
-![Dashboard with portfolio totals, languages and project rankings](docs/screenshots/dashboard.png)
+[Quick start](#-quick-start) ·
+[Features](#-what-you-get) ·
+[How cards move](#-the-board-keeps-itself-up-to-date) ·
+[AI agents](#-ai-agents-in-real-terminals) ·
+[FAQ](#-faq)
 
-## What it does
+<br>
 
-- **Track project folders.** Add any folder, browsing your drives from the app.
-- **Code stats:**
-  - lines of code, comments and blank lines
-  - complexity estimate, language breakdown
-  - file and folder counts, largest files
-- **Size on disk:** the whole folder (including `node_modules`, builds, `.git`), source files only, and the
-  biggest top-level folders.
-- **Git activity:** a GitHub-style commit heatmap, commits per month, contributors, recent commits, and
-  first/last commit dates.
-- **Portfolio dashboard:** totals across all projects, a ranked table, and **commits by project**
-  over the last 12 months, 12 weeks or 30 days, so you can see which projects get the most work.
-- **Global Board:** cards across projects, project tags, filters and full card creation. New card uses the same dialog as Edit card, including images and agent/session choices.
-- **Project list order:** sort the sidebar by name, activity, code size, terminals or tasks, or
-  pick **Custom order** and drag projects by their handle (or focus a handle and use ↑ / ↓).
-- **Theme:** System, Light and Dark, remembered across reloads.
-- **Phone layout:** at 768px wide and below, a bottom tab bar (Home, Projects, Board, Agents,
-  Settings) replaces the top nav, the project list opens full screen, and dialogs become bottom
-  sheets. The same layout fits narrow desktop windows.
-- **Board or List:** every board has Notion-style view tabs. **Board** is the Kanban; **List**
-  groups cards by status in collapsible sections with one row per card, which is easier on a
-  phone. Your choice is remembered per browser.
-- **Last page:** opening the app returns to the page you had open (project tab, board, or agents). All projects still opens the dashboard when you choose it.
-- **Settings** (top right): agent CLIs with one-click install using each vendor's official
-  method, their **usage limits** (5-hour and weekly windows: percent used and when they reset;
-  Codex from its own session logs, Claude Code from the status line of sessions started here,
-  which still shows your own status line; no tokens spent), and per-project board column
-  presets (Full flow, Simple, Capture flow). The sidebar keeps a compact **Plan usage** card.
-  **Agent permissions**: one level for all agents (the CLIs' own settings, Read-only, Edit files or
-  Full access) and, per CLI, "Inherit" or its own level; each level is translated into that CLI's
-  own flags/config and applies to terminal sessions on their next start and as the run default.
-- **Pull requests:** a project tab lists up to 100 open GitHub PRs, draft/review state, branches and authors. Install GitHub CLI and run `gh auth login`; Refresh reloads the list.
-- **Feature board per project:** Backlog → To do → In progress → Review → Done, with drag and drop.
-- **Automatic card moves.** Every card has a key like `PM-12`, and the board follows the work by
-  itself from what git and GitHub record (no AI agent involved):
-  - A commit on any local branch that mentions `PM-12`, or a branch named after the card
-    (`pm-12-login`), moves it to **In progress**.
-  - `Fixes PM-12` (also `closes` / `resolves` / `completes`) on a branch that isn't merged yet, or
-    an open pull request mentioning the card, moves it to **Review**.
-  - `Fixes PM-12` on the default branch, or a merged pull request mentioning it, moves it to
-    **Done**.
-  - Branch work counts too (worktrees, feature branches), not only the checked-out branch.
-    Commits apply within about 15 seconds; pull requests are checked every 2 minutes through the
-    GitHub CLI (`gh auth login`) for projects with a GitHub remote.
-  - Cards only move forward, and each commit or pull request applies once, so a card you move
-    back by hand stays put.
-- **AI agents:** dispatch a card to Claude Code, Codex, Grok, Antigravity or OpenCode (whichever is
-  installed).
-  - Choose what the agent may do: **Read-only**, **Edit files** (default) or **Full access**.
-  - Dispatching moves the card to In progress.
-  - When the run finishes you see what it changed ("3 files changed · 1 commit"), then
-    **Accept** (the card moves to Review) or **Reject** (it goes back to To do).
-  - **Work on it in a terminal** (on a card) starts an interactive session already given the
-    card's task. The card shows a **⌨ live** badge while it runs.
-  - **Send to this session** (on a card) gives the task to an agent session that's already running,
-    so it keeps everything it already knows about the project.
-  - The **Agents** workspace (top bar) shows sessions from any projects side by side: pick a
-    layout (1, 2, 3 or 4 panes), double-click a pane header (or Alt+Enter) to maximise it,
-    Alt+1…4 to jump between panes, and drag a header to swap panes. Your layout is
-    saved and comes back after reloads and restarts.
-  - Terminals are real and interactive. Click and type, and full-screen CLIs
-    like `claude` work in the browser. Sessions survive restarts and reboots, and **Start** on a
-    stopped session continues its own conversation: Claude Code, Codex, Grok, OpenCode and
-    Antigravity each reopen exactly the conversation that session was in, even with several
-    sessions of one CLI in the same project.
-  - Session names stay in sync with the CLIs' own `/rename` (Claude Code, Codex, Grok): a name
-    you give a session here is passed on to the CLI (at launch, or as `/rename` once it's idle),
-    and a `/rename` typed in the CLI renames the session here. Automatic titles never do.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hero-dark.jpg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/hero-light.jpg">
+  <img src="docs/screenshots/hero-dark.jpg" alt="The ProjectManager dashboard with every project's totals, plus the Board on a phone">
+</picture>
 
-![Project overview: stats, commit heatmap, monthly commits and languages](docs/screenshots/project-overview.png)
+<sub>Screenshots use demo projects. The hero image follows your GitHub theme.</sub>
 
-![Feature board](docs/screenshots/project-board.png)
+</div>
 
-![Agents workspace: a shell for one project next to a Claude session that took card PM-4, then PM-5, in the same conversation](docs/screenshots/agent-workspace.jpg)
+---
 
-## Requirements
+## ✨ What you get
 
-- **Node.js 22.13+**
-- **git** on your PATH (for commit stats; everything else works without it)
-- Optional: [scc](https://github.com/boyter/scc) on your PATH. If found, it's used for faster, more
-  accurate line counts.
-- Optional: an AI coding CLI (`claude`, `codex`, `grok`, `agy`, `opencode`) for agent dispatch
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## Quick start
+### 📊 Every project at a glance
+
+Add your project folders once. ProjectManager counts the lines of code, finds the languages,
+measures the size on disk and reads the git history. You get a GitHub-style activity heatmap for
+each project and a dashboard that ranks all of them.
+
+</td>
+<td width="50%" valign="top">
+
+### 🗂️ A board that updates itself
+
+Each project gets a board: **Backlog → To do → In progress → Review → Done**. Mention a card in a
+commit, open a pull request for it or merge it, and the card moves on its own. No clicking, and no
+AI needed for that.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🤖 AI agents in real terminals
+
+Hand a card to **Claude Code, Codex, Grok, Antigravity or OpenCode**. Each one runs in a real
+terminal inside the app. Watch up to four side by side, and pick up exactly where you left off
+after a restart.
+
+</td>
+<td width="50%" valign="top">
+
+### 📱 Works on your phone too
+
+A phone layout with a bottom tab bar. Turn on LAN access, type a 4-letter code on your phone, and
+check on your agents from the couch.
+
+</td>
+</tr>
+</table>
+
+<details>
+<summary><b>See the project page</b> &nbsp;·&nbsp; stats, heatmap and languages</summary>
+<br>
+
+![A project page: lines of code, size, commit heatmap, commits per month and languages](docs/screenshots/overview.jpg)
+
+</details>
+
+<details open>
+<summary><b>See the board</b> &nbsp;·&nbsp; every card across your projects</summary>
+<br>
+
+![The global Board with five coloured columns and cards tagged by project](docs/screenshots/board.jpg)
+
+</details>
+
+<details>
+<summary><b>See the agents</b> &nbsp;·&nbsp; three AI agents working side by side</summary>
+<br>
+
+![The Agents workspace with three terminal panes: Claude Code, Codex and Grok, each working on a card](docs/screenshots/agents.jpg)
+
+</details>
+
+<details>
+<summary><b>See it on a phone</b> &nbsp;·&nbsp; dashboard, board and agents</summary>
+<br>
+
+![Three phones showing the dashboard, the board and an agent terminal](docs/screenshots/phones.jpg)
+
+</details>
+
+---
+
+## 🚀 Quick start
+
+You need **[Node.js 22.13 or newer](https://nodejs.org)** and **git**.
 
 ```bash
-git clone <this repo> ProjectManager
+git clone https://github.com/meap158/ProjectManager.git
 cd ProjectManager
 npm install
 npm run launch
 ```
 
-Then open the URL the launcher prints (normally http://localhost:5180). It opens in your browser
-automatically.
+Your browser opens on **http://localhost:5180**. Click **＋ Add**, pick a project folder, and
+you're done.
 
-You can also start it with `launch.bat` / `launch.ps1` on Windows, or `./launch.sh` on macOS/Linux.
-If `node_modules` is missing, the launcher runs `npm install` for you.
+> [!TIP]
+> On Windows you can double-click **`launch.bat`**. On macOS or Linux run **`./launch.sh`**.
+> If port 5180 is busy, the launcher simply picks the next free one and tells you which.
 
-### Ports
+<details>
+<summary><b>Optional extras</b></summary>
+<br>
 
-The launcher prefers port **5180**. If that port is already in use, it automatically tries 5181, 5182
-and so on, then prints the URL it actually used. You never need to free up a port yourself. To change
-the preferred port, set `PORT` in `.env`.
+| Install this                                                     | And you get                                               |
+| ---------------------------------------------------------------- | --------------------------------------------------------- |
+| An AI coding CLI: `claude`, `codex`, `grok`, `agy` or `opencode` | Agents that work on your cards                            |
+| [GitHub CLI](https://cli.github.com) (`gh auth login`)           | Pull requests on each project, and cards that follow them |
+| [scc](https://github.com/boyter/scc)                             | Faster, more precise line counts                          |
 
-If ProjectManager is already running for the same data folder, the launcher doesn't start a
-second copy. It prints the running URL and opens it.
+Missing an agent CLI? **Settings** can install it for you, using each vendor's official method.
 
-### Configuration (optional)
+</details>
 
-Copy `.env.example` to `.env` to override any of these:
+<details>
+<summary><b>Settings you can change</b> (<code>.env</code>)</summary>
+<br>
 
-| Variable   | Default     | Purpose                                                       |
-| ---------- | ----------- | ------------------------------------------------------------- |
-| `PORT`     | `5180`      | Preferred port (the launcher falls back to the next free one) |
-| `HOST`     | `127.0.0.1` | Interface to bind. Keep it local                              |
-| `DATA_DIR` | `./data`    | Where the SQLite database is stored                           |
-| `BROWSER`  | (unset)     | Set to `none` to stop the browser from opening                |
-| `SCC`      | (unset)     | Set to `off` to ignore an installed `scc`                     |
+Copy `.env.example` to `.env` and change what you need:
 
-## Using it
+| Variable   | Default     | What it does                                              |
+| ---------- | ----------- | --------------------------------------------------------- |
+| `PORT`     | `5180`      | The port to try first (the next free one is used if busy) |
+| `HOST`     | `127.0.0.1` | Where the server listens. Keep it local                   |
+| `DATA_DIR` | `./data`    | Where your data (one SQLite file) is kept                 |
+| `BROWSER`  | (unset)     | Set to `none` to stop the browser from opening            |
+| `SCC`      | (unset)     | Set to `off` to ignore an installed `scc`                 |
 
-1. Click **+ Add** and pick a project folder. The first scan starts right away.
-2. Open the project for its **Overview**. Click **Refresh** after you've made changes.
-3. Use the **Board** tab to capture upcoming features. Click a card to edit it, change its column, or
-   dispatch it to an AI agent.
-4. Mention card keys in your commit messages and the board keeps itself up to date.
+</details>
 
-"Remove" (the bin icon) only stops tracking a project. It never touches your files.
+---
 
-The switch at the top right picks **Match system**, **Light** or **Dark**. It's remembered
-per browser.
+## 🔄 The board keeps itself up to date
 
-![Phone layout: dashboard, Projects panel and a board in List view](docs/screenshots/mobile.png)
+Every card has a key like **`PM-12`**. Just use it in your normal git work:
 
-## Development
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> ToDo: you add a card
+    ToDo --> InProgress: a commit or branch mentions PM-12
+    InProgress --> Review: "Fixes PM-12" on a branch,<br/>or a pull request is opened
+    Review --> Done: merged into main,<br/>or the pull request is merged
+    InProgress --> Done: "Fixes PM-12" on main
+    Done --> [*]
+    ToDo: To do
+    InProgress: In progress
+```
 
-| Command          | What it does                                       |
-| ---------------- | -------------------------------------------------- |
-| `npm run launch` | Dev server with hot reload (same as `npm run dev`) |
-| `npm run check`  | Typecheck + lint + format check + tests            |
-| `npm run build`  | Production build into `dist/`                      |
-| `npm start`      | Run the production build through the launcher      |
+| You do this                                                         | The card moves to |
+| ------------------------------------------------------------------- | ----------------- |
+| Commit on any branch with `PM-12` in the message                    | **In progress**   |
+| Create a branch named after it, like `pm-12-login`                  | **In progress**   |
+| Commit `Fixes PM-12` on a branch that isn't merged yet              | **Review**        |
+| Open a pull request that mentions `PM-12`                           | **Review**        |
+| Commit `Fixes PM-12` on your main branch, or merge the pull request | **Done**          |
 
-Contributors and AI agents: read [CLAUDE.md](CLAUDE.md) for conventions, [DESIGN.md](DESIGN.md) for UI
-rules, and [AGENT_HANDOVER.md](AGENT_HANDOVER.md) for the current state.
+`closes`, `resolves` and `completes` work like `fixes`.
 
-## Security note
+<details>
+<summary><b>The fine print</b></summary>
+<br>
 
-The app can read any folder on your computer and run AI agent CLIs, so it only listens on `127.0.0.1`
-and rejects requests from other sites. Don't expose it to a network.
+- Commits are picked up within about 15 seconds, on every local branch and worktree.
+- Pull requests are checked every 2 minutes for projects with a GitHub remote (needs `gh auth login`).
+- Cards only ever move forward. Each commit or pull request counts once, so if you drag a card
+  back, it stays where you put it.
+- Commits made before a card existed never move it.
 
-## Credits
+</details>
 
-Animated components by [Rare UI](https://rareui.com) (MIT + Commons Clause; attribution required).
+---
 
-Agent CLI marks: Claude Code and OpenCode from [Simple Icons](https://simpleicons.org) (CC0);
-Codex (the OpenAI mark), Grok and Antigravity from [LobeHub Icons](https://github.com/lobehub/lobe-icons)
-(MIT, Copyright (c) 2023 LobeHub). They identify each CLI only; the trademarks belong to their
-owners.
+## 🤖 AI agents in real terminals
 
-## LAN access (opt-in)
+| Agent       | Exact resume after a restart | Name syncs with `/rename` |
+| ----------- | :--------------------------: | :-----------------------: |
+| Claude Code |              ✅              |            ✅             |
+| Codex       |              ✅              |            ✅             |
+| Grok        |              ✅              |            ✅             |
+| OpenCode    |              ✅              |             —             |
+| Antigravity |              ✅              |             —             |
 
-Settings → **LAN access** opens ProjectManager to other devices on your network (phone, laptop). It
-is off by default and runs as a separate listener (the app port + 100); the normal server stays on
-`127.0.0.1`. On the device, open the address shown in Settings and type the **4-character code**
-shown next to it, like signing in to GitHub on a TV. The code works once, expires after 10 minutes
-and is retired after 5 wrong tries, so guessing is hopeless; wrong tries are also rate-limited per
-device. Each signed-in device gets its own secure cookie (HttpOnly, SameSite=Strict) and is listed
-in Settings, where you can sign it (or all devices) out. Only this computer's own LAN addresses
-(and its name) are accepted, and LAN devices can't view or change the LAN settings. Signed-in
-devices can read your tracked folders and drive agents, so only sign in devices you trust.
-Windows may ask to allow Node.js the first time: allow it on Private networks only.
+- **Hand over a card.** Open a card, choose an agent, and it starts in a terminal with the task
+  already typed in. The card moves to **In progress**.
+- **One-shot runs.** Or let the agent run on its own. When it finishes you see what changed
+  ("3 files changed · 1 commit") and choose **Accept** or **Reject**.
+- **Pick how much it may do:** Read-only, Edit files, or Full access. Set it once for every agent,
+  or per agent.
+- **Watch them side by side.** The **Agents** page shows 1 to 4 terminals at once.
+  <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>4</kbd> jumps between panes, <kbd>Alt</kbd>+<kbd>Enter</kbd>
+  makes one full size, and you can drag panes to swap them.
+- **Nothing is lost.** Sessions keep running when you close the tab, come back after a reboot,
+  and **Start** reopens the exact conversation each agent was in.
+- **Working or waiting?** Each session shows whether the agent is busy or waiting for you.
+- **Plan usage at a glance.** See how much of your 5-hour and weekly limits you've used, and
+  when they reset (Claude Code and Codex).
 
-**On a phone** you get the phone layout (bottom tab bar, Projects panel, List view for boards).
-Add it to your home screen (Safari: Share → Add to Home Screen; Chrome: ⋮ → Add to Home screen) to
-open it full screen with its own icon; a home-screen app keeps its own sign-in, so type a fresh code
-once more there. Folders open only on the computer, so the project path is plain text on the phone.
-If a device is signed out in Settings, it lands back on the sign-in page by itself.
+<details>
+<summary><b>Board tools for agents</b> (MCP)</summary>
+<br>
 
-A signed-in device **stays signed in** across browser restarts, server restarts and reboots: its
-cookie is renewed whenever you use it, and the LAN listener reuses the same port after a restart,
-so saved links and home-screen icons keep working. If your router hands this computer a new IP
-address, use the second address in Settings (this computer's name, `<name>.local`, which iPhones
-resolve) or reserve the IP in your router (DHCP reservation).
+Claude Code, Codex and OpenCode sessions started from ProjectManager get a small built-in tool
+set, so the agent can read its card and keep it up to date: `get_card`, `update_status`,
+`add_note`, `read_image` and `create_card`. An agent can only touch the card it was given. A
+session started without a card can create one card for its own work. Every change is recorded in
+the card's history.
 
-If the phone can't load the address: it must be on the same network as the computer (not a guest
-Wi-Fi, which usually isolates devices), and Windows Firewall must allow Node.js on that network's
-profile (Settings → Network shows whether it is Private or Public). With `npm run launch` (dev
-mode) pages load and work, but live reload doesn't reach the phone; reload by hand after changes.
+Agents are also told to commit in small steps and mention their card (`Refs PM-12` while working,
+`Fixes PM-12` when done), so the board follows their work.
 
-## Agent board tools and images
+Your CLI config files are never edited: the tools are passed to each process when it starts.
 
-Claude Code, Codex and OpenCode sessions/runs launched by ProjectManager receive a
-`projectmanager` MCP server automatically. It provides `get_card`, `update_status`, `add_note`,
-`read_image` and `create_card`. It can access only the owner's currently assigned card in that project;
-a session started without a card (directly in a terminal) can call `create_card` once to make one for
-its work, which then becomes its card. Agents are told to commit atomically and reference their card
-(`Refs PM-12` while working, `Fixes PM-12` when complete), so the board follows their commits.
-reattaching changes that scope, detaching removes card access, and deleting the owner revokes it.
-Card dialogs show **Agent board history** for audited status changes and notes. Validate work
-before moving it to Review; Done means the task is complete.
+</details>
 
-The stdio bridge (`scripts/board-mcp.mjs`) finds the live local server on each request, including
-after port fallback. CLI config is injected per process; project and global CLI files are not edited.
-Capabilities are stored in the local database and passed through environment variables, never task text.
-Existing terminals started before this integration need a stop/start to load MCP configuration.
+---
 
-Image transport uses documented provider support: Codex initial prompts use `--image`, Claude gets
-`--add-dir` access, Antigravity gets `--add-dir`, and OpenCode one-shot runs use `--file`.
-MCP `read_image` delivers native image content, including when sending a new card to an existing
-connected session. Grok and custom commands retain file-path context: automatic isolated MCP/image
-configuration has not been verified for those providers. Clipboard image shortcuts are not emulated.
+## 📱 Use it from your phone
 
-References: [Codex CLI](https://developers.openai.com/codex/cli/reference),
-[Claude CLI](https://code.claude.com/docs/en/cli-reference),
-[OpenCode CLI](https://opencode.ai/docs/cli/).
+1. Open **Settings → LAN access** and turn it on.
+2. On your phone, open the address shown there.
+3. Type the **4-letter code** from your computer. That's it.
+
+<details>
+<summary><b>How it stays safe</b></summary>
+<br>
+
+- LAN access is **off by default** and runs on its own port. The normal app only listens on your
+  own computer.
+- A code works **once**, expires after **10 minutes**, and is thrown away after 5 wrong tries.
+  Too many wrong tries from one device are blocked for a while.
+- Each signed-in device gets its own secure cookie and appears in Settings, where you can sign it
+  out. Devices stay signed in across restarts.
+- Only this computer's own network addresses are accepted, and a phone can't change the LAN
+  settings.
+- On Windows, allow Node.js on **Private** networks when asked.
+
+Tip: add it to your home screen (Safari: Share → Add to Home Screen) to open it like an app.
+
+</details>
+
+---
+
+## 🔒 Your data stays yours
+
+- Everything is stored in **one SQLite file** on your computer (`./data`). No account, no cloud,
+  no tracking.
+- ProjectManager **never changes files in your projects**. Only agents you start yourself do that.
+  Removing a project from the list only stops tracking it.
+- The server only listens on `127.0.0.1` and refuses requests from other websites.
+
+---
+
+## ❓ FAQ
+
+<details>
+<summary><b>Does it upload my code anywhere?</b></summary>
+<br>
+No. It reads your folders locally. The only outside connections are the ones you choose: the AI
+agent CLIs you run (they talk to their own providers) and the GitHub CLI for pull requests.
+</details>
+
+<details>
+<summary><b>Do I need an AI agent to use it?</b></summary>
+<br>
+No. Stats, the activity heatmaps, the dashboard and the self-updating board all work without one.
+</details>
+
+<details>
+<summary><b>Which languages does it count?</b></summary>
+<br>
+Dozens, from TypeScript, Python, Go and Rust to Kotlin, C#, shaders and config files. Generated
+folders like <code>node_modules</code> and build output are left out of the code stats but still
+show up in the size on disk.
+</details>
+
+<details>
+<summary><b>Can it run on a server for my team?</b></summary>
+<br>
+It's built for one person on one computer. It can read your folders and run agents, so don't put
+it on the internet. LAN access is for your own devices at home.
+</details>
+
+---
+
+## 🛠️ For developers
+
+| Command          | What it does                                    |
+| ---------------- | ----------------------------------------------- |
+| `npm run launch` | Start with hot reload (same as `npm run dev`)   |
+| `npm run check`  | Typecheck, lint, format check and all the tests |
+| `npm run build`  | Build for production into `dist/`               |
+| `npm start`      | Run the production build                        |
+
+Built with **Node.js** (built-in `node:sqlite`, so no database to set up), **Hono**, **React 19**,
+**Vite**, **xterm.js** and **node-pty** (optional, for terminals).
+
+Contributors and AI agents: start with [CLAUDE.md](CLAUDE.md) (how we work),
+[DESIGN.md](DESIGN.md) (how it looks) and [AGENT_HANDOVER.md](AGENT_HANDOVER.md) (where things
+stand).
+
+---
+
+## 🙏 Credits
+
+- Animated components by **[Rare UI](https://rareui.com)** (MIT + Commons Clause; attribution
+  required).
+- Agent marks: Claude Code and OpenCode from [Simple Icons](https://simpleicons.org) (CC0); Codex
+  (the OpenAI mark), Grok and Antigravity from
+  [LobeHub Icons](https://github.com/lobehub/lobe-icons) (MIT, Copyright (c) 2023 LobeHub). They
+  only identify each tool; the trademarks belong to their owners.
+
+<div align="center">
+<br>
+<sub>Made for people with too many side projects. ⭐ Star it if it helps you keep track of yours.</sub>
+</div>
