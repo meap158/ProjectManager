@@ -185,7 +185,7 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   });
 
   // Plan usage limits (5-hour / weekly) the CLIs record locally; no tokens spent (PM-17).
-  app.get('/agent-limits', (c) => c.json(readLimits()));
+  app.get('/agent-limits', (c) => c.json(readLimits(supervisor.dataDir)));
 
   app.get('/agent-sessions', (c) => c.json(supervisor.listAllSessions()));
 

@@ -1,5 +1,5 @@
 import { useAgentLimits } from '../agentLimits';
-import { formatDuration, formatRelative } from '../format';
+import { formatRelative, formatReset } from '../format';
 import { PROVIDER_LABELS, ProviderIcon } from './icons';
 
 /**
@@ -26,7 +26,7 @@ export function LimitsStrip({ providerIds }: { providerIds: string[] }) {
             const reset = w.resetSinceReport
               ? 'reset since the last report'
               : w.resetsAt
-                ? `resets in ${formatDuration(Date.parse(w.resetsAt) - now)}`
+                ? `resets ${formatReset(w.resetsAt, now)}`
                 : '';
             return (
               <span key={w.label} className="limits-window" title={reset || undefined}>

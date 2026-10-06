@@ -407,8 +407,18 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   read; `server/agents/limits.ts`): Codex logs `rate_limits` in its session rollouts. They are as
   of the CLI's last reply (tooltip: source and time); a window that reset since reads 0% "reset
   since". CLIs without a local source show no meter, never an estimate. Claude Code exposes its
-  limits only to a status-line command's JSON (`rate_limits.five_hour` / `seven_day`), which
-  would mean wrapping the user's status line in sessions we launch: evaluated, not done yet.
+  limits only to a status-line command's JSON (`rate_limits.five_hour` / `seven_day`), so the
+  Claude sessions ProjectManager launches get `scripts/claude-statusline.mjs` as status line
+  (in the same injected `--settings` as the hooks): it saves that block to
+  `<dataDir>/claude-limits.json`, then runs the user's own status line (project-local, project,
+  then user settings; PowerShell on Windows, sh elsewhere) and passes its output through, so
+  what they see is unchanged. Resets read like Claude Code: "in 3h 49m" within a day, else
+  "Mon 7:00 PM" (`formatReset`).
+- **Sidebar plan usage (PM-41):** a card above the totals in the sidebar footer, after Claude
+  Code's usage popover: per CLI a name row, then each window as label · "Resets …" · percent with
+  a 4px bar beneath (amber from 75%, red from 90%). The header collapses it to a one-line summary
+  ("Claude Code 94% · Codex 28%", highest window per CLI), saved per browser. Hidden when no CLI
+  reports limits.
 - **Limits on Agent work (PM-18):** limits belong to the account, not a session or run, so they
   appear once per CLI above each Agent work list (project Agents tab and the workspace List),
   only for CLIs present in that list: icon, name, then each window as label, 40px meter and

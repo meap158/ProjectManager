@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatCompact, formatRelative } from './format';
+import { formatBytes, formatCompact, formatRelative, formatReset } from './format';
 
 describe('format helpers', () => {
   it('formats byte sizes with sensible precision', () => {
@@ -19,5 +19,14 @@ describe('format helpers', () => {
     expect(formatRelative(new Date(Date.now() - 3 * 86_400_000).toISOString())).toMatch(
       /3 days ago/,
     );
+  });
+});
+
+describe('formatReset', () => {
+  it('says "in 3h 49m" within a day and the weekday and time beyond', () => {
+    const now = Date.parse('2026-10-06T13:00:00Z');
+    expect(formatReset('2026-10-06T16:49:00Z', now)).toBe('in 3h 49m');
+    expect(formatReset('2026-10-12T19:00:00Z', now)).toMatch(/\d/);
+    expect(formatReset('2026-10-12T19:00:00Z', now)).not.toMatch(/^in /);
   });
 });

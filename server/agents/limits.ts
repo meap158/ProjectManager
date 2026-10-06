@@ -1,4 +1,12 @@
-import { closeSync, fstatSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  statSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { ProviderLimits, UsageWindow } from '../../shared/limits.js';
@@ -8,6 +16,9 @@ import type { ProviderLimits, UsageWindow } from '../../shared/limits.js';
 //  - Codex logs `rate_limits` on every token_count event in its session rollouts
 //    ($CODEX_HOME or ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl): primary is the 5-hour
 //    window, secondary the weekly one, each with used_percent and resets_at (unix seconds).
+//  - Claude Code reports plan usage only to its status line command; the sessions ProjectManager
+//    launches run scripts/claude-statusline.mjs, which saves that block to
+//    <dataDir>/claude-limits.json before running the user's own status line.
 // The numbers are as of the CLI's last reply; they don't move while the CLI is idle, so the UI
 // shows when they were reported. Rollouts can total hundreds of MB, so only the newest day
 // folders are listed and only the tail of the newest file is read.
@@ -166,15 +177,69 @@ export function rollOver(limits: ProviderLimits, now: number): ProviderLimits {
   };
 }
 
+interface ClaudeWindow {
+  used_percentage?: number;
+  used_percent?: number;
+  resets_at?: number | string | null;
+}
+
+/** A reset time as ISO: unix seconds (documented), milliseconds or an ISO string. */
+function resetTime(value: number | string | null | undefined): string | null {
+  if (typeof value === 'string')
+    return Number.isNaN(Date.parse(value)) ? null : new Date(value).toISOString();
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return new Date(value < 1e12 ? value * 1000 : value).toISOString();
+}
+
+function claudeWindow(w: ClaudeWindow | null | undefined, minutes: number): UsageWindow | null {
+  const used = w?.used_percentage ?? w?.used_percent;
+  if (typeof used !== 'number') return null;
+  return {
+    label: windowLabel(minutes),
+    windowMinutes: minutes,
+    usedPercent: Math.min(100, Math.max(0, used)),
+    resetsAt: resetTime(w?.resets_at),
+  };
+}
+
+/** Claude Code's last recorded limits (from its status line), or null. */
+export function claudeLimits(dataDir: string | null, now = Date.now()): ProviderLimits | null {
+  if (!dataDir) return null;
+  try {
+    const saved = JSON.parse(readFileSync(path.join(dataDir, 'claude-limits.json'), 'utf8')) as {
+      asOf?: string;
+      fiveHour?: ClaudeWindow | null;
+      sevenDay?: ClaudeWindow | null;
+    };
+    const windows = [
+      claudeWindow(saved.fiveHour, 300),
+      claudeWindow(saved.sevenDay, 10_080),
+    ].filter((w): w is UsageWindow => w !== null);
+    if (windows.length === 0) return null;
+    return rollOver(
+      {
+        providerId: 'claude',
+        windows,
+        asOf: saved.asOf ?? new Date(now).toISOString(),
+        source: 'Claude Code status line (sessions started from ProjectManager)',
+      },
+      now,
+    );
+  } catch {
+    return null; // Not recorded yet: no Claude session from here has replied since.
+  }
+}
+
 const TTL_MS = 30_000;
 let cached: { at: number; value: ProviderLimits[] } | null = null;
 
 /** Every provider's limits that can be read locally, cached briefly (Settings polls). */
-export function readLimits(now = Date.now()): ProviderLimits[] {
+export function readLimits(dataDir: string | null, now = Date.now()): ProviderLimits[] {
   if (cached && now - cached.at < TTL_MS) return cached.value;
-  const value = [codexLimits(os.homedir(), process.env.CODEX_HOME, now)].filter(
-    (l): l is ProviderLimits => l !== null,
-  );
+  const value = [
+    claudeLimits(dataDir, now),
+    codexLimits(os.homedir(), process.env.CODEX_HOME, now),
+  ].filter((l): l is ProviderLimits => l !== null);
   cached = { at: now, value };
   return value;
 }

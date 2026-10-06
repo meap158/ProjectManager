@@ -54,3 +54,17 @@ export function formatDuration(ms: number): string {
   if (h < 24) return `${h}h ${m % 60}m`;
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
+
+/**
+ * When a usage window resets, the way Claude Code words it: "in 3h 49m" within a day, else the
+ * day and time ("Mon 7:00 PM").
+ */
+export function formatReset(iso: string, now: number): string {
+  const ms = Date.parse(iso) - now;
+  if (ms < 24 * 3600_000) return `in ${formatDuration(ms)}`;
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}

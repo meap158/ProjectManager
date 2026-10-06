@@ -113,12 +113,18 @@ export function boardConnection(
       },
     };
     // Sessions also get a SessionStart hook that reports the live conversation id (Claude
-    // switches on /resume, /clear and compaction), so relaunches resume the right conversation.
+    // switches on /resume, /clear and compaction), so relaunches resume the right conversation,
+    // and a status line that records plan usage (Claude reports it nowhere else) before running
+    // the user's own status line unchanged (scripts/claude-statusline.mjs, PM-17).
     const hook =
       owner.kind === 'session'
         ? [
             '--settings',
             JSON.stringify({
+              statusLine: {
+                type: 'command',
+                command: `node "${siblingScript('claude-statusline.mjs')}" "${dataDir}"`,
+              },
               hooks: Object.fromEntries(
                 [
                   'SessionStart',

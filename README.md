@@ -34,9 +34,10 @@ ProjectManager stores its data locally. GitHub PR queries use your gh login; age
   phone. Your choice is remembered per browser.
 - **Last page:** opening the app returns to the page you had open (project tab, board, or agents). All projects still opens the dashboard when you choose it.
 - **Settings** (top right): agent CLIs with one-click install using each vendor's official
-  method, their **usage limits** (Codex's 5-hour and weekly windows: percent used and when they
-  reset, read from Codex's own session logs, no tokens spent), and per-project board column
-  presets (Full flow, Simple, Capture flow).
+  method, their **usage limits** (5-hour and weekly windows: percent used and when they reset;
+  Codex from its own session logs, Claude Code from the status line of sessions started here,
+  which still shows your own status line; no tokens spent), and per-project board column
+  presets (Full flow, Simple, Capture flow). The sidebar keeps a compact **Plan usage** card.
   **Agent permissions**: one level for all agents (the CLIs' own settings, Read-only, Edit files or
   Full access) and, per CLI, "Inherit" or its own level; each level is translated into that CLI's
   own flags/config and applies to terminal sessions on their next start and as the run default.

@@ -78,7 +78,13 @@ atomic commits). Nothing is pending in the working tree.
   single-use code (`server/lan.ts`); see CLAUDE.md security model.
 - **Limits on Agent work (PM-18):** `LimitsStrip` above both Agent work lists, once per CLI in
   the list (`useAgentLimits` in `client/src/agentLimits.ts`, shared with Settings).
-- **Usage limits (PM-17, in progress):** Settings → Agent CLIs shows Codex's 5-hour/weekly
+- **Claude limits + sidebar card (PM-17, PM-41):** launched Claude sessions run
+  `scripts/claude-statusline.mjs` as status line (recorder -> `<dataDir>/claude-limits.json`, then
+  the user's own status line, output unchanged); `claudeLimits` reads it. Verified: recorder with
+  and without a user status line (stand-alone), parsing, UI. Not yet seen live: Claude only fills
+  `rate_limits` after a reply in a session started/restarted with the new settings.
+  `PlanUsage` card in the sidebar footer (collapsible, `pm.sidebar.usage`).
+- **Usage limits (PM-17):** Settings → Agent CLIs shows Codex's 5-hour/weekly
   windows from `rate_limits` in `~/.codex/sessions` rollouts (`server/agents/limits.ts`, GET
   `/api/agent-limits`, 30s cache; newest 3 day folders, tail reads of the newest 4 files, latest
   report wins, reset windows read 0%). Claude Code: only the status-line JSON carries

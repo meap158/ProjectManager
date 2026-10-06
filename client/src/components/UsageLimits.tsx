@@ -1,5 +1,5 @@
 import type { ProviderLimits } from '../../../shared/limits';
-import { formatDuration, formatRelative } from '../format';
+import { formatRelative, formatReset } from '../format';
 
 /**
  * Plan usage meters for one agent CLI (PM-17): one row per window (5-hour, weekly) with a thin
@@ -17,7 +17,7 @@ export function UsageLimits({ limits, now }: { limits: ProviderLimits; now: numb
         const reset = w.resetSinceReport
           ? 'reset since'
           : w.resetsAt
-            ? `resets in ${formatDuration(Date.parse(w.resetsAt) - now)}`
+            ? `resets ${formatReset(w.resetsAt, now)}`
             : null;
         return (
           <span key={w.label} className="usage-window">

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { codexLimits, lastCodexLimits, windowLabel } from './limits.js';
+import { claudeLimits, codexLimits, lastCodexLimits, windowLabel } from './limits.js';
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -85,5 +85,28 @@ describe('Codex usage limits', () => {
       '1-hour',
       '2-day',
     ]);
+  });
+});
+
+describe('Claude Code usage limits', () => {
+  it('reads what the status line recorder saved, as documented (percentage, unix seconds)', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'pm-claude-'));
+    dirs.push(dir);
+    expect(claudeLimits(dir)).toBeNull(); // Nothing recorded yet.
+    writeFileSync(
+      path.join(dir, 'claude-limits.json'),
+      JSON.stringify({
+        asOf: '2026-10-06T13:00:00Z',
+        fiveHour: { used_percentage: 94, resets_at: 1_791_308_133 },
+        sevenDay: { used_percentage: 13, resets_at: '2026-10-12T19:00:00Z' },
+      }),
+    );
+    const found = claudeLimits(dir, Date.parse('2026-10-06T13:00:00Z'));
+    expect(found?.providerId).toBe('claude');
+    expect(found?.windows.map((w) => [w.label, w.usedPercent, w.resetsAt])).toEqual([
+      ['5-hour', 94, new Date(1_791_308_133_000).toISOString()],
+      ['Weekly', 13, '2026-10-12T19:00:00.000Z'],
+    ]);
+    expect(claudeLimits(null)).toBeNull();
   });
 });

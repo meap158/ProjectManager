@@ -7,6 +7,7 @@ import { useProjectHref } from '../projectTabs';
 import { sessionActivity } from '../sessionActivity';
 import { AddProjectDialog } from './AddProjectDialog';
 import { applyCustomOrder, mergeVisibleOrder, moveBefore, moveBy } from '../projectOrder';
+import { PlanUsage } from './PlanUsage';
 
 // Sorter modelled on the KDP Publishing Pipeline Library sorter: each mode has
 // a natural direction, re-selecting the active mode flips it, switching modes
@@ -515,6 +516,7 @@ export function ProjectSidebar({
 
       {projects && projects.length > 0 && (
         <div className="sidebar-foot">
+          <PlanUsage />
           <div className="sidebar-totals" aria-label="Portfolio totals">
             <div className="totals-grid">
               <span className="t">

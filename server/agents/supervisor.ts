@@ -405,7 +405,8 @@ export class AgentSupervisor {
   readonly events = new EventEmitter().setMaxListeners(0);
   /** Interactive sessions live in the session host (survive server restarts) when enabled. */
   private readonly useHost: boolean;
-  private readonly dataDir: string | null;
+  /** The data folder (null in tests without one); limits.ts reads recorder output there. */
+  readonly dataDir: string | null;
   private host: HostClient | null = null;
   private hostConnecting: Promise<HostClient | null> | null = null;
   private hosted = new Map<string, { proc: HostedProc; log: OutputLog }>();

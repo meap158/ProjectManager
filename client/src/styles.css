@@ -691,6 +691,98 @@ code,
   flex-direction: column;
   gap: 6px;
 }
+/* Plan usage card (PM-41), after Claude Code's usage popover: per CLI, rows of label, reset time
+   and percent with a thin bar beneath. Same surface as the totals card below it. */
+.plan-usage {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.plan-usage-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.plan-usage-head .faint {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+}
+.plan-usage-head .blist-caret {
+  margin-left: auto;
+}
+.plan-usage-head[aria-expanded='true'] .blist-caret {
+  transform: rotate(90deg);
+}
+.plan-usage-title {
+  flex: none;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-3);
+}
+.plan-usage-cli {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-usage-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text);
+}
+.plan-usage-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.plan-usage-line > .faint {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-usage-line > .num {
+  flex: none;
+  min-width: 30px;
+  text-align: right;
+  font-weight: 600;
+}
+.plan-usage-bar {
+  height: 4px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.plan-usage-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.plan-usage-bar.is-warn > span {
+  background: var(--status-review);
+}
+.plan-usage-bar.is-high > span {
+  background: var(--danger);
+}
+
 /* Portfolio totals card (KDP "Active Focus" analogue): the numbers that would
    otherwise require a trip back to the home page. */
 .sidebar-totals {
