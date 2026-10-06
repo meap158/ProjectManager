@@ -388,8 +388,8 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   prompt draws); a prompt with neither reads "idle · waiting for you". Log recency alone lies
   (TUI redraws keep the file fresh for hours) and is only the fallback for unknown CLIs.
 - **Agent work rows:** title flush left right after the status dot, provider mark + name after
-  it (official Claude Code and OpenCode marks in brand colours, generic terminal glyph
-  otherwise — never a wrong "official" mark); card tag, state word and actions sit in fixed
+  it (each CLI's own mark: Claude Code, Codex, Antigravity in brand colours, Grok and OpenCode
+  in the text colour; generic terminal glyph for shells and custom commands); card tag, state word and actions sit in fixed
   right-hand columns so they line up on every row.
   Start / Stop carry an icon as well as the word: a green play triangle and a red square
   (`SessionToggle`), so the two read apart at a glance.

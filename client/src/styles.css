@@ -14,6 +14,8 @@
 :root {
   /* Vendor brand colours for official provider marks (identification only). */
   --brand-claude: #d97757;
+  --brand-codex: #5b63ff; /* From Codex's blue-violet gradient; reads on light and dark. */
+  --brand-antigravity: #3186ff;
   color-scheme: light;
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
