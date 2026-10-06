@@ -12,6 +12,9 @@ for await (const line of lines) {
     rpc = JSON.parse(line);
     const { url } = JSON.parse(await readFile(path.join(dataDir, 'server.json'), 'utf8'));
     const endpoint = new URL('/api/board-mcp', url);
+    // "localhost" may resolve to ::1, where another app can hold the same port: use the IPv4
+    // loopback ProjectManager always binds.
+    if (endpoint.hostname === 'localhost') endpoint.hostname = '127.0.0.1';
     if (
       endpoint.protocol !== 'http:' ||
       !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)

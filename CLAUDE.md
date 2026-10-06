@@ -66,6 +66,10 @@ anything.
   `package.json` → `config.port` (5180). If that port is busy, the launcher tries the next ports and
   prints the actual URL. The server prints `[server] EADDRINUSE` on a port race, and the launcher
   relies on that line, so keep it.
+- The server listens on both loopbacks (127.0.0.1 and ::1), and a port counts as free only if
+  neither answers. Browsers and Node try `localhost` as ::1 first, and Windows lets another app
+  (e.g. a Next.js dev server on 0.0.0.0/::) share our port, so `localhost` would reach that app.
+  Local helper scripts call `127.0.0.1` directly.
 - Don't break the launcher or the automatic port selection. If you change startup, re-verify both.
 
 ## Verification (Definition of Done)

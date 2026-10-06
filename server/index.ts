@@ -101,6 +101,22 @@ async function main() {
     void lan.restore();
   });
 
+  // "localhost" resolves to ::1 first in browsers and Node, and Windows lets another app hold
+  // this port on 0.0.0.0/:: next to our 127.0.0.1 (it would then answer localhost). Listening on
+  // the IPv6 loopback too keeps localhost ours: the more specific address wins.
+  const server6 = config.host === '127.0.0.1' ? createServer() : null;
+  if (server6) {
+    server6.on('request', (req: IncomingMessage, res: ServerResponse) => handle(req, res));
+    server6.on('upgrade', (...args) => server.emit('upgrade', ...args)); // Vite HMR.
+    server6.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EADDRNOTAVAIL' || error.code === 'EAFNOSUPPORT') return; // No IPv6.
+      console.warn(
+        `[server] could not also listen on [::1]:${config.port} (${error.code}); if localhost opens another app, use http://127.0.0.1:${config.port}`,
+      );
+    });
+    server6.listen(config.port, '::1');
+  }
+
   // Stop agent processes first: desiredState stays 'running', so the next boot
   // relaunches supervised sessions and runs (reboot-proof by design).
   const shutdown = () => {
@@ -112,6 +128,8 @@ async function main() {
         await lan.stop();
         server.close();
         server.closeAllConnections();
+        server6?.close();
+        server6?.closeAllConnections();
         db.close();
         process.exit(0);
       }

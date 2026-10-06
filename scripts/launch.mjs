@@ -104,22 +104,43 @@ function handOver(url) {
 
 // ---- Port selection -----------------------------------------------------------------------------
 
-/** A port is free if nothing accepts connections on it and we can bind it ourselves. */
-async function isPortFree(port) {
-  const accepting = await new Promise((resolve) => {
-    const socket = net.connect({ port, host });
+/** True if something accepts connections on host:port. */
+function accepting(port, at) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: at });
     socket.setTimeout(400);
     socket.once('connect', () => (socket.destroy(), resolve(true)));
     socket.once('timeout', () => (socket.destroy(), resolve(false)));
     socket.once('error', () => resolve(false));
   });
-  if (accepting) return false;
+}
+
+/** Binds host:port briefly: 'ok', 'busy', or 'unavailable' (no such address, e.g. no IPv6). */
+function bindable(port, at) {
   return new Promise((resolve) => {
     const server = net.createServer();
     server.unref();
-    server.once('error', () => resolve(false));
-    server.listen({ port, host, exclusive: true }, () => server.close(() => resolve(true)));
+    server.once('error', (e) =>
+      resolve(['EADDRNOTAVAIL', 'EAFNOSUPPORT'].includes(e.code) ? 'unavailable' : 'busy'),
+    );
+    server.listen({ port, host: at, exclusive: true }, () => server.close(() => resolve('ok')));
   });
+}
+
+/**
+ * A port is free if nothing accepts connections on it and we can bind it ourselves. On loopback,
+ * both 127.0.0.1 and ::1 count: browsers and Node try "localhost" as ::1 first, and Windows lets
+ * another app hold the same port on 0.0.0.0/:: alongside our 127.0.0.1 (that app would then
+ * answer localhost). The server listens on both loopbacks (server/index.ts).
+ */
+async function isPortFree(port) {
+  const hosts = host === '127.0.0.1' ? ['127.0.0.1', '::1'] : [host];
+  for (const at of hosts) if (await accepting(port, at)) return false;
+  for (const at of hosts) {
+    const result = await bindable(port, at);
+    if (result === 'busy' || (result === 'unavailable' && at === host)) return false;
+  }
+  return true;
 }
 
 async function findFreePort(start, exclude) {
