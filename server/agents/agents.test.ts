@@ -453,4 +453,44 @@ describe('reboot persistence', () => {
     await sup2.stopRun(runId);
     await sup2.removeSession(session.id);
   }, 30_000);
+
+  it('starts fresh when resuming fails right away (no crash loop)', async () => {
+    const pid = Number(
+      db
+        .prepare(`INSERT INTO projects (name, path, created_at) VALUES (?, ?, ?)`)
+        .run('resumer', mkdtempSync(path.join(tmp, 'resumer-')), new Date().toISOString())
+        .lastInsertRowid,
+    );
+    sup1 = new AgentSupervisor(db, logs);
+    const session = await sup1.createSession(pid, {
+      providerId: 'custom',
+      command: [NODE, '-e', LONG],
+      name: 'resumer',
+    });
+    // A resume target that dies at once, like `claude --resume <id>` -> "No conversation found".
+    db.prepare('UPDATE agent_sessions SET resume_json = ? WHERE id = ?').run(
+      JSON.stringify([NODE, '-e', 'process.exit(1)']),
+      session.id,
+    );
+    await sup1.shutdown();
+    sup1 = null;
+    sup2 = new AgentSupervisor(db, logs);
+
+    const log = await waitFor(
+      async () => sup2!.readSessionOutput(session.id, 0)!.data,
+      (data) => data.includes('the last resume failed right away'),
+      'fresh relaunch after a failed resume',
+    );
+    // Only the normal launch command runs after the note, then it stays up: no loop.
+    expect(log.split('the last resume failed right away')[1]).toContain(LONG);
+    const back = await waitFor(
+      async () => sup2!.getSession(session.id)!,
+      (s) => s.status === 'running' && s.pid !== null,
+      'session running',
+    );
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(sup2.getSession(session.id)!.restarts).toBe(back.restarts);
+    expect(back.restarts).toBe(1);
+    await sup2.removeSession(session.id);
+  }, 30_000);
 });

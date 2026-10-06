@@ -53,7 +53,7 @@ import type { Db } from '../db.js';
 import { getCard, getProjectRow, updateCard } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
 import { tailState } from './activity.js';
-import { staleClaudeResume } from './usage.js';
+import { codexSessionFor, staleClaudeResume } from './usage.js';
 import { HostClient } from './host/client.js';
 import type { HostSessionInfo } from './host/protocol.js';
 import { fetchScript, recipeFor } from './install.js';
@@ -80,6 +80,8 @@ const MAX_QUEUE_BYTES = 256 * 1024;
 const RUN_DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
 const RUN_MAX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 const MAX_RESTARTS = 20;
+/** A resumed process that exits non-zero within this time counts as a failed resume. */
+const RESUME_FAIL_MS = 20_000;
 const RESTART_BASE_MS = 2000;
 const RESTART_CAP_MS = 60_000;
 const KILL_GRACE_MS = 3000;
@@ -370,6 +372,10 @@ export class AgentSupervisor {
   private logs = new Map<string, OutputLog>();
   /** Keys whose spawn is in flight (argv resolution is async): guards double starts. */
   private starting = new Set<string>();
+  /** When each session last spawned and whether that spawn resumed a conversation. */
+  private lastSpawn = new Map<string, { at: number; resumed: boolean }>();
+  /** Sessions whose last resume died right away: their next relaunch starts fresh. */
+  private resumeFailed = new Set<string>();
   private closed = false;
   /** Emits `output:<kind>:<id>` whenever a log grows, for live streaming to the GUI. */
   readonly events = new EventEmitter().setMaxListeners(0);
@@ -1306,31 +1312,51 @@ export class AgentSupervisor {
       // so an AI conversation picks up instead of starting cold. Shells and
       // custom commands simply respawn.
       let resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
-      let launch = command;
-      // A pinned Claude conversation that was never saved (or whose transcript is gone) can't
-      // be resumed: `claude --resume <id>` exits with "No conversation found" and the session
-      // would crash-loop until it gives up. Start a fresh conversation under a new pinned id
-      // instead, and remember it so the next relaunch resumes that one.
+      const launch = command;
+      const note = (text: string) =>
+        this.outputFor(key, row.log_path).append(`
+[supervisor] ${text}
+`);
+      // Each CLI resumes its own conversation where it can say which one it is:
+      // - Claude: the id its SessionStart hook last reported (follows /resume, /clear,
+      //   compaction). A conversation Claude never saved can't be resumed: start fresh.
+      // - Codex: the rollout this session started (~/.codex/sessions), not "the latest".
+      // - Others: their "continue latest" flag when no sibling session shares the folder.
       if (isRelaunch && resume && row.provider_id === 'claude') {
         const stale = staleClaudeResume(resume, row.cwd);
         if (stale) {
-          const fresh = randomUUID();
-          const swap = (argv: string[]) => argv.map((a) => (a === stale ? fresh : a));
-          launch = swap(command);
-          resume = swap(resume);
-          this.db
-            .prepare(`UPDATE agent_sessions SET command_json = ?, resume_json = ? WHERE id = ?`)
-            .run(JSON.stringify({ command: launch, env }), JSON.stringify(resume), row.id);
-          this.outputFor(key, row.log_path).append(
-            `
-[supervisor] Claude has no saved conversation ${stale} to resume (it was never ` +
-              `saved, or its transcript is gone) — starting a new conversation instead
-`,
-          );
+          note(`Claude has no saved conversation ${stale} (it was never saved) — starting fresh`);
           resume = null;
         }
       }
-      const baseArgv = isRelaunch ? (resume ?? this.resumeLatestArgv(row) ?? launch) : launch;
+      if (isRelaunch && !resume && row.provider_id === 'codex' && command[0] === 'codex') {
+        const claimed = new Set(
+          (
+            this.db
+              .prepare(
+                `SELECT resume_json FROM agent_sessions WHERE provider_id = 'codex' AND id != ? AND resume_json IS NOT NULL`,
+              )
+              .all(row.id) as { resume_json: string }[]
+          ).flatMap((r) => (JSON.parse(r.resume_json) as string[]).slice(-1)),
+        );
+        const id = codexSessionFor(row.cwd, row.created_at, claimed);
+        if (id) {
+          resume = [command[0], 'resume', id];
+          this.db
+            .prepare('UPDATE agent_sessions SET resume_json = ? WHERE id = ?')
+            .run(JSON.stringify(resume), row.id);
+        }
+      }
+      // The last resume attempt died within seconds (e.g. "No conversation found"): start
+      // fresh instead of burning the restart budget on the same failure.
+      const resumeFailed = this.resumeFailed.delete(key);
+      if (isRelaunch && resumeFailed) note('the last resume failed right away — starting fresh');
+      const baseArgv = isRelaunch
+        ? resumeFailed
+          ? launch
+          : (resume ?? this.resumeLatestArgv(row) ?? launch)
+        : launch;
+      this.lastSpawn.set(key, { at: Date.now(), resumed: baseArgv !== launch });
       const connection = this.dataDir
         ? boardConnection(
             this.db,
@@ -1442,6 +1468,10 @@ export class AgentSupervisor {
         )
         .run(code, now(), id);
       return;
+    }
+    const spawned = this.lastSpawn.get(key);
+    if (spawned?.resumed && code !== 0 && Date.now() - spawned.at < RESUME_FAIL_MS) {
+      this.resumeFailed.add(key);
     }
     if (current.supervise && current.restarts < MAX_RESTARTS) {
       const restarts = current.restarts + 1;

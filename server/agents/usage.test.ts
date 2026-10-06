@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   claudeSessionId,
+  codexSessionFor,
   readTranscriptUsage,
   staleClaudeResume,
   transcriptPath,
@@ -72,5 +73,33 @@ describe('Claude session usage', () => {
     });
     appendFileSync(file, reply('m2', 1, 7));
     expect(readTranscriptUsage(file)).toMatchObject({ input: 6, output: 57, replies: 2 });
+  });
+
+  it('finds the Codex conversation a session started (main thread, this folder)', () => {
+    const day = path.join(home, '.codex', 'sessions', '2026', '10', '06');
+    mkdirSync(day, { recursive: true });
+    const meta = (id: string, cwd: string, at: string, source?: unknown) =>
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id, cwd, timestamp: at, ...(source ? { source } : {}) },
+      }) + '\n';
+    const cwd = 'S:\\Vibe Coding\\Codex';
+    writeFileSync(path.join(day, 'rollout-a.jsonl'), meta('old', cwd, '2026-10-06T01:00:00Z'));
+    writeFileSync(
+      path.join(day, 'rollout-b.jsonl'),
+      meta('guardian', cwd, '2026-10-06T02:00:01Z', { subagent: { other: 'guardian' } }),
+    );
+    writeFileSync(
+      path.join(day, 'rollout-c.jsonl'),
+      meta('other-dir', 'S:\\Elsewhere', '2026-10-06T02:00:02Z'),
+    );
+    writeFileSync(path.join(day, 'rollout-d.jsonl'), meta('mine', cwd, '2026-10-06T02:00:03Z'));
+    writeFileSync(path.join(day, 'rollout-e.jsonl'), meta('later', cwd, '2026-10-06T03:00:00Z'));
+
+    const started = '2026-10-06T02:00:00Z';
+    expect(codexSessionFor(cwd, started, new Set(), home)).toBe('mine');
+    // Another session already resumes "mine": take the next one.
+    expect(codexSessionFor(cwd, started, new Set(['mine']), home)).toBe('later');
+    expect(codexSessionFor('S:\\Nowhere', started, new Set(), home)).toBeNull();
   });
 });

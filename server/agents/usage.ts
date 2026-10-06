@@ -156,3 +156,61 @@ export function sessionUsage(
   }
   return result;
 }
+
+/**
+ * The Codex conversation a session started: the main (non-subagent) rollout recorded in
+ * ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl for this folder, created soonest after `startedAt`
+ * (and not claimed by another session). Its first line is a session_meta record with the id,
+ * folder and start time. Null when none matches (then `codex resume --last` is the fallback).
+ */
+export function codexSessionFor(
+  cwd: string,
+  startedAt: string,
+  claimed: ReadonlySet<string> = new Set(),
+  home = os.homedir(),
+): string | null {
+  const start = Date.parse(startedAt);
+  if (!Number.isFinite(start)) return null;
+  const root = path.join(home, '.codex', 'sessions');
+  const folders: string[] = [];
+  // Days from the start (UTC and local can differ by one) up to today.
+  for (let t = start - 86_400_000; t <= Date.now() + 86_400_000; t += 86_400_000) {
+    const d = new Date(t);
+    const dir = path.join(
+      root,
+      String(d.getFullYear()),
+      String(d.getMonth() + 1).padStart(2, '0'),
+      String(d.getDate()).padStart(2, '0'),
+    );
+    if (!folders.includes(dir) && existsSync(dir)) folders.push(dir);
+  }
+  const want = path.resolve(cwd).toLowerCase();
+  let best: { id: string; at: number } | null = null;
+  for (const dir of folders) {
+    for (const file of readdirSync(dir)) {
+      if (!file.startsWith('rollout-') || !file.endsWith('.jsonl')) continue;
+      try {
+        const fd = openSync(path.join(dir, file), 'r');
+        const buf = Buffer.alloc(4096);
+        const n = readSync(fd, buf, 0, buf.length, 0);
+        closeSync(fd);
+        const first = buf.subarray(0, n).toString('utf8').split('\n')[0] ?? '';
+        const meta = JSON.parse(first) as {
+          type?: string;
+          payload?: { id?: string; cwd?: string; timestamp?: string; source?: unknown };
+        };
+        const p = meta.payload;
+        if (meta.type !== 'session_meta' || !p?.id || !p.cwd || !p.timestamp) continue;
+        // Subagent threads (reviewers, guardians) carry an object source; skip them.
+        if (p.source && typeof p.source === 'object') continue;
+        if (path.resolve(p.cwd).toLowerCase() !== want || claimed.has(p.id)) continue;
+        const at = Date.parse(p.timestamp);
+        if (!(at >= start - 5_000)) continue;
+        if (!best || at < best.at) best = { id: p.id, at };
+      } catch {
+        // Partial or foreign file: skip.
+      }
+    }
+  }
+  return best?.id ?? null;
+}
