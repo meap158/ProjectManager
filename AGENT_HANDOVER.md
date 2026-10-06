@@ -61,6 +61,8 @@ atomic commits). Nothing is pending in the working tree.
 - **Port sharing:** the server also listens on `[::1]` and the launcher probes both loopbacks, so
   another app on the same port (0.0.0.0/::) can't capture `localhost` (seen with a Next.js app on
   5180). Hook and board bridge scripts call 127.0.0.1.
+- **Sidebar custom order:** "Custom order" sort with grip handles (drag or ↑/↓), order saved in
+  settings `project_order` (`client/src/projectOrder.ts`, after KDP's Library custom sort).
 - **Auto refresh:** the stalest project is rescanned once 15+ minutes old (one scan at a time).
 - **Agent permissions** (Settings): global level + per-CLI inherit/own, translated into each CLI's
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.

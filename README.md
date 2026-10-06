@@ -23,6 +23,8 @@ ProjectManager stores its data locally. GitHub PR queries use your gh login; age
 - **Portfolio dashboard:** totals across all projects, a ranked table, and **commits by project**
   over the last 12 months, 12 weeks or 30 days, so you can see which projects get the most work.
 - **Global Board:** cards across projects, project tags, filters and full card creation. New card uses the same dialog as Edit card, including images and agent/session choices.
+- **Project list order:** sort the sidebar by name, activity, code size, terminals or tasks, or
+  pick **Custom order** and drag projects by their handle (or focus a handle and use ↑ / ↓).
 - **Theme:** System, Light and Dark, remembered across reloads.
 - **Phone layout:** at 768px wide and below, a bottom tab bar (Home, Projects, Board, Agents,
   Settings) replaces the top nav, the project list opens full screen, and dialogs become bottom

@@ -40,6 +40,7 @@ const createCardBody = z.object({
 });
 const themeBody = z.object({ theme: z.enum(['system', 'light', 'dark']) });
 type ThemePreference = z.infer<typeof themeBody>['theme'];
+const projectOrderBody = z.object({ order: z.array(z.number().int().positive()).max(5000) });
 
 const updateCardBody = z
   .object({
@@ -304,6 +305,18 @@ export function createApp(
     const { theme } = await parseBody(c, themeBody);
     store.setSetting(db, 'theme', theme);
     return c.json({ theme });
+  });
+
+  // The sidebar's "Custom order": the full list of project ids, in the order the user arranged.
+  app.get('/preferences/project-order', (c) =>
+    c.json({ order: store.getSetting<number[]>(db, 'project_order') ?? [] }),
+  );
+
+  app.put('/preferences/project-order', async (c) => {
+    const { order } = await parseBody(c, projectOrderBody);
+    const unique = [...new Set(order)];
+    store.setSetting(db, 'project_order', unique);
+    return c.json({ order: unique });
   });
 
   // ---- Folder browser (for the "Add project" dialog) -----------------------------------------

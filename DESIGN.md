@@ -46,6 +46,11 @@ a populated pane.
   its direction; switching modes restarts from the new mode's natural direction. The trigger
   and menu labels always name the active direction, comparators are written once and
   negated for reverse, and the choice persists in localStorage. Outside click / Esc closes.
+  **Custom order** (first option, no direction, ✓ instead of an arrow) shows a grip handle on
+  each row: drag it, or focus it and press ↑ / ↓ (the keyboard alternative). The full ordered id
+  list is saved server-side (`/api/preferences/project-order`); reordering a filtered list
+  refills only the visible projects' slots, so hidden ones keep their places; new projects
+  follow the saved order A–Z.
 - **Page headers are intrinsic (KDP Opportunities back-bar rule):** the title block is the
   only elastic part and truncates; `.actions` is `flex: none`, so the bar degrades by
   truncating text rather than stacking controls.

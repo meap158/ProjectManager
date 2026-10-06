@@ -87,6 +87,9 @@ export const api = {
     request<{ theme: 'system' | 'light' | 'dark' | null }>('GET', '/preferences/theme'),
   saveTheme: (theme: 'system' | 'light' | 'dark') =>
     request<{ theme: string }>('PUT', '/preferences/theme', { theme }),
+  getProjectOrder: () => request<{ order: number[] }>('GET', '/preferences/project-order'),
+  saveProjectOrder: (order: number[]) =>
+    request<{ order: number[] }>('PUT', '/preferences/project-order', { order }),
   browse: (path?: string) =>
     request<DirectoryListing>(
       'GET',

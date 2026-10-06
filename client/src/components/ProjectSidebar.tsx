@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router';
 import type { AgentSession, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
@@ -6,15 +6,20 @@ import { formatCompact, formatRelative } from '../format';
 import { useProjectHref } from '../projectTabs';
 import { sessionActivity } from '../sessionActivity';
 import { AddProjectDialog } from './AddProjectDialog';
+import { applyCustomOrder, mergeVisibleOrder, moveBefore, moveBy } from '../projectOrder';
 
 // Sorter modelled on the KDP Publishing Pipeline Library sorter: each mode has
 // a natural direction, re-selecting the active mode flips it, switching modes
 // restarts from the new mode's natural direction, and the label always names
 // the active direction (never "A–Z" while sorting Z–A).
-type SortMode = 'name' | 'recent' | 'started' | 'lines' | 'terminals' | 'active' | 'planned';
+// "Custom order" (KDP Library's custom sort): the user's own arrangement, dragged by a grip
+// handle or moved with the arrow keys; it has no direction.
+type SortMode =
+  'custom' | 'name' | 'recent' | 'started' | 'lines' | 'terminals' | 'active' | 'planned';
 type SortDirection = 'asc' | 'desc';
 
 const SORT_MODES: SortMode[] = [
+  'custom',
   'name',
   'recent',
   'started',
@@ -24,6 +29,7 @@ const SORT_MODES: SortMode[] = [
   'planned',
 ];
 const SORT_DEFAULT_DIRECTION: Record<SortMode, SortDirection> = {
+  custom: 'asc',
   name: 'asc',
   recent: 'desc',
   started: 'desc',
@@ -48,6 +54,7 @@ const FILTERS: { value: Filter; label: string; title: string }[] = [
 ];
 
 function sortOptionLabel(mode: SortMode, direction: SortDirection): string {
+  if (mode === 'custom') return 'Custom order';
   if (mode === 'name') return direction === 'asc' ? 'A–Z' : 'Z–A';
   // "Recently active" (last commit) vs "Newest project" (first commit): never ambiguous.
   if (mode === 'recent') return direction === 'desc' ? 'Recently active' : 'Least active';
@@ -118,6 +125,10 @@ export function ProjectSidebar({
     ),
   );
   const [sortOpen, setSortOpen] = useState(false);
+  // Custom order (server-side, so it survives port changes and cleared browsers).
+  const [customOrder, setCustomOrder] = useState<number[]>([]);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dropBefore, setDropBefore] = useState<number | null | undefined>(undefined);
   const [adding, setAdding] = useState(false);
   const sorterRef = useRef<HTMLDivElement>(null);
 
@@ -125,7 +136,7 @@ export function ProjectSidebar({
     // Re-selecting the active mode flips it; switching modes starts from that
     // mode's natural direction instead of inheriting the previous one.
     if (mode === sortMode) {
-      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+      if (mode !== 'custom') setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortMode(mode);
       setSortDirection(SORT_DEFAULT_DIRECTION[mode]);
@@ -142,6 +153,17 @@ export function ProjectSidebar({
       // Private browsing etc: sorting still works for the session.
     }
   }, [sortMode, sortDirection, filter]);
+
+  useEffect(() => {
+    let active = true;
+    api.getProjectOrder().then(
+      ({ order }) => active && setCustomOrder(order),
+      () => undefined, // Unknown order: projects fall back to A–Z.
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!sortOpen) return;
@@ -223,11 +245,13 @@ export function ProjectSidebar({
             : true;
   const filterLabel = FILTERS.find((f) => f.value === filter)!.label;
 
-  const visible = (projects ?? [])
+  const sorted = sortMode === 'custom' ? applyCustomOrder(projects ?? [], customOrder) : null;
+  const visible = (sorted ?? projects ?? [])
     .filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
     .filter(matchesFilter)
     .slice()
     .sort((a, b) => {
+      if (sortMode === 'custom') return 0; // Already in the user's order (stable sort).
       // Count sorts fall back to name so equal counts keep a stable, readable order.
       const byName = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
       if (sortMode === 'terminals') return flip * (open(b) - open(a)) || byName;
@@ -244,6 +268,16 @@ export function ProjectSidebar({
       if (sortMode === 'lines') return flip * ((b.code?.code ?? -1) - (a.code?.code ?? -1));
       return flip * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     });
+
+  /** Saves a new order of the visible projects (hidden ones keep their places). */
+  function reorder(visibleIds: number[]) {
+    const full = applyCustomOrder(projects ?? [], customOrder).map((x) => x.id);
+    const next = mergeVisibleOrder(full, visibleIds);
+    setCustomOrder(next);
+    api.saveProjectOrder(next).catch(() => undefined); // Still applied for this session.
+  }
+  const visibleIds = visible.map((x) => x.id);
+  const reorderable = sortMode === 'custom' && visible.length > 1;
 
   const totalsLines = (projects ?? []).reduce((s, p) => s + (p.code?.code ?? 0), 0);
   const totalsCommits = recentCommits(projects ?? [], 30);
@@ -337,9 +371,11 @@ export function ProjectSidebar({
                       aria-checked={active}
                       className={`sorter-option${active ? ' selected' : ''}`}
                       title={
-                        active
-                          ? 'Click again to reverse the order'
-                          : `Sort by ${sortOptionLabel(mode, SORT_DEFAULT_DIRECTION[mode])}`
+                        mode === 'custom'
+                          ? 'Your own order: drag the handles, or focus one and use the arrow keys'
+                          : active
+                            ? 'Click again to reverse the order'
+                            : `Sort by ${sortOptionLabel(mode, SORT_DEFAULT_DIRECTION[mode])}`
                       }
                       onClick={() => chooseSort(mode)}
                     >
@@ -350,7 +386,7 @@ export function ProjectSidebar({
                       </span>
                       {active && (
                         <span className="sort-direction-badge" aria-hidden="true">
-                          {sortDirection === 'asc' ? '↑' : '↓'}
+                          {mode === 'custom' ? '✓' : sortDirection === 'asc' ? '↑' : '↓'}
                         </span>
                       )}
                     </button>
@@ -378,14 +414,90 @@ export function ProjectSidebar({
             No projects tracked yet.
           </div>
         )}
-        {visible.map((p) => (
-          <SidebarItem
-            key={p.id}
-            project={p}
-            href={projectHref(p.id)}
-            activity={activity.get(p.id) ?? { running: 0, idle: p.runningSessions }}
+        {visible.map((p) => {
+          const item = (
+            <SidebarItem
+              project={p}
+              href={projectHref(p.id)}
+              activity={activity.get(p.id) ?? { running: 0, idle: p.runningSessions }}
+            />
+          );
+          if (!reorderable) return <Fragment key={p.id}>{item}</Fragment>;
+          return (
+            <div
+              key={p.id}
+              className={`sidebar-reorder${dragId === p.id ? ' is-dragging' : ''}${
+                dragId !== null && dropBefore === p.id ? ' drop-before' : ''
+              }`}
+              onDragOver={(e) => {
+                if (dragId === null) return;
+                e.preventDefault();
+                const box = e.currentTarget.getBoundingClientRect();
+                const after = e.clientY > box.top + box.height / 2;
+                const i = visibleIds.indexOf(p.id);
+                setDropBefore(after ? (visibleIds[i + 1] ?? null) : p.id);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragId !== null && dropBefore !== undefined)
+                  reorder(moveBefore(visibleIds, dragId, dropBefore));
+                setDragId(null);
+                setDropBefore(undefined);
+              }}
+            >
+              <button
+                type="button"
+                className="sidebar-grip"
+                data-project-id={p.id}
+                draggable
+                aria-label={`Move ${p.name}: press the up or down arrow`}
+                title="Drag to reorder, or use the arrow keys"
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', p.name);
+                  const row = e.currentTarget.parentElement;
+                  if (row) e.dataTransfer.setDragImage(row, 12, 20);
+                  setDragId(p.id);
+                }}
+                onDragEnd={() => {
+                  setDragId(null);
+                  setDropBefore(undefined);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                  e.preventDefault();
+                  const next = moveBy(visibleIds, p.id, e.key === 'ArrowUp' ? -1 : 1);
+                  if (next === visibleIds) return;
+                  reorder(next);
+                  // Moving the row re-inserts its DOM node, which drops focus: put it back.
+                  requestAnimationFrame(() =>
+                    document
+                      .querySelector<HTMLButtonElement>(`.sidebar-grip[data-project-id="${p.id}"]`)
+                      ?.focus(),
+                  );
+                }}
+              >
+                <GripIcon />
+              </button>
+              {item}
+            </div>
+          );
+        })}
+        {reorderable && dragId !== null && (
+          <div
+            className={`sidebar-drop-end${dropBefore === null ? ' drop-before' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDropBefore(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              reorder(moveBefore(visibleIds, dragId, null));
+              setDragId(null);
+              setDropBefore(undefined);
+            }}
           />
-        ))}
+        )}
         {projects !== null && visible.length === 0 && projects.length > 0 && (
           <div className="faint" style={{ fontSize: 13, padding: '4px 2px' }}>
             {q ? `No projects match “${query.trim()}”` : 'No projects match this filter'}
@@ -579,6 +691,17 @@ function StatusDot({ project: p }: { project: ProjectSummary }) {
       aria-label={label}
       role="img"
     />
+  );
+}
+
+function GripIcon() {
+  return (
+    <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
+      {[2, 7, 12].flatMap((y) => [
+        <circle key={`a${y}`} cx="3" cy={y} r="1.2" fill="currentColor" />,
+        <circle key={`b${y}`} cx="7" cy={y} r="1.2" fill="currentColor" />,
+      ])}
+    </svg>
   );
 }
 

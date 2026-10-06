@@ -134,6 +134,18 @@ describe('projects and cards', () => {
     expect((await call('PUT', '/preferences/theme', { theme: 'neon' })).status).toBe(400);
   });
 
+  it('keeps the sidebar custom order server-side, without duplicates', async () => {
+    const { call } = setup();
+    expect(await (await call('GET', '/preferences/project-order')).json()).toEqual({ order: [] });
+    expect((await call('PUT', '/preferences/project-order', { order: [3, 1, 3, 2] })).status).toBe(
+      200,
+    );
+    expect(await (await call('GET', '/preferences/project-order')).json()).toEqual({
+      order: [3, 1, 2],
+    });
+    expect((await call('PUT', '/preferences/project-order', { order: ['x'] })).status).toBe(400);
+  });
+
   it('switches board column presets per project', async () => {
     const { call } = setup();
     const created = (await (
