@@ -116,49 +116,53 @@ export function BoardPage() {
 
   return (
     <main className="page board-page">
-      <div className="page-header">
-        <div>
-          <h1>Board</h1>
-          <div className="subtitle">
-            Every card across your projects
-            {cards && (
-              <span className="faint">
-                {' '}
-                · {visible.length} card{visible.length === 1 ? '' : 's'}
-              </span>
-            )}
+      {/* Sticky chrome like project pages: title, filters and the view switch stay put while
+          the columns scroll underneath. */}
+      <div className="sticky-head">
+        <div className="page-header">
+          <div>
+            <h1>Board</h1>
+            <div className="subtitle">
+              Every card across your projects
+              {cards && (
+                <span className="faint">
+                  {' '}
+                  · {visible.length} card{visible.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setAddingTo(columns[0]!)}
+              title="Add a card to one of your projects"
+            >
+              ＋ New card
+            </button>
+            <Dropdown
+              label="Project"
+              value={projectFilter ?? 0}
+              options={[
+                { value: 0, label: 'All projects' },
+                ...projects.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+              onChange={(v) => setParam('project', v ? String(v) : null)}
+            />
+            <Dropdown
+              label="Show"
+              value={show}
+              options={SHOW_OPTIONS}
+              onChange={(v) => setParam('show', v === 'all' ? null : v)}
+            />
           </div>
         </div>
-        <div className="actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setAddingTo(columns[0]!)}
-            title="Add a card to one of your projects"
-          >
-            ＋ New card
-          </button>
-          <Dropdown
-            label="Project"
-            value={projectFilter ?? 0}
-            options={[
-              { value: 0, label: 'All projects' },
-              ...projects.map((p) => ({ value: p.id, label: p.name })),
-            ]}
-            onChange={(v) => setParam('project', v ? String(v) : null)}
-          />
-          <Dropdown
-            label="Show"
-            value={show}
-            options={SHOW_OPTIONS}
-            onChange={(v) => setParam('show', v === 'all' ? null : v)}
-          />
-        </div>
+
+        <BoardViewTabs view={view} onChange={setView} />
       </div>
 
       {error && <div className="error-banner">{error}</div>}
-
-      <BoardViewTabs view={view} onChange={setView} />
       {cards === null ? (
         view === 'list' ? (
           <div className="blist" aria-busy="true">
