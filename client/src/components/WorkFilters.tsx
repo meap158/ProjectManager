@@ -148,7 +148,8 @@ export function WorkFilters({
         type="search"
         value={filters.query}
         onChange={(e) => set({ query: e.target.value })}
-        placeholder="Search name or card…"
+        placeholder="Search…"
+        title="Search by name or card key"
         aria-label="Search agent work by name or card"
       />
       {filtersActive(filters) && (

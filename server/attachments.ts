@@ -187,3 +187,46 @@ export function registerAttachmentRoutes(app: Hono, db: Db, root: string): void 
     }
   });
 }
+
+// ---- Session images (PM-54) ---------------------------------------------------------------
+// An image sent into a running CLI session: a phone has no Alt+V (that reads the computer's
+// clipboard), so the browser uploads the file here and pastes its absolute path into the
+// session, which the CLIs attach as an image. <dataDir>/attachments/sessions/<id>/, newest 50.
+
+export const MAX_IMAGES_PER_SESSION = 50;
+export const sessionImagesDir = (root: string, sessionId: number) =>
+  path.join(root, 'sessions', String(sessionId));
+
+export function removeSessionImages(root: string, sessionId: number): void {
+  rmSync(sessionImagesDir(root, sessionId), { recursive: true, force: true });
+}
+
+export function registerSessionImageRoutes(app: Hono, db: Db, root: string): void {
+  app.post('/agent-sessions/:id/images', async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'Invalid session id' }, 400);
+    if (!db.prepare('SELECT 1 FROM agent_sessions WHERE id = ?').get(id)) {
+      return c.json({ error: 'Session not found' }, 404);
+    }
+    const parsed = uploadBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Expected { name, type, data }' }, 400);
+    const ext = IMAGE_TYPES[parsed.data.type];
+    if (!ext) return c.json({ error: 'Only PNG, JPEG, GIF and WebP images' }, 415);
+    const bytes = Buffer.from(parsed.data.data, 'base64');
+    if (bytes.length === 0) return c.json({ error: 'Empty image' }, 400);
+    if (bytes.length > MAX_IMAGE_BYTES) return c.json({ error: 'Image over 8 MB' }, 413);
+    const dir = sessionImagesDir(root, id);
+    mkdirSync(dir, { recursive: true });
+    const file = `${randomUUID()}__${safeName(parsed.data.name)}.${ext}`;
+    writeFileSync(path.join(dir, file), bytes);
+    // Keep the newest few: older ones were already read by the CLI when they were sent.
+    const files = readdirSync(dir)
+      .filter((f) => FILE.test(f))
+      .map((f) => ({ f, t: statSync(path.join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t);
+    for (const old of files.slice(MAX_IMAGES_PER_SESSION)) {
+      rmSync(path.join(dir, old.f), { force: true });
+    }
+    return c.json({ path: path.join(dir, file) }, 201);
+  });
+}

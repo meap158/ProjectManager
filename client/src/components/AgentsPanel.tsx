@@ -17,6 +17,8 @@ import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
 import { SessionToggle } from './SessionToggle';
 import { LimitsStrip } from './LimitsStrip';
+import { sendImageToSession } from '../sessionImages';
+import { SessionImageButton } from './SessionImageButton';
 
 // xterm is heavy: it loads only when a terminal actually renders.
 const TerminalView = lazy(() =>
@@ -169,6 +171,8 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
 
   // Keystrokes from interactive (PTY) terminals: batched per ~frame and sent strictly in order,
   // so fast typing or pastes arrive intact.
+  // Pastes into the shown terminal like the keyboard would (image paths, PM-54).
+  const pasteRef = useRef<((text: string) => void) | null>(null);
   const keyBuffer = useRef('');
   const keyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const keyChain = useRef<Promise<void>>(Promise.resolve());
@@ -315,6 +319,14 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                 {active.status}
                 {active.pid ? ` · pid ${active.pid}` : ''}
               </span>
+              {active.status === 'running' && active.terminal === 'pty' && (
+                <SessionImageButton
+                  sessionId={active.id}
+                  pasteRef={pasteRef}
+                  onError={setError}
+                  className="btn btn-sm"
+                />
+              )}
             </div>
             <Suspense fallback={<div className="terminal skeleton" style={{ height: 380 }} />}>
               <TerminalView
@@ -326,6 +338,11 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                 paused={!visible}
                 {...(active.terminal === 'pty'
                   ? {
+                      pasteRef,
+                      onImage: (file: File) =>
+                        sendImageToSession(active.id, file, pasteRef.current).catch((e: Error) =>
+                          setError(e.message),
+                        ),
                       // A stopped session only queues real typing, not the terminal's auto-replies.
                       onInput: (data: string) => {
                         if (active.status === 'running' || !isTerminalReport(data)) {

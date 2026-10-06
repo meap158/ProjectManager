@@ -1,3 +1,4 @@
+import path from 'node:path';
 // HTTP routes for agent CLI sessions and runs. Validation lives here at the
 // boundary (pstack boundary-discipline); the supervisor trusts internal types.
 
@@ -17,6 +18,7 @@ import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
 import { getPermissions, PERMISSION_PROVIDERS, setPermissions } from './permissions.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
+import { removeSessionImages } from '../attachments.js';
 
 const idParam = z.coerce.number().int().positive();
 const offsetParam = z.coerce.number().int().min(0).default(0);
@@ -345,8 +347,10 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   });
 
   app.delete('/agent-sessions/:id', async (c) => {
-    if (!(await supervisor.removeSession(parseId(c))))
-      throw new AgentError(404, 'Session not found');
+    const id = parseId(c);
+    if (!(await supervisor.removeSession(id))) throw new AgentError(404, 'Session not found');
+    // Images sent into the session (PM-54) go with it.
+    if (supervisor.dataDir) removeSessionImages(path.join(supervisor.dataDir, 'attachments'), id);
     return c.body(null, 204);
   });
 

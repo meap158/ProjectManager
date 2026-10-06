@@ -269,6 +269,11 @@ Your CLI config files are never edited: the tools are passed to each process whe
 
 Tip: add it to your home screen (Safari: Share → Add to Home Screen) to open it like an app.
 
+In an agent's terminal, **swipe** to scroll back. To show an agent a picture, tap **Image** in the
+terminal's header and pick a photo or take one: it's sent to the computer and its path is pasted
+in, so Claude Code attaches it as `[Image #1]`. On a computer you can also paste or drop an image
+onto a terminal.
+
 </details>
 
 ---

@@ -77,3 +77,32 @@ describe('card attachments', () => {
     expect(withAttachments('task', root, card.id)).toBe('task');
   });
 });
+
+describe('session images (PM-54)', () => {
+  it('saves an image for a session and returns the path to paste into its CLI', async () => {
+    const now = new Date().toISOString();
+    const session = Number(
+      db
+        .prepare(
+          `INSERT INTO agent_sessions (project_id, name, command_json, cwd, created_at, started_at, log_path)
+           VALUES (?, 'Phone', '["claude"]', ?, ?, ?, ?)`,
+        )
+        .run(project, process.cwd(), now, now, path.join(dir, 's.log')).lastInsertRowid,
+    );
+    const send = (id: number, body: unknown) =>
+      app.request(`/api/agent-sessions/${id}/images`, {
+        method: 'POST',
+        headers: json,
+        body: JSON.stringify(body),
+      });
+    const ok = await send(session, { name: '../photo.png', type: 'image/png', data: PNG });
+    expect(ok.status).toBe(201);
+    const { path: saved } = (await ok.json()) as { path: string };
+    expect(path.dirname(saved)).toBe(path.join(root, 'sessions', String(session)));
+    expect(path.basename(saved)).toMatch(/__photo\.png$/); // No path parts from the name.
+    expect((await send(999, { name: 'a.png', type: 'image/png', data: PNG })).status).toBe(404);
+    expect((await send(session, { name: 'a.heic', type: 'image/heic', data: PNG })).status).toBe(
+      415,
+    );
+  });
+});

@@ -84,6 +84,11 @@ atomic commits). Nothing is pending in the working tree.
 - **Limits on Agent work (PM-18, PM-42):** `LimitsStrip` is a slim section of its own below both
   Agent work lists and their terminal, once per CLI in the list (`useAgentLimits` in
   `client/src/agentLimits.ts`, shared with Settings and the sidebar card).
+- **Phone terminals (PM-53, PM-54):** swipes become wheel events in `TerminalView` (verified:
+  mouse-mode CLIs get SGR wheel reports, e.g. `ESC[<64;…M`); Image button + image paste/drop
+  upload to `POST /api/agent-sessions/:id/images` (`server/attachments.ts`) and paste the path
+  via `pasteRef` (xterm `paste`). Live check: a temporary Claude Code session showed
+  `[Image #1]` for the pasted path; the session and its images were deleted after.
 - **Agents List view space (PM-50, PM-52):** no title row, Plan usage in the toolbar (List view),
   terminal-first default split (`dockHeight` null until dragged). Desktop 903px window: terminal
   380 -> 508px; phone 390x844: 253 -> 329px, no sideways scroll. Phone Plan usage section cards

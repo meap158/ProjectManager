@@ -41,6 +41,8 @@ import { ConfirmDelete } from '../components/ConfirmDelete';
 import { SessionToggle } from '../components/SessionToggle';
 import { RunCard } from '../components/RunCard';
 import { LimitsStrip } from '../components/LimitsStrip';
+import { SessionImageButton } from '../components/SessionImageButton';
+import { sendImageToSession } from '../sessionImages';
 
 // xterm is heavy: it loads only when a pane actually shows a terminal.
 const TerminalView = lazy(() =>
@@ -577,6 +579,10 @@ function Pane({
   const [line, setLine] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [cardNote, setCardNote] = useState<string | null>(null);
+  // Pastes into this pane's terminal like the keyboard would (image paths, PM-54).
+  const pasteRef = useRef<((text: string) => void) | null>(null);
+  const sendImage = (file: File) =>
+    sendImageToSession(s.id, file, pasteRef.current).catch((e: Error) => onError(e.message));
 
   /** Hand the linked card on to Review once the work in this session looks done. */
   async function sendCardToReview() {
@@ -700,6 +706,9 @@ function Pane({
             → Review
           </button>
         )}
+        {running && s.terminal === 'pty' && (
+          <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
+        )}
         {running ? (
           <button
             className="icon-btn"
@@ -744,6 +753,8 @@ function Pane({
             streamUrl={(after) => api.sessionStreamUrl(s.id, after)}
             {...(s.terminal === 'pty'
               ? {
+                  pasteRef,
+                  onImage: sendImage,
                   // A stopped session only queues real typing, not the terminal's auto-replies.
                   onInput: (data: string) => {
                     if (running || !isTerminalReport(data)) sendKeys(data);

@@ -516,6 +516,20 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   without re-creating terminals.
 - **Card sessions** have a "→ Review" header action that moves the linked card to Review when the
   work looks done.
+- **Touch in terminals (PM-53):** xterm has no touch scrolling (its canvas takes the swipe), so a
+  vertical swipe is replayed as the wheel a mouse would send: scrollback in plain output, and the
+  CLI's own scrolling where it turned mouse mode on (Claude Code, Codex get the same wheel reports
+  as from a desktop mouse). The swipe never scrolls the page around the terminal.
+- **Images into a session (PM-54):** phones have no Alt+V (that reads the computer's clipboard),
+  so images travel as files. Every running PTY session's terminal header has an Image button
+  (photo picker / camera on phones); pasting or dropping an image on a terminal does the same.
+  The browser re-encodes big photos (long edge 2000px, JPEG) and uploads to
+  `<dataDir>/attachments/sessions/<id>/` (8 MB cap, newest 50 kept, removed with the session),
+  then pastes the absolute path through xterm's paste (bracketed when the CLI asked), which
+  Claude Code shows as `[Image #1]` (verified live). Alt+V and Ctrl+V for text are unchanged.
+- **Filters (PM-53):** the search box flexes 120-220px to share the filter row; below 1200px the
+  session count steps aside for it; on phones it is a short "Search…" box beside the three
+  pickers that takes the whole row while in use.
 - **List view space (PM-50):** no title row (the page says "Agents"; the count sits at the end
   of the filter row, hidden on phones). With a session docked, the terminal takes the height and
   the list keeps about three rows (216px; 140px on phones) until the edge is dragged; a dragged

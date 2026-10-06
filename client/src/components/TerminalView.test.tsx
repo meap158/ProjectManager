@@ -12,6 +12,8 @@ const terms = vi.hoisted(
       written: string;
       onDataCb: ((d: string) => void) | null;
       keyHandler: ((e: KeyboardEvent) => boolean) | null;
+      element: HTMLElement | undefined;
+      pasted: string;
     }[],
 );
 vi.mock('@xterm/xterm', () => ({
@@ -22,6 +24,11 @@ vi.mock('@xterm/xterm', () => ({
     written = '';
     onDataCb: ((d: string) => void) | null = null;
     keyHandler: ((e: KeyboardEvent) => boolean) | null = null;
+    element: HTMLElement | undefined = undefined;
+    pasted = '';
+    paste(text: string) {
+      this.pasted += text;
+    }
     attachCustomKeyEventHandler(handler: (e: KeyboardEvent) => boolean) {
       this.keyHandler = handler;
     }
@@ -30,7 +37,10 @@ vi.mock('@xterm/xterm', () => ({
       terms.push(this as never);
     }
     loadAddon() {}
-    open() {}
+    open(host: HTMLElement) {
+      this.element = document.createElement('div');
+      host.appendChild(this.element);
+    }
     focus() {}
     dispose() {}
     write(data: string) {
@@ -158,5 +168,61 @@ describe('TerminalView', () => {
     rerender(<TerminalView {...props} fontSize={15} />);
     expect(terms.length).toBe(count);
     expect(terms.at(-1)!.options.fontSize).toBe(15);
+  });
+
+  it('turns a vertical swipe into wheel scrolling (phones have no touch scrolling in xterm)', async () => {
+    const { container } = render(
+      <TerminalView fetchOutput={noFetch} streamUrl={() => '/s'} onInput={() => undefined} />,
+    );
+    await waitFor(() => expect(terms.at(-1)?.element).toBeDefined());
+    const wheels: number[] = [];
+    terms.at(-1)!.element!.addEventListener('wheel', (e) => wheels.push(e.deltaY));
+    const host = container.querySelector('.terminal')!;
+    const touch = (type: string, y: number | null) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', {
+        value: y === null ? [] : [{ clientX: 10, clientY: y }],
+      });
+      host.dispatchEvent(event);
+      return event;
+    };
+    touch('touchstart', 100);
+    const move = touch('touchmove', 140); // Finger down: back through the history.
+    touch('touchmove', 120); // Finger up: forward again.
+    touch('touchend', null);
+    expect(wheels).toEqual([-40, 20]);
+    expect(move.defaultPrevented).toBe(true); // The page around it doesn't scroll instead.
+  });
+
+  it('sends a pasted or dropped image as a file and pastes text through xterm', async () => {
+    const onImage = vi.fn();
+    const onInput = vi.fn();
+    const pasteRef = { current: null as ((text: string) => void) | null };
+    const { container } = render(
+      <TerminalView
+        fetchOutput={noFetch}
+        streamUrl={() => '/s'}
+        onInput={onInput}
+        onImage={onImage}
+        pasteRef={pasteRef}
+      />,
+    );
+    await waitFor(() => expect(terms.at(-1)?.keyHandler).not.toBeNull());
+    const term = terms.at(-1)!;
+    const image = new File(['x'], 'shot.png', { type: 'image/png' });
+    // Ctrl+V with only an image on the clipboard: the image goes to onImage, no ^V fallback.
+    term.keyHandler!(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true }));
+    const paste = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+      clipboardData: unknown;
+    };
+    paste.clipboardData = { getData: () => '', files: [image] };
+    container.querySelector('.terminal')!.dispatchEvent(paste);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(onImage).toHaveBeenCalledWith(image);
+    expect(onInput).not.toHaveBeenCalled();
+    expect(paste.defaultPrevented).toBe(true);
+    // The uploaded image's path goes in as a paste (bracketed when the CLI asked for it).
+    pasteRef.current!('/data/attachments/shot.png');
+    expect(term.pasted).toBe('/data/attachments/shot.png');
   });
 });

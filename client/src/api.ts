@@ -145,6 +145,9 @@ export const api = {
       `/agent-sessions/${id}/card`,
       { cardId, send, prompt },
     ),
+  /** Saves an image for a session (PM-54); returns its absolute path to paste into the CLI. */
+  uploadSessionImage: (id: number, image: { name: string; type: string; data: string }) =>
+    request<{ path: string }>('POST', `/agent-sessions/${id}/images`, image),
   sendSessionInput: (id: number, data: string) =>
     request<{ queued: boolean; session: AgentSession }>('POST', `/agent-sessions/${id}/input`, {
       data,

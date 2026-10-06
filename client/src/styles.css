@@ -3126,6 +3126,12 @@ span.path-link:hover .path-icon {
   line-height: 32px;
   white-space: nowrap;
 }
+/* Below 1200px the count gives its room to the search box (the "All N" chip shows it too). */
+@media (max-width: 1200px) {
+  .work-list-top > .meta {
+    display: none;
+  }
+}
 .workspace-list.is-dock-max .work-list-scroll {
   display: none;
 }
@@ -3818,8 +3824,16 @@ span.path-link:hover .path-icon {
     flex: 1 1 0;
     min-width: 0;
   }
+  /* Search shares the pickers' row as a short box, and takes the whole row while it's in use
+     (focused or holding a query), so it costs no row of its own. */
   .input.work-search {
-    flex: 1 1 100%;
+    flex: 0 0 84px;
+    width: 84px;
+    min-width: 0;
+  }
+  .input.work-search:focus,
+  .input.work-search:not(:placeholder-shown) {
+    flex-basis: 100%;
     width: 100%;
   }
   /* Plan usage in the workspace toolbar (PM-50): its own row that scrolls sideways; the "All N"
@@ -4003,7 +4017,11 @@ span.path-link:hover .path-icon {
   color: inherit;
 }
 .input.work-search {
-  width: 200px;
+  /* Takes the row's leftover space (120-220px) so it rarely needs a row of its own. */
+  flex: 1 1 120px;
+  min-width: 120px;
+  max-width: 220px;
+  width: auto;
   height: 32px;
 }
 

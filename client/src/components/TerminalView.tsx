@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
@@ -24,6 +24,8 @@ export function TerminalView({
   height = 320,
   fontSize = 12.5,
   historyBytes = 0,
+  pasteRef,
+  onImage,
 }: {
   fetchOutput: (after: number) => Promise<AgentOutput>;
   /** Builds the SSE URL resuming from a byte offset; enables live streaming. */
@@ -43,6 +45,13 @@ export function TerminalView({
    * they would reach the CLI as junk (or pile up in a stopped session's input queue).
    */
   historyBytes?: number;
+  /**
+   * Filled with a function that pastes text the way the keyboard would (xterm's paste: bracketed
+   * when the CLI asked for it), e.g. the path of an image sent from a phone (PM-54).
+   */
+  pasteRef?: MutableRefObject<((text: string) => void) | null>;
+  /** An image file pasted or dropped onto the terminal (sent as a file, not the OS clipboard). */
+  onImage?: (file: File) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
@@ -50,9 +59,17 @@ export function TerminalView({
   // > 0 while xterm parses replayed history; anything it emits meanwhile is an automatic reply.
   const replaying = useRef(0);
   // Keep the latest callbacks without re-creating the terminal.
-  const callbacks = useRef({ fetchOutput, streamUrl, onInput, onResize, paused });
+  const callbacks = useRef({
+    fetchOutput,
+    streamUrl,
+    onInput,
+    onResize,
+    paused,
+    onImage,
+    pasteRef,
+  });
   useEffect(() => {
-    callbacks.current = { fetchOutput, streamUrl, onInput, onResize, paused };
+    callbacks.current = { fetchOutput, streamUrl, onInput, onResize, paused, onImage, pasteRef };
   });
   const interactive = onInput !== undefined;
   const streaming = streamUrl !== undefined;
@@ -151,12 +168,76 @@ export function TerminalView({
         return true;
       });
     }
+    /** The first image file in a paste or drop, when someone takes images. */
+    const imageOf = (data: DataTransfer | null) =>
+      callbacks.current.onImage
+        ? ([...(data?.files ?? [])].find((f) => f.type.startsWith('image/')) ?? null)
+        : null;
     const onPaste = (event: ClipboardEvent) => {
       const text = event.clipboardData?.getData('text/plain') ?? '';
+      const image = text ? null : imageOf(event.clipboardData);
+      if (image) {
+        // An image (screenshot, copied photo): sent as a file whose path is pasted in, so it
+        // works from a phone and for every CLI, not only those reading the OS clipboard.
+        pasteViaBrowser = false;
+        event.preventDefault();
+        event.stopPropagation();
+        callbacks.current.onImage?.(image);
+        return;
+      }
       // Text: xterm's own paste handling takes it from here. No text: keep the ^V fallback.
       if (text) pasteViaBrowser = false;
     };
     host.addEventListener('paste', onPaste, true);
+    const onDragOver = (event: DragEvent) => {
+      if (callbacks.current.onImage && event.dataTransfer?.types.includes('Files')) {
+        event.preventDefault();
+      }
+    };
+    const onDrop = (event: DragEvent) => {
+      const image = imageOf(event.dataTransfer);
+      if (!image) return;
+      event.preventDefault();
+      callbacks.current.onImage?.(image);
+    };
+    host.addEventListener('dragover', onDragOver);
+    host.addEventListener('drop', onDrop);
+    // Touch: xterm has no touch scrolling (its canvas takes the swipe), so a vertical swipe is
+    // replayed as the wheel a mouse would send: scrollback in plain output, and the CLI's own
+    // scrolling in full-screen apps (xterm turns wheel into mouse reports or arrow keys there).
+    let touchY: number | null = null;
+    let touchX = 0;
+    const onTouchStart = (event: TouchEvent) => {
+      touchY = event.touches.length === 1 ? event.touches[0]!.clientY : null;
+      touchX = event.touches[0]?.clientX ?? 0;
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (touchY === null || event.touches.length !== 1) return;
+      const y = event.touches[0]!.clientY;
+      const delta = touchY - y;
+      if (Math.abs(delta) < 1) return;
+      touchY = y;
+      event.preventDefault(); // The swipe scrolls the terminal, not the page around it.
+      term.element?.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: delta,
+          deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+          clientX: touchX,
+          clientY: y,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    };
+    const onTouchEnd = () => {
+      touchY = null;
+    };
+    host.addEventListener('touchstart', onTouchStart, { passive: true });
+    host.addEventListener('touchmove', onTouchMove, { passive: false });
+    host.addEventListener('touchend', onTouchEnd);
+    host.addEventListener('touchcancel', onTouchEnd);
+    const pasteTarget = callbacks.current.pasteRef;
+    if (pasteTarget && interactive) pasteTarget.current = (text) => term.paste(text);
     // Copy the controller: cleanup must not read a ref that may have changed by then.
     const controller = ctl.current;
 
@@ -257,6 +338,13 @@ export function TerminalView({
       controller.source = null;
       inputSub?.dispose();
       host.removeEventListener('paste', onPaste, true);
+      host.removeEventListener('dragover', onDragOver);
+      host.removeEventListener('drop', onDrop);
+      host.removeEventListener('touchstart', onTouchStart);
+      host.removeEventListener('touchmove', onTouchMove);
+      host.removeEventListener('touchend', onTouchEnd);
+      host.removeEventListener('touchcancel', onTouchEnd);
+      if (pasteTarget) pasteTarget.current = null;
       window.removeEventListener('resize', refit);
       resize.disconnect();
       term.dispose();

@@ -14,7 +14,11 @@ import { registerAgentRoutes } from './agents/routes.js';
 import { registerBoardMcp } from './boardMcp.js';
 import { pullRequests } from './pullRequests.js';
 import { openInFileManager } from './openFolder.js';
-import { registerAttachmentRoutes, removeAttachments } from './attachments.js';
+import {
+  registerAttachmentRoutes,
+  registerSessionImageRoutes,
+  removeAttachments,
+} from './attachments.js';
 
 const idParam = z.coerce.number().int().positive();
 
@@ -139,6 +143,7 @@ export function createApp(
   // Card images live beside the agent logs: <dataDir>/attachments/<cardId>/.
   const attachmentsRoot = path.join(path.dirname(logDir), 'attachments');
   registerAttachmentRoutes(app, db, attachmentsRoot);
+  registerSessionImageRoutes(app, db, attachmentsRoot);
   registerBoardMcp(app, db, attachmentsRoot);
 
   // ---- Projects -------------------------------------------------------------------------------
