@@ -1524,13 +1524,19 @@ a.t:hover {
 
 /* ---- Kanban ------------------------------------------------------------------------------- */
 
+/* No sideways scroll: an overflow box would trap the sticky column headers (they'd stick to the
+   board, which never scrolls vertically). Columns share the width like the global board and
+   stack below 900px. Columns stretch to the tallest so every header stays stuck as one row. */
 .board {
   display: grid;
-  grid-template-columns: repeat(var(--board-cols, 5), minmax(220px, 1fr));
+  grid-template-columns: repeat(var(--board-cols, 5), minmax(0, 1fr));
   gap: 12px;
-  overflow-x: auto;
   padding-bottom: 8px;
-  align-items: start;
+}
+@media (max-width: 900px) {
+  .board {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .column {
   background: var(--surface-2);
@@ -1546,11 +1552,45 @@ a.t:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+/* Sticky column headers (Notion-style), both boards: a header scrolls with its column until it
+   meets the page's sticky chrome (--stuck-top, measured by useStuckTop), then holds there while
+   the cards slide underneath. The wrapper reaches the column's edges so nothing peeks past the
+   bar, and is a scroll-state container so the bar can show a shadow only while stuck. */
+.col-stick {
+  position: sticky;
+  top: var(--stuck-top, 0px);
+  z-index: 2;
+  margin: -4px -10px;
+  container-type: scroll-state;
+}
+.col-stick > * {
+  padding: 6px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  transition:
+    box-shadow 120ms,
+    border-radius 120ms;
+}
+.column.drop-target > .col-stick > * {
+  background: var(--accent-soft);
+}
+@container scroll-state(stuck: top) {
+  .col-stick > * {
+    border-radius: 0;
+    box-shadow:
+      0 1px 0 var(--border),
+      0 6px 8px -6px rgb(0 0 0 / 0.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .col-stick > * {
+    transition: none;
+  }
+}
 .column-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 4px;
 }
 .column-header h3 {
   display: flex;
@@ -1589,6 +1629,7 @@ a.t:hover {
 }
 .kcard .meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   color: var(--text-3);
@@ -2950,10 +2991,10 @@ span.path-link:hover .path-icon {
 }
 
 /* Global board: columns of project-tagged cards across all projects. */
+/* Columns stretch to the tallest so the sticky headers hold as one row (see .col-stick). */
 .gboard {
   display: grid;
   gap: 12px;
-  align-items: start;
 }
 .gcolumn {
   background: var(--surface-2);
@@ -2972,7 +3013,6 @@ span.path-link:hover .path-icon {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 4px;
 }
 .gcolumn-head h2 {
   margin: 0;

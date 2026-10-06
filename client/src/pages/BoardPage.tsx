@@ -15,6 +15,7 @@ import { CardDialog } from '../components/CardDialog';
 import { Dropdown } from '../components/Dropdown';
 import { NewCardDialog } from '../components/NewCardDialog';
 import { formatRelative } from '../format';
+import { useStuckTop } from '../stuckTop';
 
 // One board across every project (Notion-style: a board view whose cards carry a project tag).
 // ?show=planned|active narrows the columns (the dashboard's tiles link here), ?project=<id>
@@ -49,6 +50,7 @@ export function BoardPage() {
   // Adding: the column whose + was clicked (null = closed).
   const [addingTo, setAddingTo] = useState<CardStatus | null>(null);
   const [view, setView] = useBoardView();
+  const stuckTop = useStuckTop();
 
   useEffect(() => {
     let active = true;
@@ -199,6 +201,7 @@ export function BoardPage() {
         />
       ) : (
         <div
+          ref={stuckTop}
           className="gboard"
           style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
         >
@@ -223,23 +226,26 @@ export function BoardPage() {
                   if (card) void move(card, status);
                 }}
               >
-                <header className="gcolumn-head">
-                  <h2>
-                    <span className={`status-pill status-${status}`}>
-                      {CARD_STATUS_LABELS[status]}
-                    </span>
-                  </h2>
-                  <span className="faint num">{items.length}</span>
-                  <button
-                    type="button"
-                    className="icon-btn gcolumn-add"
-                    aria-label={`Add a card to ${CARD_STATUS_LABELS[status]}`}
-                    title={`Add a card to ${CARD_STATUS_LABELS[status]}`}
-                    onClick={() => setAddingTo(status)}
-                  >
-                    ＋
-                  </button>
-                </header>
+                {/* Sticks under the page header while the column scrolls (see .col-stick). */}
+                <div className="col-stick">
+                  <header className="gcolumn-head">
+                    <h2>
+                      <span className={`status-pill status-${status}`}>
+                        {CARD_STATUS_LABELS[status]}
+                      </span>
+                    </h2>
+                    <span className="faint num">{items.length}</span>
+                    <button
+                      type="button"
+                      className="icon-btn gcolumn-add"
+                      aria-label={`Add a card to ${CARD_STATUS_LABELS[status]}`}
+                      title={`Add a card to ${CARD_STATUS_LABELS[status]}`}
+                      onClick={() => setAddingTo(status)}
+                    >
+                      ＋
+                    </button>
+                  </header>
+                </div>
                 <div className="gcolumn-cards">
                   {items.map((c) => (
                     <button

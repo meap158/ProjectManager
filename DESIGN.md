@@ -68,6 +68,14 @@ a populated pane.
   visible while tab content scrolls; banners and notices scroll away. Stuck bars keep 8px
   breathing room above (`.page` top padding compensates, so resting pages are unchanged) —
   sticky content never touches the viewport edge.
+- **Sticky board column headers (PM-56, Notion-style):** on both boards each column header
+  (`.col-stick`) scrolls with its column until it meets the page's sticky chrome, then holds
+  there while cards slide underneath. `useStuckTop` (`client/src/stuckTop.ts`) measures the part
+  of the page head that actually sticks (the whole `.sticky-head`, or only the tab bar on phone
+  project pages) into `--stuck-top`. Columns stretch to the tallest so the headers hold as one
+  row; a scroll-state container query adds a rule line and soft shadow only while stuck
+  (browsers without it still stick, just without the shadow). Boards never scroll sideways: an
+  overflow box would trap the sticky headers.
 - **The all-projects overview (`/`) is pinned prominent:** first item in the sidebar
   ("All projects" with an accent icon when active, above the filter) and a topbar nav
   link. It is never buried under the project list.
@@ -290,7 +298,7 @@ Switching tabs or projects must not move anything that stays on screen.
 ## 10. Responsive behaviour
 
 - Desktop-first, usable down to 360px wide: grids collapse, tables scroll horizontally inside
-  `.table-wrap`, and the board scrolls horizontally.
+  `.table-wrap`, and board columns share the width, stacking into one column at ≤ 900px.
 - **Breakpoints:** 900px (tablet: shell stacks, two-column grids become one) and **768px (phone)**,
   the same mobile breakpoint as the sister apps (KDP, Oracle). `PHONE_QUERY` in
   `client/src/projectPanel.ts` mirrors it for JS.

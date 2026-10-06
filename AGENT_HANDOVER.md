@@ -13,8 +13,8 @@ atomic commits). Nothing is pending in the working tree.
 - **Phone layout (≤ 768px, DESIGN.md §10.1):** bottom tab bar (`MobileTabBar`: Home, Projects,
   Board, Agents, Settings) replaces the top nav; Projects opens the sidebar full screen
   (`useProjectPanel` in `client/src/projectPanel.ts`, tied to the history entry so navigation
-  closes it); safe-area tokens + `viewport-fit=cover`; headers wrap; tabs scroll; the Kanban
-  keeps its original layout; dialogs are bottom sheets with a pinned footer; dashboard and Agent work
+  closes it); safe-area tokens + `viewport-fit=cover`; headers wrap; tabs scroll; both Kanbans
+  stack their columns at ≤ 900px; dialogs are bottom sheets with a pinned footer; dashboard and Agent work
   rows reflow to two lines; workspace panes stack and hide presets/shortcut help; 40px touch
   targets and 16px field text on coarse pointers; `theme-color` follows `--surface`. Patterns
   taken from the sister apps KdpPublishingPipeline (bottom bar, master/detail) and ApexTide
@@ -24,6 +24,13 @@ atomic commits). Nothing is pending in the working tree.
   board and the global Board; Board (Kanban) stays the default. List (`BoardListView`) groups
   cards by status under collapsible headers with status pills, 44px rows and a "New" row per
   group; Done starts collapsed. View and collapsed groups persist per browser (`boardView.ts`).
+- **Sticky board column headers (PM-56, DESIGN.md §2):** both boards' column headers stick under
+  the page's sticky chrome (`.col-stick`, offset from `useStuckTop` in `client/src/stuckTop.ts`),
+  with a shadow only while stuck (scroll-state container query, progressive). The project board
+  no longer scrolls sideways (that overflow box would trap sticky): columns share the width like
+  the global board and stack at ≤ 900px. Verified on a scratch instance: desktop headers hold as
+  one row flush under the head on both boards; 390px phone pins under the Board head / project
+  tab bar; no sideways scroll.
 - **Boards:** project and global boards create cards through the full CardDialog (notes, staged
   images, hand-to-agent); the project is required on the global Board. Dashboard tiles link to
   /board?show=planned|active. Card images: data folder only, lightbox preview.

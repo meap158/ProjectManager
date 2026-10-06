@@ -10,6 +10,7 @@ import {
 import { api } from '../api';
 import { useBoardView } from '../boardView';
 import { formatRelative, movedBy } from '../format';
+import { useStuckTop } from '../stuckTop';
 import { BoardListView, BoardViewTabs } from './BoardListView';
 import { CardDialog } from './CardDialog';
 import { NewCardDialog } from './NewCardDialog';
@@ -51,6 +52,7 @@ export function KanbanBoard({
     () => new Map((runCache.get(projectId) ?? []).map((s) => [s.cardId, s])),
   );
   const [view, setView] = useBoardView();
+  const stuckTop = useStuckTop();
 
   // Write-through cache: every cards update lands in the module cache too, so tab
   // switches and revisits render instantly and refresh in the background.
@@ -197,6 +199,7 @@ export function KanbanBoard({
         />
       ) : (
         <div
+          ref={stuckTop}
           className="board"
           style={{ '--board-cols': columns.length } as CSSProperties}
           onDragEnd={() => (setDragId(null), setDropTarget(null))}
@@ -211,21 +214,24 @@ export function KanbanBoard({
                 onDragOver={(e) => onDragOver(e, status, null)}
                 onDrop={onDrop}
               >
-                <div className="column-header">
-                  <h3>
-                    {/* Same coloured status pill as the List view's group headers. */}
-                    <span className={`status-pill status-${status}`}>
-                      {CARD_STATUS_LABELS[status]}
-                    </span>{' '}
-                    <span className="badge">{items.length}</span>
-                  </h3>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setAdding(status)}
-                    aria-label={`Add card to ${CARD_STATUS_LABELS[status]}`}
-                  >
-                    ＋
-                  </button>
+                {/* Sticks under the page header while the column scrolls (see .col-stick). */}
+                <div className="col-stick">
+                  <div className="column-header">
+                    <h3>
+                      {/* Same coloured status pill as the List view's group headers. */}
+                      <span className={`status-pill status-${status}`}>
+                        {CARD_STATUS_LABELS[status]}
+                      </span>{' '}
+                      <span className="badge">{items.length}</span>
+                    </h3>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setAdding(status)}
+                      aria-label={`Add card to ${CARD_STATUS_LABELS[status]}`}
+                    >
+                      ＋
+                    </button>
+                  </div>
                 </div>
 
                 {items.map((card) => (
