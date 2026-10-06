@@ -308,7 +308,14 @@ export function ProjectSidebar({
         </span>
         <span className="sidebar-home-text">
           <b>All projects</b>
-          <span className="faint">Portfolio overview</span>
+          {/* The project count lives here (PM-43), not in a footer row of its own. */}
+          <span className="faint">
+            {projects === null
+              ? 'Portfolio overview'
+              : visible.length !== projects.length
+                ? `Portfolio · ${visible.length} of ${projects.length} shown`
+                : `Portfolio · ${projects.length} project${projects.length === 1 ? '' : 's'}`}
+          </span>
         </span>
       </NavLink>
       <div className="sidebar-top">
@@ -541,11 +548,6 @@ export function ProjectSidebar({
               </Link>
             </div>
           </div>
-          <span className="faint">
-            {visible.length !== projects.length
-              ? `${visible.length} of ${projects.length} projects`
-              : `${projects.length} project${projects.length === 1 ? '' : 's'}`}
-          </span>
         </div>
       )}
 
