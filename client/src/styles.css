@@ -3895,13 +3895,14 @@ span.path-link:hover .path-icon {
 }
 
 /* Agent work: plan usage per CLI in the list (PM-18) as its own slim section below the list and
-   its terminal (PM-42), on the panel surface, one line where it fits. */
+   its terminal (PM-42). Each CLI is its own small card, and its windows (5-hour, weekly) are split
+   by a hairline, so CLIs and windows read apart at a glance. */
 .limits-strip {
   flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 16px;
+  gap: 8px;
   padding: 8px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -3909,6 +3910,7 @@ span.path-link:hover .path-icon {
   font-size: 12px;
 }
 .limits-title {
+  margin-right: 4px;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -3921,15 +3923,32 @@ span.path-link:hover .path-icon {
   gap: 6px;
 }
 .limits-chip {
-  gap: 8px;
+  gap: 10px;
+  padding: 4px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 .limits-name {
-  font-weight: 550;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.limits-window + .limits-window {
+  padding-left: 10px;
+  border-left: 1px solid var(--border-strong);
 }
 .limits-window .usage-meter {
   flex: none;
-  width: 40px;
+  width: 44px;
   min-width: 0;
+  background: var(--surface);
+}
+.limits-window > .num {
+  min-width: 30px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Settings → LAN access */

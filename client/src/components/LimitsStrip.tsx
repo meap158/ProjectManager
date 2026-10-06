@@ -20,8 +20,10 @@ export function LimitsStrip({ providerIds }: { providerIds: string[] }) {
           className="limits-chip"
           title={`From the ${l.source}, reported ${formatRelative(l.asOf)}`}
         >
-          <ProviderIcon id={l.providerId} size={13} />
-          <span className="limits-name">{PROVIDER_LABELS[l.providerId] ?? l.providerId}</span>
+          <span className="limits-name">
+            <ProviderIcon id={l.providerId} size={13} />
+            {PROVIDER_LABELS[l.providerId] ?? l.providerId}
+          </span>
           {l.windows.map((w) => {
             const level = w.usedPercent >= 90 ? 'high' : w.usedPercent >= 75 ? 'warn' : 'ok';
             const reset = w.resetSinceReport
