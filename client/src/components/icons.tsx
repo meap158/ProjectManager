@@ -155,3 +155,21 @@ export function SettingsIcon(props: IconProps) {
     </Base>
   );
 }
+
+/** Start a stopped session (filled play triangle). */
+export function PlayIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M5 3.5v9l7.5-4.5z" fill="currentColor" />
+    </Base>
+  );
+}
+
+/** Stop a running session (filled square). */
+export function StopIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" />
+    </Base>
+  );
+}

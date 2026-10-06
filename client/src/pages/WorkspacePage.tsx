@@ -38,6 +38,7 @@ import { splitSessionInput } from '../lib/sessionInput';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
+import { SessionToggle } from '../components/SessionToggle';
 import { RunCard } from '../components/RunCard';
 
 // xterm is heavy: it loads only when a pane actually shows a terminal.
@@ -1049,25 +1050,11 @@ function WorkList({
         >
           Show in pane
         </button>
-        {s.status === 'running' ? (
-          <button
-            type="button"
-            className="btn btn-sm"
-            title="Stop the process (it won't relaunch until you start it)"
-            onClick={() => change(() => api.stopSession(s.id))}
-          >
-            Stop
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn btn-sm"
-            title={s.resumeSupported ? 'Start again, resuming the conversation' : 'Start again'}
-            onClick={() => change(() => api.startSession(s.id))}
-          >
-            Start
-          </button>
-        )}
+        <SessionToggle
+          session={s}
+          onStart={() => change(() => api.startSession(s.id))}
+          onStop={() => change(() => api.stopSession(s.id))}
+        />
         <ConfirmDelete
           label={`Delete session "${s.name}"`}
           heading={`Delete session "${s.name}"?`}

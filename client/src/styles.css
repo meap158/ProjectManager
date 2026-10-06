@@ -3630,3 +3630,13 @@ dialog.lightbox img {
     grid-template-columns: 1fr;
   }
 }
+/* Start / Stop on session rows: the icon carries the colour, the word stays text-coloured. */
+.session-toggle {
+  gap: 5px;
+}
+.session-toggle.start svg {
+  color: var(--good);
+}
+.session-toggle.stop svg {
+  color: var(--danger);
+}

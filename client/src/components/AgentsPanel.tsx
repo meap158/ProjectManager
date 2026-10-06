@@ -15,6 +15,7 @@ import { isTerminalReport } from '../../../shared/terminalReports';
 import { AgentWorkList, mergeWork, workKey, type WorkItem, type WorkKey } from './AgentWorkList';
 import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
+import { SessionToggle } from './SessionToggle';
 
 // xterm is heavy: it loads only when a terminal actually renders.
 const TerminalView = lazy(() =>
@@ -129,25 +130,11 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
         >
           Open in workspace
         </Link>
-        {s.status === 'running' ? (
-          <button
-            type="button"
-            className="btn btn-sm"
-            title="Stop the process (it won't relaunch until you start it)"
-            onClick={() => changeSession(() => api.stopSession(s.id))}
-          >
-            Stop
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn btn-sm"
-            title={s.resumeSupported ? 'Start again, resuming the conversation' : 'Start again'}
-            onClick={() => changeSession(() => api.startSession(s.id))}
-          >
-            Start
-          </button>
-        )}
+        <SessionToggle
+          session={s}
+          onStart={() => changeSession(() => api.startSession(s.id))}
+          onStop={() => changeSession(() => api.stopSession(s.id))}
+        />
         <ConfirmDelete
           label={`Delete session "${s.name}"`}
           heading={`Delete session "${s.name}"?`}

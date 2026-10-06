@@ -363,6 +363,8 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   it (official Claude Code and OpenCode marks in brand colours, generic terminal glyph
   otherwise — never a wrong "official" mark); card tag, state word and actions sit in fixed
   right-hand columns so they line up on every row.
+  Start / Stop carry an icon as well as the word: a green play triangle and a red square
+  (`SessionToggle`), so the two read apart at a glance.
 - **Settings (/settings):** one section per concern. First section is agent CLIs: availability,
   and one-click **Install** for whatever is missing, using each vendor's official method
   (native installer scripts for Claude/Codex/Grok/OpenCode-posix; npm globals for
