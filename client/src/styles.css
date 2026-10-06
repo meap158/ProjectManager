@@ -3554,6 +3554,8 @@ span.path-link:hover .path-icon {
     margin-top: 8px;
     font-size: 13px;
   }
+  /* Words dropped on phones ("Open in workspace" -> "Open"). Inside a .btn the flex gap supplies
+     the space before them, so their text starts without one. */
   .phone-hide {
     display: none;
   }
@@ -3797,6 +3799,32 @@ span.path-link:hover .path-icon {
 }
 .usage-window > .faint {
   white-space: nowrap;
+}
+
+/* Agent work lists: one line of plan usage per CLI in the list (PM-18), above the filters. */
+.limits-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+.limits-chip,
+.limits-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.limits-chip {
+  gap: 8px;
+}
+.limits-name {
+  font-weight: 550;
+}
+.limits-window .usage-meter {
+  flex: none;
+  width: 40px;
+  min-width: 0;
 }
 
 /* Settings → LAN access */

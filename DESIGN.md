@@ -407,6 +407,10 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   since". CLIs without a local source show no meter, never an estimate. Claude Code exposes its
   limits only to a status-line command's JSON (`rate_limits.five_hour` / `seven_day`), which
   would mean wrapping the user's status line in sessions we launch: evaluated, not done yet.
+- **Limits on Agent work (PM-18):** limits belong to the account, not a session or run, so they
+  appear once per CLI above each Agent work list (project Agents tab and the workspace List),
+  only for CLIs present in that list: icon, name, then each window as label, 40px meter and
+  percent; reset time and source in tooltips. No row repeats them; no CLI without data shows.
 - **Trust model:** same-machine only (existing Host allowlist + JSON-write guard). Sessions
   run as your user with your environment; logs live under `data/agent-logs/` (gitignored).
   Caps: 8 sessions/project, 3 concurrent runs/project, 8MB logs, 20min default run timeout.

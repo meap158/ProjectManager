@@ -40,6 +40,7 @@ import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../compon
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { SessionToggle } from '../components/SessionToggle';
 import { RunCard } from '../components/RunCard';
+import { LimitsStrip } from '../components/LimitsStrip';
 
 // xterm is heavy: it loads only when a pane actually shows a terminal.
 const TerminalView = lazy(() =>
@@ -1049,7 +1050,7 @@ function WorkList({
           aria-label="Show in pane"
           onClick={() => onShowInPane(s.id)}
         >
-          Show<span className="phone-hide"> in pane</span>
+          Show<span className="phone-hide">in pane</span>
         </button>
         <SessionToggle
           session={s}
@@ -1084,6 +1085,7 @@ function WorkList({
           {runs.length === 1 ? '' : 's'} across projects
         </span>
       </div>
+      <LimitsStrip providerIds={[...new Set(allItems.map((w) => w.item.providerId))]} />
       {allItems.length > 0 && (
         <WorkFilters
           items={allItems}

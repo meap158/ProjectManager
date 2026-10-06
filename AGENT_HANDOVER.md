@@ -76,6 +76,8 @@ atomic commits). Nothing is pending in the working tree.
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.
 - **LAN access** (Settings, opt-in): separate listener, devices sign in with a 4-character
   single-use code (`server/lan.ts`); see CLAUDE.md security model.
+- **Limits on Agent work (PM-18):** `LimitsStrip` above both Agent work lists, once per CLI in
+  the list (`useAgentLimits` in `client/src/agentLimits.ts`, shared with Settings).
 - **Usage limits (PM-17, in progress):** Settings → Agent CLIs shows Codex's 5-hour/weekly
   windows from `rate_limits` in `~/.codex/sessions` rollouts (`server/agents/limits.ts`, GET
   `/api/agent-limits`, 30s cache; newest 3 day folders, tail reads of the newest 4 files, latest

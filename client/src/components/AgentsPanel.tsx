@@ -16,6 +16,7 @@ import { AgentWorkList, mergeWork, workKey, type WorkItem, type WorkKey } from '
 import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
 import { SessionToggle } from './SessionToggle';
+import { LimitsStrip } from './LimitsStrip';
 
 // xterm is heavy: it loads only when a terminal actually renders.
 const TerminalView = lazy(() =>
@@ -129,7 +130,7 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
           title="Show this session in the multi-pane Agents workspace"
           aria-label="Open in workspace"
         >
-          Open<span className="phone-hide"> in workspace</span>
+          Open<span className="phone-hide">in workspace</span>
         </Link>
         <SessionToggle
           session={s}
@@ -268,6 +269,7 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             Terminals keep running until stopped · one-shot runs wait for your review
           </span>
         </div>
+        {work && <LimitsStrip providerIds={[...new Set(work.map((w) => w.item.providerId))]} />}
         {work === null ? (
           <div className="skeleton" style={{ height: 120 }} />
         ) : work.length === 0 ? (
