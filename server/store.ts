@@ -53,6 +53,16 @@ export function cardKey(id: number): string {
 
 // ---- Projects ---------------------------------------------------------------------------------
 
+/** Moves a project's commit-reference cursor (the last commit time whose card refs were applied). */
+export function setRefsCursor(db: Db, projectId: number, cursor: string | null): void {
+  db.prepare('UPDATE projects SET refs_cursor = ? WHERE id = ?').run(cursor, projectId);
+}
+
+/** Ids and folders of every tracked project (for background watchers). */
+export function listProjectFolders(db: Db): { id: number; path: string }[] {
+  return db.prepare('SELECT id, path FROM projects').all() as { id: number; path: string }[];
+}
+
 export function listProjects(db: Db, scanState: (id: number) => ScanState): ProjectSummary[] {
   const rows = db
     .prepare('SELECT * FROM projects ORDER BY name COLLATE NOCASE')

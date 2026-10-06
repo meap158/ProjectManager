@@ -136,6 +136,12 @@ export async function commitMessagesSince(root: string, since: string): Promise<
     });
 }
 
+/** The current HEAD commit hash, or null outside a repo / before the first commit. */
+export async function headCommit(root: string): Promise<string | null> {
+  const out = await gitOrNull(root, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+  return out?.trim() || null;
+}
+
 async function gitOrNull(cwd: string, args: string[]): Promise<string | null> {
   try {
     const { stdout } = await run('git', ['-c', 'core.quotepath=off', ...args], { cwd });

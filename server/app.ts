@@ -77,7 +77,7 @@ function parseId(c: Context, name = 'id'): number {
   return result.data;
 }
 
-export type AppWithAgents = Hono & { supervisor: AgentSupervisor };
+export type AppWithAgents = Hono & { supervisor: AgentSupervisor; scanner: Scanner };
 
 export function createApp(
   db: Db,
@@ -285,7 +285,7 @@ export function createApp(
     return c.json(browse(db, requested ? resolveFolder(requested) : os.homedir()));
   });
 
-  return Object.assign(app, { supervisor });
+  return Object.assign(app, { supervisor, scanner });
 }
 
 function resolveFolder(input: string): string {

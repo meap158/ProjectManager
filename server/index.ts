@@ -40,6 +40,8 @@ async function main() {
     agentHost: process.env.AGENT_HOST !== 'off',
   });
   root.route('/', api);
+  // Boards follow commits on their own: new commits' card refs apply within ~15s, no Refresh.
+  api.scanner.watchCommits();
 
   const server = createServer();
 

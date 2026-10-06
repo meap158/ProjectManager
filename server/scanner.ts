@@ -5,9 +5,18 @@ import type { CardMove, ScanState } from '../shared/types.js';
 import { computeMoves } from './analysis/cardRefs.js';
 import { scanCode } from './analysis/codeScan.js';
 import { scanDisk } from './analysis/diskScan.js';
-import { commitMessagesSince, scanGit } from './analysis/git.js';
+import { commitMessagesSince, headCommit, scanGit } from './analysis/git.js';
 import type { Db } from './db.js';
-import { getProjectRow, listCards, moveCardToTop, saveScanResults } from './store.js';
+import {
+  getProjectRow,
+  getSetting,
+  listCards,
+  listProjectFolders,
+  moveCardToTop,
+  saveScanResults,
+  setRefsCursor,
+  setSetting,
+} from './store.js';
 
 const IDLE: ScanState = { status: 'idle', error: null, startedAt: null, moves: [] };
 
@@ -53,28 +62,13 @@ export class Scanner {
       scanGit(project.path),
     ]);
 
-    // Card references: only look at commits newer than the cursor, so a card the user moved back
-    // by hand isn't moved again by the same old commit on every refresh.
-    let moves: CardMove[] = [];
-    let refsCursor = project.refs_cursor;
-    const openCards = listCards(this.db, projectId).filter((c) => c.status !== 'done');
-    if (git.isRepo && openCards.length > 0) {
-      // Timestamps carry different UTC offsets, so compare parsed values, never strings.
-      const oldestCard = Math.min(...openCards.map((c) => Date.parse(c.createdAt)));
-      const cursor = refsCursor ? Date.parse(refsCursor) : -Infinity;
-      const since = new Date(Math.max(cursor, oldestCard)).toISOString();
-      const commits = (await commitMessagesSince(project.path, since)).filter(
-        (c) => Date.parse(c.committedAt) > cursor,
-      );
-      moves = computeMoves(openCards, commits);
-      if (commits.length > 0) refsCursor = commits.at(-1)!.committedAt;
-    } else if (git.lastCommitAt && !refsCursor) {
-      refsCursor = new Date().toISOString();
-    }
+    // Card references (shared with the commit watcher, so cards follow commits without a scan).
+    if (!getProjectRow(this.db, projectId)) return [];
+    const moves = git.isRepo ? await this.applyCommitRefs(projectId) : [];
+    const refsCursor = getProjectRow(this.db, projectId)?.refs_cursor ?? null;
 
     // Re-check: the project may have been deleted while scanning.
     if (!getProjectRow(this.db, projectId)) return [];
-    for (const move of moves) moveCardToTop(this.db, move.cardId, move.to, move.commit);
     saveScanResults(this.db, projectId, { code, disk, git, refsCursor });
 
     console.log(
@@ -82,5 +76,78 @@ export class Scanner {
         `${moves.length ? `, ${moves.length} card(s) moved` : ''} (${Date.now() - started} ms)`,
     );
     return moves;
+  }
+
+  /**
+   * Applies card references from commits not yet seen: "PM-12" moves a Backlog/To do card to In
+   * progress, "Fixes PM-12" (closes/resolves/completes) moves it to Done. A cursor (last applied
+   * commit time, plus the hashes seen at exactly that time) makes this idempotent, so a card moved
+   * back by hand isn't moved again by an old commit, and two commits in the same second both count.
+   */
+  async applyCommitRefs(projectId: number): Promise<CardMove[]> {
+    const project = getProjectRow(this.db, projectId);
+    if (!project) return [];
+    const seenKey = `refs_seen:${projectId}`;
+    const seen = new Set(getSetting<string[]>(this.db, seenKey) ?? []);
+    const cursor = project.refs_cursor ? Date.parse(project.refs_cursor) : -Infinity;
+    const openCards = listCards(this.db, projectId).filter((c) => c.status !== 'done');
+    if (openCards.length === 0) {
+      // Nothing to move: just keep the cursor at "now" so old history never replays later.
+      if (!project.refs_cursor) setRefsCursor(this.db, projectId, new Date().toISOString());
+      return [];
+    }
+    // Timestamps carry different UTC offsets, so compare parsed values, never strings.
+    const oldestCard = Math.min(...openCards.map((c) => Date.parse(c.createdAt)));
+    const since = new Date(Math.max(cursor, oldestCard) - 1000).toISOString();
+    const commits = (await commitMessagesSince(project.path, since)).filter((c) => {
+      const at = Date.parse(c.committedAt);
+      return at > cursor || (at === cursor && !seen.has(c.hash));
+    });
+    if (commits.length === 0) return [];
+    const moves = computeMoves(openCards, commits);
+    if (!getProjectRow(this.db, projectId)) return [];
+    for (const move of moves) moveCardToTop(this.db, move.cardId, move.to, move.commit);
+    const last = commits.at(-1)!.committedAt;
+    const lastAt = Date.parse(last);
+    const atLast = commits.filter((c) => Date.parse(c.committedAt) === lastAt).map((c) => c.hash);
+    setRefsCursor(this.db, projectId, last);
+    setSetting(this.db, seenKey, lastAt === cursor ? [...seen, ...atLast] : atLast);
+    if (moves.length > 0) {
+      console.log(
+        `[cards] project ${projectId}: ${moves.map((m) => `${m.key} → ${m.to}`).join(', ')}`,
+      );
+    }
+    return moves;
+  }
+
+  /**
+   * Keeps boards in step with commits without a manual Refresh: every `intervalMs` each project's
+   * HEAD is checked (one cheap `git rev-parse`), and when it changed, only the new commits'
+   * card references are applied. Returns a stop function.
+   */
+  watchCommits(intervalMs = 15_000): () => void {
+    const heads = new Map<number, string | null>();
+    let busy = false;
+    const tick = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        for (const { id, path } of listProjectFolders(this.db)) {
+          if (this.state(id).status === 'scanning') continue;
+          const head = await headCommit(path);
+          if (!head || heads.get(id) === head) continue;
+          heads.set(id, head);
+          await this.applyCommitRefs(id).catch((e: Error) =>
+            console.error(`[cards] project ${id}: ${e.message}`),
+          );
+        }
+      } finally {
+        busy = false;
+      }
+    };
+    void tick();
+    const timer = setInterval(() => void tick(), intervalMs);
+    timer.unref();
+    return () => clearInterval(timer);
   }
 }
