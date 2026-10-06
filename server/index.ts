@@ -42,6 +42,8 @@ async function main() {
   root.route('/', api);
   // Boards follow commits on their own: new commits' card refs apply within ~15s, no Refresh.
   api.scanner.watchCommits();
+  // Stats stay fresh on their own: the stalest project is rescanned once it is 15+ minutes old.
+  api.scanner.refreshPeriodically();
 
   const server = createServer();
 

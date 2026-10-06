@@ -63,6 +63,19 @@ export function listProjectFolders(db: Db): { id: number; path: string }[] {
   return db.prepare('SELECT id, path FROM projects').all() as { id: number; path: string }[];
 }
 
+/** The project scanned longest ago (never-scanned first), with when that was. */
+export function stalestProject(
+  db: Db,
+): { id: number; path: string; last_scanned_at: string | null } | null {
+  return (
+    (db
+      .prepare(
+        'SELECT id, path, last_scanned_at FROM projects ORDER BY last_scanned_at IS NOT NULL, last_scanned_at LIMIT 1',
+      )
+      .get() as { id: number; path: string; last_scanned_at: string | null } | undefined) ?? null
+  );
+}
+
 export function listProjects(db: Db, scanState: (id: number) => ScanState): ProjectSummary[] {
   const rows = db
     .prepare('SELECT * FROM projects ORDER BY name COLLATE NOCASE')

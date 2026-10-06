@@ -1,6 +1,7 @@
 // Runs project scans in the background and keeps their status in memory. Scans can take from
 // milliseconds to a minute on huge folders, so HTTP handlers start them and the UI polls.
 
+import { existsSync } from 'node:fs';
 import type { CardMove, ScanState } from '../shared/types.js';
 import { computeMoves } from './analysis/cardRefs.js';
 import { scanCode } from './analysis/codeScan.js';
@@ -12,6 +13,7 @@ import {
   getSetting,
   listCards,
   listProjectFolders,
+  stalestProject,
   moveCardToTop,
   saveScanResults,
   setRefsCursor,
@@ -118,6 +120,26 @@ export class Scanner {
       );
     }
     return moves;
+  }
+
+  /**
+   * Keeps every project's stats fresh without a manual Refresh: every `checkMs` the project
+   * scanned longest ago is rescanned once it is older than `maxAgeMs`. One scan at a time, so
+   * big folders never pile up on a busy machine. Returns a stop function.
+   */
+  refreshPeriodically(maxAgeMs = 15 * 60_000, checkMs = 60_000): () => void {
+    const tick = () => {
+      if ([...this.states.values()].some((s) => s.status === 'scanning')) return;
+      const stalest = stalestProject(this.db);
+      if (!stalest || !existsSync(stalest.path)) return;
+      const age = stalest.last_scanned_at
+        ? Date.now() - Date.parse(stalest.last_scanned_at)
+        : Infinity;
+      if (age >= maxAgeMs) this.start(stalest.id);
+    };
+    const timer = setInterval(tick, checkMs);
+    timer.unref();
+    return () => clearInterval(timer);
   }
 
   /**
