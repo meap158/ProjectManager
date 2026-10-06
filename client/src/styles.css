@@ -3741,6 +3741,17 @@ span.path-link:hover .path-icon {
   height: 32px;
 }
 
+/* Project → Pull requests: banner, table and footnote in the panels' 10px rhythm. */
+.pr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pr-body > p {
+  margin: 0;
+  font-size: 12.5px;
+}
+
 /* Settings → Agent CLIs: plan usage meters (PM-17), one line per window under the CLI's name. */
 .usage-limits {
   display: flex;
