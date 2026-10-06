@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from 'react';
+import { ProviderIcon } from './icons';
 import { Link, useNavigate } from 'react-router';
 import {
   AGENT_AUTONOMY,
@@ -476,6 +477,7 @@ export function CardDialog({
                     options={aiProviders.map((p) => ({
                       value: p.id,
                       label: p.name,
+                      icon: <ProviderIcon id={p.id} size={14} />,
                       disabled: !p.available,
                       ...(p.available
                         ? {}

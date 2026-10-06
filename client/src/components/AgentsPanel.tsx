@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { ProviderIcon } from './icons';
 import type {
   AgentProviderStatus,
   AgentRun,
@@ -488,6 +489,7 @@ function NewSessionForm({
               .filter((p) => !p.retired)
               .map((p) => ({
                 value: p.id,
+                icon: <ProviderIcon id={p.id} size={14} />,
                 label: p.name,
                 disabled: !p.available,
                 ...(p.available ? {} : { hint: 'not on PATH', title: `${p.name} isn’t on PATH` }),

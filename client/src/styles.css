@@ -3501,3 +3501,15 @@ dialog.lightbox img {
     height: 32px;
   }
 }
+
+/* Option marks (agent logos) before dropdown labels, also in the closed button. */
+.dropdown-icon {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  color: var(--text-2);
+}

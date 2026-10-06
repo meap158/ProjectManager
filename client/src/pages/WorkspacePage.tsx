@@ -9,6 +9,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
+import { ProviderIcon } from '../components/icons';
 import { Link, useSearchParams } from 'react-router';
 import {
   WORKSPACE_FONT_SIZES,
@@ -871,6 +872,7 @@ function NewSessionInline({
         options={usable.map((p) => ({
           value: p.id,
           label: p.name,
+          icon: <ProviderIcon id={p.id} size={14} />,
           disabled: !p.available,
           hint: !p.available ? 'not on PATH' : undefined,
           title: p.unavailableReason ?? p.description,

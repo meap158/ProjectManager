@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 export interface DropdownOption<T extends string | number> {
   value: T;
@@ -9,6 +9,8 @@ export interface DropdownOption<T extends string | number> {
   disabled?: boolean;
   /** Short right-side meta, e.g. "not on PATH". */
   hint?: string;
+  /** Small mark before the label (e.g. an agent's logo), also shown in the closed button. */
+  icon?: ReactNode;
   title?: string;
 }
 
@@ -132,6 +134,7 @@ export function Dropdown<T extends string | number>({
           }
         }}
       >
+        {selected?.icon && <span className="dropdown-icon">{selected.icon}</span>}
         <span className="truncate">{selected?.label ?? '—'}</span>
         {/* The closed picker says what the open list says about the choice (e.g. its CLI). */}
         {selected?.hint && <span className="dropdown-trigger-hint truncate">{selected.hint}</span>}
@@ -190,6 +193,7 @@ export function Dropdown<T extends string | number>({
                 <span className="dropdown-check" aria-hidden="true">
                   {option.value === value ? '✓' : ''}
                 </span>
+                {option.icon && <span className="dropdown-icon">{option.icon}</span>}
                 <span className="dropdown-text">
                   <span className="truncate">{option.label}</span>
                   {option.sub && <span className="dropdown-sub truncate">{option.sub}</span>}
