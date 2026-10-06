@@ -6,12 +6,32 @@ import {
   type ThemePreference,
 } from '../theme';
 import { api } from '../api';
-import { Dropdown } from './Dropdown';
+import { Dropdown, type DropdownOption } from './Dropdown';
+import { MonitorIcon, MoonIcon, SunIcon } from './icons';
 
-const OPTIONS: { value: ThemePreference; label: string; title: string }[] = [
-  { value: 'system', label: 'Theme: System', title: 'Follow your operating system setting' },
-  { value: 'light', label: 'Theme: Light', title: 'Always light' },
-  { value: 'dark', label: 'Theme: Dark', title: 'Always dark' },
+// An icon for each (monitor, sun, moon) so the choice reads at a glance (owner request PM-46).
+const OPTIONS: DropdownOption<ThemePreference>[] = [
+  {
+    value: 'system',
+    label: 'System',
+    sub: 'Follow your device',
+    icon: <MonitorIcon size={14} />,
+    title: 'Theme: follow your operating system setting',
+  },
+  {
+    value: 'light',
+    label: 'Light',
+    sub: 'Always light',
+    icon: <SunIcon size={14} />,
+    title: 'Theme: always light',
+  },
+  {
+    value: 'dark',
+    label: 'Dark',
+    sub: 'Always dark',
+    icon: <MoonIcon size={14} />,
+    title: 'Theme: always dark',
+  },
 ];
 
 /** Theme menu for the top bar: System (default), Light or Dark. */
