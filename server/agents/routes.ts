@@ -11,6 +11,7 @@ import {
   type WorkspaceLayout,
 } from '../../shared/types.js';
 import type { Db } from '../db.js';
+import { readLimits } from './limits.js';
 import { sessionUsage } from './usage.js';
 import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
@@ -182,6 +183,9 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
       throw new AgentError(400, (e as Error).message);
     }
   });
+
+  // Plan usage limits (5-hour / weekly) the CLIs record locally; no tokens spent (PM-17).
+  app.get('/agent-limits', (c) => c.json(readLimits()));
 
   app.get('/agent-sessions', (c) => c.json(supervisor.listAllSessions()));
 

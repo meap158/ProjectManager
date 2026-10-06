@@ -68,6 +68,14 @@ atomic commits). Nothing is pending in the working tree.
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.
 - **LAN access** (Settings, opt-in): separate listener, devices sign in with a 4-character
   single-use code (`server/lan.ts`); see CLAUDE.md security model.
+- **Usage limits (PM-17, in progress):** Settings → Agent CLIs shows Codex's 5-hour/weekly
+  windows from `rate_limits` in `~/.codex/sessions` rollouts (`server/agents/limits.ts`, GET
+  `/api/agent-limits`, 30s cache; newest 3 day folders, tail reads of the newest 4 files, latest
+  report wins, reset windows read 0%). Claude Code: only the status-line JSON carries
+  `rate_limits.five_hour/seven_day` (docs: code.claude.com/docs/en/statusline); hooks, `-p` JSON
+  and local files don't. Next step would be a recorder status line for launched Claude sessions
+  that chains to the user's own `statusLine` command; deferred while another session reworks
+  session launching (supervisor/providers). PM-18 (limits on Agent work rows) builds on this.
 - **LAN devices stay signed in (PM-37, `server/lan.ts`):** the listener remembers its port in
   `lan_access.port` and retries it for ~3s on restart (old process releasing it) before falling
   back to app port + 100…109; page loads re-send the device cookie (sliding one-year expiry);

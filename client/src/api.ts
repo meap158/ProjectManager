@@ -22,6 +22,7 @@ import type {
   ProjectSummary,
   WorkspaceLayout,
 } from '../../shared/types';
+import type { ProviderLimits } from '../../shared/limits';
 import { handleSignedOut } from './remote';
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -40,6 +41,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
+  agentLimits: () => request<ProviderLimits[]>('GET', '/agent-limits'),
   pullRequests: (id: number) => request<PullRequestsResult>('GET', `/projects/${id}/pull-requests`),
   listProjects: () => request<ProjectSummary[]>('GET', '/projects'),
   getProject: (id: number) => request<ProjectDetail>('GET', `/projects/${id}`),

@@ -394,6 +394,15 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   shows before anything runs; execution needs the explicit Install POST; output streams live
   and availability re-probes past the status cache on success. Installs never relaunch after
   a restart — retry by hand. Same-machine trust model and caps apply.
+- **Usage limits (PM-17):** under a CLI's name, one line per plan window (5-hour, Weekly): label,
+  a thin 6px meter (accent; amber from 75%, red from 90%), the percentage, and "resets in 4h 5m".
+  The meter is `role="meter"` and the number is always printed, so colour is never the only
+  signal. Numbers come only from what the CLI records locally (no tokens spent, no credentials
+  read; `server/agents/limits.ts`): Codex logs `rate_limits` in its session rollouts. They are as
+  of the CLI's last reply (tooltip: source and time); a window that reset since reads 0% "reset
+  since". CLIs without a local source show no meter, never an estimate. Claude Code exposes its
+  limits only to a status-line command's JSON (`rate_limits.five_hour` / `seven_day`), which
+  would mean wrapping the user's status line in sessions we launch: evaluated, not done yet.
 - **Trust model:** same-machine only (existing Host allowlist + JSON-write guard). Sessions
   run as your user with your environment; logs live under `data/agent-logs/` (gitignored).
   Caps: 8 sessions/project, 3 concurrent runs/project, 8MB logs, 20min default run timeout.

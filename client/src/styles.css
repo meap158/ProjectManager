@@ -3728,6 +3728,53 @@ span.path-link:hover .path-icon {
   height: 32px;
 }
 
+/* Settings → Agent CLIs: plan usage meters (PM-17), one line per window under the CLI's name. */
+.usage-limits {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.usage-window {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.usage-label {
+  width: 48px;
+  flex: none;
+  color: var(--text-2);
+}
+.usage-meter {
+  flex: 0 1 120px;
+  min-width: 40px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.usage-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.usage-meter.is-warn > span {
+  background: var(--status-review);
+}
+.usage-meter.is-high > span {
+  background: var(--danger);
+}
+.usage-window > .num {
+  width: 32px;
+  flex: none;
+  text-align: right;
+}
+.usage-window > .faint {
+  white-space: nowrap;
+}
+
 /* Settings → LAN access */
 .lan-actions {
   display: flex;

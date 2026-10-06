@@ -1,0 +1,23 @@
+// Plan usage limits of agent CLIs (PM-17), shared by the API and the client.
+
+/** One rolling usage window, e.g. Codex's 5-hour or weekly limit. */
+export interface UsageWindow {
+  /** "5-hour" or "Weekly" for the two standard windows, else "<n>-hour" / "<n>-day". */
+  label: string;
+  windowMinutes: number;
+  /** 0–100, as the CLI reported it. */
+  usedPercent: number;
+  /** ISO time the window resets, when known. */
+  resetsAt: string | null;
+  /** The window reset after the CLI's last report: it starts from 0% on next use. */
+  resetSinceReport?: boolean;
+}
+
+export interface ProviderLimits {
+  providerId: string;
+  windows: UsageWindow[];
+  /** When the CLI last reported these numbers (they only change while the CLI is used). */
+  asOf: string;
+  /** Where the numbers come from, for the tooltip. */
+  source: string;
+}

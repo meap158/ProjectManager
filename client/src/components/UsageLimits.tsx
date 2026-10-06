@@ -1,0 +1,42 @@
+import type { ProviderLimits } from '../../../shared/limits';
+import { formatDuration, formatRelative } from '../format';
+
+/**
+ * Plan usage meters for one agent CLI (PM-17): one row per window (5-hour, weekly) with a thin
+ * bar, the percentage used and when it resets, the way the CLIs show it themselves. The numbers
+ * are as of the CLI's last reply, so the source and time sit in the tooltip.
+ */
+export function UsageLimits({ limits, now }: { limits: ProviderLimits; now: number }) {
+  return (
+    <span
+      className="usage-limits"
+      title={`From the ${limits.source}, reported ${formatRelative(limits.asOf)}`}
+    >
+      {limits.windows.map((w) => {
+        const level = w.usedPercent >= 90 ? 'high' : w.usedPercent >= 75 ? 'warn' : 'ok';
+        const reset = w.resetSinceReport
+          ? 'reset since'
+          : w.resetsAt
+            ? `resets in ${formatDuration(Date.parse(w.resetsAt) - now)}`
+            : null;
+        return (
+          <span key={w.label} className="usage-window">
+            <span className="usage-label">{w.label}</span>
+            <span
+              className={`usage-meter is-${level}`}
+              role="meter"
+              aria-label={`${w.label} limit used`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(w.usedPercent)}
+            >
+              <span style={{ width: `${w.usedPercent}%` }} />
+            </span>
+            <span className="num">{Math.round(w.usedPercent)}%</span>
+            {reset && <span className="faint">{reset}</span>}
+          </span>
+        );
+      })}
+    </span>
+  );
+}

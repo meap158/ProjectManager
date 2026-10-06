@@ -9,9 +9,11 @@ import {
   type BoardPreset,
   type ProjectSummary,
 } from '../../../shared/types';
+import type { ProviderLimits } from '../../../shared/limits';
 import { api } from '../api';
 import { AgentPermissionsPanel } from '../components/AgentPermissionsPanel';
 import { LanAccessPanel } from '../components/LanAccessPanel';
+import { UsageLimits } from '../components/UsageLimits';
 import { Dropdown } from '../components/Dropdown';
 
 const TerminalView = lazy(() =>
@@ -29,6 +31,26 @@ export function SettingsPage() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [openLog, setOpenLog] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Plan usage limits per CLI (PM-17) and the clock for "resets in …", refreshed together.
+  const [limits, setLimits] = useState<{ list: ProviderLimits[]; now: number }>({
+    list: [],
+    now: 0,
+  });
+  useEffect(() => {
+    let active = true;
+    const load = () =>
+      api.agentLimits().then(
+        (list) => active && setLimits({ list, now: Date.now() }),
+        // Advisory: a failed read leaves the rows as they are.
+        () => undefined,
+      );
+    void load();
+    const timer = setInterval(load, 60_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   const loadProviders = useCallback(
     (refresh: boolean) =>
@@ -132,6 +154,11 @@ export function SettingsPage() {
                       · {p.unavailableReason}
                     </span>
                   )}
+                  {limits.list
+                    .filter((l) => l.providerId === p.id)
+                    .map((l) => (
+                      <UsageLimits key={l.providerId} limits={l} now={limits.now} />
+                    ))}
                 </span>
                 {p.available ? (
                   <span className="badge badge-done">installed</span>
