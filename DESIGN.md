@@ -67,7 +67,8 @@ a populated pane.
   (`position: sticky`, opaque page background, one rule line). Titles, actions and tabs stay
   visible while tab content scrolls; banners and notices scroll away. Stuck bars keep 8px
   breathing room above (`.page` top padding compensates, so resting pages are unchanged) —
-  sticky content never touches the viewport edge.
+  sticky content never touches the viewport edge. When the Board/List view switch closes the
+  head (global Board), its rule is the head's bottom line: no second border below it.
 - **Sticky board column headers (PM-56, Notion-style):** on both boards each column header
   (`.col-stick`) scrolls with its column until it meets the page's sticky chrome, then holds
   there while cards slide underneath. `useStuckTop` (`client/src/stuckTop.ts`) measures the part

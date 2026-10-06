@@ -940,6 +940,12 @@ a.t:hover {
   padding: 8px 0 10px;
   border-bottom: 1px solid var(--border);
 }
+/* When the Board/List view switch closes the head (global Board), its own rule is the head's
+   bottom line: a second border 10px below it read as a double line. */
+.sticky-head:has(> .view-tabs:last-child) {
+  padding-bottom: 0;
+  border-bottom: none;
+}
 
 .grid {
   display: grid;
