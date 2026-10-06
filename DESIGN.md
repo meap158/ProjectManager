@@ -426,8 +426,10 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   ("Claude Code 94% · Codex 28%", highest window per CLI), saved per browser. Hidden when no CLI
   reports limits.
 - **Limits on Agent work (PM-18):** limits belong to the account, not a session or run, so they
-  appear once per CLI in a slim section of their own below each Agent work list and its docked
-  terminal (project Agents tab and the workspace List; moved out of the list header in PM-42),
+  appear once per CLI: on the project Agents tab as a slim section of its own below Agent work
+  and its terminal (PM-42); in the workspace List view inside the toolbar's free middle (PM-50),
+  so it costs the terminal no height (on phones it is its own row that scrolls sideways). On
+  phones the section's cards take the width, name above both windows (PM-52),
   only for CLIs present in that list: icon, name, then each window as label, 40px meter and
   percent; reset time and source in tooltips. No row repeats them; no CLI without data shows.
 - **Trust model:** same-machine only (existing Host allowlist + JSON-write guard). Sessions
@@ -514,6 +516,10 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   without re-creating terminals.
 - **Card sessions** have a "→ Review" header action that moves the linked card to Review when the
   work looks done.
+- **List view space (PM-50):** no title row (the page says "Agents"; the count sits at the end
+  of the filter row, hidden on phones). With a session docked, the terminal takes the height and
+  the list keeps about three rows (216px; 140px on phones) until the edge is dragged; a dragged
+  height is remembered, double-click returns to this default.
 - **Narrow screens** (< 900px): panes stack vertically with a minimum height and the grid
   scrolls. Phones: see §10.1.
 

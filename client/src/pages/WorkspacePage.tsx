@@ -370,6 +370,16 @@ export function WorkspacePage() {
             <ShortcutsHelp />
           </>
         )}
+        {/* Plan usage sits in the toolbar's free middle in List view, costing the terminal no
+            height (PM-50; out of the list header since PM-42). */}
+        {view === 'list' && (
+          <LimitsStrip
+            inline
+            providerIds={[
+              ...new Set([...(sessions ?? []), ...(runs ?? [])].map((x) => x.providerId)),
+            ]}
+          />
+        )}
         <NewSessionInline
           projects={projects}
           providers={providers}
@@ -390,66 +400,55 @@ export function WorkspacePage() {
       )}
 
       {view === 'list' ? (
-        <>
-          <WorkList
-            sessions={sessions}
-            runs={runs}
-            now={now}
-            usage={usage}
-            projectName={projectName}
-            selected={selectedWork}
-            onSelect={setSelectedWork}
-            renderSession={(session, close, maximized, toggleMaximize) => (
-              // The same pane as the grid, docked under the list like VS Code's panel.
-              <Pane
-                key={session.id}
-                index={0}
-                fontSize={fontSize}
-                onDragStart={() => undefined}
-                onDragEnd={() => undefined}
-                dropActive={false}
-                onDragOver={() => undefined}
-                onDrop={() => undefined}
-                session={session}
-                projectName={projectName.get(session.projectId) ?? `Project ${session.projectId}`}
-                agentName={
-                  session.providerId === 'custom'
-                    ? (session.command[0] ?? 'Custom command')
-                    : (providers.find((p) => p.id === session.providerId)?.name ??
-                      session.providerId)
-                }
-                maximized={maximized}
-                onToggleMaximize={toggleMaximize}
-                onClose={close}
-                onChanged={(next) =>
-                  setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
-                }
-                onError={setError}
-              />
-            )}
-            onShowInPane={(id) => {
-              update(placeSession(layout, id));
-              setView('panes');
-            }}
-            onSessionChanged={(next) =>
-              setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
-            }
-            onSessionDeleted={(id) =>
-              setSessions((prev) => prev?.filter((x) => x.id !== id) ?? prev)
-            }
-            onRunChanged={(next) =>
-              setRuns((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? [next])
-            }
-            onRunDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
-            onError={setError}
-          />
-          {/* Plan usage in its own slim section under the list and its terminal (PM-42). */}
-          <LimitsStrip
-            providerIds={[
-              ...new Set([...(sessions ?? []), ...(runs ?? [])].map((x) => x.providerId)),
-            ]}
-          />
-        </>
+        <WorkList
+          sessions={sessions}
+          runs={runs}
+          now={now}
+          usage={usage}
+          projectName={projectName}
+          selected={selectedWork}
+          onSelect={setSelectedWork}
+          renderSession={(session, close, maximized, toggleMaximize) => (
+            // The same pane as the grid, docked under the list like VS Code's panel.
+            <Pane
+              key={session.id}
+              index={0}
+              fontSize={fontSize}
+              onDragStart={() => undefined}
+              onDragEnd={() => undefined}
+              dropActive={false}
+              onDragOver={() => undefined}
+              onDrop={() => undefined}
+              session={session}
+              projectName={projectName.get(session.projectId) ?? `Project ${session.projectId}`}
+              agentName={
+                session.providerId === 'custom'
+                  ? (session.command[0] ?? 'Custom command')
+                  : (providers.find((p) => p.id === session.providerId)?.name ?? session.providerId)
+              }
+              maximized={maximized}
+              onToggleMaximize={toggleMaximize}
+              onClose={close}
+              onChanged={(next) =>
+                setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
+              }
+              onError={setError}
+            />
+          )}
+          onShowInPane={(id) => {
+            update(placeSession(layout, id));
+            setView('panes');
+          }}
+          onSessionChanged={(next) =>
+            setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
+          }
+          onSessionDeleted={(id) => setSessions((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
+          onRunChanged={(next) =>
+            setRuns((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? [next])
+          }
+          onRunDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
+          onError={setError}
+        />
       ) : (
         <div
           className="pane-grid"
@@ -978,14 +977,17 @@ function PresetIcon({ preset }: { preset: WorkspacePreset }) {
 }
 
 const DOCK_KEY = 'pm.workspace.dockHeight';
-const DOCK_DEFAULT = 380;
 const DOCK_MIN = 140;
-function readDockHeight(): number {
+/**
+ * The docked terminal's height once dragged, or null for the default: the terminal takes the
+ * space and the list keeps about three rows above it (PM-50), whatever the window height.
+ */
+function readDockHeight(): number | null {
   try {
     const v = Number(localStorage.getItem(DOCK_KEY));
-    return Number.isFinite(v) && v >= DOCK_MIN ? v : DOCK_DEFAULT;
+    return Number.isFinite(v) && v >= DOCK_MIN ? v : null;
   } catch {
-    return DOCK_DEFAULT;
+    return null;
   }
 }
 
@@ -1027,7 +1029,8 @@ function WorkList({
   onRunDeleted: (id: number) => void;
   onError: (message: string) => void;
 }) {
-  const [dockHeight, setDockHeight] = useState<number>(readDockHeight);
+  const [dockHeight, setDockHeight] = useState<number | null>(readDockHeight);
+  const dockPanel = useRef<HTMLDivElement>(null);
   const [filters, setFilters] = useWorkFilters();
   const [dockMax, setDockMax] = useState(false);
   const container = useRef<HTMLElement>(null);
@@ -1041,6 +1044,17 @@ function WorkList({
       // Remembering the height is a convenience only.
     }
   };
+  /** Back to the default split (double-click on the edge). */
+  const resetDock = () => {
+    setDockHeight(null);
+    try {
+      localStorage.removeItem(DOCK_KEY);
+    } catch {
+      // As above.
+    }
+  };
+  const currentDock = () =>
+    dockHeight ?? Math.round(dockPanel.current?.getBoundingClientRect().height ?? 400);
   if (!sessions || !runs) return <div className="skeleton" style={{ flex: 1 }} />;
   const allItems = mergeWork(sessions, runs);
   const items = applyWorkFilters(allItems, filters, now);
@@ -1089,23 +1103,28 @@ function WorkList({
       className={`panel workspace-list${dockMax && session ? ' is-dock-max' : ''}`}
       aria-label="All agent work"
     >
-      <div className="panel-header">
-        <h2>All agent work</h2>
+      {/* No title row: the page is already "Agents". Filters and the count share one row, so the
+          list and its terminal get the height (PM-50). */}
+      <div className="work-list-top">
+        {allItems.length > 0 && (
+          <WorkFilters
+            items={allItems}
+            filters={filters}
+            onChange={setFilters}
+            now={now}
+            projectNames={projectName}
+          />
+        )}
         <span className="meta">
           {sessions.length} session{sessions.length === 1 ? '' : 's'} · {runs.length} run
-          {runs.length === 1 ? '' : 's'} across projects
+          {runs.length === 1 ? '' : 's'}
         </span>
       </div>
-      {allItems.length > 0 && (
-        <WorkFilters
-          items={allItems}
-          filters={filters}
-          onChange={setFilters}
-          now={now}
-          projectNames={projectName}
-        />
-      )}
-      <div className={`work-list-scroll${session || run ? ' is-docked' : ''}`}>
+      <div
+        className={`work-list-scroll${session || run ? ' is-docked' : ''}${
+          session && dockHeight === null ? ' is-auto' : ''
+        }`}
+      >
         {allItems.length === 0 ? (
           <p className="faint" style={{ margin: 0 }}>
             Nothing yet. Start a session from the toolbar, or hand a card to an agent from a board.
@@ -1145,7 +1164,7 @@ function WorkList({
               role="separator"
               aria-orientation="horizontal"
               aria-label="Resize terminal panel"
-              aria-valuenow={dockHeight}
+              aria-valuenow={dockHeight ?? undefined}
               tabIndex={0}
               title="Drag to resize · double-click to reset"
               onPointerDown={(e) => {
@@ -1159,19 +1178,20 @@ function WorkList({
                 window.addEventListener('pointermove', onMove);
                 window.addEventListener('pointerup', onUp);
               }}
-              onDoubleClick={() => resizeTo(DOCK_DEFAULT)}
+              onDoubleClick={resetDock}
               onKeyDown={(e) => {
-                if (e.key === 'ArrowUp') resizeTo(dockHeight + 24);
-                else if (e.key === 'ArrowDown') resizeTo(dockHeight - 24);
+                if (e.key === 'ArrowUp') resizeTo(currentDock() + 24);
+                else if (e.key === 'ArrowDown') resizeTo(currentDock() - 24);
                 else return;
                 e.preventDefault();
               }}
             />
           )}
           <div
-            className="work-panel"
+            ref={dockPanel}
+            className={`work-panel${dockHeight === null ? ' is-auto' : ''}`}
             aria-label={`Terminal: ${session.name}`}
-            style={dockMax ? undefined : { height: dockHeight }}
+            style={dockMax || dockHeight === null ? undefined : { height: dockHeight }}
           >
             {renderSession(
               session,

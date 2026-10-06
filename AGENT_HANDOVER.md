@@ -84,6 +84,10 @@ atomic commits). Nothing is pending in the working tree.
 - **Limits on Agent work (PM-18, PM-42):** `LimitsStrip` is a slim section of its own below both
   Agent work lists and their terminal, once per CLI in the list (`useAgentLimits` in
   `client/src/agentLimits.ts`, shared with Settings and the sidebar card).
+- **Agents List view space (PM-50, PM-52):** no title row, Plan usage in the toolbar (List view),
+  terminal-first default split (`dockHeight` null until dragged). Desktop 903px window: terminal
+  380 -> 508px; phone 390x844: 253 -> 329px, no sideways scroll. Phone Plan usage section cards
+  wrap (name above windows).
 - **Sidebar project count (PM-43):** in the All projects link subtitle; the footer row is gone.
 - **Claude limits + sidebar card (PM-17, PM-41):** launched Claude sessions run
   `scripts/claude-statusline.mjs` as status line (recorder -> `<dataDir>/claude-limits.json`, then

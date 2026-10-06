@@ -3090,6 +3090,42 @@ span.path-link:hover .path-icon {
   border-top: 0;
   margin-top: 0;
 }
+/* Default split (PM-50): until the edge is dragged, the terminal takes the height and the list
+   keeps about three rows above it, at any window size. */
+.work-resizer + .work-panel.is-auto {
+  flex: 1 1 auto;
+}
+.work-list-scroll.is-docked.is-auto {
+  flex: 0 1 auto;
+  max-height: 216px;
+}
+/* Plan usage inside the workspace toolbar (List view): no surface of its own, centred in the
+   toolbar's free space between View and New session. */
+.limits-strip.is-inline {
+  padding: 0;
+  border: 0;
+  background: none;
+  margin-left: auto;
+}
+/* List view top row: filters on the left, the count on the right (no title row). */
+.work-list-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.work-list-top > .work-filters {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.work-list-top > .meta {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 32px;
+  white-space: nowrap;
+}
 .workspace-list.is-dock-max .work-list-scroll {
   display: none;
 }
@@ -3785,6 +3821,52 @@ span.path-link:hover .path-icon {
   .input.work-search {
     flex: 1 1 100%;
     width: 100%;
+  }
+  /* Plan usage in the workspace toolbar (PM-50): its own row that scrolls sideways; the "All N"
+     chip already shows the total, so the count beside the filters steps aside. */
+  .limits-strip.is-inline {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    margin-left: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .limits-strip.is-inline::-webkit-scrollbar {
+    display: none;
+  }
+  .limits-strip.is-inline > .limits-title {
+    display: none;
+  }
+  .limits-strip.is-inline > * {
+    flex: none;
+  }
+  .work-list-top > .meta {
+    display: none;
+  }
+  /* Plan usage as a section (project Agents tab, PM-52): each CLI's card takes the width, its
+     name on one line and both windows sharing the next, meters shrinking to fit, so nothing
+     runs past the screen edge. */
+  .limits-strip:not(.is-inline) > .limits-chip {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .limits-strip:not(.is-inline) .limits-name {
+    flex: 1 1 100%;
+  }
+  .limits-strip:not(.is-inline) .limits-window {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .limits-strip:not(.is-inline) .limits-window .usage-meter {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 16px;
+  }
+  /* Phone rows are taller: with a terminal docked the list keeps a row and a half. */
+  .work-list-scroll.is-docked.is-auto {
+    max-height: 140px;
   }
   /* Work rows: "started …" repeats "up …"; line two is card, state, actions on one line. */
   .work-fact-minor {

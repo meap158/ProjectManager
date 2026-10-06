@@ -7,12 +7,19 @@ import { PROVIDER_LABELS, ProviderIcon } from './icons';
  * usage for the CLIs that list uses, once per provider, because limits belong to the account,
  * not to a session or run. Hidden when none of them reports limits.
  */
-export function LimitsStrip({ providerIds }: { providerIds: string[] }) {
+export function LimitsStrip({
+  providerIds,
+  inline = false,
+}: {
+  providerIds: string[];
+  /** In a toolbar: no section surface of its own (the workspace List view). */
+  inline?: boolean;
+}) {
   const { list, now } = useAgentLimits();
   const shown = list.filter((l) => providerIds.includes(l.providerId));
   if (shown.length === 0) return null;
   return (
-    <section className="limits-strip" aria-label="Plan usage limits">
+    <section className={`limits-strip${inline ? ' is-inline' : ''}`} aria-label="Plan usage limits">
       <span className="limits-title">Plan usage</span>
       {shown.map((l) => (
         <span
