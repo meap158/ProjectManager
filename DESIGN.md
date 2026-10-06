@@ -322,6 +322,14 @@ tokens and touch targets.
   pane-header icon buttons 32px, and 16px text in fields so iOS doesn't zoom on focus. Nothing in
   the app is hover-only, so touch sees every control.
 - **Browser chrome:** `theme-color` follows the active `--surface` token (`syncThemeColor`).
+- **Space savers (PM-36):** page headers scroll away and only the page tabs stick; title and
+  actions share a row (title keeps ≥ 160px, actions align to the title line; "Scanned …" hides);
+  12px gutter and panel padding; stat tiles three across without hints; dashboard lists show five
+  rows and a "Show all N" link. Agents: the sentence labels hide so New session is one row
+  (project, agent, Start); status chips scroll on one line; pickers share a row, search is full
+  width; work rows drop the "started …" fact and keep card · state · actions on one line, with
+  "Open"/"Show" short labels (full names stay in `aria-label`). Fact separators never start a
+  wrapped line (clipped at the row's inset).
 - **Reachability:** phones use **LAN access** (opt-in, `server/lan.ts`, README): same app, same
   layout, behind a sign-in code. The phone layout also serves narrow desktop windows.
 - **On another device** (`isRemoteClient()` in `client/src/remote.ts`: the page's host isn't a

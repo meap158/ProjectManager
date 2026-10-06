@@ -1046,9 +1046,10 @@ function WorkList({
           type="button"
           className="btn btn-sm"
           title="Put this session in a pane"
+          aria-label="Show in pane"
           onClick={() => onShowInPane(s.id)}
         >
-          Show in pane
+          Show<span className="phone-hide"> in pane</span>
         </button>
         <SessionToggle
           session={s}

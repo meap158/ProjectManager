@@ -2455,10 +2455,17 @@ kbd {
   gap: 0 10px;
   padding-left: 16px;
   font-size: 12px;
+  /* Separators sit in the gap before each fact; the clip hides the one in front of whichever
+     fact starts a line, so a wrapped line never begins with a stray dot. */
+  clip-path: inset(0 0 0 16px);
 }
-.work-facts span + span::before {
+.work-facts > span {
+  position: relative;
+}
+.work-facts > span::before {
   content: '·';
-  margin-right: 10px;
+  position: absolute;
+  left: -7px;
 }
 .status-dot.tone-good {
   background: var(--good, #0ca30c);
@@ -3240,15 +3247,15 @@ span.path-link:hover .path-icon {
 
 /* ---- Phone layout (≤ 768px, DESIGN.md §10) ------------------------------------------------ */
 /* Same breakpoint as KDP's mobile bar. Navigation moves to a bottom tab bar, the project list
-   becomes a full-screen panel, headers wrap instead of truncating to nothing, wide grids scroll
-   sideways with snapping, and dialogs become bottom sheets. Keep PHONE_QUERY in App.tsx in sync. */
+   becomes a full-screen panel, headers wrap instead of truncating to nothing, and dialogs become
+   bottom sheets. Keep PHONE_QUERY in client/src/projectPanel.ts in sync. */
 
 .tabbar {
   display: none;
 }
 @media (max-width: 768px) {
   :root {
-    --gutter: 16px;
+    --gutter: 12px;
   }
   html {
     -webkit-tap-highlight-color: transparent;
@@ -3325,20 +3332,23 @@ span.path-link:hover .path-icon {
     padding-left: calc(var(--gutter) + var(--safe-left));
     padding-right: calc(var(--gutter) + var(--safe-right));
   }
-  /* Headers: the title takes its own row and actions wrap below it, so neither collapses. */
+  /* Headers: title and actions share a row while the title keeps at least 160px; past that the
+     actions wrap under it, so neither collapses. The subtitle stays one truncating line. */
   .page-header {
     flex-wrap: wrap;
     row-gap: 8px;
+    /* Actions line up with the title row, not the middle of a wrapped subtitle. */
+    align-items: flex-start;
   }
   .page-header > div:first-child {
-    flex-basis: 100%;
+    flex: 1 1 0;
+    min-width: min(100%, 160px);
   }
   .page-header .actions {
-    flex: 1 1 auto;
     flex-wrap: wrap;
   }
-  .page-header .subtitle {
-    flex-wrap: wrap;
+  .page-header h1 {
+    font-size: 20px;
   }
   /* Tabs scroll sideways rather than wrapping into a second line. */
   .tabs {
@@ -3467,6 +3477,135 @@ span.path-link:hover .path-icon {
   .work-actions {
     min-width: 0;
     margin-left: auto;
+  }
+}
+
+/* Phone space savers (PM-36): every row of chrome costs content on an 844px screen with a top bar
+   and a tab bar, so headers scroll away (only page tabs stick), gutters and panel padding
+   tighten, stat tiles go three across, long dashboard lists show five rows, and the Agents
+   toolbars and rows hold one aligned line each. */
+.phone-show-all {
+  display: none;
+}
+@media (max-width: 768px) {
+  .page {
+    padding-top: 12px;
+    gap: 12px;
+  }
+  /* Header scrolls away with the page; the tab bar alone sticks (it's what you switch with). */
+  .sticky-head {
+    display: contents;
+  }
+  .sticky-head > .tabs {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  /* "Scanned 2 hours ago": Refresh shows its own spinner while a scan runs. */
+  .page-header .actions > .faint {
+    display: none;
+  }
+  .panel {
+    padding: 12px;
+  }
+  .stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .stat {
+    padding: 8px;
+  }
+  .stat .label {
+    font-size: 11.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stat .value {
+    font-size: 17px;
+  }
+  .stat .value-text {
+    font-size: 13px;
+    line-height: 25px;
+  }
+  .stat .hint {
+    display: none;
+  }
+  .phone-capped:not(.is-expanded) > li:nth-child(n + 6) {
+    display: none;
+  }
+  .phone-show-all {
+    display: block;
+    margin-top: 8px;
+    font-size: 13px;
+  }
+  .phone-hide {
+    display: none;
+  }
+
+  /* Agents toolbars: the pickers carry their own labels, so the sentence words step aside and
+     New session is one row: project, agent, Start. */
+  #ws-view-label,
+  .workspace-new .bar-label {
+    display: none;
+  }
+  .workspace-bar .bar-group {
+    padding-left: 0;
+    border-left: none;
+  }
+  .workspace-new {
+    flex-wrap: nowrap;
+  }
+  .workspace-new .dropdown {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .workspace-new .btn {
+    flex: none;
+  }
+  /* Filters: status chips scroll sideways on one line; pickers share a row; search is full width. */
+  .work-filters {
+    gap: 6px;
+  }
+  .work-status-chips {
+    flex: 1 1 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .work-status-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .work-chip {
+    flex: none;
+    white-space: nowrap;
+  }
+  .work-filters .dropdown {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .input.work-search {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  /* Work rows: "started …" repeats "up …"; line two is card, state, actions on one line. */
+  .work-fact-minor {
+    display: none;
+  }
+  .work-side {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+  }
+  .work-state {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .work-actions {
+    margin-left: 0;
   }
 }
 

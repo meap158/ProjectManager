@@ -68,6 +68,9 @@ atomic commits). Nothing is pending in the working tree.
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.
 - **LAN access** (Settings, opt-in): separate listener, devices sign in with a 4-character
   single-use code (`server/lan.ts`); see CLAUDE.md security model.
+- **Phone space savers (PM-36, DESIGN.md §10.1):** headers scroll away (tabs stick), tighter
+  gutters/panels, 3-across stats, capped dashboard lists, one-row Agents toolbars, aligned work
+  rows. Verified at 390px on Home, Agents (workspace + project tab), project, Board, Settings.
 - **Phone over LAN (PM-32):** verified end to end with a scripted iPhone client through the real
   gate: sign-in page, 303 + cookie, shell with mobile metas, app modules, every main API, live SSE
   output, writes, LAN settings refused, device signed out after. Phone-side fixes: LAN panel is a

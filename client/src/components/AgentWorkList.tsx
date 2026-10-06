@@ -63,6 +63,8 @@ export function mergeWork(sessions: AgentSession[], runs: AgentRun[]): WorkItem[
 interface Fact {
   text: string;
   title?: string;
+  /** Repeats what another fact already says roughly; the phone layout drops it for space. */
+  minor?: boolean;
 }
 
 export function sessionFacts(s: AgentSession, now: number, usage?: AgentTokenUsage | null): Fact[] {
@@ -81,6 +83,7 @@ export function sessionFacts(s: AgentSession, now: number, usage?: AgentTokenUsa
   facts.push({
     text: `started ${formatRelative(s.createdAt)}`,
     title: `First started ${formatDate(s.createdAt)}, ${new Date(s.createdAt).toLocaleTimeString()}`,
+    minor: true,
   });
   if (s.restarts > 0) {
     facts.push({
@@ -268,7 +271,7 @@ export function AgentWorkList({
               </span>
               <span className="work-facts faint num">
                 {facts.map((f, i) => (
-                  <span key={i} title={f.title}>
+                  <span key={i} title={f.title} className={f.minor ? 'work-fact-minor' : undefined}>
                     {f.text}
                   </span>
                 ))}

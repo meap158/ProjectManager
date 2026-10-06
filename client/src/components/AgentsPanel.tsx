@@ -127,8 +127,9 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
           className="btn btn-sm"
           to={`/workspace?open=${s.id}`}
           title="Show this session in the multi-pane Agents workspace"
+          aria-label="Open in workspace"
         >
-          Open in workspace
+          Open<span className="phone-hide"> in workspace</span>
         </Link>
         <SessionToggle
           session={s}

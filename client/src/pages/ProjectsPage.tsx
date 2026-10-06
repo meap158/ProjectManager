@@ -26,6 +26,9 @@ function recentCommits(project: ProjectSummary, days: number): number {
   );
 }
 
+/** Rows a capped dashboard list shows on phones before "Show all" (keep in sync with CSS). */
+const PHONE_LIST_ROWS = 5;
+
 export function ProjectsPage() {
   const projectHref = useProjectHref();
   const navigate = useNavigate();
@@ -37,6 +40,9 @@ export function ProjectsPage() {
 
   // Only sets state in promise callbacks, so effects may call it directly.
   const [inFlight, setInFlight] = useState<CardWithProject[]>([]);
+  // Phone layout: long dashboard lists show their first rows until expanded (DESIGN.md §10.1).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const showAll = (list: string) => setExpanded((prev) => new Set(prev).add(list));
   const load = useCallback(
     () =>
       Promise.all([api.listProjects(), api.listCardsInFlight().catch(() => [])]).then(
@@ -211,7 +217,9 @@ export function ProjectsPage() {
                   {attention.length} project{attention.length === 1 ? '' : 's'}
                 </span>
               </div>
-              <ul className="list attention-list">
+              <ul
+                className={`list attention-list phone-capped${expanded.has('attention') ? ' is-expanded' : ''}`}
+              >
                 {attention.map(({ project: p, kind, detail }) => (
                   <li key={`${p.id}-${kind}`}>
                     <span
@@ -229,6 +237,15 @@ export function ProjectsPage() {
                   </li>
                 ))}
               </ul>
+              {attention.length > PHONE_LIST_ROWS && !expanded.has('attention') && (
+                <button
+                  type="button"
+                  className="link-button phone-show-all"
+                  onClick={() => showAll('attention')}
+                >
+                  Show all {attention.length}
+                </button>
+              )}
             </section>
           )}
 
@@ -238,7 +255,9 @@ export function ProjectsPage() {
                 <h2>Being worked on</h2>
                 <span className="meta">In progress or in review, across all projects</span>
               </div>
-              <ul className="list flight-list">
+              <ul
+                className={`list flight-list phone-capped${expanded.has('flight') ? ' is-expanded' : ''}`}
+              >
                 {inFlight.map((c) => (
                   <li key={c.id}>
                     <span className="badge" style={{ flex: 'none' }}>
@@ -261,6 +280,15 @@ export function ProjectsPage() {
                   </li>
                 ))}
               </ul>
+              {inFlight.length > PHONE_LIST_ROWS && !expanded.has('flight') && (
+                <button
+                  type="button"
+                  className="link-button phone-show-all"
+                  onClick={() => showAll('flight')}
+                >
+                  Show all {inFlight.length}
+                </button>
+              )}
             </section>
           )}
 
