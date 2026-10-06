@@ -9,7 +9,7 @@ import {
 } from '../../../shared/types';
 import { api } from '../api';
 import { useBoardView } from '../boardView';
-import { formatRelative } from '../format';
+import { formatRelative, movedBy } from '../format';
 import { BoardListView, BoardViewTabs } from './BoardListView';
 import { CardDialog } from './CardDialog';
 import { NewCardDialog } from './NewCardDialog';
@@ -182,8 +182,12 @@ export function KanbanBoard({
               <span className="mono">{card.key}</span>
               <RunBadges summary={runSummary.get(card.id)} />
               {card.linkedCommit && (
-                <span title={`Moved by commit ${card.linkedCommit}`}>
-                  ⎇ {card.linkedCommit.slice(0, 7)}
+                <span
+                  className="truncate"
+                  style={{ maxWidth: 120 }}
+                  title={`Moved automatically by ${movedBy(card.linkedCommit).label}`}
+                >
+                  ⎇ {movedBy(card.linkedCommit).short}
                 </span>
               )}
               <span>{formatRelative(card.updatedAt)}</span>

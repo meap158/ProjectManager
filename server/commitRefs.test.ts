@@ -75,4 +75,56 @@ describe('commit references without a scan', () => {
       [a.key, 'done'],
     ]);
   }, 30_000);
+
+  it('follows work on other branches: branch name, unmerged fix, then the merge', async () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'pm-refs-branches-'));
+    try {
+      const git = (...args: string[]) =>
+        execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.com', ...args], {
+          cwd: repo,
+          stdio: 'pipe',
+        });
+      const commitIn = (message: string) => {
+        writeFileSync(path.join(repo, `f${Math.random()}.txt`), message);
+        git('add', '.');
+        git('commit', '-q', '-m', message);
+      };
+      git('init', '-q', '-b', 'main');
+      commitIn('Initial commit');
+      const { id } = (await (
+        await call('POST', '/projects', { path: repo })
+      ).json()) as ProjectDetail;
+      for (let i = 0; i < 200; i++) {
+        const p = (await (await call('GET', `/projects/${id}`)).json()) as ProjectDetail;
+        if (p.scan.status !== 'scanning') break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const fix = (await (
+        await call('POST', `/projects/${id}/cards`, { title: 'Fix' })
+      ).json()) as Card;
+      const named = (await (
+        await call('POST', `/projects/${id}/cards`, { title: 'Branch' })
+      ).json()) as Card;
+      await new Promise((r) => setTimeout(r, 1100)); // Commits land after the cards (1s resolution).
+
+      // Work on a feature branch (as in a worktree): HEAD stays on main.
+      git('branch', `${named.key.toLowerCase()}-search`); // A branch named after a card.
+      git('checkout', '-q', '-b', 'feature');
+      commitIn(`Login form\n\nFixes ${fix.key}`);
+      git('checkout', '-q', 'main');
+      expect((await app.scanner.applyCommitRefs(id)).map((m) => [m.key, m.to]).sort()).toEqual([
+        [fix.key, 'review'], // Fixed on a branch that isn't merged yet: awaiting merge.
+        [named.key, 'in_progress'],
+      ]);
+
+      // Merged into main: the same commit now closes the card.
+      git('merge', '-q', '--no-edit', 'feature');
+      expect((await app.scanner.applyCommitRefs(id)).map((m) => [m.key, m.to])).toEqual([
+        [fix.key, 'done'],
+      ]);
+      expect(await app.scanner.applyCommitRefs(id)).toEqual([]); // Applied once.
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

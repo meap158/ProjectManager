@@ -68,3 +68,25 @@ export function formatReset(iso: string, now: number): string {
     minute: '2-digit',
   });
 }
+
+/**
+ * What moved a card automatically (card.linkedCommit): a commit hash, a pull request ("PR #12")
+ * or a branch name. `short` fits a card's meta line; `label` reads in a sentence.
+ */
+export function movedBy(source: string): {
+  short: string;
+  kind: 'commit' | 'pull request' | 'branch';
+  name: string;
+  label: string;
+} {
+  const make = (short: string, kind: 'commit' | 'pull request' | 'branch', name: string) => ({
+    short,
+    kind,
+    name,
+    label: `${kind} ${name}`,
+  });
+  if (/^[0-9a-f]{7,40}$/i.test(source))
+    return make(source.slice(0, 7), 'commit', source.slice(0, 10));
+  if (/^PR #\d+$/.test(source)) return make(source, 'pull request', source.slice(3));
+  return make(source, 'branch', source);
+}

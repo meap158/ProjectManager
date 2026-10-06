@@ -117,9 +117,18 @@ export interface CommitMessage {
 }
 
 /** Full commit messages committed after `since` (ISO), oldest first. */
-export async function commitMessagesSince(root: string, since: string): Promise<CommitMessage[]> {
+/**
+ * Commit messages since a time, oldest first. `revisions` picks the history (default: HEAD), e.g.
+ * `['main']`, or `['--branches', '--not', 'main']` for commits only on other local branches.
+ */
+export async function commitMessagesSince(
+  root: string,
+  since: string,
+  revisions: string[] = [],
+): Promise<CommitMessage[]> {
   const out = await gitOrNull(root, [
     'log',
+    ...revisions,
     '--reverse',
     `--since=${since}`,
     `--format=%H${US}%cI${US}%B${RS}`,
@@ -134,6 +143,45 @@ export async function commitMessagesSince(root: string, since: string): Promise<
       const [hash = '', committedAt = '', message = ''] = record.split(US);
       return { hash, committedAt, message };
     });
+}
+
+/**
+ * The branch work lands on: origin's default branch when known (and present locally), else
+ * main / master, else whatever is checked out. Null outside a repo.
+ */
+export async function defaultBranch(root: string): Promise<string | null> {
+  const remote = (await gitOrNull(root, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']))
+    ?.trim()
+    .replace(/^origin\//, '');
+  for (const name of [remote, 'main', 'master']) {
+    if (name && (await gitOrNull(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])))
+      return name;
+  }
+  return (await gitOrNull(root, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim() || null;
+}
+
+/** Local branches with their tip's commit time. */
+export async function localBranches(root: string): Promise<{ name: string; at: string }[]> {
+  const out = await gitOrNull(root, [
+    'for-each-ref',
+    `--format=%(refname:short)${US}%(committerdate:iso-strict)`,
+    'refs/heads',
+  ]);
+  return (out ?? '')
+    .split('\n')
+    .map((line) => line.trim().split(US))
+    .filter((parts): parts is [string, string] => !!parts[0] && !!parts[1])
+    .map(([name, at]) => ({ name, at }));
+}
+
+/** The origin remote's URL, or null. */
+export async function originUrl(root: string): Promise<string | null> {
+  return (await gitOrNull(root, ['remote', 'get-url', 'origin']))?.trim() || null;
+}
+
+/** Changes whenever any local branch moves (cheap enough to poll every few seconds). */
+export async function branchesFingerprint(root: string): Promise<string | null> {
+  return gitOrNull(root, ['for-each-ref', '--format=%(objectname) %(refname)', 'refs/heads']);
 }
 
 /** The current HEAD commit hash, or null outside a repo / before the first commit. */

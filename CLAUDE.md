@@ -25,7 +25,7 @@ anything.
 | `server/boardMcp.ts`      | Scoped agent board tools, process config injection and audit records              |
 | `scripts/board-mcp.mjs`   | MCP stdio bridge to the live local server                                         |
 | `server/pullRequests.ts`  | gh-backed open pull requests for a project                                        |
-| `server/scanner.ts`       | Background scan jobs (code + disk + git) and auto-moving cards from commit refs   |
+| `server/scanner.ts`       | Background scans; cards auto-move from commits, branches and PRs (no agent)       |
 | `server/analysis/*`       | Pure-ish analysis: line counter, languages, file listing, disk walk, git, scc     |
 | `server/agents/*`         | AI agent providers, run/session supervisor, agent API routes                      |
 | `shared/types.ts`         | Types shared by API and client. Change both sides together                        |

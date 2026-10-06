@@ -45,9 +45,14 @@ atomic commits). Nothing is pending in the working tree.
   idle: a tail with no letters or digits is redraw chrome, not work.
 - **Agents tab selection** is remembered per project (`pm.agents.selected`), across project
   switches and restarts.
-- **Boards follow commits:** a commit watcher (`Scanner.watchCommits`, started in index.ts)
-  checks each project's HEAD every 15s and applies new commits' card refs (`PM-n` → In progress,
-  `Fixes PM-n` → Done), idempotent across same-second commits; no Refresh needed. Agents get a
+- **Boards follow the work, no agent needed** (`server/analysis/cardRefs.ts` rules,
+  `Scanner.applyCommitRefs` / `applyPullRequestRefs`): every 15s any project whose local branches
+  moved is read on all branches (default-branch commits, commits only on other branches, branch
+  names); every 2 min GitHub PRs via `gh` (projects with a GitHub remote; 30 min back-off on
+  failure). Mention → In progress, unmerged `Fixes`/open PR → Review, merged `Fixes`/merged PR →
+  Done; forward-only; each event applies once (settings `ref_events_seen:<id>`, seeded from the
+  old `refs_cursor` so history never replays). History is path-limited (`-- .`), so commits that
+  change no files are ignored. Agents get a
   `create_card` MCP tool for terminal-started work and are told to reference cards in commits.
 - **Pull requests** tab via `gh pr list`.
 - **CLI resume:** Claude sessions get a per-process SessionStart hook
@@ -191,7 +196,8 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
 
 - One Node process serves both the API and the UI on one port. In dev, Vite runs in middleware mode.
 - SQLite via `node:sqlite` at `data/projectmanager.db`. Agent logs are in `data/agent-logs/`.
-- **Scans** (`server/scanner.ts`) run in the background. `refs_cursor` makes commit refs apply once.
+- **Scans** (`server/scanner.ts`) run in the background and apply card refs too (same apply-once
+  events as the watchers).
 - **Agents** (`server/agents/`):
   - `providers.ts`: catalog plus per-autonomy flags.
   - `resolve.ts`: unwraps Windows npm `.cmd` shims, so no shell is ever used.

@@ -2,11 +2,19 @@
 // milliseconds to a minute on huge folders, so HTTP handlers start them and the UI polls.
 
 import { existsSync } from 'node:fs';
-import type { CardMove, ScanState } from '../shared/types.js';
-import { computeMoves } from './analysis/cardRefs.js';
+import { CARD_KEY_PREFIX, type CardMove, type ScanState } from '../shared/types.js';
+import { commitEvents, computeMoves, type RefEvent } from './analysis/cardRefs.js';
 import { scanCode } from './analysis/codeScan.js';
 import { scanDisk } from './analysis/diskScan.js';
-import { commitMessagesSince, headCommit, scanGit } from './analysis/git.js';
+import {
+  branchesFingerprint,
+  commitMessagesSince,
+  defaultBranch,
+  localBranches,
+  originUrl,
+  scanGit,
+} from './analysis/git.js';
+import { pullRequestEvents } from './pullRequests.js';
 import type { Db } from './db.js';
 import {
   getProjectRow,
@@ -19,6 +27,12 @@ import {
   setRefsCursor,
   setSetting,
 } from './store.js';
+
+/** Card keys anywhere in a text (cheap pre-filter before the full rules). */
+const MENTIONS_CARD = new RegExp(String.raw`\b${CARD_KEY_PREFIX}-\d+\b`, 'i');
+/** Applied events remembered per project (newest kept). */
+const MAX_SEEN = 5000;
+const seenKey = (projectId: number) => `ref_events_seen:${projectId}`;
 
 const IDLE: ScanState = { status: 'idle', error: null, startedAt: null, moves: [] };
 
@@ -81,45 +95,101 @@ export class Scanner {
   }
 
   /**
-   * Applies card references from commits not yet seen: "PM-12" moves a Backlog/To do card to In
-   * progress, "Fixes PM-12" (closes/resolves/completes) moves it to Done. A cursor (last applied
-   * commit time, plus the hashes seen at exactly that time) makes this idempotent, so a card moved
-   * back by hand isn't moved again by an old commit, and two commits in the same second both count.
+   * Moves cards from what git records, on every local branch (see analysis/cardRefs.ts for the
+   * rules): default-branch commits, commits only on other branches (worktrees, feature branches)
+   * and branch names. Each event is applied once (a seen-set in settings), so a card moved back
+   * by hand stays put and a branch commit counts again only once it is merged.
    */
   async applyCommitRefs(projectId: number): Promise<CardMove[]> {
     const project = getProjectRow(this.db, projectId);
     if (!project) return [];
-    const seenKey = `refs_seen:${projectId}`;
-    const seen = new Set(getSetting<string[]>(this.db, seenKey) ?? []);
-    const cursor = project.refs_cursor ? Date.parse(project.refs_cursor) : -Infinity;
+    const since = this.lookback(projectId);
+    if (!since) return [];
+    const main = await defaultBranch(project.path);
+    const [merged, branchOnly, branches] = await Promise.all([
+      commitMessagesSince(project.path, since, main ? [main] : []),
+      main
+        ? commitMessagesSince(project.path, since, ['--branches', '--not', main])
+        : Promise.resolve([]),
+      localBranches(project.path),
+    ]);
+    const events: RefEvent[] = [
+      ...commitEvents(merged, 'commit'),
+      ...commitEvents(branchOnly, 'branch-commit'),
+      ...branches
+        .filter((b) => b.name !== main)
+        .map((b): RefEvent => ({
+          id: `branch:${b.name}`,
+          kind: 'branch',
+          // A new branch usually points at an older commit, but a branch named after a card can
+          // only exist because the card does: date it when first seen, not by its tip.
+          at: new Date(Math.max(Date.parse(b.at), Date.now())).toISOString(),
+          text: b.name,
+          source: b.name,
+        })),
+    ];
+    return this.applyEvents(projectId, events);
+  }
+
+  /** Moves cards from the project's pull requests on GitHub (open → Review, merged → Done). */
+  async applyPullRequestRefs(projectId: number): Promise<CardMove[] | null> {
+    const project = getProjectRow(this.db, projectId);
+    if (!project || !this.lookback(projectId)) return [];
+    const events = await pullRequestEvents(project.path);
+    return events ? this.applyEvents(projectId, events) : null;
+  }
+
+  /** Lower bound for history worth reading: the oldest open card (within 90 days). */
+  private lookback(projectId: number): string | null {
+    const open = listCards(this.db, projectId).filter((c) => c.status !== 'done');
+    if (open.length === 0) return null;
+    const oldest = Math.min(...open.map((c) => Date.parse(c.createdAt)));
+    return new Date(Math.max(oldest, Date.now() - 90 * 86_400_000) - 1000).toISOString();
+  }
+
+  private applyEvents(projectId: number, all: RefEvent[]): CardMove[] {
+    const project = getProjectRow(this.db, projectId);
+    if (!project) return [];
+    const seen = this.seenEvents(projectId, all);
+    // Only events that name a card matter (and are remembered); the rest are skipped cheaply.
+    const fresh = all.filter((e) => !seen.has(e.id) && MENTIONS_CARD.test(e.text));
+    if (fresh.length === 0) return [];
     const openCards = listCards(this.db, projectId).filter((c) => c.status !== 'done');
-    if (openCards.length === 0) {
-      // Nothing to move: just keep the cursor at "now" so old history never replays later.
-      if (!project.refs_cursor) setRefsCursor(this.db, projectId, new Date().toISOString());
-      return [];
-    }
-    // Timestamps carry different UTC offsets, so compare parsed values, never strings.
-    const oldestCard = Math.min(...openCards.map((c) => Date.parse(c.createdAt)));
-    const since = new Date(Math.max(cursor, oldestCard) - 1000).toISOString();
-    const commits = (await commitMessagesSince(project.path, since)).filter((c) => {
-      const at = Date.parse(c.committedAt);
-      return at > cursor || (at === cursor && !seen.has(c.hash));
-    });
-    if (commits.length === 0) return [];
-    const moves = computeMoves(openCards, commits);
-    if (!getProjectRow(this.db, projectId)) return [];
+    const moves = computeMoves(openCards, fresh);
     for (const move of moves) moveCardToTop(this.db, move.cardId, move.to, move.commit);
-    const last = commits.at(-1)!.committedAt;
-    const lastAt = Date.parse(last);
-    const atLast = commits.filter((c) => Date.parse(c.committedAt) === lastAt).map((c) => c.hash);
-    setRefsCursor(this.db, projectId, last);
-    setSetting(this.db, seenKey, lastAt === cursor ? [...seen, ...atLast] : atLast);
+    for (const e of fresh) seen.add(e.id);
+    setSetting(this.db, seenKey(projectId), [...seen].slice(-MAX_SEEN));
+    const latest = fresh
+      .map((e) => e.at)
+      .sort((a, b) => Date.parse(a) - Date.parse(b))
+      .at(-1)!;
+    if (!project.refs_cursor || Date.parse(latest) > Date.parse(project.refs_cursor))
+      setRefsCursor(this.db, projectId, latest);
     if (moves.length > 0) {
       console.log(
         `[cards] project ${projectId}: ${moves.map((m) => `${m.key} → ${m.to}`).join(', ')}`,
       );
     }
     return moves;
+  }
+
+  /**
+   * Events already applied. First run after the move from the old time cursor: everything at or
+   * before that cursor counts as applied, so old history never replays.
+   */
+  private seenEvents(projectId: number, events: RefEvent[]): Set<string> {
+    const saved = getSetting<string[]>(this.db, seenKey(projectId));
+    if (saved) return new Set(saved);
+    const cursor = getProjectRow(this.db, projectId)?.refs_cursor;
+    const legacy = new Set(getSetting<string[]>(this.db, `refs_seen:${projectId}`) ?? []);
+    const seen = new Set<string>();
+    for (const e of events) {
+      const old = cursor && Date.parse(e.at) < Date.parse(cursor);
+      const sameSecondSeen =
+        cursor && Date.parse(e.at) === Date.parse(cursor) && legacy.has(e.source);
+      if (old || sameSecondSeen) seen.add(e.id);
+    }
+    return seen;
   }
 
   /**
@@ -156,12 +226,44 @@ export class Scanner {
       try {
         for (const { id, path } of listProjectFolders(this.db)) {
           if (this.state(id).status === 'scanning') continue;
-          const head = await headCommit(path);
+          // Any local branch moving counts (worktrees and feature branches, not just HEAD).
+          const head = await branchesFingerprint(path);
           if (!head || heads.get(id) === head) continue;
           heads.set(id, head);
           await this.applyCommitRefs(id).catch((e: Error) =>
             console.error(`[cards] project ${id}: ${e.message}`),
           );
+        }
+      } finally {
+        busy = false;
+      }
+    };
+    void tick();
+    const timer = setInterval(() => void tick(), intervalMs);
+    timer.unref();
+    return () => clearInterval(timer);
+  }
+
+  /**
+   * Pull requests on GitHub move cards too (open → Review, merged → Done): polled every
+   * `intervalMs` for projects with a GitHub remote, via the gh CLI. A project whose gh call fails
+   * (not installed, not signed in) is skipped for 30 minutes. Returns a stop function.
+   */
+  watchPullRequests(intervalMs = 120_000): () => void {
+    const retryAt = new Map<number, number>();
+    let busy = false;
+    const tick = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        for (const { id, path } of listProjectFolders(this.db)) {
+          if ((retryAt.get(id) ?? 0) > Date.now()) continue;
+          if (!/github\.com[:/]/i.test((await originUrl(path)) ?? '')) {
+            retryAt.set(id, Date.now() + 30 * 60_000); // Re-check the remote now and then.
+            continue;
+          }
+          const moves = await this.applyPullRequestRefs(id).catch(() => null);
+          if (moves === null) retryAt.set(id, Date.now() + 30 * 60_000);
         }
       } finally {
         busy = false;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatCompact, formatRelative, formatReset } from './format';
+import { formatBytes, formatCompact, formatRelative, formatReset, movedBy } from './format';
 
 describe('format helpers', () => {
   it('formats byte sizes with sensible precision', () => {
@@ -28,5 +28,19 @@ describe('formatReset', () => {
     expect(formatReset('2026-10-06T16:49:00Z', now)).toBe('in 3h 49m');
     expect(formatReset('2026-10-12T19:00:00Z', now)).toMatch(/\d/);
     expect(formatReset('2026-10-12T19:00:00Z', now)).not.toMatch(/^in /);
+  });
+});
+
+describe('movedBy', () => {
+  it('names the commit, pull request or branch that moved a card', () => {
+    expect(movedBy('0f790c9a1b2c3d4e5f60718293a4b5c6d7e8f901')).toMatchObject({
+      short: '0f790c9',
+      label: 'commit 0f790c9a1b',
+    });
+    expect(movedBy('PR #12')).toMatchObject({ short: 'PR #12', kind: 'pull request', name: '#12' });
+    expect(movedBy('pm-3-search')).toMatchObject({
+      short: 'pm-3-search',
+      label: 'branch pm-3-search',
+    });
   });
 });

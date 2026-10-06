@@ -43,11 +43,19 @@ ProjectManager stores its data locally. GitHub PR queries use your gh login; age
   own flags/config and applies to terminal sessions on their next start and as the run default.
 - **Pull requests:** a project tab lists up to 100 open GitHub PRs, draft/review state, branches and authors. Install GitHub CLI and run `gh auth login`; Refresh reloads the list.
 - **Feature board per project:** Backlog → To do → In progress → Review → Done, with drag and drop.
-- **Automatic card moves.** Every card has a key like `PM-12`.
-  - A commit that mentions `PM-12` moves it to **In progress**.
-  - A commit saying `Fixes PM-12` (also `closes` / `resolves` / `completes`) moves it to **Done**.
-  - Moves apply automatically within about 15 seconds of the commit (no Refresh needed); a card
-    you move back by hand stays put.
+- **Automatic card moves.** Every card has a key like `PM-12`, and the board follows the work by
+  itself from what git and GitHub record (no AI agent involved):
+  - A commit on any local branch that mentions `PM-12`, or a branch named after the card
+    (`pm-12-login`), moves it to **In progress**.
+  - `Fixes PM-12` (also `closes` / `resolves` / `completes`) on a branch that isn't merged yet, or
+    an open pull request mentioning the card, moves it to **Review**.
+  - `Fixes PM-12` on the default branch, or a merged pull request mentioning it, moves it to
+    **Done**.
+  - Branch work counts too (worktrees, feature branches), not only the checked-out branch.
+    Commits apply within about 15 seconds; pull requests are checked every 2 minutes through the
+    GitHub CLI (`gh auth login`) for projects with a GitHub remote.
+  - Cards only move forward, and each commit or pull request applies once, so a card you move
+    back by hand stays put.
 - **AI agents:** dispatch a card to Claude Code, Codex, Grok, Antigravity or OpenCode (whichever is
   installed).
   - Choose what the agent may do: **Read-only**, **Edit files** (default) or **Full access**.

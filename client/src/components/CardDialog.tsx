@@ -16,7 +16,7 @@ import {
   type ProjectSummary,
 } from '../../../shared/types';
 import { api } from '../api';
-import { formatDate } from '../format';
+import { formatDate, movedBy } from '../format';
 import { CardAgentAudit } from './CardAgentAudit';
 import { CardImages } from './CardImages';
 import { Dropdown } from './Dropdown';
@@ -438,7 +438,8 @@ export function CardDialog({
             )}
             {card.linkedCommit && (
               <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
-                Last moved automatically by commit <code>{card.linkedCommit.slice(0, 10)}</code>.
+                Last moved automatically by {movedBy(card.linkedCommit).kind}{' '}
+                <code>{movedBy(card.linkedCommit).name}</code>.
               </p>
             )}
             <div className="field">
