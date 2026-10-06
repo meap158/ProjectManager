@@ -3,16 +3,17 @@ import { formatRelative, formatReset } from '../format';
 import { PROVIDER_LABELS, ProviderIcon } from './icons';
 
 /**
- * One line above an Agent work list (PM-18): plan usage for the CLIs that list uses, once per
- * provider, because limits belong to the account, not to a session or run. Hidden when none of
- * them reports limits.
+ * A slim section under an Agent work list (PM-18, moved out of the list header in PM-42): plan
+ * usage for the CLIs that list uses, once per provider, because limits belong to the account,
+ * not to a session or run. Hidden when none of them reports limits.
  */
 export function LimitsStrip({ providerIds }: { providerIds: string[] }) {
   const { list, now } = useAgentLimits();
   const shown = list.filter((l) => providerIds.includes(l.providerId));
   if (shown.length === 0) return null;
   return (
-    <div className="limits-strip" aria-label="Plan usage limits">
+    <section className="limits-strip" aria-label="Plan usage limits">
+      <span className="limits-title">Plan usage</span>
       {shown.map((l) => (
         <span
           key={l.providerId}
@@ -47,6 +48,6 @@ export function LimitsStrip({ providerIds }: { providerIds: string[] }) {
           })}
         </span>
       ))}
-    </div>
+    </section>
   );
 }

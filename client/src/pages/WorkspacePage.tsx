@@ -390,55 +390,66 @@ export function WorkspacePage() {
       )}
 
       {view === 'list' ? (
-        <WorkList
-          sessions={sessions}
-          runs={runs}
-          now={now}
-          usage={usage}
-          projectName={projectName}
-          selected={selectedWork}
-          onSelect={setSelectedWork}
-          renderSession={(session, close, maximized, toggleMaximize) => (
-            // The same pane as the grid, docked under the list like VS Code's panel.
-            <Pane
-              key={session.id}
-              index={0}
-              fontSize={fontSize}
-              onDragStart={() => undefined}
-              onDragEnd={() => undefined}
-              dropActive={false}
-              onDragOver={() => undefined}
-              onDrop={() => undefined}
-              session={session}
-              projectName={projectName.get(session.projectId) ?? `Project ${session.projectId}`}
-              agentName={
-                session.providerId === 'custom'
-                  ? (session.command[0] ?? 'Custom command')
-                  : (providers.find((p) => p.id === session.providerId)?.name ?? session.providerId)
-              }
-              maximized={maximized}
-              onToggleMaximize={toggleMaximize}
-              onClose={close}
-              onChanged={(next) =>
-                setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
-              }
-              onError={setError}
-            />
-          )}
-          onShowInPane={(id) => {
-            update(placeSession(layout, id));
-            setView('panes');
-          }}
-          onSessionChanged={(next) =>
-            setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
-          }
-          onSessionDeleted={(id) => setSessions((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
-          onRunChanged={(next) =>
-            setRuns((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? [next])
-          }
-          onRunDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
-          onError={setError}
-        />
+        <>
+          <WorkList
+            sessions={sessions}
+            runs={runs}
+            now={now}
+            usage={usage}
+            projectName={projectName}
+            selected={selectedWork}
+            onSelect={setSelectedWork}
+            renderSession={(session, close, maximized, toggleMaximize) => (
+              // The same pane as the grid, docked under the list like VS Code's panel.
+              <Pane
+                key={session.id}
+                index={0}
+                fontSize={fontSize}
+                onDragStart={() => undefined}
+                onDragEnd={() => undefined}
+                dropActive={false}
+                onDragOver={() => undefined}
+                onDrop={() => undefined}
+                session={session}
+                projectName={projectName.get(session.projectId) ?? `Project ${session.projectId}`}
+                agentName={
+                  session.providerId === 'custom'
+                    ? (session.command[0] ?? 'Custom command')
+                    : (providers.find((p) => p.id === session.providerId)?.name ??
+                      session.providerId)
+                }
+                maximized={maximized}
+                onToggleMaximize={toggleMaximize}
+                onClose={close}
+                onChanged={(next) =>
+                  setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
+                }
+                onError={setError}
+              />
+            )}
+            onShowInPane={(id) => {
+              update(placeSession(layout, id));
+              setView('panes');
+            }}
+            onSessionChanged={(next) =>
+              setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
+            }
+            onSessionDeleted={(id) =>
+              setSessions((prev) => prev?.filter((x) => x.id !== id) ?? prev)
+            }
+            onRunChanged={(next) =>
+              setRuns((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? [next])
+            }
+            onRunDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
+            onError={setError}
+          />
+          {/* Plan usage in its own slim section under the list and its terminal (PM-42). */}
+          <LimitsStrip
+            providerIds={[
+              ...new Set([...(sessions ?? []), ...(runs ?? [])].map((x) => x.providerId)),
+            ]}
+          />
+        </>
       ) : (
         <div
           className="pane-grid"
@@ -1085,7 +1096,6 @@ function WorkList({
           {runs.length === 1 ? '' : 's'} across projects
         </span>
       </div>
-      <LimitsStrip providerIds={[...new Set(allItems.map((w) => w.item.providerId))]} />
       {allItems.length > 0 && (
         <WorkFilters
           items={allItems}

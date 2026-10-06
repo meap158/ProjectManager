@@ -39,7 +39,9 @@ a populated pane.
   name + state badge, then one glance line (lines · top language · relative last commit).
   The full path lives in the `title` tooltip, not a third line. Footer holds a portfolio
   totals card (lines / 30-day commits / active tasks — the KDP "Active Focus" analogue) so
-  totals never require a trip home. Polls every 2s while any scan runs, otherwise every 10s,
+  totals never require a trip home (plus the Plan usage card above it, PM-41). The project
+  count sits in the All projects link's subtitle ("Portfolio · 23 projects", "11 of 23 shown"
+  while filtering), not in a footer row of its own (PM-43). Polls every 2s while any scan runs, otherwise every 10s,
   and never replaces populated rows with skeletons (KDP populated-pane rule).
 - **Sorter (KDP Library sorter):** modes Name / Recent commit / Lines of code, each with a
   natural direction (A–Z, newest first, most code first). Re-selecting the active mode flips
@@ -388,8 +390,8 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   prompt draws); a prompt with neither reads "idle · waiting for you". Log recency alone lies
   (TUI redraws keep the file fresh for hours) and is only the fallback for unknown CLIs.
 - **Agent work rows:** title flush left right after the status dot, provider mark + name after
-  it (each CLI's own mark: Claude Code, Codex, Antigravity in brand colours, Grok and OpenCode
-  in the text colour; generic terminal glyph for shells and custom commands); card tag, state word and actions sit in fixed
+  it (each CLI's own mark: Claude Code and Antigravity in brand colours; Codex (the OpenAI
+  mark), Grok and OpenCode in the text colour; generic terminal glyph for shells and custom commands); card tag, state word and actions sit in fixed
   right-hand columns so they line up on every row.
   Start / Stop carry an icon as well as the word: a green play triangle and a red square
   (`SessionToggle`), so the two read apart at a glance.
@@ -420,7 +422,8 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   ("Claude Code 94% · Codex 28%", highest window per CLI), saved per browser. Hidden when no CLI
   reports limits.
 - **Limits on Agent work (PM-18):** limits belong to the account, not a session or run, so they
-  appear once per CLI above each Agent work list (project Agents tab and the workspace List),
+  appear once per CLI in a slim section of their own below each Agent work list and its docked
+  terminal (project Agents tab and the workspace List; moved out of the list header in PM-42),
   only for CLIs present in that list: icon, name, then each window as label, 40px meter and
   percent; reset time and source in tooltips. No row repeats them; no CLI without data shows.
 - **Trust model:** same-machine only (existing Host allowlist + JSON-write guard). Sessions

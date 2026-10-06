@@ -14,7 +14,6 @@
 :root {
   /* Vendor brand colours for official provider marks (identification only). */
   --brand-claude: #d97757;
-  --brand-codex: #5b63ff; /* From Codex's blue-violet gradient; reads on light and dark. */
   --brand-antigravity: #3186ff;
   color-scheme: light;
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -3895,13 +3894,25 @@ span.path-link:hover .path-icon {
   white-space: nowrap;
 }
 
-/* Agent work lists: one line of plan usage per CLI in the list (PM-18), above the filters. */
+/* Agent work: plan usage per CLI in the list (PM-18) as its own slim section below the list and
+   its terminal (PM-42), on the panel surface, one line where it fits. */
 .limits-strip {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px 16px;
-  margin: 0 0 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   font-size: 12px;
+}
+.limits-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-3);
 }
 .limits-chip,
 .limits-window {

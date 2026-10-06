@@ -76,8 +76,10 @@ atomic commits). Nothing is pending in the working tree.
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.
 - **LAN access** (Settings, opt-in): separate listener, devices sign in with a 4-character
   single-use code (`server/lan.ts`); see CLAUDE.md security model.
-- **Limits on Agent work (PM-18):** `LimitsStrip` above both Agent work lists, once per CLI in
-  the list (`useAgentLimits` in `client/src/agentLimits.ts`, shared with Settings).
+- **Limits on Agent work (PM-18, PM-42):** `LimitsStrip` is a slim section of its own below both
+  Agent work lists and their terminal, once per CLI in the list (`useAgentLimits` in
+  `client/src/agentLimits.ts`, shared with Settings and the sidebar card).
+- **Sidebar project count (PM-43):** in the All projects link subtitle; the footer row is gone.
 - **Claude limits + sidebar card (PM-17, PM-41):** launched Claude sessions run
   `scripts/claude-statusline.mjs` as status line (recorder -> `<dataDir>/claude-limits.json`, then
   the user's own status line, output unchanged); `claudeLimits` reads it. Verified: recorder with

@@ -269,7 +269,6 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             Terminals keep running until stopped · one-shot runs wait for your review
           </span>
         </div>
-        {work && <LimitsStrip providerIds={[...new Set(work.map((w) => w.item.providerId))]} />}
         {work === null ? (
           <div className="skeleton" style={{ height: 120 }} />
         ) : work.length === 0 ? (
@@ -404,6 +403,8 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
           </div>
         )}
       </section>
+      {/* Plan usage in its own slim section under Agent work and its terminal (PM-42). */}
+      {work && <LimitsStrip providerIds={[...new Set(work.map((w) => w.item.providerId))]} />}
 
       <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
         Sessions run on this machine as your user, rooted in the project folder by default, and only
