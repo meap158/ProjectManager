@@ -51,6 +51,17 @@ atomic commits). Nothing is pending in the working tree.
   `Fixes PM-n` → Done), idempotent across same-second commits; no Refresh needed. Agents get a
   `create_card` MCP tool for terminal-started work and are told to reference cards in commits.
 - **Pull requests** tab via `gh pr list`.
+- **CLI resume:** Claude sessions get a per-process SessionStart hook
+  (`scripts/claude-session-hook.mjs`) that reports the live conversation id (follows /resume,
+  /clear, compaction) to `/api/agent-hooks/claude-session`; Codex resumes its own rollout from
+  `~/.codex/sessions`; any resume that dies within 20s is followed by a fresh start.
+- **Auto refresh:** the stalest project is rescanned once 15+ minutes old (one scan at a time).
+- **Agent permissions** (Settings): global level + per-CLI inherit/own, translated into each CLI's
+  flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.
+- **LAN access** (Settings, opt-in): separate listener, devices sign in with a 4-character
+  single-use code (`server/lan.ts`); see CLAUDE.md security model.
+- **Also:** Ctrl+V pastes in terminals; agent icons in pickers; sticky global Board header;
+  workspace list filters (status chips with counts, agent, project, kind, search).
 - **Verification (this snapshot):** both typechecks, lint on every changed file, Prettier, and
   154+ tests pass (`npx vitest run --maxWorkers=1`). Browser QA in Chrome on a scratch instance
   (port 5290): agent rows aligned (measured), sidebar slots/menu (measured), Board create flow.
