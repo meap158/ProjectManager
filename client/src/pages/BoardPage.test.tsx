@@ -20,6 +20,7 @@ const card = (id: number, projectId: number, projectName: string, status: string
 
 vi.mock('../api', () => ({
   api: {
+    getPermissions: vi.fn(async () => ({ global: 'cli', providers: {} })),
     listAllCards: vi.fn(async () => [
       card(1, 1, 'Alpha', 'todo', 'Plan the release'),
       card(2, 2, 'Beta', 'in_progress', 'Fix login'),

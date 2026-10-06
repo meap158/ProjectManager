@@ -33,6 +33,9 @@ ProjectManager stores its data locally. GitHub PR queries use your gh login; age
 - **Last page:** opening the app returns to the page you had open (project tab, board, or agents). All projects still opens the dashboard when you choose it.
 - **Settings** (top right): agent CLIs with one-click install using each vendor's official
   method, and per-project board column presets (Full flow, Simple, Capture flow).
+  **Agent permissions**: one level for all agents (the CLIs' own settings, Read-only, Edit files or
+  Full access) and, per CLI, "Inherit" or its own level; each level is translated into that CLI's
+  own flags/config and applies to terminal sessions on their next start and as the run default.
 - **Pull requests:** a project tab lists up to 100 open GitHub PRs, draft/review state, branches and authors. Install GitHub CLI and run `gh auth login`; Refresh reloads the list.
 - **Feature board per project:** Backlog → To do → In progress → Review → Done, with drag and drop.
 - **Automatic card moves.** Every card has a key like `PM-12`.

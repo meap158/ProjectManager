@@ -8,6 +8,7 @@ import { KanbanBoard } from './KanbanBoard';
 
 vi.mock('../api', () => ({
   api: {
+    getPermissions: vi.fn(async () => ({ global: 'cli', providers: {} })),
     listCards: vi.fn(),
     runSummaries: vi.fn(async () => []),
     updateCard: vi.fn(),

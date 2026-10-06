@@ -8,6 +8,7 @@ import { CardDialog } from './CardDialog';
 
 vi.mock('../api', () => ({
   api: {
+    getPermissions: vi.fn(async () => ({ global: 'cli', providers: {} })),
     listProviders: vi.fn(async () => []),
     listSessions: vi.fn(),
     listRuns: vi.fn(async () => []),

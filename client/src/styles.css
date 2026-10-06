@@ -3513,3 +3513,22 @@ dialog.lightbox img {
   margin-right: 6px;
   color: var(--text-2);
 }
+
+/* Settings → Agent permissions rows: CLI, the flags it will get, the level picker. */
+.permission-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.permission-cli {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 140px;
+  flex: none;
+}
+.permission-flags {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}

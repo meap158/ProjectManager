@@ -2,6 +2,7 @@ import type {
   AgentAutonomy,
   AgentInstall,
   AgentOutput,
+  AgentPermissions,
   AgentProviderStatus,
   AgentTerminal,
   AgentRun,
@@ -69,6 +70,10 @@ export const api = {
   ) => request<Card>('PATCH', `/cards/${id}`, patch),
   deleteCard: (id: number) => request<void>('DELETE', `/cards/${id}`),
 
+  /** Global agent permissions and per-CLI overrides (Settings). */
+  getPermissions: () => request<AgentPermissions>('GET', '/agents/permissions'),
+  savePermissions: (value: AgentPermissions) =>
+    request<AgentPermissions>('PUT', '/agents/permissions', value),
   /** The colour theme, stored server-side so it survives restarts and port changes. */
   getTheme: () =>
     request<{ theme: 'system' | 'light' | 'dark' | null }>('GET', '/preferences/theme'),

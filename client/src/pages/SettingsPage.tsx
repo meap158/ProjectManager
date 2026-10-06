@@ -10,6 +10,7 @@ import {
   type ProjectSummary,
 } from '../../../shared/types';
 import { api } from '../api';
+import { AgentPermissionsPanel } from '../components/AgentPermissionsPanel';
 import { Dropdown } from '../components/Dropdown';
 
 const TerminalView = lazy(() =>
@@ -175,6 +176,8 @@ export function SettingsPage() {
         )}
         {confirmId && <InstallConfirm provider={clis.find((p) => p.id === confirmId) ?? null} />}
       </section>
+
+      <AgentPermissionsPanel providers={providers} onError={setError} />
 
       <section className="panel" aria-label="Boards">
         <div className="panel-header">

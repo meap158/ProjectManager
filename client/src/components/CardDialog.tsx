@@ -7,6 +7,7 @@ import {
   CARD_STATUSES,
   CARD_STATUS_LABELS,
   type AgentAutonomy,
+  type AgentPermissions,
   type AgentProviderStatus,
   type AgentSession,
   type AgentRun,
@@ -113,7 +114,18 @@ export function CardDialog({
   const [attachTo, setAttachTo] = useState<number | null>(null);
   const [dispatchProvider, setDispatchProvider] = useState('claude');
   const [prompt, setPrompt] = useState('');
-  const [autonomy, setAutonomy] = useState<AgentAutonomy>('edit');
+  // A run's permission level: the user's pick, else the configured level for the chosen agent
+  // (Settings → Agent permissions), else Edit files.
+  const [chosenAutonomy, setAutonomy] = useState<AgentAutonomy | null>(null);
+  const [permissions, setPermissions] = useState<AgentPermissions | null>(null);
+  const configured = permissions
+    ? (() => {
+        const own = permissions.providers[dispatchProvider];
+        const level = own && own !== 'inherit' ? own : permissions.global;
+        return level === 'cli' ? null : level;
+      })()
+    : null;
+  const autonomy: AgentAutonomy = chosenAutonomy ?? configured ?? 'edit';
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   // Pasting a screenshot anywhere in the dialog attaches it (text pastes are left alone).
@@ -163,6 +175,12 @@ export function CardDialog({
     if (!dialog) return;
     if (card) {
       if (!dialog.open) dialog.showModal();
+      api.getPermissions().then(
+        (next) => {
+          if (active) setPermissions(next);
+        },
+        () => undefined,
+      );
       api.listProviders().then(
         (next) => {
           if (active) setProviders(next);
