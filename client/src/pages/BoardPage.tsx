@@ -9,6 +9,8 @@ import {
   type ProjectSummary,
 } from '../../../shared/types';
 import { api } from '../api';
+import { useBoardView } from '../boardView';
+import { BoardListView, BoardViewTabs } from '../components/BoardListView';
 import { CardDialog } from '../components/CardDialog';
 import { Dropdown } from '../components/Dropdown';
 import { NewCardDialog } from '../components/NewCardDialog';
@@ -46,6 +48,7 @@ export function BoardPage() {
   const [dropOn, setDropOn] = useState<CardStatus | null>(null);
   // Adding: the column whose + was clicked (null = closed).
   const [addingTo, setAddingTo] = useState<CardStatus | null>(null);
+  const [view, setView] = useBoardView();
 
   useEffect(() => {
     let active = true;
@@ -155,12 +158,40 @@ export function BoardPage() {
 
       {error && <div className="error-banner">{error}</div>}
 
+      <BoardViewTabs view={view} onChange={setView} />
       {cards === null ? (
-        <div className="gboard" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
-          {columns.map((s) => (
-            <div key={s} className="gcolumn skeleton" style={{ minHeight: 240 }} />
-          ))}
-        </div>
+        view === 'list' ? (
+          <div className="blist" aria-busy="true">
+            {columns.map((s) => (
+              <div key={s} className="skeleton blist-skeleton" />
+            ))}
+          </div>
+        ) : (
+          <div className="gboard" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
+            {columns.map((s) => (
+              <div key={s} className="gcolumn skeleton" style={{ minHeight: 240 }} />
+            ))}
+          </div>
+        )
+      ) : view === 'list' ? (
+        <BoardListView
+          columns={columns}
+          cards={visible}
+          onOpen={setOpenCard}
+          onAdd={setAddingTo}
+          meta={(c) => (
+            <>
+              <span
+                className="project-tag"
+                style={{ ['--tag' as string]: colorOf.get(c.projectId) }}
+              >
+                {c.projectName}
+              </span>
+              <span className="mono">{c.key}</span>
+              <span title={c.updatedAt}>{formatRelative(c.updatedAt)}</span>
+            </>
+          )}
+        />
       ) : (
         <div
           className="gboard"

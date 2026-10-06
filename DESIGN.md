@@ -200,6 +200,17 @@ adjacent-pair CVD separation in both modes).
     drag-and-drop action has a non-drag equivalent.
   - New cards go to the **top** of a column. Quick-add stays open for rapid entry; Esc closes it.
   - Card keys (`PM-12`) are always visible in mono so they can be typed into commit messages.
+  - **Views (Notion database views):** text tabs above both boards switch between **Board** (the
+    Kanban, default) and **List**, with an icon each and a text-coloured underline on the active
+    one. The choice is shared by every board and saved per browser (`pm.board.view`).
+  - **List view** (`BoardListView`): one collapsible group per visible column, headed by a
+    disclosure triangle, a Notion-style status pill (tinted background, coloured dot; `--status-*`
+    tokens: grey Backlog, purple To do, blue In progress, amber Review, green Done) and the count,
+    with ＋ on the right. Rows are full width, 44px minimum: page glyph, title (two lines max),
+    then a properties line (key, project tag on the global board, run badges, time). Each group
+    ends in a faint "＋ New" row. Done starts collapsed; collapsed groups are saved per browser
+    (`pm.board.collapsed`). Cards move through the card dialog's Column dropdown; the list has no
+    drag and drop.
 - **Project title:** click to rename inline. Enter saves, Esc cancels, blur saves.
 
 ## 7. States
@@ -290,9 +301,9 @@ tokens and touch targets.
   tab bar, page gutters and bottom sheets. Pinch zoom stays enabled.
 - **Headers wrap** instead of truncating: the title gets its own row and actions wrap beneath.
   Project tabs scroll sideways on one line. Panel headers drop their meta under the heading.
-- **Boards** (project and global): columns are `min(86%, 340px)` wide, scroll sideways and snap
-  to each column. Moving a card on touch uses the card dialog's Column dropdown (the drag
-  alternative from §6).
+- **Boards** keep the original Kanban layout at every width (project columns scroll sideways,
+  global columns stack). The touch-friendly alternative is the **List view** (§6), one tap away
+  in the view tabs above either board.
 - **Dialogs are bottom sheets:** full width, rounded top corners, anchored to the bottom, with the
   footer pinned to the sheet's bottom edge so Save/Cancel stay reachable. The lightbox is exempt.
   No slide-in animation (§8 motion rule).

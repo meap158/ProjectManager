@@ -29,6 +29,14 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
 
+  /* Card status colours (List view pills), Notion-style: grey not started, blue in progress,
+     green done. Roles over the categorical slots, so both themes follow. */
+  --status-backlog: var(--series-other);
+  --status-todo: var(--series-7);
+  --status-in_progress: var(--series-1);
+  --status-review: var(--series-4);
+  --status-done: var(--good);
+
   --bg: #f5f5f3;
   --surface: #fcfcfb;
   /* Dialogs, menus: same as surface in light, a lighter step in dark (elevation by lightness). */
@@ -3034,6 +3042,192 @@ dialog.lightbox img {
   margin: 4px 0;
 }
 
+/* ---- Board views: Kanban (default) or a Notion-style grouped List ------------------------ */
+
+/* View tabs (Notion database view bar): text + icon, a text-coloured underline on the active
+   view, so they read as quieter than the page tabs above them. */
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+  padding: 6px 8px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.view-tab:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.view-tab[aria-checked='true'] {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+
+.blist {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.blist-skeleton {
+  height: 96px;
+}
+.blist-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+}
+.blist-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.blist-toggle:hover {
+  background: var(--surface-2);
+}
+/* Disclosure triangle: points right when collapsed, down when open. */
+.blist-caret {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--text-3);
+}
+.blist-toggle[aria-expanded='true'] .blist-caret {
+  transform: rotate(90deg);
+}
+.blist-add {
+  margin-left: auto;
+}
+.status-pill {
+  --pill: var(--status-backlog);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pill) 16%, var(--surface));
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+.status-pill::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pill);
+}
+.status-todo {
+  --pill: var(--status-todo);
+}
+.status-in_progress {
+  --pill: var(--status-in_progress);
+}
+.status-review {
+  --pill: var(--status-review);
+}
+.status-done {
+  --pill: var(--status-done);
+}
+.blist-rows {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.blist-rows > li {
+  border-bottom: 1px solid var(--border);
+}
+/* One card per row: page glyph, title (two lines at most), then its properties. 44px minimum
+   height keeps every row an easy tap. */
+.blist-row,
+.blist-new {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms;
+}
+.blist-row {
+  align-items: flex-start;
+  min-height: 44px;
+}
+.blist-row:hover,
+.blist-new:hover {
+  background: var(--surface-hover);
+}
+.blist-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-3);
+}
+.blist-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.blist-title {
+  font-weight: 550;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.blist-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.blist-new {
+  align-items: center;
+  color: var(--text-3);
+}
+.blist-new > span {
+  flex: none;
+  width: 16px;
+  text-align: center;
+}
+.blist-new:hover {
+  color: var(--text-2);
+}
+
 /* ---- Phone layout (≤ 768px, DESIGN.md §10) ------------------------------------------------ */
 /* Same breakpoint as KDP's mobile bar. Navigation moves to a bottom tab bar, the project list
    becomes a full-screen panel, headers wrap instead of truncating to nothing, wide grids scroll
@@ -3147,22 +3341,6 @@ dialog.lightbox img {
   .tab {
     flex: none;
     white-space: nowrap;
-  }
-
-  /* Boards: one column fills most of the screen; swipe between columns, which snap. */
-  .board,
-  .gboard {
-    grid-template-columns: none !important;
-    grid-auto-flow: column;
-    grid-auto-columns: min(86%, 340px);
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    overscroll-behavior-x: contain;
-    padding-bottom: 8px;
-  }
-  .board > *,
-  .gboard > * {
-    scroll-snap-align: start;
   }
 
   /* Dialogs become bottom sheets: full width, anchored to the bottom, home-indicator safe. */
@@ -3304,6 +3482,19 @@ dialog.lightbox img {
   }
   .pane-head {
     height: 36px;
+  }
+  .view-tab {
+    padding: 10px 12px;
+  }
+  .blist-toggle {
+    height: 36px;
+  }
+  .blist-add {
+    width: 36px;
+    height: 36px;
+  }
+  .blist-new {
+    min-height: 44px;
   }
   .pane-head .icon-btn:not(.icon-btn-sm, .icon-btn-text) {
     width: 32px;

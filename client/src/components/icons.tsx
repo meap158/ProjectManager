@@ -125,6 +125,26 @@ export function ProviderIcon({ id, ...props }: IconProps & { id: string }) {
   return <TerminalIcon {...props} />;
 }
 
+/** Rows: the board's List view. */
+export function ListIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M5.5 4h8.5M5.5 8h8.5M5.5 12h8.5" />
+      <path d="M2 4h.5M2 8h.5M2 12h.5" />
+    </Base>
+  );
+}
+
+/** Page with a folded corner: one card in the List view (Notion's page glyph). */
+export function PageIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M4 1.8h5l3 3v9.4H4z" />
+      <path d="M9 1.8v3h3" />
+    </Base>
+  );
+}
+
 /** Stacked folders: the tracked-project list (mobile tab bar). */
 export function FoldersIcon(props: IconProps) {
   return (

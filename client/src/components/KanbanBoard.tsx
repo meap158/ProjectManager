@@ -8,7 +8,9 @@ import {
   type CardStatus,
 } from '../../../shared/types';
 import { api } from '../api';
+import { useBoardView } from '../boardView';
 import { formatRelative } from '../format';
+import { BoardListView, BoardViewTabs } from './BoardListView';
 import { CardDialog } from './CardDialog';
 import { NewCardDialog } from './NewCardDialog';
 
@@ -48,6 +50,7 @@ export function KanbanBoard({
   const [runSummary, setRunSummary] = useState<Map<number, CardRunSummary>>(
     () => new Map((runCache.get(projectId) ?? []).map((s) => [s.cardId, s])),
   );
+  const [view, setView] = useBoardView();
 
   // Write-through cache: every cards update lands in the module cache too, so tab
   // switches and revisits render instantly and refresh in the background.
@@ -137,95 +140,129 @@ export function KanbanBoard({
   // auto-moves and validation) and reappear when the preset changes back.
   const hidden = (cards ?? []).filter((c) => !columns.includes(c.status));
 
+  const tabs = <BoardViewTabs view={view} onChange={setView} />;
   if (error && !cards) return <div className="error-banner">{error}</div>;
   if (!cards) {
     return (
-      <div
-        className="board"
-        aria-busy="true"
-        style={{ '--board-cols': columns.length } as CSSProperties}
-      >
-        {columns.map((s) => (
-          <div key={s} className="column skeleton" />
-        ))}
-      </div>
+      <>
+        {tabs}
+        {view === 'list' ? (
+          <div className="blist" aria-busy="true">
+            {columns.map((s) => (
+              <div key={s} className="skeleton blist-skeleton" />
+            ))}
+          </div>
+        ) : (
+          <div
+            className="board"
+            aria-busy="true"
+            style={{ '--board-cols': columns.length } as CSSProperties}
+          >
+            {columns.map((s) => (
+              <div key={s} className="column skeleton" />
+            ))}
+          </div>
+        )}
+      </>
     );
   }
 
   return (
     <>
       {error && <div className="error-banner">{error}</div>}
-      <div
-        className="board"
-        style={{ '--board-cols': columns.length } as CSSProperties}
-        onDragEnd={() => (setDragId(null), setDropTarget(null))}
-      >
-        {columns.map((status) => {
-          const items = column(status);
-          return (
-            <section
-              key={status}
-              className={`column${dropTarget?.status === status && dropTarget.beforeId === null ? ' drop-target' : ''}`}
-              aria-label={CARD_STATUS_LABELS[status]}
-              onDragOver={(e) => onDragOver(e, status, null)}
-              onDrop={onDrop}
-            >
-              <div className="column-header">
-                <h3>
-                  {CARD_STATUS_LABELS[status]} <span className="badge">{items.length}</span>
-                </h3>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setAdding(status)}
-                  aria-label={`Add card to ${CARD_STATUS_LABELS[status]}`}
-                >
-                  ＋
-                </button>
-              </div>
-
-              {items.map((card) => (
-                <button
-                  key={card.id}
-                  className={[
-                    'kcard',
-                    dragId === card.id && 'dragging',
-                    dropTarget?.beforeId === card.id && 'drop-before',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.effectAllowed = 'move';
-                    e.dataTransfer.setData('text/plain', card.key);
-                    setDragId(card.id);
-                  }}
-                  onDragOver={(e) => onDragOver(e, status, card.id)}
-                  onDrop={onDrop}
-                  onClick={() => setEditing(card)}
-                >
-                  <span className="title">{card.title}</span>
-                  <span className="meta">
-                    <span className="mono">{card.key}</span>
-                    <RunBadges summary={runSummary.get(card.id)} />
-                    {card.linkedCommit && (
-                      <span title={`Moved by commit ${card.linkedCommit}`}>
-                        ⎇ {card.linkedCommit.slice(0, 7)}
-                      </span>
-                    )}
-                    <span>{formatRelative(card.updatedAt)}</span>
-                  </span>
-                </button>
-              ))}
-
-              {items.length === 0 && (
-                <p className="faint" style={{ margin: '4px', fontSize: 12.5 }}>
-                  {status === 'backlog' ? 'Capture upcoming features here.' : 'Drop cards here.'}
-                </p>
+      {tabs}
+      {view === 'list' ? (
+        <BoardListView
+          columns={columns}
+          cards={columns.flatMap(column)}
+          onOpen={setEditing}
+          onAdd={setAdding}
+          meta={(card) => (
+            <>
+              <span className="mono">{card.key}</span>
+              <RunBadges summary={runSummary.get(card.id)} />
+              {card.linkedCommit && (
+                <span title={`Moved by commit ${card.linkedCommit}`}>
+                  ⎇ {card.linkedCommit.slice(0, 7)}
+                </span>
               )}
-            </section>
-          );
-        })}
-      </div>
+              <span>{formatRelative(card.updatedAt)}</span>
+            </>
+          )}
+        />
+      ) : (
+        <div
+          className="board"
+          style={{ '--board-cols': columns.length } as CSSProperties}
+          onDragEnd={() => (setDragId(null), setDropTarget(null))}
+        >
+          {columns.map((status) => {
+            const items = column(status);
+            return (
+              <section
+                key={status}
+                className={`column${dropTarget?.status === status && dropTarget.beforeId === null ? ' drop-target' : ''}`}
+                aria-label={CARD_STATUS_LABELS[status]}
+                onDragOver={(e) => onDragOver(e, status, null)}
+                onDrop={onDrop}
+              >
+                <div className="column-header">
+                  <h3>
+                    {CARD_STATUS_LABELS[status]} <span className="badge">{items.length}</span>
+                  </h3>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setAdding(status)}
+                    aria-label={`Add card to ${CARD_STATUS_LABELS[status]}`}
+                  >
+                    ＋
+                  </button>
+                </div>
+
+                {items.map((card) => (
+                  <button
+                    key={card.id}
+                    className={[
+                      'kcard',
+                      dragId === card.id && 'dragging',
+                      dropTarget?.beforeId === card.id && 'drop-before',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', card.key);
+                      setDragId(card.id);
+                    }}
+                    onDragOver={(e) => onDragOver(e, status, card.id)}
+                    onDrop={onDrop}
+                    onClick={() => setEditing(card)}
+                  >
+                    <span className="title">{card.title}</span>
+                    <span className="meta">
+                      <span className="mono">{card.key}</span>
+                      <RunBadges summary={runSummary.get(card.id)} />
+                      {card.linkedCommit && (
+                        <span title={`Moved by commit ${card.linkedCommit}`}>
+                          ⎇ {card.linkedCommit.slice(0, 7)}
+                        </span>
+                      )}
+                      <span>{formatRelative(card.updatedAt)}</span>
+                    </span>
+                  </button>
+                ))}
+
+                {items.length === 0 && (
+                  <p className="faint" style={{ margin: '4px', fontSize: 12.5 }}>
+                    {status === 'backlog' ? 'Capture upcoming features here.' : 'Drop cards here.'}
+                  </p>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
 
       {hidden.length > 0 && (
         <p className="faint hidden-strip" role="status">
