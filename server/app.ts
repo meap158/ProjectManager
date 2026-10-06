@@ -88,7 +88,8 @@ export function createApp(
     lan?: {
       status(): LanStatus;
       setEnabled(enabled: boolean): Promise<LanStatus>;
-      regenerateKey(): LanStatus;
+      newCode(): LanStatus;
+      signOut(id?: string): LanStatus;
     };
     dataDir?: string;
     /** Run interactive sessions in the session host so they survive server restarts. */
@@ -286,7 +287,9 @@ export function createApp(
     const { enabled } = await parseBody(c, z.object({ enabled: z.boolean() }));
     return c.json(await lan.setEnabled(enabled));
   });
-  app.post('/lan/regenerate-key', (c) => c.json(lanOnly(c).regenerateKey()));
+  app.post('/lan/new-code', (c) => c.json(lanOnly(c).newCode()));
+  app.delete('/lan/devices/:id', (c) => c.json(lanOnly(c).signOut(c.req.param('id'))));
+  app.delete('/lan/devices', (c) => c.json(lanOnly(c).signOut()));
 
   // ---- Preferences ------------------------------------------------------------------------------
   // The colour theme lives in the database as well as the browser: browser storage is tied to the

@@ -3597,3 +3597,37 @@ dialog.lightbox img {
   min-width: 0;
   font-size: 12px;
 }
+.lan-signin {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 32px;
+  margin-top: 14px;
+  align-items: start;
+}
+.lan-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.lan-code {
+  font:
+    700 34px/1.1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.3em;
+  color: var(--text);
+}
+.lan-devices li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+@media (max-width: 700px) {
+  .lan-signin {
+    grid-template-columns: 1fr;
+  }
+}

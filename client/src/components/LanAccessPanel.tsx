@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { LanStatus } from '../../../shared/types';
 import { api } from '../api';
+import { formatRelative } from '../format';
 
 /**
- * Settings → LAN access (opt-in). A separate listener on the local network that only serves
- * devices holding the access key: each link below signs a device in once (secure cookie).
- * Anyone with a link can read your tracked folders and drive agents, so share it like a password.
+ * Settings → LAN access (opt-in). Other devices open the address below and type the short code,
+ * like signing in to GitHub on a TV: the code works once, expires after 10 minutes, and is retired
+ * after 5 wrong tries. Each signed-in device is listed and can be signed out.
  */
 export function LanAccessPanel({ onError }: { onError: (message: string) => void }) {
   const [status, setStatus] = useState<LanStatus | null>(null);
@@ -14,12 +15,17 @@ export function LanAccessPanel({ onError }: { onError: (message: string) => void
 
   useEffect(() => {
     let active = true;
-    api.lanStatus().then(
-      (s) => active && setStatus(s),
-      (e: Error) => active && onError(e.message),
-    );
+    const load = () =>
+      api.lanStatus().then(
+        (s) => active && setStatus(s),
+        (e: Error) => active && onError(e.message),
+      );
+    void load();
+    // The code is single use and expires: keep what's shown current.
+    const timer = setInterval(load, 5000);
     return () => {
       active = false;
+      clearInterval(timer);
     };
   }, [onError]);
 
@@ -40,7 +46,7 @@ export function LanAccessPanel({ onError }: { onError: (message: string) => void
       setCopied(url);
       setTimeout(() => setCopied(null), 1500);
     } catch {
-      onError('Could not copy; select the link and copy it by hand.');
+      onError('Could not copy; select the address and copy it by hand.');
     }
   }
 
@@ -59,10 +65,10 @@ export function LanAccessPanel({ onError }: { onError: (message: string) => void
         </span>
       </div>
       <p className="faint" style={{ margin: '0 0 12px', fontSize: 12.5 }}>
-        Open ProjectManager from other devices on your network (phone, laptop). Each device signs in
-        once with the link below. Anyone with the link can read your tracked folders and drive your
-        agents, so share it like a password; <b>New key</b> signs every device out. Windows may ask
-        to allow Node.js on private networks the first time.
+        Use ProjectManager from your phone or another computer on the same network. Open the address
+        on that device and type the code shown here. Signed-in devices can read your tracked folders
+        and drive your agents. Windows may ask to allow Node.js the first time: allow it on Private
+        networks only.
       </p>
       {status === null ? (
         <div className="skeleton" style={{ height: 60 }} />
@@ -77,37 +83,86 @@ export function LanAccessPanel({ onError }: { onError: (message: string) => void
             >
               {status.enabled ? 'Turn off LAN access' : 'Turn on LAN access'}
             </button>
-            {status.enabled && (
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                title="Make a new access key: every signed-in device must open the new link"
-                onClick={() => act(() => api.regenerateLanKey())}
-              >
-                New key
-              </button>
-            )}
           </div>
           {status.error && <div className="error-banner">{status.error}</div>}
-          {status.running && status.urls.length === 0 && (
-            <p className="faint" style={{ margin: '10px 0 0' }}>
-              No local network address found: connect this computer to a network.
-            </p>
-          )}
-          {status.urls.length > 0 && (
-            <ul className="list lan-links">
-              {status.urls.map((url) => (
-                <li key={url}>
-                  <code className="truncate" title={url}>
-                    {url}
-                  </code>
-                  <button type="button" className="btn btn-sm" onClick={() => copy(url)}>
-                    {copied === url ? 'Copied' : 'Copy link'}
+          {status.running && (
+            <div className="lan-signin">
+              <div>
+                <div className="lan-label">1. Open on the device</div>
+                {status.urls.length === 0 ? (
+                  <p className="faint" style={{ margin: 0 }}>
+                    No local network address found: connect this computer to a network.
+                  </p>
+                ) : (
+                  <ul className="list lan-links">
+                    {status.urls.map((url) => (
+                      <li key={url}>
+                        <code className="truncate">{url}</code>
+                        <button type="button" className="btn btn-sm" onClick={() => copy(url)}>
+                          {copied === url ? 'Copied' : 'Copy'}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <div className="lan-label">2. Type this code</div>
+                <div className="lan-code" aria-label={`Sign-in code ${status.code ?? ''}`}>
+                  {status.code}
+                </div>
+                <div className="faint" style={{ fontSize: 12 }}>
+                  One device, once · new code{' '}
+                  {status.codeExpiresAt ? formatRelative(status.codeExpiresAt) : ''}{' '}
+                  <button
+                    type="button"
+                    className="link-button"
+                    disabled={busy}
+                    onClick={() => act(() => api.lanNewCode())}
+                  >
+                    New code
                   </button>
-                </li>
-              ))}
-            </ul>
+                </div>
+              </div>
+            </div>
+          )}
+          {status.devices.length > 0 && (
+            <>
+              <div className="lan-label" style={{ marginTop: 14 }}>
+                Signed-in devices
+              </div>
+              <ul className="list lan-devices">
+                {status.devices.map((d) => (
+                  <li key={d.id}>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <b>{d.label}</b>{' '}
+                      <span className="faint" style={{ fontSize: 12.5 }}>
+                        {d.address} · signed in {formatRelative(d.signedInAt)} · last seen{' '}
+                        {formatRelative(d.lastSeenAt)}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={busy}
+                      onClick={() => act(() => api.lanSignOut(d.id))}
+                    >
+                      Sign out
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {status.devices.length > 1 && (
+                <button
+                  type="button"
+                  className="link-button"
+                  disabled={busy}
+                  onClick={() => act(() => api.lanSignOut())}
+                >
+                  Sign out all devices
+                </button>
+              )}
+            </>
           )}
         </>
       )}

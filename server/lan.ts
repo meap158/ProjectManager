@@ -1,29 +1,44 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import os from 'node:os';
-import type { LanStatus } from '../shared/types.js';
+import type { LanDevice, LanStatus } from '../shared/types.js';
 import type { Db } from './db.js';
 import { getSetting, setSetting } from './store.js';
 
 // Opt-in LAN access. ProjectManager can read any folder and run agent CLIs, so the loopback
-// server stays exactly as it is and LAN access is a *separate* listener that only ever serves
-// requests carrying the access key:
-//  - off by default; Settings turns it on (persisted, restarted on boot);
-//  - every request needs the key: once as ?key=… (sets an HttpOnly, SameSite=Strict cookie and
-//    redirects to the same URL without it), then via that cookie; compared in constant time;
-//  - only this machine's own LAN addresses are accepted as Host (DNS-rebinding guard);
-//  - regenerating the key signs every LAN device out;
-//  - LAN requests are marked (x-pm-lan) so the API can refuse LAN-settings changes from them.
-// After the gate, requests are handled like local ones (Host rewritten to the loopback origin, so
-// the API's own Host allowlist and Vite's host check keep working unchanged).
+// server stays exactly as it is and LAN access is a *separate* listener that only serves signed-in
+// devices. Sign-in follows the device-flow pattern (GitHub, TV apps): the device opens the plain
+// address and types the short code shown in Settings on this computer.
+//  - Off by default; Settings turns it on (persisted, restarted on boot).
+//  - Pairing code: 4 characters from an unambiguous alphabet, single use, valid 10 minutes, and
+//    retired after 5 wrong tries, so a guesser gets at most 5 tries out of ~920,000 per code (the
+//    code is only ever shown on this computer). Wrong tries are also rate-limited per client.
+//  - A successful sign-in gives the device its own long random token (stored hashed) in an
+//    HttpOnly, SameSite=Strict cookie; Settings lists devices and can sign each (or all) out.
+//  - Only this machine's own LAN addresses/name are accepted as Host (DNS-rebinding guard).
+//  - LAN requests are marked (x-pm-lan) so the API refuses LAN-settings requests from them.
+// After the gate, requests are handled like local ones (Host rewritten in req.headers and
+// rawHeaders, so the API's Host allowlist and Vite's host check keep working unchanged).
 
 const SETTINGS_KEY = 'lan_access';
 const COOKIE = 'pm_lan';
+const PAIR_PATH = '/__pm/sign-in';
 export const LAN_HEADER = 'x-pm-lan';
+
+/** No 0/O, 1/I/L: easy to read aloud and type on a phone. */
+const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const CODE_LENGTH = 4;
+const CODE_TTL_MS = 10 * 60_000;
+const CODE_MAX_FAILURES = 5;
+const MAX_DEVICES = 20;
+
+interface StoredDevice extends LanDevice {
+  tokenHash: string;
+}
 
 interface LanSettings {
   enabled: boolean;
-  key: string;
+  devices: StoredDevice[];
 }
 
 /** Virtual adapters that are not "the network" (after AdRelay's lan-access.mjs). */
@@ -59,16 +74,18 @@ const HARDENING = {
   'cache-control': 'no-store',
 };
 
-/** Failed key attempts per client address: 10 per 10 minutes, then refused for the window. */
+/** Failed sign-in attempts per client address: 10 per 10 minutes, then refused for the window. */
 const MAX_FAILURES = 10;
 const FAILURE_WINDOW_MS = 10 * 60_000;
 
-const newKey = () => randomBytes(24).toString('base64url');
+const hash = (token: string) => createHash('sha256').update(token).digest('hex');
+const newCode = () =>
+  Array.from({ length: CODE_LENGTH }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
+/** What a person typed, normalised: case, spaces and dashes don't matter. */
+export const normaliseCode = (typed: string) => typed.toUpperCase().replace(/[\s-]/g, '');
 
-function safeEqual(a: string, b: string): boolean {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 }
 
 /**
@@ -91,10 +108,6 @@ function setHeader(req: IncomingMessage, name: string, value: string | null): vo
   req.rawHeaders.splice(0, req.rawHeaders.length, ...raw);
 }
 
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
-}
-
 function cookieValue(req: IncomingMessage, name: string): string | null {
   for (const part of (req.headers.cookie ?? '').split(';')) {
     const [k, ...v] = part.trim().split('=');
@@ -103,11 +116,34 @@ function cookieValue(req: IncomingMessage, name: string): string | null {
   return null;
 }
 
-const DENIED_PAGE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>ProjectManager</title><body style="font:15px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem">
-<h1 style="font-size:20px">Access key needed</h1>
-<p>Open the LAN link shown in <b>ProjectManager → Settings → LAN access</b> on the computer
-running ProjectManager. The link signs this device in.</p></body>`;
+/** A short, human label for a device from its browser's user agent. */
+function deviceLabel(ua: string): string {
+  const system = /iPhone|iPad|Android|Windows|Mac OS|Linux|CrOS/.exec(ua)?.[0] ?? 'Device';
+  const browser = /Edg|Firefox|Chrome|Safari/.exec(ua)?.[0] ?? 'browser';
+  const names: Record<string, string> = { 'Mac OS': 'Mac', CrOS: 'ChromeOS', Edg: 'Edge' };
+  return `${names[system] ?? system} · ${names[browser] ?? browser}`;
+}
+
+/** The sign-in page: one code field, big enough for a phone keyboard. */
+function signInPage(message: string | null, next: string): string {
+  return `<!doctype html><html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · ProjectManager</title>
+<style>
+body{font:16px system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f6f4;color:#1b1b1a}
+@media (prefers-color-scheme:dark){body{background:#121211;color:#e4e3dd}input{background:#1a1a19;color:#e4e3dd;border-color:#3d3d39}}
+main{width:min(22rem,calc(100vw - 2rem))}h1{font-size:20px;margin:0 0 6px}p{margin:0 0 16px;opacity:.75;font-size:14px;line-height:1.45}
+input{width:100%;box-sizing:border-box;font:600 28px ui-monospace,monospace;letter-spacing:.4em;text-align:center;text-transform:uppercase;padding:12px;border:1px solid #c9c8c1;border-radius:10px}
+button{margin-top:12px;width:100%;font:600 15px system-ui;padding:12px;border:0;border-radius:10px;background:#3b6ea8;color:#fff}
+.err{color:#c4423b;opacity:1;font-size:14px;margin:0 0 12px}
+</style>
+<main><h1>Sign in to ProjectManager</h1>
+<p>Type the code shown in <b>Settings → LAN access</b> on the computer running ProjectManager.</p>
+${message ? `<p class="err" role="alert">${escapeHtml(message)}</p>` : ''}
+<form method="post" action="${PAIR_PATH}">
+<input type="hidden" name="next" value="${escapeHtml(next)}">
+<input name="code" aria-label="Sign-in code" maxlength="9" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" autofocus required>
+<button type="submit">Sign in</button></form></main></html>`;
+}
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void;
 
@@ -116,6 +152,7 @@ export class LanAccess {
   private port: number | null = null;
   private error: string | null = null;
   private failures = new Map<string, { count: number; since: number }>();
+  private pairing: { code: string; expiresAt: number; failures: number } | null = null;
 
   constructor(
     private db: Db,
@@ -127,20 +164,42 @@ export class LanAccess {
   ) {}
 
   private settings(): LanSettings {
-    const saved = getSetting<LanSettings>(this.db, SETTINGS_KEY);
-    if (saved?.key) return saved;
-    const fresh = { enabled: false, key: newKey() };
-    setSetting(this.db, SETTINGS_KEY, fresh);
-    return fresh;
+    const saved = getSetting<Partial<LanSettings>>(this.db, SETTINGS_KEY);
+    return { enabled: saved?.enabled ?? false, devices: saved?.devices ?? [] };
+  }
+
+  private save(next: LanSettings): void {
+    setSetting(this.db, SETTINGS_KEY, next);
+  }
+
+  /** The current pairing code, made fresh when missing or expired. */
+  private code() {
+    if (!this.pairing || Date.now() > this.pairing.expiresAt) {
+      this.pairing = { code: newCode(), expiresAt: Date.now() + CODE_TTL_MS, failures: 0 };
+    }
+    return this.pairing;
   }
 
   status(): LanStatus {
-    const { enabled, key } = this.settings();
-    const urls =
-      this.server && this.port
-        ? lanAddresses().map((ip) => `http://${ip}:${this.port}/?key=${encodeURIComponent(key)}`)
-        : [];
-    return { enabled, running: !!this.server, port: this.port, urls, error: this.error };
+    const { enabled, devices } = this.settings();
+    const running = !!this.server;
+    const pairing = running ? this.code() : null;
+    return {
+      enabled,
+      running,
+      port: this.port,
+      urls: running && this.port ? lanAddresses().map((ip) => `http://${ip}:${this.port}/`) : [],
+      code: pairing?.code ?? null,
+      codeExpiresAt: pairing ? new Date(pairing.expiresAt).toISOString() : null,
+      devices: devices.map((d) => ({
+        id: d.id,
+        label: d.label,
+        address: d.address,
+        signedInAt: d.signedInAt,
+        lastSeenAt: d.lastSeenAt,
+      })),
+      error: this.error,
+    };
   }
 
   /** Starts the listener when enabled in settings (boot). */
@@ -149,15 +208,22 @@ export class LanAccess {
   }
 
   async setEnabled(enabled: boolean): Promise<LanStatus> {
-    setSetting(this.db, SETTINGS_KEY, { ...this.settings(), enabled });
+    this.save({ ...this.settings(), enabled });
     if (enabled) await this.start();
     else await this.stop();
     return this.status();
   }
 
-  /** A new key: every LAN device must open the new link. */
-  regenerateKey(): LanStatus {
-    setSetting(this.db, SETTINGS_KEY, { ...this.settings(), key: newKey() });
+  /** Replaces the pairing code (the old one stops working at once). */
+  newCode(): LanStatus {
+    this.pairing = null;
+    return this.status();
+  }
+
+  /** Signs one device out, or every device when id is omitted. */
+  signOut(id?: string): LanStatus {
+    const settings = this.settings();
+    this.save({ ...settings, devices: id ? settings.devices.filter((d) => d.id !== id) : [] });
     return this.status();
   }
 
@@ -165,71 +231,125 @@ export class LanAccess {
     const server = this.server;
     this.server = null;
     this.port = null;
+    this.pairing = null;
     if (!server) return;
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 
-  /** The gate: key check, host check, then the normal handler as a local request. */
-  private gate: Handler = (req, res) => {
+  private signedInDevice(req: IncomingMessage): StoredDevice | null {
+    const token = cookieValue(req, COOKIE);
+    if (!token) return null;
+    const tokenHash = hash(token); // Hash first: lookups never compare raw secrets.
+    return this.settings().devices.find((d) => d.tokenHash === tokenHash) ?? null;
+  }
+
+  /** Marks a device as seen (at most once a minute, to keep writes rare). */
+  private touch(device: StoredDevice): void {
+    if (Date.now() - Date.parse(device.lastSeenAt) < 60_000) return;
+    const settings = this.settings();
+    this.save({
+      ...settings,
+      devices: settings.devices.map((d) =>
+        d.id === device.id ? { ...d, lastSeenAt: new Date().toISOString() } : d,
+      ),
+    });
+  }
+
+  private async readForm(req: IncomingMessage): Promise<URLSearchParams> {
+    let body = '';
+    for await (const chunk of req) {
+      body += String(chunk);
+      if (body.length > 2048) break; // A code and a path: never more than this.
+    }
+    return new URLSearchParams(body);
+  }
+
+  private page(res: ServerResponse, status: number, message: string | null, next: string): void {
+    res
+      .writeHead(status, { ...HARDENING, 'content-type': 'text/html; charset=utf-8' })
+      .end(signInPage(message, next));
+  }
+
+  /** The gate: host check, sign-in, then the normal handler as a local request. */
+  private gate = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const rawHost = req.headers.host ?? '';
     const host = rawHost.replace(/:\d+$/, '').toLowerCase();
     if (!allowedHosts().has(host)) {
       res.writeHead(403, { ...HARDENING, 'content-type': 'text/plain' }).end('Forbidden host');
       return;
     }
-    const client = req.socket.remoteAddress ?? 'unknown';
-    const record = this.failures.get(client);
-    if (record && Date.now() - record.since > FAILURE_WINDOW_MS) this.failures.delete(client);
-    if ((this.failures.get(client)?.count ?? 0) >= MAX_FAILURES) {
-      res
-        .writeHead(429, { ...HARDENING, 'content-type': 'text/plain', 'retry-after': '600' })
-        .end('Too many wrong keys; try again later');
-      return;
-    }
-    const deny = () => {
-      const r = this.failures.get(client) ?? { count: 0, since: Date.now() };
-      r.count++;
-      this.failures.set(client, r);
-      res
-        .writeHead(401, { ...HARDENING, 'content-type': 'text/html; charset=utf-8' })
-        .end(DENIED_PAGE);
-    };
-    const { key } = this.settings();
     const url = new URL(req.url ?? '/', 'http://lan');
-    const offered = url.searchParams.get('key');
-    if (offered !== null) {
-      if (!safeEqual(offered, key)) return deny();
-      url.searchParams.delete('key');
-      // Not a 303: a SameSite=Strict cookie is withheld on navigations that started on another
-      // site (a link in chat or mail), redirect hops included. This page comes from our own
-      // origin, so the navigation it makes is same-site and the cookie is sent. The target is a
-      // same-origin path; it is HTML-escaped and JSON-encoded where it is used.
-      const target = url.pathname + url.search;
-      const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<meta http-equiv="refresh" content="0;url=${escapeHtml(target)}"><title>ProjectManager</title>
-<p style="font:15px system-ui;margin:15vh auto;max-width:32rem;padding:0 1rem">Signed in. Opening ProjectManager…</p>
-<script>location.replace(${JSON.stringify(target).replace(/</g, '\\u003c')})</script>`;
+    const client = req.socket.remoteAddress ?? 'unknown';
+
+    if (url.pathname === PAIR_PATH && req.method === 'POST') {
+      const record = this.failures.get(client);
+      if (record && Date.now() - record.since > FAILURE_WINDOW_MS) this.failures.delete(client);
+      if ((this.failures.get(client)?.count ?? 0) >= MAX_FAILURES) {
+        res
+          .writeHead(429, { ...HARDENING, 'content-type': 'text/plain', 'retry-after': '600' })
+          .end('Too many wrong codes; try again later');
+        return;
+      }
+      const form = await this.readForm(req);
+      const next = form.get('next') ?? '/';
+      const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
+      const pairing = this.code();
+      if (normaliseCode(form.get('code') ?? '') !== pairing.code) {
+        const r = this.failures.get(client) ?? { count: 0, since: Date.now() };
+        r.count++;
+        this.failures.set(client, r);
+        // Too many wrong tries on this code: retire it (a fresh one shows in Settings).
+        if (++pairing.failures >= CODE_MAX_FAILURES) this.pairing = null;
+        this.page(res, 401, 'That code didn’t match. Check Settings on the computer.', safeNext);
+        return;
+      }
+      this.pairing = null; // Single use.
+      const token = randomBytes(32).toString('base64url');
+      const now = new Date().toISOString();
+      const settings = this.settings();
+      const device: StoredDevice = {
+        id: randomBytes(6).toString('hex'),
+        label: deviceLabel(req.headers['user-agent'] ?? ''),
+        address: client.replace(/^::ffff:/, ''),
+        signedInAt: now,
+        lastSeenAt: now,
+        tokenHash: hash(token),
+      };
+      this.save({ ...settings, devices: [...settings.devices, device].slice(-MAX_DEVICES) });
+      // 303 from a same-origin form POST: the navigation is same-site, so the Strict cookie
+      // is sent on the very next request.
       res
-        .writeHead(200, {
+        .writeHead(303, {
           ...HARDENING,
-          'content-type': 'text/html; charset=utf-8',
-          'set-cookie': `${COOKIE}=${encodeURIComponent(key)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`,
+          'set-cookie': `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`,
+          location: safeNext,
         })
-        .end(html);
+        .end();
       return;
     }
-    const cookie = cookieValue(req, COOKIE);
-    if (!cookie || !safeEqual(cookie, key)) return deny();
+
+    const device = this.signedInDevice(req);
+    if (!device) {
+      // API calls get a plain 401; pages get the sign-in form (returning here after).
+      if (url.pathname.startsWith('/api/')) {
+        res.writeHead(401, { ...HARDENING, 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Sign in on this device first' }));
+      } else {
+        this.page(res, 401, null, url.pathname + url.search);
+      }
+      return;
+    }
     // Writes must come from this app's own LAN origin (on top of SameSite and JSON-only writes).
     const origin = req.headers.origin;
     if (req.method !== 'GET' && req.method !== 'HEAD' && origin && origin !== `http://${rawHost}`) {
       res.writeHead(403, { ...HARDENING, 'content-type': 'text/plain' }).end('Forbidden origin');
       return;
     }
+    this.touch(device);
     res.setHeader('x-frame-options', 'DENY');
     res.setHeader('referrer-policy', 'no-referrer');
-    // Authenticated: handle like a local request, but marked as coming from the LAN.
+    // Signed in: handle like a local request, but marked as coming from the LAN.
     setHeader(req, 'host', new URL(this.localOrigin()).host);
     setHeader(req, LAN_HEADER, '1');
     this.handler(req, res);
@@ -241,7 +361,10 @@ export class LanAccess {
     for (let port = this.basePort; port < this.basePort + 10; port++) {
       const server = createServer((req, res) => {
         setHeader(req, LAN_HEADER, null); // Never trust a client-sent marker.
-        this.gate(req, res);
+        this.gate(req, res).catch((e: Error) => {
+          console.error('[lan]', e.message);
+          if (!res.headersSent) res.writeHead(500).end();
+        });
       });
       server.headersTimeout = 10_000; // Slow-header clients don't hold sockets open.
       server.requestTimeout = 60_000; // Request bodies only; live output streams are unaffected.
@@ -252,7 +375,7 @@ export class LanAccess {
       if (ok) {
         this.server = server;
         this.port = port;
-        console.log(`[lan] listening on port ${port} (access key required)`);
+        console.log(`[lan] listening on port ${port} (sign-in required)`);
         return;
       }
       server.close();

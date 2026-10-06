@@ -151,11 +151,13 @@ Animated components by [Rare UI](https://rareui.com) (MIT + Commons Clause; attr
 
 Settings → **LAN access** opens ProjectManager to other devices on your network (phone, laptop). It
 is off by default and runs as a separate listener (the app port + 100); the normal server stays on
-`127.0.0.1`. Each device signs in once with the link shown in Settings, which carries an access key
-and stores it as an HttpOnly, SameSite=Strict cookie; every LAN request without it is refused.
-Only this computer's own LAN addresses (and its name) are accepted, wrong keys are rate-limited,
-and LAN devices can't view or change the LAN settings. Anyone with the link can read your tracked
-folders and drive agents, so share it like a password; **New key** signs every device out.
+`127.0.0.1`. On the device, open the address shown in Settings and type the **4-character code**
+shown next to it, like signing in to GitHub on a TV. The code works once, expires after 10 minutes
+and is retired after 5 wrong tries, so guessing is hopeless; wrong tries are also rate-limited per
+device. Each signed-in device gets its own secure cookie (HttpOnly, SameSite=Strict) and is listed
+in Settings, where you can sign it (or all devices) out. Only this computer's own LAN addresses
+(and its name) are accepted, and LAN devices can't view or change the LAN settings. Signed-in
+devices can read your tracked folders and drive agents, so only sign in devices you trust.
 Windows may ask to allow Node.js the first time: allow it on Private networks only.
 
 ## Agent board tools and images

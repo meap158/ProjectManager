@@ -244,12 +244,27 @@ export const AGENT_AUTONOMY_LABELS: Record<AgentAutonomy, string> = {
   full: 'Full access',
 };
 
-/** Opt-in LAN access (Settings). urls carry the access key; only shown on this computer. */
+/** A device signed in to LAN access. */
+export interface LanDevice {
+  id: string;
+  /** e.g. "iPhone · Safari", from its browser. */
+  label: string;
+  address: string;
+  signedInAt: string;
+  lastSeenAt: string;
+}
+
+/** Opt-in LAN access (Settings; only ever answered on this computer). */
 export interface LanStatus {
   enabled: boolean;
   running: boolean;
   port: number | null;
+  /** Plain addresses (no secrets): devices open one and type the code. */
   urls: string[];
+  /** Current one-time sign-in code while listening. */
+  code: string | null;
+  codeExpiresAt: string | null;
+  devices: LanDevice[];
   error: string | null;
 }
 

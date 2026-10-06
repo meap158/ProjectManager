@@ -74,7 +74,10 @@ export const api = {
   /** Opt-in LAN access (Settings); only answers on this computer. */
   lanStatus: () => request<LanStatus>('GET', '/lan'),
   setLan: (enabled: boolean) => request<LanStatus>('PUT', '/lan', { enabled }),
-  regenerateLanKey: () => request<LanStatus>('POST', '/lan/regenerate-key', {}),
+  lanNewCode: () => request<LanStatus>('POST', '/lan/new-code', {}),
+  /** Signs one LAN device out, or every device without an id. */
+  lanSignOut: (deviceId?: string) =>
+    request<LanStatus>('DELETE', deviceId ? `/lan/devices/${deviceId}` : '/lan/devices'),
   /** Global agent permissions and per-CLI overrides (Settings). */
   getPermissions: () => request<AgentPermissions>('GET', '/agents/permissions'),
   savePermissions: (value: AgentPermissions) =>
