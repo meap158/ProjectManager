@@ -11,6 +11,7 @@ import {
 } from '../../../shared/types';
 import { api } from '../api';
 import { AgentPermissionsPanel } from '../components/AgentPermissionsPanel';
+import { LanAccessPanel } from '../components/LanAccessPanel';
 import { Dropdown } from '../components/Dropdown';
 
 const TerminalView = lazy(() =>
@@ -178,6 +179,8 @@ export function SettingsPage() {
       </section>
 
       <AgentPermissionsPanel providers={providers} onError={setError} />
+
+      <LanAccessPanel onError={setError} />
 
       <section className="panel" aria-label="Boards">
         <div className="panel-header">

@@ -8,6 +8,7 @@ import { createApp } from './app.js';
 import { config } from './config.js';
 import { openDb } from './db.js';
 import { ALREADY_RUNNING_MARKER, claimInstance, isAlive, releaseInstance } from './instance.js';
+import { LanAccess } from './lan.js';
 
 /** scripts/launch.mjs watches for this line to retry on the next port. Keep in sync with it. */
 const PORT_IN_USE_MARKER = '[server] EADDRINUSE';
@@ -34,7 +35,18 @@ async function main() {
 
   const db = openDb(config.dataDir);
   const root = new Hono();
+  // Opt-in LAN listener (Settings → LAN access): its own port, access key required; it hands
+  // authenticated requests to the same handler as the local server (set below).
+  let handle: (req: IncomingMessage, res: ServerResponse) => void = (_req, res) =>
+    res.writeHead(503).end();
+  const lan = new LanAccess(
+    db,
+    (req, res) => handle(req, res),
+    () => `http://localhost:${config.port}`,
+    config.port + 100,
+  );
   const api = createApp(db, {
+    lan,
     dataDir: config.dataDir,
     // Sessions live in the session host and survive server restarts (AGENT_HOST=off disables).
     agentHost: process.env.AGENT_HOST !== 'off',
@@ -52,7 +64,8 @@ async function main() {
     const clientDir = path.relative(process.cwd(), path.join(here, '..', 'client'));
     root.use('/*', serveStatic({ root: clientDir }));
     root.get('*', serveStatic({ path: path.join(clientDir, 'index.html') }));
-    server.on('request', getRequestListener(root.fetch));
+    handle = getRequestListener(root.fetch);
+    server.on('request', handle);
   } else {
     // Development: Vite runs inside this process (middleware mode), sharing our port, including
     // its HMR websocket. Imported lazily so production never loads Vite.
@@ -63,10 +76,11 @@ async function main() {
       appType: 'spa',
     });
     const api = getRequestListener(root.fetch);
-    server.on('request', (req: IncomingMessage, res: ServerResponse) => {
+    handle = (req: IncomingMessage, res: ServerResponse) => {
       if (req.url?.startsWith('/api/') || req.url === '/api') api(req, res);
       else vite.middlewares(req, res);
-    });
+    };
+    server.on('request', handle);
     server.on('close', () => void vite.close());
   }
 
@@ -84,6 +98,7 @@ async function main() {
     console.log(
       `[server] listening on http://${config.host}:${config.port} (${config.isProduction ? 'production' : 'development'})`,
     );
+    void lan.restore();
   });
 
   // Stop agent processes first: desiredState stays 'running', so the next boot
@@ -94,6 +109,7 @@ async function main() {
         await api.supervisor.shutdown();
       } finally {
         releaseInstance(config.dataDir, process.pid);
+        await lan.stop();
         server.close();
         server.closeAllConnections();
         db.close();

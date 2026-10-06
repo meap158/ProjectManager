@@ -147,6 +147,17 @@ and rejects requests from other sites. Don't expose it to a network.
 
 Animated components by [Rare UI](https://rareui.com) (MIT + Commons Clause; attribution required).
 
+## LAN access (opt-in)
+
+Settings → **LAN access** opens ProjectManager to other devices on your network (phone, laptop). It
+is off by default and runs as a separate listener (the app port + 100); the normal server stays on
+`127.0.0.1`. Each device signs in once with the link shown in Settings, which carries an access key
+and stores it as an HttpOnly, SameSite=Strict cookie; every LAN request without it is refused.
+Only this computer's own LAN addresses (and its name) are accepted, wrong keys are rate-limited,
+and LAN devices can't view or change the LAN settings. Anyone with the link can read your tracked
+folders and drive agents, so share it like a password; **New key** signs every device out.
+Windows may ask to allow Node.js the first time: allow it on Private networks only.
+
 ## Agent board tools and images
 
 Claude Code, Codex, OpenCode and (existing) Gemini sessions/runs launched by ProjectManager receive a

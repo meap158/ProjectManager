@@ -43,7 +43,10 @@ anything.
   out of user or repo data.
 - **Security model:** the server binds `127.0.0.1`, only accepts allowlisted `Host` headers, and
   requires `Content-Type: application/json` on writes. Keep all three. It can read any folder and run
-  agent CLIs, so it must never be exposed to the network.
+  agent CLIs, so it must never be exposed to the network, except through the **opt-in LAN listener**
+  (`server/lan.ts`): a separate port, off by default, every request gated by an access key (cookie
+  after a one-time link), this machine's own LAN addresses only as Host, rate-limited wrong keys,
+  and LAN settings refused from LAN clients. Never weaken that gate or bind the main server wider.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
   the user explicitly starts may change project files.
 - **DB changes** go in a new migration appended to `MIGRATIONS` in `server/db.ts`. Never edit a

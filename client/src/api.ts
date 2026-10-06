@@ -3,6 +3,7 @@ import type {
   AgentInstall,
   AgentOutput,
   AgentPermissions,
+  LanStatus,
   AgentProviderStatus,
   AgentTerminal,
   AgentRun,
@@ -70,6 +71,10 @@ export const api = {
   ) => request<Card>('PATCH', `/cards/${id}`, patch),
   deleteCard: (id: number) => request<void>('DELETE', `/cards/${id}`),
 
+  /** Opt-in LAN access (Settings); only answers on this computer. */
+  lanStatus: () => request<LanStatus>('GET', '/lan'),
+  setLan: (enabled: boolean) => request<LanStatus>('PUT', '/lan', { enabled }),
+  regenerateLanKey: () => request<LanStatus>('POST', '/lan/regenerate-key', {}),
   /** Global agent permissions and per-CLI overrides (Settings). */
   getPermissions: () => request<AgentPermissions>('GET', '/agents/permissions'),
   savePermissions: (value: AgentPermissions) =>

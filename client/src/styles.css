@@ -3578,3 +3578,22 @@ dialog.lightbox img {
   width: 200px;
   height: 32px;
 }
+
+/* Settings → LAN access */
+.lan-actions {
+  display: flex;
+  gap: 8px;
+}
+.lan-links {
+  margin-top: 10px;
+}
+.lan-links li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lan-links code {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}

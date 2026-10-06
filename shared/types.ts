@@ -244,6 +244,15 @@ export const AGENT_AUTONOMY_LABELS: Record<AgentAutonomy, string> = {
   full: 'Full access',
 };
 
+/** Opt-in LAN access (Settings). urls carry the access key; only shown on this computer. */
+export interface LanStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number | null;
+  urls: string[];
+  error: string | null;
+}
+
 /** A permission choice: one of the levels, or 'cli' = pass no flags, the CLI's own settings apply. */
 export type PermissionLevel = 'cli' | AgentAutonomy;
 

@@ -4,7 +4,8 @@ import path from 'node:path';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { BOARD_PRESETS, CARD_STATUSES } from '../shared/types.js';
-import type { DirectoryEntry, DirectoryListing } from '../shared/types.js';
+import type { DirectoryEntry, DirectoryListing, LanStatus } from '../shared/types.js';
+import { LAN_HEADER } from './lan.js';
 import type { Db } from './db.js';
 import { Scanner } from './scanner.js';
 import * as store from './store.js';
@@ -83,6 +84,12 @@ export function createApp(
   db: Db,
   options: {
     allowedHosts?: string[];
+    /** Opt-in LAN listener control (server/lan.ts); absent in tests. */
+    lan?: {
+      status(): LanStatus;
+      setEnabled(enabled: boolean): Promise<LanStatus>;
+      regenerateKey(): LanStatus;
+    };
     dataDir?: string;
     /** Run interactive sessions in the session host so they survive server restarts. */
     agentHost?: boolean;
@@ -262,6 +269,24 @@ export function createApp(
     removeAttachments(attachmentsRoot, id);
     return c.body(null, 204);
   });
+
+  // ---- LAN access (opt-in; server/lan.ts) --------------------------------------------------------
+  // Only this computer may see or change LAN settings: requests arriving through the LAN
+  // listener are marked by its gate and refused here, so a LAN device can't read the key,
+  // turn access off for others, or re-key.
+  const lanOnly = (c: Context) => {
+    if (c.req.header(LAN_HEADER))
+      throw new HttpError(403, 'LAN settings can only be changed on this computer');
+    if (!options.lan) throw new HttpError(404, 'LAN access is not available');
+    return options.lan;
+  };
+  app.get('/lan', (c) => c.json(lanOnly(c).status()));
+  app.put('/lan', async (c) => {
+    const lan = lanOnly(c);
+    const { enabled } = await parseBody(c, z.object({ enabled: z.boolean() }));
+    return c.json(await lan.setEnabled(enabled));
+  });
+  app.post('/lan/regenerate-key', (c) => c.json(lanOnly(c).regenerateKey()));
 
   // ---- Preferences ------------------------------------------------------------------------------
   // The colour theme lives in the database as well as the browser: browser storage is tied to the
