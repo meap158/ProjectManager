@@ -208,7 +208,11 @@ export function KanbanBoard({
               >
                 <div className="column-header">
                   <h3>
-                    {CARD_STATUS_LABELS[status]} <span className="badge">{items.length}</span>
+                    {/* Same coloured status pill as the List view's group headers. */}
+                    <span className={`status-pill status-${status}`}>
+                      {CARD_STATUS_LABELS[status]}
+                    </span>{' '}
+                    <span className="badge">{items.length}</span>
                   </h3>
                   <button
                     className="btn btn-ghost btn-sm"

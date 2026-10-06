@@ -208,6 +208,8 @@ adjacent-pair CVD separation in both modes).
   - **Views (Notion database views):** text tabs above both boards switch between **Board** (the
     Kanban, default) and **List**, with an icon each and a text-coloured underline on the active
     one. The choice is shared by every board and saved per browser (`pm.board.view`).
+  - **Board view** column headers (project and global boards) use the same status pill as the
+    List view's group headers, so a status reads the same colour in both views.
   - **List view** (`BoardListView`): one collapsible group per visible column, headed by a
     disclosure triangle, a Notion-style status pill (tinted background, coloured dot; `--status-*`
     tokens: grey Backlog, purple To do, blue In progress, amber Review, green Done) and the count,

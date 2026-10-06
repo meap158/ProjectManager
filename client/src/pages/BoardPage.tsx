@@ -223,7 +223,11 @@ export function BoardPage() {
                 }}
               >
                 <header className="gcolumn-head">
-                  <h2>{CARD_STATUS_LABELS[status]}</h2>
+                  <h2>
+                    <span className={`status-pill status-${status}`}>
+                      {CARD_STATUS_LABELS[status]}
+                    </span>
+                  </h2>
                   <span className="faint num">{items.length}</span>
                   <button
                     type="button"
