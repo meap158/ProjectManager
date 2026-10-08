@@ -14,3 +14,26 @@
     max-width: 100%;
   }
 }
+
+/* Keep session, project and card labels on the same desktop header centre line. */
+@media (min-width: 769px) {
+  .workspace .pane-identity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .workspace .pane-identity > .inline-rename,
+  .workspace .pane-identity > .pane-meta {
+    line-height: 20px;
+  }
+  .workspace .pane-meta > a {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    line-height: 20px;
+  }
+  .workspace .pane-meta > a.truncate {
+    display: block;
+  }
+}
