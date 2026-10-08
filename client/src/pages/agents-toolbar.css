@@ -1,0 +1,16 @@
+/* PM-57: account usage gets a dedicated desktop row below the workspace controls. */
+@media (min-width: 769px) {
+  .workspace-bar > .limits-strip.is-inline {
+    order: 1;
+    flex: 0 0 100%;
+    min-width: 0;
+    margin-left: 0;
+    padding: 6px 0 0;
+    border-top: 1px solid var(--border);
+    gap: 6px 10px;
+  }
+  .workspace-bar > .limits-strip.is-inline > .limits-chip {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+}

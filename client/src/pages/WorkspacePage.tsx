@@ -1,3 +1,4 @@
+import './agents-toolbar.css';
 import {
   Suspense,
   lazy,
