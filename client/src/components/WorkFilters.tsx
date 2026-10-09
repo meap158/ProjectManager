@@ -7,8 +7,10 @@ import { PROVIDER_LABELS, ProviderIcon } from './icons';
 // name search. All choices are remembered per browser; an active filter can be cleared in one
 // click, and an empty result says so (never a silently empty list).
 
+type FilterStatus = Exclude<WorkStatus, 'input' | 'review'> | 'attention' | 'all';
+
 export interface WorkFilterState {
-  status: WorkStatus | 'all';
+  status: FilterStatus;
   agent: string; // provider id or 'all'
   project: number; // project id or 0 = all
   kind: 'all' | 'session' | 'run';
@@ -26,7 +28,11 @@ export const NO_FILTERS: WorkFilterState = {
 
 export function readWorkFilters(): WorkFilterState {
   try {
-    return { ...NO_FILTERS, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as object) };
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<WorkFilterState> & {
+      status?: string;
+    };
+    const status = ['input', 'review'].includes(saved.status ?? '') ? 'attention' : saved.status;
+    return { ...NO_FILTERS, ...saved, status: (status ?? 'all') as FilterStatus };
   } catch {
     return NO_FILTERS;
   }
@@ -52,6 +58,17 @@ export const filtersActive = (f: WorkFilterState) =>
   f.kind !== 'all' ||
   !!f.query.trim();
 
+/** Running includes work awaiting input; the row keeps its more specific state. */
+export function matchesWorkStatus(w: WorkItem, status: FilterStatus, now: number): boolean {
+  const actual = workStatus(w, now);
+  return (
+    status === 'all' ||
+    actual === status ||
+    (status === 'attention' && (actual === 'input' || actual === 'review')) ||
+    (status === 'running' && actual === 'input')
+  );
+}
+
 /** Items matching every filter except, optionally, the status (used for the chip counts). */
 export function applyWorkFilters(
   items: WorkItem[],
@@ -62,7 +79,7 @@ export function applyWorkFilters(
   const q = f.query.trim().toLowerCase();
   return items.filter(
     (w) =>
-      (ignoreStatus || f.status === 'all' || workStatus(w, now) === f.status) &&
+      (ignoreStatus || matchesWorkStatus(w, f.status, now)) &&
       (f.agent === 'all' || w.item.providerId === f.agent) &&
       (f.project === 0 || w.item.projectId === f.project) &&
       (f.kind === 'all' || w.kind === f.kind) &&
@@ -87,30 +104,52 @@ export function WorkFilters({
 }) {
   // Counts reflect the other filters, so each chip says what clicking it will show.
   const pool = applyWorkFilters(items, filters, now, { ignoreStatus: true });
-  const count = (s: WorkStatus | 'all') =>
-    s === 'all' ? pool.length : pool.filter((w) => workStatus(w, now) === s).length;
+  const count = (s: FilterStatus) => pool.filter((w) => matchesWorkStatus(w, s, now)).length;
   const agents = [...new Set(items.map((w) => w.item.providerId))].sort();
   const projects = [...new Set(items.map((w) => w.item.projectId))].sort((a, b) =>
     (projectNames.get(a) ?? '').localeCompare(projectNames.get(b) ?? ''),
   );
   const set = (patch: Partial<WorkFilterState>) => onChange({ ...filters, ...patch });
+  const [expanded, setExpanded] = useState(false);
+  const extraCount =
+    Number(filters.agent !== 'all') +
+    Number(filters.project !== 0) +
+    Number(filters.kind !== 'all') +
+    Number(!!filters.query.trim());
 
   return (
-    <div className="work-filters" role="search" aria-label="Filter agent work">
+    <div
+      className={`work-filters${expanded ? ' is-expanded' : ''}`}
+      role="search"
+      aria-label="Filter agent work"
+    >
       <div className="work-status-chips" role="group" aria-label="Status">
-        {(['all', 'input', 'running', 'idle', 'review', 'ended'] as const).map((s) => (
+        {(['all', 'attention', 'running', 'idle', 'ended'] as const).map((s) => (
           <button
             key={s}
             type="button"
             aria-pressed={filters.status === s}
             className={`work-chip${filters.status === s ? ' active' : ''}`}
+            title={
+              s === 'attention'
+                ? 'Waiting for your input or a finished run awaiting review'
+                : undefined
+            }
             onClick={() => set({ status: s })}
           >
-            {s === 'all' ? 'All' : WORK_STATUS_LABELS[s]}
+            {s === 'all' ? 'All' : s === 'attention' ? 'Needs attention' : WORK_STATUS_LABELS[s]}
             <span className="work-chip-count num">{count(s)}</span>
           </button>
         ))}
       </div>
+      <button
+        type="button"
+        className="btn btn-sm work-filter-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded(!expanded)}
+      >
+        Filters{extraCount ? ` (${extraCount})` : ''}
+      </button>
       <Dropdown
         label="Agent"
         value={filters.agent}
