@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
 import { Dropdown } from '../components/Dropdown';
@@ -1157,222 +1157,31 @@ export function OrchestratorPage() {
         )}
       </section>
 
-      {/* Collapsible / context-aware configuration panel */}
+      {/* Configuration: a modal dialog over the dashboard when masters exist (PM-73); inline as
+          the page's first-run content when there are none yet. */}
       {isFormVisible && (
-        <section className="panel orchestrator-form-panel">
-          <div className="panel-header">
-            <div>
-              <h2>{draft.id ? 'Edit orchestrator' : 'New orchestrator'}</h2>
-              <p className="faint" style={{ margin: '4px 0 0' }}>
-                {draft.id
-                  ? `Updating configuration for "${draft.name}"`
-                  : 'Define project scope, provider preference, and concurrency rules.'}
-              </p>
-            </div>
-            {state.instances.length > 0 && (
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => {
-                  setDraft(defaults);
-                  setShowForm(false);
-                }}
-              >
-                Cancel edit
-              </button>
-            )}
-          </div>
-          <form
-            className="orchestrator-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void perform(async () => {
-                await api.saveOrchestrator(draft);
-                setDraft(defaults);
-                setShowForm(false);
-              });
-            }}
-          >
-            <div className="orchestrator-form-section">
-              <h3 className="orchestrator-form-section-title">Scope & Identity</h3>
-              <div className="orchestrator-form-grid">
-                <label>
-                  Name
-                  <input
-                    className="input"
-                    required
-                    maxLength={120}
-                    value={draft.name}
-                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Project scope
-                  <Dropdown
-                    label="Project scope"
-                    value={0}
-                    onChange={() => {}}
-                    multiple={{
-                      values: draft.projectIds,
-                      allValue: 0,
-                      onChange: (projectIds) => setDraft({ ...draft, projectIds }),
-                    }}
-                    options={[
-                      { value: 0, label: 'All projects' },
-                      ...projects.map((p) => ({ value: p.id, label: p.name })),
-                    ]}
-                  />
-                </label>
+        <OrchestratorFormShell
+          modal={state.instances.length > 0}
+          title={draft.id ? 'Edit orchestrator' : 'New orchestrator'}
+          onClose={() => {
+            setDraft(defaults);
+            setShowForm(false);
+          }}
+        >
+          <section className="panel orchestrator-form-panel">
+            <div className="panel-header">
+              <div>
+                <h2>{draft.id ? 'Edit orchestrator' : 'New orchestrator'}</h2>
+                <p className="faint" style={{ margin: '4px 0 0' }}>
+                  {draft.id
+                    ? `Updating configuration for "${draft.name}"`
+                    : 'Define project scope, provider preference, and concurrency rules.'}
+                </p>
               </div>
-            </div>
-
-            <div className="orchestrator-form-section">
-              <h3 className="orchestrator-form-section-title">Worker Providers & Concurrency</h3>
-              <div className="orchestrator-form-grid">
-                <label>
-                  Worker providers
-                  <Dropdown
-                    label="Worker providers"
-                    value="all"
-                    onChange={() => {}}
-                    multiple={{
-                      values: draft.providers,
-                      allValue: 'all',
-                      onChange: (providers) =>
-                        setDraft({ ...draft, providers: providers.length ? providers : ['codex'] }),
-                    }}
-                    options={[
-                      { value: 'all', label: 'Reset to Codex' },
-                      ...['codex', 'claude', 'antigravity', 'grok', 'opencode'].map((id) => ({
-                        value: id,
-                        label: PROVIDER_LABELS[id] ?? id,
-                      })),
-                    ]}
-                  />
-                </label>
-                <label>
-                  Total worker limit
-                  <input
-                    className="input"
-                    type="number"
-                    required
-                    min={1}
-                    max={32}
-                    value={draft.maxWorkers}
-                    onChange={(e) => setDraft({ ...draft, maxWorkers: Number(e.target.value) })}
-                  />
-                </label>
-                <label>
-                  Workers per project
-                  <input
-                    className="input"
-                    type="number"
-                    required
-                    min={1}
-                    max={8}
-                    value={draft.maxWorkersPerProject}
-                    onChange={(e) =>
-                      setDraft({ ...draft, maxWorkersPerProject: Number(e.target.value) })
-                    }
-                  />
-                </label>
-                <label>
-                  Workers per provider
-                  <input
-                    className="input"
-                    type="number"
-                    required
-                    min={1}
-                    max={16}
-                    value={draft.maxWorkersPerProvider}
-                    onChange={(e) =>
-                      setDraft({ ...draft, maxWorkersPerProvider: Number(e.target.value) })
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="orchestrator-form-section">
-              <h3 className="orchestrator-form-section-title">Policies & Quota</h3>
-              <label>
-                Strategy
-                <Dropdown
-                  label="Strategy"
-                  value={draft.strategy ?? 'autonomous'}
-                  options={[
-                    {
-                      value: 'observe' as const,
-                      label: 'Observe',
-                      sub: 'Report board readiness; do not dispatch workers or change attention cards',
-                    },
-                    {
-                      value: 'autonomous' as const,
-                      label: 'Autonomous board work',
-                      sub: 'Dispatch ready tasks within scope, quota and worker limits; retain review',
-                    },
-                  ]}
-                  onChange={(strategy) => setDraft({ ...draft, strategy })}
-                />
-              </label>
-              <div className="orchestrator-form-grid">
-                <label>
-                  Quota reserve (%)
-                  <input
-                    className="input"
-                    type="number"
-                    required
-                    min={0}
-                    max={90}
-                    value={draft.reservePercent}
-                    onChange={(e) => setDraft({ ...draft, reservePercent: Number(e.target.value) })}
-                  />
-                </label>
-              </div>
-              <div className="orchestrator-checkboxes">
-                <label className="orchestrator-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={draft.allowUnknownQuota}
-                    onChange={(e) => setDraft({ ...draft, allowUnknownQuota: e.target.checked })}
-                  />
-                  Allow workers when quota is unknown
-                </label>
-                <label className="orchestrator-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={draft.followDashboardAttention ?? false}
-                    onChange={(e) =>
-                      setDraft({ ...draft, followDashboardAttention: e.target.checked })
-                    }
-                  />
-                  Follow up Dashboard attention and uncommitted work
-                </label>
-                <label className="orchestrator-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={draft.pruneDashboardAttention ?? true}
-                    onChange={(e) =>
-                      setDraft({ ...draft, pruneDashboardAttention: e.target.checked })
-                    }
-                  />
-                  Auto-prune resolved Dashboard attention tasks
-                </label>
-              </div>
-            </div>
-
-            <p className="faint">
-              Saved paused by default. Start authorizes board tasks to run with your agent
-              permission settings. Completed work stays available for review.
-            </p>
-            <div className="orchestrator-actions">
-              <button className="btn btn-primary" disabled={busy}>
-                Save{draft.enabled ? ' active orchestrator' : ' orchestrator'}
-              </button>
               {state.instances.length > 0 && (
                 <button
                   type="button"
-                  className="btn"
+                  className="btn btn-sm"
                   onClick={() => {
                     setDraft(defaults);
                     setShowForm(false);
@@ -1382,8 +1191,214 @@ export function OrchestratorPage() {
                 </button>
               )}
             </div>
-          </form>
-        </section>
+            <form
+              className="orchestrator-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void perform(async () => {
+                  await api.saveOrchestrator(draft);
+                  setDraft(defaults);
+                  setShowForm(false);
+                });
+              }}
+            >
+              <div className="orchestrator-form-section">
+                <h3 className="orchestrator-form-section-title">Scope & Identity</h3>
+                <div className="orchestrator-form-grid">
+                  <label>
+                    Name
+                    <input
+                      className="input"
+                      required
+                      maxLength={120}
+                      value={draft.name}
+                      onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Project scope
+                    <Dropdown
+                      label="Project scope"
+                      value={0}
+                      onChange={() => {}}
+                      multiple={{
+                        values: draft.projectIds,
+                        allValue: 0,
+                        onChange: (projectIds) => setDraft({ ...draft, projectIds }),
+                      }}
+                      options={[
+                        { value: 0, label: 'All projects' },
+                        ...projects.map((p) => ({ value: p.id, label: p.name })),
+                      ]}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="orchestrator-form-section">
+                <h3 className="orchestrator-form-section-title">Worker Providers & Concurrency</h3>
+                <div className="orchestrator-form-grid">
+                  <label>
+                    Worker providers
+                    <Dropdown
+                      label="Worker providers"
+                      value="all"
+                      onChange={() => {}}
+                      multiple={{
+                        values: draft.providers,
+                        allValue: 'all',
+                        onChange: (providers) =>
+                          setDraft({
+                            ...draft,
+                            providers: providers.length ? providers : ['codex'],
+                          }),
+                      }}
+                      options={[
+                        { value: 'all', label: 'Reset to Codex' },
+                        ...['codex', 'claude', 'antigravity', 'grok', 'opencode'].map((id) => ({
+                          value: id,
+                          label: PROVIDER_LABELS[id] ?? id,
+                        })),
+                      ]}
+                    />
+                  </label>
+                  <label>
+                    Total worker limit
+                    <input
+                      className="input"
+                      type="number"
+                      required
+                      min={1}
+                      max={32}
+                      value={draft.maxWorkers}
+                      onChange={(e) => setDraft({ ...draft, maxWorkers: Number(e.target.value) })}
+                    />
+                  </label>
+                  <label>
+                    Workers per project
+                    <input
+                      className="input"
+                      type="number"
+                      required
+                      min={1}
+                      max={8}
+                      value={draft.maxWorkersPerProject}
+                      onChange={(e) =>
+                        setDraft({ ...draft, maxWorkersPerProject: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Workers per provider
+                    <input
+                      className="input"
+                      type="number"
+                      required
+                      min={1}
+                      max={16}
+                      value={draft.maxWorkersPerProvider}
+                      onChange={(e) =>
+                        setDraft({ ...draft, maxWorkersPerProvider: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="orchestrator-form-section">
+                <h3 className="orchestrator-form-section-title">Policies & Quota</h3>
+                <label>
+                  Strategy
+                  <Dropdown
+                    label="Strategy"
+                    value={draft.strategy ?? 'autonomous'}
+                    options={[
+                      {
+                        value: 'observe' as const,
+                        label: 'Observe',
+                        sub: 'Report board readiness; do not dispatch workers or change attention cards',
+                      },
+                      {
+                        value: 'autonomous' as const,
+                        label: 'Autonomous board work',
+                        sub: 'Dispatch ready tasks within scope, quota and worker limits; retain review',
+                      },
+                    ]}
+                    onChange={(strategy) => setDraft({ ...draft, strategy })}
+                  />
+                </label>
+                <div className="orchestrator-form-grid">
+                  <label>
+                    Quota reserve (%)
+                    <input
+                      className="input"
+                      type="number"
+                      required
+                      min={0}
+                      max={90}
+                      value={draft.reservePercent}
+                      onChange={(e) =>
+                        setDraft({ ...draft, reservePercent: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="orchestrator-checkboxes">
+                  <label className="orchestrator-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.allowUnknownQuota}
+                      onChange={(e) => setDraft({ ...draft, allowUnknownQuota: e.target.checked })}
+                    />
+                    Allow workers when quota is unknown
+                  </label>
+                  <label className="orchestrator-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.followDashboardAttention ?? false}
+                      onChange={(e) =>
+                        setDraft({ ...draft, followDashboardAttention: e.target.checked })
+                      }
+                    />
+                    Follow up Dashboard attention and uncommitted work
+                  </label>
+                  <label className="orchestrator-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.pruneDashboardAttention ?? true}
+                      onChange={(e) =>
+                        setDraft({ ...draft, pruneDashboardAttention: e.target.checked })
+                      }
+                    />
+                    Auto-prune resolved Dashboard attention tasks
+                  </label>
+                </div>
+              </div>
+
+              <p className="faint">
+                Saved paused by default. Start authorizes board tasks to run with your agent
+                permission settings. Completed work stays available for review.
+              </p>
+              <div className="orchestrator-actions">
+                <button className="btn btn-primary" disabled={busy}>
+                  Save{draft.enabled ? ' active orchestrator' : ' orchestrator'}
+                </button>
+                {state.instances.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      setDraft(defaults);
+                      setShowForm(false);
+                    }}
+                  >
+                    Cancel edit
+                  </button>
+                )}
+              </div>
+            </form>
+          </section>
+        </OrchestratorFormShell>
       )}
       <section className="panel orchestrator-history-panel">
         <div className="orchestrator-history-header">
@@ -1511,5 +1526,33 @@ export function OrchestratorPage() {
         )}
       </section>
     </main>
+  );
+}
+
+/**
+ * Hosts the orchestrator form: a modal dialog (Esc / Cancel close it, focus stays inside) when
+ * there are masters to return to, the plain inline panel otherwise.
+ */
+function OrchestratorFormShell({
+  modal,
+  title,
+  onClose,
+  children,
+}: {
+  modal: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (modal && dialog && !dialog.open) dialog.showModal();
+  }, [modal]);
+  if (!modal) return <>{children}</>;
+  return (
+    <dialog ref={ref} className="orchestrator-form-dialog" aria-label={title} onClose={onClose}>
+      {children}
+    </dialog>
   );
 }
