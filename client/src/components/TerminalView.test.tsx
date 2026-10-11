@@ -257,6 +257,7 @@ describe('TerminalView', () => {
       visualViewport: Object.getOwnPropertyDescriptor(window, 'visualViewport'),
       requestAnimationFrame: window.requestAnimationFrame,
       matchMedia: window.matchMedia,
+      scrollBy: window.scrollBy,
     };
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
     window.requestAnimationFrame = (cb: FrameRequestCallback) => {
@@ -275,11 +276,13 @@ describe('TerminalView', () => {
       else delete (window as { visualViewport?: unknown }).visualViewport;
       window.requestAnimationFrame = saved.requestAnimationFrame;
       window.matchMedia = saved.matchMedia;
+      window.scrollBy = saved.scrollBy;
       delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
     }
   };
   const mountFocused = async () => {
     const scrollIntoView = vi.fn();
+    window.scrollBy = scrollIntoView;
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
       value: scrollIntoView,
@@ -299,9 +302,12 @@ describe('TerminalView', () => {
       viewport.height = 450;
       viewport.dispatchEvent(new Event('resize'));
       await waitFor(() =>
-        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'end', inline: 'nearest' }),
+        expect(scrollIntoView).toHaveBeenCalledWith({ top: 254, behavior: 'instant' }),
       );
       expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(true);
+      scrollIntoView.mockClear();
+      viewport.dispatchEvent(new Event('scroll'));
+      expect(scrollIntoView).not.toHaveBeenCalled();
       // Keyboard closed: the tab bar comes back.
       viewport.height = 800;
       viewport.dispatchEvent(new Event('resize'));

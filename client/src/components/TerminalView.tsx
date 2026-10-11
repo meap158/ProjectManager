@@ -102,8 +102,17 @@ export function TerminalView({
         const visibleBottom = viewport.offsetTop + viewport.height - bar;
         const rect = host.getBoundingClientRect();
         if (rect.bottom > visibleBottom + 1 || rect.bottom < visibleTop + 48) {
-          host.style.scrollMarginBottom = `${bar + 4}px`;
-          host.scrollIntoView({ block: 'end', inline: 'nearest' });
+          // scrollIntoView aligns against the layout viewport on iOS, behind the keyboard.
+          // Move only the required distance in the actual scroll container instead.
+          const delta = rect.bottom - visibleBottom + 4;
+          let parent = host.parentElement;
+          while (parent && parent !== document.documentElement) {
+            const overflow = getComputedStyle(parent).overflowY;
+            if (/(auto|scroll)/.test(overflow) && parent.scrollHeight > parent.clientHeight) break;
+            parent = parent.parentElement;
+          }
+          if (parent && parent !== document.documentElement) parent.scrollTop += delta;
+          else window.scrollBy({ top: delta, behavior: 'instant' });
         }
       });
     };
@@ -111,7 +120,7 @@ export function TerminalView({
     // Only touch devices have an on-screen keyboard. On desktop a window that got shorter (an
     // un-maximize, DevTools) read as one and scrolled the page and terminal on every resize.
     const touch = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-    const update = () => {
+    const update = (reveal = true) => {
       const focused = hostRef.current?.contains(document.activeElement) ?? false;
       // Browser chrome can resize the viewport too; a keyboard takes substantially more space.
       restingHeight = Math.max(restingHeight, viewport.height, window.innerHeight);
@@ -125,7 +134,7 @@ export function TerminalView({
       // While typing, the page hides chrome that only takes space (the phone tab bar).
       document.documentElement.toggleAttribute('data-terminal-typing', open);
       if (!open) setExtraKeys(false);
-      if (open && hostRef.current) {
+      if (reveal && open && hostRef.current) {
         const vp = hostRef.current.querySelector<HTMLElement>('.xterm-viewport');
         if (vp) vp.scrollTop = vp.scrollHeight;
         revealInput();
@@ -135,9 +144,11 @@ export function TerminalView({
       clearTimeout(timer);
       timer = setTimeout(update, 0);
     };
-    viewport.addEventListener('resize', update);
-    viewport.addEventListener('scroll', update);
-    window.addEventListener('resize', update);
+    const resizeViewport = () => update();
+    const scrollViewport = () => update(false);
+    viewport.addEventListener('resize', resizeViewport);
+    viewport.addEventListener('scroll', scrollViewport);
+    window.addEventListener('resize', resizeViewport);
     document.addEventListener('focusin', focusChanged);
     document.addEventListener('focusout', focusChanged);
     update();
@@ -146,9 +157,9 @@ export function TerminalView({
       cancelAnimationFrame(frame);
       revealInputRef.current = () => undefined;
       document.documentElement.removeAttribute('data-terminal-typing');
-      viewport.removeEventListener('resize', update);
-      viewport.removeEventListener('scroll', update);
-      window.removeEventListener('resize', update);
+      viewport.removeEventListener('resize', resizeViewport);
+      viewport.removeEventListener('scroll', scrollViewport);
+      window.removeEventListener('resize', resizeViewport);
       document.removeEventListener('focusin', focusChanged);
       document.removeEventListener('focusout', focusChanged);
     };
@@ -328,7 +339,14 @@ export function TerminalView({
         callbacks.current.onResize?.(term.cols, term.rows);
       }
     };
-    const resize = new ResizeObserver(refit);
+    // Mobile keyboard animation emits many transient sizes. Fit after it settles so the PTY
+    // receives one geometry update instead of repeatedly clearing and redrawing its screen.
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRefit = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(refit, window.matchMedia('(pointer: coarse)').matches ? 120 : 16);
+    };
+    const resize = new ResizeObserver(scheduleRefit);
     const inputSub = interactive
       ? term.onData((data) => {
           lastInputTime = Date.now();
@@ -704,7 +722,7 @@ export function TerminalView({
       opened = true;
       refit();
       resize.observe(host);
-      window.addEventListener('resize', refit);
+      window.addEventListener('resize', scheduleRefit);
       if (interactive && !restoring && !callbacks.current.paused) term.focus();
       start();
     });
@@ -738,7 +756,8 @@ export function TerminalView({
       host.removeEventListener('touchend', onTouchEnd);
       host.removeEventListener('touchcancel', onTouchEnd);
       if (pasteTarget) pasteTarget.current = null;
-      window.removeEventListener('resize', refit);
+      window.removeEventListener('resize', scheduleRefit);
+      clearTimeout(resizeTimer);
       resize.disconnect();
       term.dispose();
     };
