@@ -6,29 +6,38 @@ import { expect, it } from 'vitest';
 import { openDb } from '../db.js';
 import { OrchestratorAssignments } from './assignments.js';
 
-it.each(['before-claim', 'after-claim', 'after-insertion'])(
+it.each(['before-claim', 'after-claim', 'after-insertion', 'after-acknowledgement'])(
   'recovers persisted chat dispatch after process exit %s',
   (boundary) => {
     const dir = mkdtempSync(path.join(tmpdir(), 'pm-orch-process-'));
     const source = `
-      import { openDb } from './server/db.ts';
-      import { ChatDispatchIntent } from './server/orchestrator/chatIntent.ts';
+      import { openDb } from ${JSON.stringify(new URL('../db.ts', import.meta.url).href)};
+      import { ChatDispatchIntent } from ${JSON.stringify(new URL('./chatIntent.ts', import.meta.url).href)};
       const db = openDb(process.argv[1]);
       db.exec("INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture','/fixture','2026-10-12'); INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(1,1,'Fixture task','todo',0,'2026-10-12','2026-10-12');");
       if(process.argv[2] === 'before-claim') process.exit(86);
       const intent = new ChatDispatchIntent(db, 1, 'fixture-master', 1000);
-      if(process.argv[2] === 'after-insertion') {
+      if(process.argv[2] === 'after-insertion' || process.argv[2] === 'after-acknowledgement') {
         db.prepare("INSERT INTO agent_runs(id,project_id,card_id,name,provider_id,command_json,status,created_at,log_path,dispatch_key) VALUES(1,1,1,'Fixture worker','codex','[]','queued','2026-10-12','',?)").run(intent.key);
       }
-      // Deliberately skip acknowledgement and db.close(): exercise persisted process boundaries.
+      if(process.argv[2] === 'after-acknowledgement') intent.assigned(1, 1001);
+      // Deliberately skip normal shutdown and, where applicable, acknowledgement and db.close(): exercise persisted process boundaries.
       process.exit(86);
     `;
     try {
       const child = spawnSync(
         process.execPath,
-        ['--import', 'tsx', '--input-type=module', '--eval', source, dir, boundary],
+        [
+          '--import',
+          import.meta.resolve('tsx'),
+          '--input-type=module',
+          '--eval',
+          source,
+          dir,
+          boundary,
+        ],
         {
-          cwd: path.resolve('.'),
+          cwd: dir,
           encoding: 'utf8',
           timeout: 15000,
           windowsHide: true,

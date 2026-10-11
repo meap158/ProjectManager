@@ -273,3 +273,8 @@ All three cases pass. No live database, terminal, master setting or worker input
 This verifies persisted reservation/assignment transitions across process exit, not the full
 supervisor/provider lifecycle. Remaining runtime drills need an isolated fake worker executable,
 actual supervisor insertion/spawn, competing process ownership and request replay identity.
+
+Process recovery also covers exit after assignment acknowledgement. Child processes now resolve
+source modules and the TypeScript loader independently of their working directory and run from
+the temporary fixture directory. All four process-boundary cases pass. The acknowledged run
+remains assigned through repeated reconciliation and refuses a replacement claim.
