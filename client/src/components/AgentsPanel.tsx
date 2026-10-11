@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+﻿import { Suspense, lazy, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ProviderIcon } from './icons';
 import type {
   AgentProviderStatus,
@@ -19,19 +19,20 @@ import { SessionToggle } from './SessionToggle';
 import { LimitsStrip } from './LimitsStrip';
 import { sendImageToSession } from '../sessionImages';
 import { SessionImageButton } from './SessionImageButton';
+import { SessionProgress, SessionRestartStatus } from './SessionProgress';
+import { RecentCache } from '../lib/recentCache';
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
 
-// xterm is heavy: it loads only when a terminal actually renders.
-const TerminalView = lazy(() =>
-  import('./TerminalView').then((m) => ({ default: m.TerminalView })),
-);
+// Preload TerminalView chunk as soon as agents panel loads so it is ready when terminal renders.
+const terminalViewPromise = import('./TerminalView');
+const TerminalView = lazy(() => terminalViewPromise.then((m) => ({ default: m.TerminalView })));
 
 // Tab memory, same pattern as the board: revisits render instantly from the
 // module cache and refresh in the background. The project page keys the panel
 // by project and only polls while its tab is visible (no wasteful background
 // polling from a hidden tab).
-const sessionsCache = new Map<number, AgentSession[]>();
-const runsCache = new Map<number, AgentRun[]>();
+const sessionsCache = new RecentCache<number, AgentSession[]>(8);
+const runsCache = new RecentCache<number, AgentRun[]>(8);
 
 /** Per-project agent HQ: providers, persistent terminal sessions, and card runs. */
 export function AgentsPanel({ projectId, visible }: { projectId: number; visible: boolean }) {
@@ -139,6 +140,11 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
           session={s}
           onStart={() => changeSession(() => api.startSession(s.id))}
           onStop={() => changeSession(() => api.stopSession(s.id))}
+          onRestart={() =>
+            changeSession(async () => {
+              return api.restartSession(s.id);
+            })
+          }
         />
         <ConfirmDelete
           label={`Delete session "${s.name}"`}
@@ -314,6 +320,8 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                 {active.status}
                 {active.pid ? ` · pid ${active.pid}` : ''}
               </span>
+              {active.terminal === 'pty' && <SessionProgress session={active} />}
+              <SessionRestartStatus session={active} />
               {active.status === 'running' && active.terminal === 'pty' && (
                 <SessionImageButton
                   sessionId={active.id}
@@ -325,8 +333,9 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             </div>
             <Suspense fallback={<div className="terminal skeleton" style={{ height: 380 }} />}>
               <TerminalView
-                key={`${active.id}-${active.terminal}`}
+                key={`${active.id}-${active.terminal}-${active.startedAt}`}
                 historyBytes={active.logBytes}
+                stopped={active.terminal === 'pty' && active.status !== 'running'}
                 height={active.terminal === 'pty' ? 380 : 320}
                 fetchOutput={(after) => api.sessionOutput(active.id, after)}
                 streamUrl={(after) => api.sessionStreamUrl(active.id, after)}

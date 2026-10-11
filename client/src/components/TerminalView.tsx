@@ -1,8 +1,16 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import type { AgentOutput } from '../../../shared/types';
+import { TerminalClipboard } from './TerminalClipboard';
+
+/**
+ * Max history bytes to replay on initial mount. 512 KB covers ~5,000 lines of scrollback (xterm's max limit).
+ * Sessions with 10–33 MB logs replay the latest 512 KB tail, eliminating multi-second freezes on load.
+ */
+export const MAX_INITIAL_HISTORY_BYTES = 512 * 1024;
 
 /**
  * Terminal rendering a session/run log via xterm.js (the same renderer VS Code uses), so ANSI
@@ -24,6 +32,7 @@ export function TerminalView({
   height = 320,
   fontSize = 12.5,
   historyBytes = 0,
+  stopped = false,
   pasteRef,
   onImage,
 }: {
@@ -45,6 +54,8 @@ export function TerminalView({
    * they would reach the CLI as junk (or pile up in a stopped session's input queue).
    */
   historyBytes?: number;
+  /** Preserve recorded geometry: a stopped full-screen CLI cannot redraw after a resize. */
+  stopped?: boolean;
   /**
    * Filled with a function that pastes text the way the keyboard would (xterm's paste: bracketed
    * when the CLI asked for it), e.g. the path of an image sent from a phone (PM-54).
@@ -54,6 +65,62 @@ export function TerminalView({
   onImage?: (file: File) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const [connection, setConnection] = useState<'loading' | 'ready' | 'empty' | 'reconnecting'>(
+    historyBytes > 0 ? 'loading' : 'empty',
+  );
+
+  const [extraKeys, setExtraKeys] = useState(false);
+
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const keysRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const strip = keysRef.current?.querySelector<HTMLElement>('.terminal-key-scroll');
+    const firstFunction = strip?.querySelector<HTMLElement>('[aria-label="Function 1"]');
+    if (strip)
+      strip.scrollLeft =
+        extraKeys && firstFunction ? firstFunction.offsetLeft - strip.offsetLeft : 0;
+  }, [extraKeys]);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    let restingHeight = Math.max(viewport.height, window.innerHeight);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      const focused = hostRef.current?.contains(document.activeElement) ?? false;
+      // Browser chrome can resize the viewport too; a keyboard takes substantially more space.
+      restingHeight = Math.max(restingHeight, viewport.height, window.innerHeight);
+      const open = focused && restingHeight - viewport.height > 80;
+      if (keysRef.current) {
+        keysRef.current.style.top = `${viewport.offsetTop + viewport.height}px`;
+        keysRef.current.style.left = `${viewport.offsetLeft}px`;
+        keysRef.current.style.width = `${viewport.width}px`;
+      }
+      setKeyboardOpen(open);
+      if (!open) setExtraKeys(false);
+      if (open && hostRef.current) {
+        const vp = hostRef.current.querySelector<HTMLElement>('.xterm-viewport');
+        if (vp) vp.scrollTop = vp.scrollHeight;
+      }
+    };
+    const focusChanged = () => {
+      clearTimeout(timer);
+      timer = setTimeout(update, 0);
+    };
+    viewport.addEventListener('resize', update);
+    viewport.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    document.addEventListener('focusin', focusChanged);
+    document.addEventListener('focusout', focusChanged);
+    update();
+    return () => {
+      clearTimeout(timer);
+      viewport.removeEventListener('resize', update);
+      viewport.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      document.removeEventListener('focusin', focusChanged);
+      document.removeEventListener('focusout', focusChanged);
+    };
+  }, []);
   const offsetRef = useRef(0);
   const historyRef = useRef(historyBytes);
   // > 0 while xterm parses replayed history; anything it emits meanwhile is an automatic reply.
@@ -74,27 +141,29 @@ export function TerminalView({
   const interactive = onInput !== undefined;
   const streaming = streamUrl !== undefined;
   // The live terminal + its refit, so font size changes apply without re-creating it.
-  const live = useRef<{ term: Terminal; refit: () => void; start: () => void } | null>(null);
+  const live = useRef<{
+    term: Terminal;
+    refit: () => void;
+    start: () => void;
+    retry: () => void;
+  } | null>(null);
   const initialFontSize = useRef(fontSize);
+  const sendKey = (data: string) => {
+    if (callbacks.current.paused) return;
+    live.current?.term.scrollToBottom();
+    // Full-screen applications can request the alternate cursor-key sequences.
+    const application = live.current?.term.modes?.applicationCursorKeysMode;
+    callbacks.current.onInput?.(
+      application && data.startsWith('\x1b[') && data.length === 3 && 'ABCDHF'.includes(data[2]!)
+        ? data.replace('\x1b[', '\x1bO')
+        : data,
+    );
+  };
   const ctl = useRef<{
     timer?: ReturnType<typeof setTimeout>;
     source?: EventSource | null;
     polling: boolean;
   }>({ polling: false });
-
-  // Pause/resume from the outside (hidden tab): traffic stops, everything kept.
-  useEffect(() => {
-    const controller = ctl.current;
-    const terminal = live.current;
-    if (paused) {
-      if (controller.timer) clearTimeout(controller.timer);
-      controller.source?.close();
-      controller.source = null;
-      controller.polling = false;
-    } else {
-      terminal?.start();
-    }
-  }, [paused]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -104,6 +173,7 @@ export function TerminalView({
       fontSize: initialFontSize.current,
       lineHeight: 1.25,
       scrollback: 5000,
+      smoothScrollDuration: 0,
       cursorBlink: interactive,
       disableStdin: !interactive,
       // PTY output already carries CRLF; plain pipe/run logs often have bare LF.
@@ -117,18 +187,104 @@ export function TerminalView({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    offsetRef.current = 0;
+    const totalHistory = historyRef.current;
+    const initialOffset =
+      totalHistory > MAX_INITIAL_HISTORY_BYTES ? totalHistory - MAX_INITIAL_HISTORY_BYTES : 0;
+    offsetRef.current = initialOffset;
+    replaying.current = 0;
+    const restoreBytes = totalHistory;
+    let restoring = restoreBytes > initialOffset;
+    const scrollDuration = term.options.smoothScrollDuration;
+    let revealFrame: number | null = null;
+    let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+    let receivedOutput = false;
+    let serverResponded = false;
+    if (restoring) {
+      // Keep layout measurable, but don't paint intermediate historical screens.
+      host.style.visibility = 'hidden';
+      host.setAttribute('aria-busy', 'true');
+      term.options.smoothScrollDuration = 0;
+    }
 
     // Guards every async path: React StrictMode (dev) disposes and re-creates the terminal, and
     // xterm throws if written to or resized after dispose.
     let cancelled = false;
-    let lastSize = '';
-    const refit = () => {
+    let opened = false;
+    const reveal = () => {
+      if (cancelled || !restoring || revealFrame !== null) return;
+      term.scrollToBottom();
+      revealFrame = requestAnimationFrame(() => {
+        revealFrame = null;
+        if (cancelled) return;
+        restoring = false;
+        clearTimeout(recoveryTimer);
+        host.style.visibility = '';
+        host.removeAttribute('aria-busy');
+        term.options.smoothScrollDuration = scrollDuration;
+        term.refresh(0, term.rows - 1);
+        setConnection(receivedOutput ? 'ready' : 'empty');
+        if (interactive && !callbacks.current.paused) term.focus();
+      });
+    };
+    // A drain notification is authoritative even when the initial byte-count snapshot is stale.
+    // An empty write runs after queued xterm writes, so no partial historical frame is revealed.
+    const revealDrained = () => {
       if (cancelled) return;
+      const drainedThrough = offsetRef.current;
+      term.write('', () => {
+        if (cancelled) return;
+        if (restoring) historyRef.current = drainedThrough;
+        if (restoring) reveal();
+        else setConnection(receivedOutput ? 'ready' : 'empty');
+      });
+    };
+    let lastSize = '';
+    const geometry = term.parser.registerOscHandler(777, (data) => {
+      const match = /^pm-size;(\d+);(\d+)$/.exec(data);
+      if (!match) return false;
+      const cols = Number(match[1]);
+      const rows = Number(match[2]);
+      if (stopped && cols >= 20 && cols <= 500 && rows >= 1 && rows <= 500) {
+        term.resize(cols, rows);
+      }
+      return true;
+    });
+    let touchY: number | null = null;
+    let touchX = 0;
+    let touchRemainder = 0;
+    let scrollFrame: number | null = null;
+    let velocity = 0;
+    let lastMove = 0;
+    let momentumFrame: number | null = null;
+    let pixelTarget: number | null = null;
+    let lastInputTime = 0;
+    let lastTouchScrollTime = 0;
+    const viewport = () => host.querySelector<HTMLElement>('.xterm-viewport');
+
+    const scrollToBottomAndSync = () => {
+      term.scrollToBottom();
+      const element = viewport();
+      if (element) {
+        pixelTarget = Math.max(0, element.scrollHeight - element.clientHeight);
+      }
+    };
+
+    const refit = () => {
+      if (cancelled || !opened) return;
+      if (stopped) return;
+      const element = viewport();
+      const wasAtBottom =
+        !element ||
+        element.scrollTop >= element.scrollHeight - element.clientHeight - 40 ||
+        host.contains(document.activeElement) ||
+        Date.now() - lastInputTime < 5000;
       try {
         fit.fit();
       } catch {
         return; // Host collapsed (e.g. closed <details>): refit when visible again.
+      }
+      if (!restoring && wasAtBottom && interactive) {
+        scrollToBottomAndSync();
       }
       const size = `${term.cols}x${term.rows}`;
       if (size !== lastSize) {
@@ -139,6 +295,8 @@ export function TerminalView({
     const resize = new ResizeObserver(refit);
     const inputSub = interactive
       ? term.onData((data) => {
+          lastInputTime = Date.now();
+          scrollToBottomAndSync();
           if (replaying.current === 0) callbacks.current.onInput?.(data);
         })
       : null;
@@ -171,11 +329,15 @@ export function TerminalView({
     /** The first image file in a paste or drop, when someone takes images. */
     const imageOf = (data: DataTransfer | null) =>
       callbacks.current.onImage
-        ? ([...(data?.files ?? [])].find((f) => f.type.startsWith('image/')) ?? null)
+        ? ([...(data?.files ?? [])].find((f) => f.type.startsWith('image/')) ??
+          Array.from(data?.items ?? [])
+            .find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+            ?.getAsFile() ??
+          null)
         : null;
     const onPaste = (event: ClipboardEvent) => {
       const text = event.clipboardData?.getData('text/plain') ?? '';
-      const image = text ? null : imageOf(event.clipboardData);
+      const image = imageOf(event.clipboardData);
       if (image) {
         // An image (screenshot, copied photo): sent as a file whose path is pasted in, so it
         // works from a phone and for every CLI, not only those reading the OS clipboard.
@@ -202,22 +364,72 @@ export function TerminalView({
     };
     host.addEventListener('dragover', onDragOver);
     host.addEventListener('drop', onDrop);
-    // Touch: xterm has no touch scrolling (its canvas takes the swipe), so a vertical swipe is
-    // replayed as the wheel a mouse would send: scrollback in plain output, and the CLI's own
-    // scrolling in full-screen apps (xterm turns wheel into mouse reports or arrow keys there).
-    let touchY: number | null = null;
-    let touchX = 0;
+    // Capture owns touch scrolling so xterm's built-in handler cannot process it twice.
+    const flushTouchScroll = () => {
+      scrollFrame = null;
+      if (cancelled || term.buffer.active.type !== 'normal') return;
+      const element = viewport();
+      if (element) {
+        const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+        pixelTarget = Math.max(
+          0,
+          Math.min(maximum, (pixelTarget ?? element.scrollTop) + touchRemainder),
+        );
+        element.scrollTop = pixelTarget;
+        if (pixelTarget >= maximum - 2) {
+          term.scrollToBottom();
+        } else if (pixelTarget <= 2) {
+          term.scrollToTop();
+        }
+        touchRemainder = 0;
+        return;
+      }
+      const rowHeight = (term.options.fontSize ?? 12.5) * (term.options.lineHeight ?? 1.25);
+      const lines = Math.trunc(touchRemainder / rowHeight);
+      if (lines) {
+        term.scrollLines(lines);
+        touchRemainder -= lines * rowHeight;
+      }
+    };
     const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 1) event.stopPropagation();
+      if (momentumFrame !== null) cancelAnimationFrame(momentumFrame);
+      momentumFrame = null;
+      velocity = 0;
+      pixelTarget = viewport()?.scrollTop ?? null;
+      lastMove = performance.now();
+      if (scrollFrame !== null) {
+        cancelAnimationFrame(scrollFrame);
+        flushTouchScroll();
+      }
       touchY = event.touches.length === 1 ? event.touches[0]!.clientY : null;
       touchX = event.touches[0]?.clientX ?? 0;
+      touchRemainder = 0;
     };
     const onTouchMove = (event: TouchEvent) => {
       if (touchY === null || event.touches.length !== 1) return;
+      event.stopPropagation();
       const y = event.touches[0]!.clientY;
       const delta = touchY - y;
       if (Math.abs(delta) < 1) return;
       touchY = y;
+      lastTouchScrollTime = Date.now();
+      const now = performance.now();
+      const elapsed = Math.max(1, now - lastMove);
+      const instantVelocity = Math.max(-15, Math.min(15, delta / elapsed));
+      velocity = velocity * 0.25 + instantVelocity * 0.75;
+      // A direction change should follow the finger immediately, not retain the old flick.
+      if (velocity * delta < 0) velocity = instantVelocity;
+      lastMove = now;
       event.preventDefault(); // The swipe scrolls the terminal, not the page around it.
+      if (term.buffer.active.type === 'normal') {
+        // Scroll the entire terminal viewport, including the CLI's prompt/footer. Sending
+        // mouse reports instead lets the CLI scroll only its output pane and pins its chrome.
+        touchRemainder += delta;
+        // Coalesce rapid touch events into one viewport update per display frame.
+        if (scrollFrame === null) scrollFrame = requestAnimationFrame(flushTouchScroll);
+        return;
+      }
       term.element?.dispatchEvent(
         new WheelEvent('wheel', {
           deltaY: delta,
@@ -229,11 +441,46 @@ export function TerminalView({
         }),
       );
     };
-    const onTouchEnd = () => {
+    const onTouchEnd = (event: TouchEvent) => {
       touchY = null;
+      if (
+        event.type === 'touchcancel' ||
+        !viewport() ||
+        term.buffer.active.type !== 'normal' ||
+        performance.now() - lastMove > 120 ||
+        Math.abs(velocity) < 0.05 ||
+        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      )
+        return;
+      let previous = performance.now();
+      const coast = (now: number) => {
+        if (cancelled) return;
+        const elapsed = Math.min(32, now - previous);
+        previous = now;
+        touchRemainder += velocity * elapsed;
+        flushTouchScroll();
+        const element = viewport();
+        const maximum = element ? Math.max(0, element.scrollHeight - element.clientHeight) : 0;
+        const atEdge =
+          element &&
+          pixelTarget !== null &&
+          ((velocity > 0 && pixelTarget >= maximum) || (velocity < 0 && pixelTarget <= 0));
+        if (atEdge && velocity > 0) {
+          term.scrollToBottom();
+        }
+        velocity *= Math.exp(-elapsed / 320);
+        if (!atEdge && Math.abs(velocity) > 0.05) momentumFrame = requestAnimationFrame(coast);
+        else momentumFrame = null;
+      };
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+      momentumFrame = requestAnimationFrame(coast);
     };
-    host.addEventListener('touchstart', onTouchStart, { passive: true });
-    host.addEventListener('touchmove', onTouchMove, { passive: false });
+    const onFocusIn = () => {
+      if (interactive) scrollToBottomAndSync();
+    };
+    host.addEventListener('focusin', onFocusIn);
+    host.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
+    host.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
     host.addEventListener('touchend', onTouchEnd);
     host.addEventListener('touchcancel', onTouchEnd);
     const pasteTarget = callbacks.current.pasteRef;
@@ -245,19 +492,53 @@ export function TerminalView({
       controller.polling = false;
     };
 
-    const write = (data: string, nextOffset: number) => {
+    const write = (
+      data: string,
+      nextOffset: number,
+      terminalSize?: AgentOutput['terminalSize'],
+    ) => {
       if (cancelled) return;
       // Ignore anything older than what we've shown (e.g. a reconnect racing a poll).
       if (nextOffset <= offsetRef.current) return;
       const start = offsetRef.current;
+      if (data) receivedOutput = true;
+      if (stopped && start === initialOffset && terminalSize)
+        term.resize(terminalSize.cols, terminalSize.rows);
       offsetRef.current = nextOffset;
+
+      // When tailing a large log, discard the partial leading line fragment before the first newline
+      let cleanData = data;
+      if (initialOffset > 0 && start === initialOffset && cleanData) {
+        const firstNl = cleanData.indexOf('\n');
+        if (firstNl !== -1 && firstNl < 1000) {
+          cleanData = cleanData.slice(firstNl + 1);
+        }
+      }
+
       if (start < historyRef.current) {
         replaying.current++;
-        term.write(data, () => {
+        term.write(cleanData, () => {
+          if (cancelled) return;
           replaying.current--;
+          if (nextOffset >= restoreBytes) reveal();
         });
       } else {
-        term.write(data);
+        const element = viewport();
+        const userScrolling = Date.now() - lastTouchScrollTime < 1500;
+        const shouldStick =
+          interactive &&
+          !userScrolling &&
+          (!element ||
+            element.scrollTop >= element.scrollHeight - element.clientHeight - 40 ||
+            Date.now() - lastInputTime < 5000 ||
+            host.contains(document.activeElement));
+        term.write(cleanData, () => {
+          if (cancelled) return;
+          setConnection('ready');
+          if (shouldStick) {
+            scrollToBottomAndSync();
+          }
+        });
       }
     };
 
@@ -269,17 +550,27 @@ export function TerminalView({
       const source = new EventSource(callbacks.current.streamUrl!(offsetRef.current));
       controller.source = source;
       source.addEventListener('output', (event) => {
-        const { data, nextOffset } = JSON.parse((event as MessageEvent<string>).data) as {
+        serverResponded = true;
+        const { data, nextOffset, terminalSize } = JSON.parse(
+          (event as MessageEvent<string>).data,
+        ) as {
           data: string;
           nextOffset: number;
+          terminalSize?: AgentOutput['terminalSize'];
         };
-        write(data, nextOffset);
+        write(data, nextOffset, terminalSize);
+      });
+      source.addEventListener('state', () => {
+        serverResponded = true;
+        revealDrained();
       });
       source.onerror = () => {
+        if (cancelled || callbacks.current.paused || controller.source !== source) return;
         source.close();
         if (controller.source === source) controller.source = null;
         stopLoop();
-        controller.timer = setTimeout(() => live.current?.start(), 1000);
+        setConnection('reconnecting');
+        controller.timer = setTimeout(poll, 1000);
       };
     }
 
@@ -291,7 +582,9 @@ export function TerminalView({
       try {
         const out = await callbacks.current.fetchOutput(offsetRef.current);
         if (cancelled) return;
-        if (out.data) write(out.data, out.nextOffset);
+        serverResponded = true;
+        if (out.data) write(out.data, out.nextOffset, out.terminalSize);
+        else revealDrained();
         if (callbacks.current.paused) {
           stopLoop();
           return;
@@ -301,19 +594,51 @@ export function TerminalView({
           stopLoop();
           return;
         }
-        controller.timer = setTimeout(poll, out.running ? pollMs : 250);
+        controller.timer = setTimeout(
+          () => {
+            if (streaming) {
+              stopLoop();
+              start();
+            } else void poll();
+          },
+          out.running ? pollMs : 250,
+        );
       } catch {
+        if (cancelled || callbacks.current.paused) return;
+        setConnection('reconnecting');
+        // Preserve any parsed output instead of leaving a permanently hidden terminal.
+        if (restoring)
+          term.write('', () => {
+            if (!cancelled) {
+              reveal();
+              requestAnimationFrame(() => {
+                if (!cancelled) setConnection('reconnecting');
+              });
+            }
+          });
         // Transient fetch failure: keep the old output, try again.
         controller.timer = setTimeout(poll, pollMs);
       }
     }
 
     const start = () => {
-      if (cancelled || controller.polling || callbacks.current.paused) return;
+      if (cancelled || !opened || controller.polling || callbacks.current.paused) return;
+      clearTimeout(recoveryTimer);
+      recoveryTimer = setTimeout(() => {
+        if (restoring || !serverResponded) retry();
+      }, 4000);
       if (streaming) connect();
       else poll();
     };
-    live.current = { term, refit, start };
+    const retry = () => {
+      if (cancelled || !opened || callbacks.current.paused) return;
+      clearTimeout(controller.timer);
+      controller.source?.close();
+      controller.source = null;
+      stopLoop();
+      void poll();
+    };
+    live.current = { term, refit, start, retry };
 
     // Open on the next frame: xterm schedules viewport work right after open(), which throws if
     // the terminal is disposed first — exactly what StrictMode's throwaway mount does. A mount
@@ -321,27 +646,38 @@ export function TerminalView({
     const openFrame = requestAnimationFrame(() => {
       if (cancelled) return;
       term.open(host);
+      // Older logs have no geometry markers; start with the supervisor's PTY default.
+      if (stopped) term.resize(120, 30);
+      opened = true;
       refit();
       resize.observe(host);
       window.addEventListener('resize', refit);
-      if (interactive) term.focus();
+      if (interactive && !restoring && !callbacks.current.paused) term.focus();
       start();
     });
 
     return () => {
       live.current = null;
       cancelled = true;
+      clearTimeout(recoveryTimer);
       controller.polling = false;
       cancelAnimationFrame(openFrame);
+      if (revealFrame !== null) cancelAnimationFrame(revealFrame);
+      host.style.visibility = '';
+      host.removeAttribute('aria-busy');
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+      if (momentumFrame !== null) cancelAnimationFrame(momentumFrame);
       if (controller.timer) clearTimeout(controller.timer);
       controller.source?.close();
       controller.source = null;
       inputSub?.dispose();
+      geometry.dispose();
+      host.removeEventListener('focusin', onFocusIn);
       host.removeEventListener('paste', onPaste, true);
       host.removeEventListener('dragover', onDragOver);
       host.removeEventListener('drop', onDrop);
-      host.removeEventListener('touchstart', onTouchStart);
-      host.removeEventListener('touchmove', onTouchMove);
+      host.removeEventListener('touchstart', onTouchStart, true);
+      host.removeEventListener('touchmove', onTouchMove, true);
       host.removeEventListener('touchend', onTouchEnd);
       host.removeEventListener('touchcancel', onTouchEnd);
       if (pasteTarget) pasteTarget.current = null;
@@ -349,7 +685,27 @@ export function TerminalView({
       resize.disconnect();
       term.dispose();
     };
-  }, [pollMs, interactive, streaming]);
+  }, [pollMs, interactive, streaming, stopped]);
+
+  // Pause/resume from the outside (hidden tab): traffic stops, everything kept.
+  useEffect(() => {
+    const controller = ctl.current;
+    const terminal = live.current;
+    if (paused) {
+      if (controller.timer) clearTimeout(controller.timer);
+      controller.source?.close();
+      controller.source = null;
+      controller.polling = false;
+    } else {
+      terminal?.refit();
+      terminal?.start();
+      const frame = requestAnimationFrame(() => {
+        const host = hostRef.current;
+        if (interactive && host && !host.hasAttribute('aria-busy')) live.current?.term.focus();
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [paused, interactive]);
 
   useEffect(() => {
     const current = live.current;
@@ -360,14 +716,140 @@ export function TerminalView({
 
   return (
     <div
-      ref={hostRef}
-      className={`terminal${interactive ? ' is-interactive' : ''}`}
+      className={`terminal-shell${stopped ? ' is-stopped' : ''}${interactive ? ' is-interactive' : ''}`}
       style={{ height }}
-      role={interactive ? 'application' : 'log'}
-      aria-label={
-        interactive ? 'Interactive terminal (keystrokes go to the session)' : 'Terminal output'
-      }
-      onClick={() => hostRef.current?.querySelector('textarea')?.focus()}
-    />
+    >
+      {connection !== 'ready' && (
+        <div className="terminal-notice" role="status">
+          {connection === 'loading'
+            ? 'Loading terminal…'
+            : connection === 'reconnecting'
+              ? 'Reconnecting…'
+              : stopped
+                ? 'No recorded output'
+                : 'Waiting for CLI output…'}
+          {connection === 'reconnecting' && (
+            <button type="button" className="link-button" onClick={() => live.current?.retry()}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+      <div
+        ref={hostRef}
+        className={`terminal${interactive ? ' is-interactive' : ''}`}
+        role={interactive ? 'application' : 'log'}
+        aria-label={
+          interactive ? 'Interactive terminal (keystrokes go to the session)' : 'Terminal output'
+        }
+        onClick={() => {
+          hostRef.current?.querySelector('textarea')?.focus();
+          live.current?.term.scrollToBottom();
+        }}
+      />
+      {interactive &&
+        createPortal(
+          <div
+            ref={keysRef}
+            className="terminal-keys"
+            data-keyboard-open={keyboardOpen || undefined}
+            role="group"
+            aria-label="Terminal keyboard shortcuts"
+          >
+            <div className="terminal-key-row">
+              <div className="terminal-key-scroll">
+                <TerminalClipboard
+                  onImage={onImage}
+                  disabled={paused}
+                  onText={(text) => live.current?.term.paste(text)}
+                />
+                {[
+                  ['Esc', '\x1b', 'Escape'],
+                  ['Tab', '\t', 'Tab'],
+                  ['↑', '\x1b[A', 'Arrow up'],
+                  ['↓', '\x1b[B', 'Arrow down'],
+                  ['←', '\x1b[D', 'Arrow left'],
+                  ['→', '\x1b[C', 'Arrow right'],
+                ].map(([label, data, name]) => (
+                  <button
+                    key={name}
+                    type="button"
+                    aria-label={name}
+                    disabled={paused}
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => sendKey(data!)}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <>
+                  {[
+                    ['Ctrl+A', '\x01', 'Control A'],
+                    ['Ctrl+C', '\x03', 'Interrupt (Control C)'],
+                    ['Ctrl+D', '\x04', 'End input (Control D)'],
+                    ['Ctrl+Z', '\x1a', 'Suspend (Control Z)'],
+                    ['Ctrl+L', '\x0c', 'Clear screen (Control L)'],
+                    ['Ctrl+G', '\x07', 'Control G'],
+                    ['Shift+Tab', '\x1b[Z', 'Shift Tab'],
+                    ['Ins', '\x1b[2~', 'Insert'],
+                    ['Del', '\x1b[3~', 'Delete'],
+                    ['Home', '\x1b[H', 'Home'],
+                    ['End', '\x1b[F', 'End'],
+                    ['PgUp', '\x1b[5~', 'Page up'],
+                    ['PgDn', '\x1b[6~', 'Page down'],
+                    ...(extraKeys
+                      ? Array.from({ length: 12 }, (_, i) => [
+                          `F${i + 1}`,
+                          i < 4
+                            ? `\x1bO${'PQRS'[i]}`
+                            : `\x1b[${[15, 17, 18, 19, 20, 21, 23, 24][i - 4]}~`,
+                          `Function ${i + 1}`,
+                        ])
+                      : []),
+                  ].map(([label, data, name]) => (
+                    <button
+                      key={name}
+                      type="button"
+                      aria-label={name}
+                      disabled={paused}
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => sendKey(data!)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </>
+                <button
+                  type="button"
+                  aria-label="Function keys"
+                  aria-expanded={extraKeys}
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() => setExtraKeys((value) => !value)}
+                >
+                  F1–F12
+                </button>
+              </div>
+              <button
+                type="button"
+                aria-label="Hide keyboard"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => hostRef.current?.querySelector('textarea')?.blur()}
+              >
+                <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+                  <path
+                    d="m5 7.5 5 5 5-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </div>
   );
 }

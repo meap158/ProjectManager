@@ -11,11 +11,14 @@ vi.mock('../components/TerminalView', () => ({
   TerminalView: () => <textarea className="xterm-helper-textarea" aria-label="terminal input" />,
 }));
 
+vi.mock('../components/LimitsStrip', () => ({ LimitsStrip: () => null }));
+
 vi.mock('../api', () => ({
   api: {
     getWorkspace: vi.fn(),
     saveWorkspace: vi.fn(async (layout: WorkspaceLayout) => layout),
     listAllSessions: vi.fn(),
+    listAllRuns: vi.fn(async () => []),
     listProjects: vi.fn(async () => [{ id: 1, name: 'Proj' }]),
     listProviders: vi.fn(async () => []),
     sessionOutput: vi.fn(),
@@ -32,6 +35,9 @@ vi.mock('../api', () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  localStorage.clear();
 });
 
 const session = (id: number, name: string): AgentSession =>
@@ -65,6 +71,28 @@ const paneNames = () =>
   );
 
 describe('Agents workspace interactions', () => {
+  it('brings a selected mobile list terminal into view and lets it maximise and close', async () => {
+    localStorage.setItem('pm.workspace.view', 'list');
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    await renderWorkspace({ preset: '1', panes: [1], maximized: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Show Alpha' }));
+    await screen.findByRole('textbox', { name: 'terminal input' });
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' }));
+    expect(document.querySelector('.workspace-list.has-dock')).not.toBeNull();
+    fireEvent.click(screen.getByTitle('Maximise pane'));
+    expect(document.querySelector('.workspace-list.is-dock-max')).not.toBeNull();
+    fireEvent.click(screen.getByTitle('Remove from layout (keeps the session running)'));
+    expect(screen.queryByRole('textbox', { name: 'terminal input' })).toBeNull();
+    expect(document.querySelector('.workspace-list.has-dock')).toBeNull();
+    expect(api.stopSession).not.toHaveBeenCalled();
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
   it('shows the saved layout with one session per pane', async () => {
     await renderWorkspace({ preset: '2v', panes: [1, 2], maximized: null });
     expect(paneNames()).toEqual(['Alpha', 'Beta']);
@@ -72,12 +100,18 @@ describe('Agents workspace interactions', () => {
 
   it('Alt+2 focuses pane 2 and Alt+Enter maximises it', async () => {
     await renderWorkspace({ preset: '2v', panes: [1, 2], maximized: null });
-    fireEvent.keyDown(window, { key: '2', code: 'Digit2', altKey: true });
+    await screen.findByText('Beta');
     await waitFor(() =>
-      expect(document.activeElement?.closest('[data-pane]')?.getAttribute('data-pane')).toBe('1'),
+      expect(document.querySelector('[data-pane="1"] .xterm-helper-textarea')).not.toBeNull(),
+    );
+    fireEvent.keyDown(window, { key: '2', code: 'Digit2', altKey: true });
+    await waitFor(
+      () =>
+        expect(document.activeElement?.closest('[data-pane]')?.getAttribute('data-pane')).toBe('1'),
+      { timeout: 3000 },
     );
     fireEvent.keyDown(document.activeElement!, { key: 'Enter', code: 'Enter', altKey: true });
-    await waitFor(() => expect(paneNames()).toEqual(['Beta']));
+    await waitFor(() => expect(paneNames()).toEqual(['Beta']), { timeout: 3000 });
   });
 
   it('swaps panes by dragging a header and saves the new order', async () => {
@@ -127,3 +161,81 @@ describe('card link in a pane', () => {
     expect(api.stopSession).not.toHaveBeenCalled();
   });
 });
+
+it('bulk Stop applies only to sessions matching the search filter', async () => {
+  localStorage.setItem('pm.workspace.view', 'list');
+  vi.mocked(api.stopSession).mockImplementation(async (id) => ({
+    ...session(id, id === 1 ? 'Alpha' : 'Beta'),
+    status: 'killed',
+  }));
+  await renderWorkspace({ preset: '1', panes: [null], maximized: null });
+  fireEvent.change(screen.getByLabelText('Search agent work by name or card'), {
+    target: { value: 'Alpha' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for 1 filtered sessions' }));
+  // jsdom does not perform the browser's native popover invoker action.
+  fireEvent.click(screen.getByRole('button', { name: 'Stop running (1)', hidden: true }));
+  await waitFor(() => expect(api.stopSession).toHaveBeenCalledWith(1));
+  expect(api.stopSession).toHaveBeenCalledTimes(1);
+});
+
+it('keeps the open terminal mounted when an Idle session becomes Running', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  localStorage.setItem('pm.workspace.view', 'list');
+  localStorage.setItem('pm.workspace.listFilters', JSON.stringify({ status: 'idle' }));
+  const idle = { ...session(1, 'Alpha'), tailState: 'idle' as const };
+  vi.mocked(api.getWorkspace).mockResolvedValue({ preset: '1', panes: [null], maximized: null });
+  vi.mocked(api.listAllSessions).mockResolvedValue([idle]);
+  render(
+    <MemoryRouter>
+      <WorkspacePage />
+    </MemoryRouter>,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Show Alpha' }));
+  const terminal = await screen.findByRole('textbox', { name: 'terminal input' });
+  terminal.focus();
+  fireEvent.change(terminal, { target: { value: 'Continue working' } });
+  vi.mocked(api.listAllSessions).mockResolvedValue([
+    { ...idle, tailState: 'running', lastOutputAt: new Date().toISOString() },
+  ]);
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Show Alpha' })).toBeNull(), {
+    timeout: 6000,
+  });
+  expect(screen.getByRole('textbox', { name: 'terminal input' })).toBe(terminal);
+  expect(document.activeElement).toBe(terminal);
+  expect(document.querySelector('.workspace-list.has-dock')).not.toBeNull();
+  expect(api.stopSession).not.toHaveBeenCalled();
+}, 10000);
+
+it.each([false, true])(
+  'preserves the open terminal across all status tabs and filters (mobile=%s)',
+  async (mobile) => {
+    vi.stubGlobal('matchMedia', () => ({ matches: mobile }));
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    localStorage.setItem('pm.workspace.view', 'list');
+    await renderWorkspace({ preset: '1', panes: [null], maximized: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Show Alpha' }));
+    const terminal = await screen.findByRole('textbox', { name: 'terminal input' });
+    fireEvent.change(terminal, { target: { value: 'Keep my draft' } });
+    for (const status of ['Needs attention', 'Running', 'Idle', 'Ended', 'All']) {
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${status}\\s*\\d+$`) }));
+      expect(screen.getByRole('textbox', { name: 'terminal input' })).toBe(terminal);
+      expect((terminal as HTMLTextAreaElement).value).toBe('Keep my draft');
+    }
+    fireEvent.change(screen.getByLabelText('Search agent work by name or card'), {
+      target: { value: 'No matching session' },
+    });
+    expect(screen.queryByRole('button', { name: 'Show Alpha' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'terminal input' })).toBe(terminal);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Kind' }));
+    fireEvent.click(screen.getByRole('button', { name: /One-shot runs/ }));
+    expect(screen.queryByRole('button', { name: 'Show Alpha' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'terminal input' })).toBe(terminal);
+    expect(api.stopSession).not.toHaveBeenCalled();
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  },
+);

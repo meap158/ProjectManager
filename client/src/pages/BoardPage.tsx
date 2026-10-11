@@ -41,16 +41,24 @@ export function BoardPage() {
   const [params, setParams] = useSearchParams();
   const show = parseShow(params.get('show'));
   const projectFilter = Number(params.get('project')) || null;
+  const cardParam = Number(params.get('card')) || null;
   const [cards, setCards] = useState<CardWithProject[] | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [openCard, setOpenCard] = useState<CardWithProject | null>(null);
+  const [explicitCard, setExplicitCard] = useState<CardWithProject | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropOn, setDropOn] = useState<CardStatus | null>(null);
   // Adding: the column whose + was clicked (null = closed).
   const [addingTo, setAddingTo] = useState<CardStatus | null>(null);
   const [view, setView] = useBoardView();
   const stuckTop = useStuckTop();
+
+  const openCard =
+    explicitCard ?? (cardParam && cards ? (cards.find((c) => c.id === cardParam) ?? null) : null);
+  const setOpenCard = (c: CardWithProject | null) => {
+    setExplicitCard(c);
+    if (!c && cardParam) setParam('card', null);
+  };
 
   useEffect(() => {
     let active = true;
@@ -137,11 +145,12 @@ export function BoardPage() {
           <div className="actions">
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-primary board-new"
               onClick={() => setAddingTo(columns[0]!)}
               title="Add a card to one of your projects"
             >
-              ＋ New card
+              <span className="board-new-desktop">＋ New card</span>
+              <span className="board-new-mobile">＋ New</span>
             </button>
             <Dropdown
               label="Project"
@@ -313,14 +322,19 @@ export function BoardPage() {
       <CardDialog
         card={openCard}
         projectId={openCard?.projectId ?? 0}
-        onClose={() => setOpenCard(null)}
+        onClose={() => {
+          setOpenCard(null);
+          setParam('card', null);
+        }}
         onSaved={(saved) => {
           replace(saved);
           setOpenCard(null);
+          setParam('card', null);
         }}
         onDeleted={(id) => {
           setCards((prev) => prev?.filter((c) => c.id !== id) ?? prev);
           setOpenCard(null);
+          setParam('card', null);
         }}
       />
     </main>

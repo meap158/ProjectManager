@@ -33,6 +33,7 @@ export function Dropdown<T extends string | number>({
   onChange,
   id,
   disabled,
+  multiple,
 }: {
   label: string;
   value: T;
@@ -41,6 +42,7 @@ export function Dropdown<T extends string | number>({
   /** Id for the trigger, so a visible `<label htmlFor>` can name it. */
   id?: string;
   disabled?: boolean;
+  multiple?: { values: T[]; allValue: T; onChange: (values: T[]) => void };
 }) {
   const [open, setOpen] = useState(false);
   // Opens upward when the menu would run past the bottom of its dialog body (or the window).
@@ -51,7 +53,20 @@ export function Dropdown<T extends string | number>({
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const listRef = useRef<HTMLUListElement>(null);
   const listId = useId();
+  const isSelected = (candidate: T) =>
+    multiple
+      ? candidate === multiple.allValue
+        ? multiple.values.length === 0
+        : multiple.values.includes(candidate)
+      : candidate === value;
   const selected = options.find((o) => o.value === value) ?? options[0];
+
+  const selectionLabel =
+    multiple && multiple.values.length > 1
+      ? `${label} (${multiple.values.length})`
+      : multiple && multiple.values.length === 1
+        ? (options.find((option) => option.value === multiple.values[0])?.label ?? `${label} (1)`)
+        : selected?.label;
 
   function enabledIndexes(): number[] {
     return options.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0);
@@ -60,7 +75,7 @@ export function Dropdown<T extends string | number>({
   function openMenu(atSelected: boolean) {
     const enabled = enabledIndexes();
     if (enabled.length === 0) return;
-    const selectedIndex = options.findIndex((o) => o.value === value && !o.disabled);
+    const selectedIndex = options.findIndex((o) => isSelected(o.value) && !o.disabled);
     setFocusIndex(atSelected && selectedIndex >= 0 ? selectedIndex : enabled[0]!);
     const trigger = triggerRef.current?.getBoundingClientRect();
     if (trigger) {
@@ -81,6 +96,16 @@ export function Dropdown<T extends string | number>({
   function choose(index: number) {
     const option = options[index];
     if (!option || option.disabled) return;
+    if (multiple) {
+      multiple.onChange(
+        option.value === multiple.allValue
+          ? []
+          : multiple.values.includes(option.value)
+            ? multiple.values.filter((v) => v !== option.value)
+            : [...multiple.values, option.value],
+      );
+      return;
+    }
     onChange(option.value);
     closeMenu(true);
   }
@@ -152,8 +177,18 @@ export function Dropdown<T extends string | number>({
         className={`dropdown-trigger${open ? ' is-open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listId : undefined}
         aria-label={label}
-        title={selected?.title ?? selected?.label ?? label}
+        title={
+          multiple
+            ? multiple.values.length
+              ? options
+                  .filter((o) => multiple.values.includes(o.value))
+                  .map((o) => o.label)
+                  .join(', ')
+              : selectionLabel
+            : (selected?.title ?? selected?.label ?? label)
+        }
         onClick={() => (open ? closeMenu(false) : openMenu(true))}
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
@@ -163,7 +198,7 @@ export function Dropdown<T extends string | number>({
         }}
       >
         {selected?.icon && <span className="dropdown-icon">{selected.icon}</span>}
-        <span className="truncate">{selected?.label ?? '—'}</span>
+        <span className="truncate">{selectionLabel ?? '—'}</span>
         {/* The closed picker says what the open list says about the choice (e.g. its CLI). */}
         {selected?.hint && <span className="dropdown-trigger-hint truncate">{selected.hint}</span>}
         <span className="dropdown-caret" aria-hidden="true">
@@ -175,6 +210,7 @@ export function Dropdown<T extends string | number>({
           ref={listRef}
           className={`dropdown-list${dropUp ? ' drop-up' : ''}`}
           role="listbox"
+          aria-multiselectable={multiple ? true : undefined}
           aria-label={label}
           id={listId}
         >
@@ -182,9 +218,9 @@ export function Dropdown<T extends string | number>({
             <li
               key={String(option.value)}
               role="option"
-              aria-selected={option.value === value}
+              aria-selected={isSelected(option.value)}
               aria-disabled={option.disabled || undefined}
-              className={option.value === value ? 'selected' : undefined}
+              className={isSelected(option.value) ? 'selected' : undefined}
             >
               <button
                 ref={(el) => {
@@ -220,7 +256,7 @@ export function Dropdown<T extends string | number>({
                 }}
               >
                 <span className="dropdown-check" aria-hidden="true">
-                  {option.value === value ? '✓' : ''}
+                  {isSelected(option.value) ? '✓' : ''}
                 </span>
                 {option.icon && <span className="dropdown-icon">{option.icon}</span>}
                 <span className="dropdown-text">

@@ -1,4 +1,9 @@
 import type {
+  OrchestratorConfig,
+  OrchestratorPlanDecision,
+  OrchestratorState,
+} from '../../shared/orchestrator';
+import type {
   AgentAutonomy,
   AgentInstall,
   AgentOutput,
@@ -41,6 +46,48 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
+  orchestrators: () => request<OrchestratorState>('GET', '/orchestrators'),
+  previewOrchestrator: (id: string) =>
+    request<{
+      at: string;
+      enabled: boolean;
+      strategy: string;
+      decisions: OrchestratorPlanDecision[];
+    }>('GET', `/orchestrators/${encodeURIComponent(id)}/preview`),
+  saveOrchestrator: (config: Omit<OrchestratorConfig, 'id'> & { id?: string }) =>
+    request<OrchestratorConfig>('POST', '/orchestrators', config),
+  tickOrchestrators: (id?: string) =>
+    request<OrchestratorState>(
+      'POST',
+      id ? `/orchestrators/${encodeURIComponent(id)}/tick` : '/orchestrators/tick',
+    ),
+  clearOrchestratorEvents: () => request<OrchestratorState>('DELETE', '/orchestrators/events'),
+  deleteOrchestrator: (id: string) => request<OrchestratorState>('DELETE', `/orchestrators/${id}`),
+  pruneOrchestratorAttention: (id?: string, projectId?: number) =>
+    request<{ ok: boolean; state: OrchestratorState }>(
+      'POST',
+      id
+        ? `/orchestrators/${encodeURIComponent(id)}/prune-attention`
+        : '/orchestrators/prune-attention',
+      projectId ? { projectId } : undefined,
+    ),
+  resolveOrchestratorAttention: (id?: string, projectId?: number) =>
+    request<{
+      ok: boolean;
+      state: OrchestratorState;
+      result: { resolvedCards: number[]; dispatchedRuns: number[] };
+    }>(
+      'POST',
+      id
+        ? `/orchestrators/${encodeURIComponent(id)}/resolve-attention`
+        : '/orchestrators/resolve-attention',
+      projectId ? { projectId } : undefined,
+    ),
+  dismissOrchestratorAttention: (projectId: number, kinds?: string[]) =>
+    request<{ ok: boolean; state: OrchestratorState }>('POST', '/orchestrators/dismiss-attention', {
+      projectId,
+      kinds,
+    }),
   agentLimits: () => request<ProviderLimits[]>('GET', '/agent-limits'),
   pullRequests: (id: number) => request<PullRequestsResult>('GET', `/projects/${id}/pull-requests`),
   listProjects: () => request<ProjectSummary[]>('GET', '/projects'),
@@ -161,6 +208,9 @@ export const api = {
     `/api/agent-sessions/${id}/stream?after=${after}`,
   startSession: (id: number) => request<AgentSession>('POST', `/agent-sessions/${id}/start`),
   stopSession: (id: number) => request<AgentSession>('POST', `/agent-sessions/${id}/stop`),
+  restartSession: (id: number) => request<AgentSession>('POST', `/agent-sessions/${id}/restart`),
+  setAutoContinue: (id: number, enabled: boolean) =>
+    request<AgentSession>('POST', `/agent-sessions/${id}/auto-continue`, { enabled }),
   deleteSession: (id: number) => request<void>('DELETE', `/agent-sessions/${id}`),
 
   /** Newest runs across every project. */

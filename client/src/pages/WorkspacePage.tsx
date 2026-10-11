@@ -36,19 +36,31 @@ import {
 import { readLastAgent, saveLastAgent } from '../lastAgent';
 import { isTerminalReport } from '../../../shared/terminalReports';
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
+import { serialPoll } from '../lib/serialPoll';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
+import { BatchSessionMessage } from '../components/BatchSessionMessage';
 import { SessionToggle } from '../components/SessionToggle';
 import { RunCard } from '../components/RunCard';
 import { LimitsStrip } from '../components/LimitsStrip';
 import { SessionImageButton } from '../components/SessionImageButton';
+import { SessionProgress, SessionRestartStatus } from '../components/SessionProgress';
 import { sendImageToSession } from '../sessionImages';
 
-// xterm is heavy: it loads only when a pane actually shows a terminal.
-const TerminalView = lazy(() =>
-  import('../components/TerminalView').then((m) => ({ default: m.TerminalView })),
-);
+// Preload TerminalView chunk as soon as workspace module loads so it is ready when panes render.
+const terminalViewPromise = import('../components/TerminalView');
+const TerminalView = lazy(() => terminalViewPromise.then((m) => ({ default: m.TerminalView })));
+
+// Memory cache: returning to /workspace renders previous layout and sessions immediately
+// without showing an empty skeleton banner while waiting for network fetches.
+let cachedWorkspaceLayout: WorkspaceLayout | null = null;
+let cachedSessions: AgentSession[] | null = null;
+
+export function resetWorkspaceCache(): void {
+  cachedWorkspaceLayout = null;
+  cachedSessions = null;
+}
 
 const SESSIONS_POLL_MS = 4000;
 const VIEW_KEY = 'pm.workspace.view';
@@ -99,11 +111,19 @@ export function placeSession(layout: WorkspaceLayout, sessionId: number): Worksp
  */
 export function WorkspacePage() {
   const [params, setParams] = useSearchParams();
-  const [layout, setLayout] = useState<WorkspaceLayout | null>(null);
-  const [sessions, setSessions] = useState<AgentSession[] | null>(null);
+  const [layout, setLayout] = useState<WorkspaceLayout | null>(() => cachedWorkspaceLayout);
+  const [sessions, setSessions] = useState<AgentSession[] | null>(() => cachedSessions);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [providers, setProviders] = useState<AgentProviderStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    cachedWorkspaceLayout = layout;
+  }, [layout]);
+
+  useEffect(() => {
+    cachedSessions = sessions;
+  }, [sessions]);
   // List view: every session and run across projects, one row each (same rows as a project's
   // Agents tab). Runs and token counts load only while the list is shown.
   const [view, setViewState] = useState<View>(readView);
@@ -111,6 +131,8 @@ export function WorkspacePage() {
   const [usage, setUsage] = useState<Record<number, AgentTokenUsage | null>>({});
   const [selectedWork, setSelectedWork] = useState<WorkKey | null>(null);
   const [now, setNow] = useState(0);
+  const [mobileNewOpen, setMobileNewOpen] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const setView = (next: View) => {
     setViewState(next);
     try {
@@ -125,7 +147,7 @@ export function WorkspacePage() {
     [],
   );
 
-  const loadedLayout = useRef<WorkspaceLayout | null>(null);
+  const loadedLayout = useRef<WorkspaceLayout | null>(cachedWorkspaceLayout);
   useEffect(() => {
     // Ignore responses that land after cleanup (StrictMode's double mount, fast navigation):
     // a late layout response would overwrite changes made since, such as an opened session.
@@ -146,11 +168,21 @@ export function WorkspacePage() {
       (p) => active && setProviders(p),
       () => undefined,
     );
-    loadSessions();
-    const timer = setInterval(loadSessions, SESSIONS_POLL_MS);
+    const stop = serialPoll(
+      () =>
+        api.listAllSessions().then(
+          (s) => {
+            if (active) setSessions(s);
+          },
+          (e: Error) => {
+            if (active) setError(e.message);
+          },
+        ),
+      SESSIONS_POLL_MS,
+    );
     return () => {
       active = false;
-      clearInterval(timer);
+      stop();
     };
   }, [loadSessions]);
 
@@ -158,7 +190,7 @@ export function WorkspacePage() {
     if (view !== 'list') return;
     let active = true;
     const load = () => {
-      api.listAllRuns().then(
+      return api.listAllRuns().then(
         (r) => {
           if (!active) return;
           setRuns(r);
@@ -167,11 +199,10 @@ export function WorkspacePage() {
         (e: Error) => active && setError(e.message),
       );
     };
-    load();
-    const timer = setInterval(load, SESSIONS_POLL_MS);
+    const stop = serialPoll(load, SESSIONS_POLL_MS);
     return () => {
       active = false;
-      clearInterval(timer);
+      stop();
     };
   }, [view]);
   const claudeIds = (sessions ?? [])
@@ -291,9 +322,14 @@ export function WorkspacePage() {
       : layout.panes.map((_, i) => i);
 
   return (
-    <main className="workspace">
+    <main
+      className={`workspace${mobileNewOpen ? ' mobile-new-open' : ''}${mobileToolsOpen ? ' mobile-tools-open' : ''}`}
+    >
       <div className="workspace-bar">
         <h1>Agents</h1>
+        <Link className="btn btn-sm workspace-orchestrator-link" to="/orchestrators">
+          Orchestrators
+        </Link>
         <div className="bar-group">
           <span className="bar-label" id="ws-view-label">
             View
@@ -318,6 +354,25 @@ export function WorkspacePage() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="workspace-mobile-actions">
+          <button
+            type="button"
+            className="btn btn-sm"
+            aria-expanded={mobileNewOpen}
+            onClick={() => setMobileNewOpen(!mobileNewOpen)}
+          >
+            + New
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            aria-label="Workspace tools"
+            aria-expanded={mobileToolsOpen}
+            onClick={() => setMobileToolsOpen(!mobileToolsOpen)}
+          >
+            ⋯
+          </button>
         </div>
         {view === 'panes' && (
           <>
@@ -387,6 +442,7 @@ export function WorkspacePage() {
           projects={projects}
           providers={providers}
           onCreated={(s) => {
+            setMobileNewOpen(false);
             setSessions((prev) => [...(prev ?? []), s]);
             update(placeSession(layout, s.id));
           }}
@@ -416,6 +472,7 @@ export function WorkspacePage() {
             <Pane
               key={session.id}
               index={0}
+              inList
               fontSize={fontSize}
               onDragStart={() => undefined}
               onDragEnd={() => undefined}
@@ -440,6 +497,12 @@ export function WorkspacePage() {
           )}
           onShowInPane={(id) => {
             update(placeSession(layout, id));
+            setView('panes');
+          }}
+          onShowAllInPanes={(ids) => {
+            let next: WorkspaceLayout = { ...layout, preset: '1', panes: [null], maximized: null };
+            for (const id of ids.slice(0, 4)) next = placeSession(next, id);
+            update(next);
             setView('panes');
           }}
           onSessionChanged={(next) =>
@@ -527,6 +590,7 @@ interface DropTargetProps {
 
 function Pane({
   index,
+  inList,
   fontSize,
   onDragStart,
   onDragEnd,
@@ -543,6 +607,7 @@ function Pane({
   onError,
 }: DropTargetProps & {
   index: number;
+  inList?: boolean;
   fontSize: number;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -569,6 +634,8 @@ function Pane({
   };
   const [line, setLine] = useState('');
   const [renaming, setRenaming] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [cardNote, setCardNote] = useState<string | null>(null);
   // Pastes into this pane's terminal like the keyboard would (image paths, PM-54).
   const pasteRef = useRef<((text: string) => void) | null>(null);
@@ -615,9 +682,11 @@ function Pane({
         }}
         onDragEnd={onDragEnd}
       >
-        <span className="pane-index faint num" aria-hidden="true">
-          {index + 1}
-        </span>
+        {!inList && (
+          <span className="pane-index faint num" aria-hidden="true">
+            {index + 1}
+          </span>
+        )}
         <span
           className={`status-dot${running ? ` is-${sessionActivity(s)}` : ''}`}
           style={{
@@ -631,113 +700,196 @@ function Pane({
           aria-label={running ? ACTIVITY_LABEL[sessionActivity(s)] : `Ended (${s.status})`}
           title={running ? ACTIVITY_LABEL[sessionActivity(s)] : `Ended (${s.status})`}
         />
-        <InlineRename
-          value={s.name}
-          label="session"
-          onEditingChange={setRenaming}
-          onSave={(name) =>
-            api.patchSession(s.id, { name }).then(onChanged, (e: Error) => onError(e.message))
-          }
-        />
-        <span className="pane-meta faint">
-          {/* Skipped when the session is simply named after its agent ("Shell"). */}
-          {agentName !== s.name && (
-            <>
-              <span className="pane-agent" title="Agent running in this session">
-                {agentName}
-              </span>
-              <span aria-hidden="true">·</span>
-            </>
-          )}
-          <Link to={`/projects/${s.projectId}?tab=agents`} className="truncate">
-            {projectName}
-          </Link>
-          {s.cardKey && (
-            <>
-              <span aria-hidden="true">·</span>
-              <Link to={`/projects/${s.projectId}?tab=board`} className="mono">
-                {s.cardKey}
-              </Link>
-              <button
-                type="button"
-                className="icon-btn icon-btn-sm"
-                title={`Unlink ${s.cardKey} from this session (the session keeps running)`}
-                aria-label={`Unlink ${s.cardKey}`}
-                onClick={() =>
-                  api.attachCardToSession(s.id, null).then(
-                    (r) => onChanged(r.session),
-                    (e: Error) => onError(e.message),
-                  )
-                }
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-                  <path
-                    d="M2 2l6 6M8 2l-6 6"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
-            </>
-          )}
-        </span>
-        <span style={{ flex: 1 }} />
-        {cardNote && (
-          <span className="badge badge-live" role="status">
-            {cardNote}
+        <div className="pane-identity">
+          <InlineRename
+            value={s.name}
+            label="session"
+            onEditingChange={setRenaming}
+            onSave={(name) =>
+              api.patchSession(s.id, { name }).then(onChanged, (e: Error) => onError(e.message))
+            }
+          />
+          <span className="pane-meta faint">
+            {/* Skipped when the session is simply named after its agent ("Shell"). */}
+            {agentName !== s.name && (
+              <>
+                <span className="pane-agent" title="Agent running in this session">
+                  {agentName}
+                </span>
+                <span aria-hidden="true">·</span>
+              </>
+            )}
+            <Link to={`/projects/${s.projectId}?tab=agents`} className="truncate">
+              {projectName}
+            </Link>
+            {s.cardKey && (
+              <>
+                <span aria-hidden="true">·</span>
+                <Link to={`/projects/${s.projectId}?tab=board`} className="mono">
+                  {s.cardKey}
+                </Link>
+                <button
+                  type="button"
+                  className="icon-btn icon-btn-sm"
+                  title={`Unlink ${s.cardKey} from this session (the session keeps running)`}
+                  aria-label={`Unlink ${s.cardKey}`}
+                  onClick={() =>
+                    api.attachCardToSession(s.id, null).then(
+                      (r) => onChanged(r.session),
+                      (e: Error) => onError(e.message),
+                    )
+                  }
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                    <path
+                      d="M2 2l6 6M8 2l-6 6"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </>
+            )}
           </span>
-        )}
-        {s.cardId && !cardNote && (
+        </div>
+        <SessionRestartStatus session={s} />
+        <span style={{ flex: 1 }} />
+        <div className={`pane-controls${mobileActionsOpen ? ' is-open' : ''}`}>
           <button
-            className="icon-btn icon-btn-text"
-            title={`Move ${s.cardKey} to Review`}
-            onClick={sendCardToReview}
+            type="button"
+            className="icon-btn pane-controls-toggle"
+            aria-label="Session actions"
+            aria-expanded={mobileActionsOpen}
+            onClick={() => setMobileActionsOpen(!mobileActionsOpen)}
           >
-            → Review
+            ⋯
           </button>
-        )}
-        {running && s.terminal === 'pty' && (
-          <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
-        )}
-        {running ? (
-          <button
-            className="icon-btn"
-            title="Stop session"
-            onClick={() => act(() => api.stopSession(s.id))}
-          >
-            ■
-          </button>
-        ) : (
-          <button
-            className="icon-btn"
-            title="Start session"
-            onClick={() => act(() => api.startSession(s.id))}
-          >
-            ▶
-          </button>
-        )}
+          <div className="pane-controls-buttons">
+            {cardNote && (
+              <span className="badge badge-live" role="status">
+                {cardNote}
+              </span>
+            )}
+            {s.cardId && !cardNote && (
+              <button
+                className="icon-btn icon-btn-text"
+                title={`Move ${s.cardKey} to Review`}
+                onClick={sendCardToReview}
+              >
+                → Review
+              </button>
+            )}
+            {!inList && s.terminal === 'pty' && <SessionProgress session={s} />}
+            {running && s.terminal === 'pty' && (
+              <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
+            )}
+            {running ? (
+              <>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Restart ${s.name}`}
+                  title="Restart session (stop, then start)"
+                  disabled={restarting || (!!s.restartProgress && s.restartProgress !== 'failed')}
+                  onClick={async () => {
+                    setRestarting(true);
+                    try {
+                      await act(async () => {
+                        return api.restartSession(s.id);
+                      });
+                    } finally {
+                      setRestarting(false);
+                    }
+                  }}
+                >
+                  {restarting ? (
+                    <span className="spinner" aria-hidden="true" />
+                  ) : (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M20 7v5h-5M20 12a8 8 0 1 0-2 6M20 7l-2 2" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  className="icon-btn"
+                  title="Stop session"
+                  disabled={restarting}
+                  onClick={() => act(() => api.stopSession(s.id))}
+                >
+                  ■
+                </button>
+              </>
+            ) : (
+              <button
+                className="icon-btn"
+                title="Start session"
+                onClick={() => act(() => api.startSession(s.id))}
+              >
+                ▶
+              </button>
+            )}
+          </div>
+        </div>
         <button
           className="icon-btn"
           title={maximized ? 'Restore layout' : 'Maximise pane'}
           aria-pressed={maximized}
           onClick={onToggleMaximize}
         >
-          {maximized ? '⤡' : '⤢'}
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d={
+                maximized
+                  ? 'M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5'
+                  : 'M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5'
+              }
+            />
+          </svg>
         </button>
         <button
           className="icon-btn"
           title="Remove from layout (keeps the session running)"
           onClick={onClose}
         >
-          ✕
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
         </button>
       </header>
       <div className="pane-body">
         <Suspense fallback={<div className="terminal skeleton" style={{ height: '100%' }} />}>
           <TerminalView
-            key={`${s.id}-${s.terminal}`}
+            key={`${s.id}-${s.terminal}-${s.startedAt}`}
             historyBytes={s.logBytes}
+            stopped={s.terminal === 'pty' && !running}
             height="100%"
             fontSize={fontSize}
             fetchOutput={(after) => api.sessionOutput(s.id, after)}
@@ -1004,6 +1156,7 @@ function WorkList({
   onSelect,
   renderSession,
   onShowInPane,
+  onShowAllInPanes,
   onSessionChanged,
   onSessionDeleted,
   onRunChanged,
@@ -1025,6 +1178,7 @@ function WorkList({
     toggleMaximize: () => void,
   ) => ReactNode;
   onShowInPane: (sessionId: number) => void;
+  onShowAllInPanes: (sessionIds: number[]) => void;
   onSessionChanged: (s: AgentSession) => void;
   onSessionDeleted: (id: number) => void;
   onRunChanged: (r: AgentRun) => void;
@@ -1035,7 +1189,52 @@ function WorkList({
   const dockPanel = useRef<HTMLDivElement>(null);
   const [filters, setFilters] = useWorkFilters();
   const [dockMax, setDockMax] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const bulkButton = useRef<HTMLButtonElement>(null);
+  const bulkMenu = useRef<HTMLDivElement>(null);
+  const positionBulkMenu = useCallback(() => {
+    const menu = bulkMenu.current;
+    const button = bulkButton.current;
+    if (!menu || !button) return;
+    const rect = button.getBoundingClientRect();
+    const height = menu.getBoundingClientRect().height || 220;
+    const top =
+      rect.bottom + 6 + height <= window.innerHeight - 8
+        ? rect.bottom + 6
+        : Math.max(8, rect.top - height - 6);
+    menu.style.setProperty('--bulk-top', `${top}px`);
+    menu.style.setProperty('--bulk-right', `${Math.max(8, window.innerWidth - rect.right)}px`);
+  }, []);
+
+  useEffect(() => {
+    const onReposition = () => {
+      if (bulkMenu.current?.matches?.(':popover-open')) {
+        positionBulkMenu();
+      }
+    };
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+    return () => {
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [positionBulkMenu]);
   const container = useRef<HTMLElement>(null);
+  const dockReady = !!sessions && !!runs;
+  useEffect(() => {
+    if (
+      !dockReady ||
+      !selected?.startsWith('session:') ||
+      !window.matchMedia('(max-width: 768px)').matches
+    ) {
+      return;
+    }
+    // Bring the terminal into view after the mobile stack has laid out.
+    const frame = requestAnimationFrame(() => {
+      dockPanel.current?.scrollIntoView({ block: 'nearest' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selected, dockReady]);
   const resizeTo = (height: number) => {
     const total = container.current?.getBoundingClientRect().height ?? 800;
     const next = Math.round(Math.min(Math.max(height, DOCK_MIN), Math.max(DOCK_MIN, total - 140)));
@@ -1060,6 +1259,33 @@ function WorkList({
   if (!sessions || !runs) return <div className="skeleton" style={{ flex: 1 }} />;
   const allItems = mergeWork(sessions, runs);
   const items = applyWorkFilters(allItems, filters, now);
+  const visibleSessions = items.flatMap((w) => (w.kind === 'session' ? [w.item] : []));
+  const liveSessions = visibleSessions.filter((s) => s.status === 'running');
+  const bulk = async (targets: AgentSession[], action: 'stop' | 'restart' | 'delete') => {
+    if (bulkBusy) return;
+    setBulkBusy(true);
+    const failures: string[] = [];
+    try {
+      for (const s of targets) {
+        try {
+          if (action === 'delete') {
+            await api.deleteSession(s.id);
+            onSessionDeleted(s.id);
+          } else {
+            onSessionChanged(
+              await (action === 'restart' ? api.restartSession(s.id) : api.stopSession(s.id)),
+            );
+          }
+        } catch (err) {
+          failures.push(`${s.name}: ${(err as Error).message}`);
+        }
+      }
+      if (failures.length) onError(failures.join('; '));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+  // Filters affect the list, not the open terminal: typing can change Idle to Running.
   const run = runs.find((r) => `run:${r.id}` === selected) ?? null;
   const session = sessions.find((x) => `session:${x.id}` === selected) ?? null;
   const change = (fn: () => Promise<AgentSession>) =>
@@ -1083,6 +1309,13 @@ function WorkList({
           session={s}
           onStart={() => change(() => api.startSession(s.id))}
           onStop={() => change(() => api.stopSession(s.id))}
+          onRestart={async () => {
+            try {
+              onSessionChanged(await api.restartSession(s.id));
+            } catch (err) {
+              onError((err as Error).message);
+            }
+          }}
         />
         <ConfirmDelete
           label={`Delete session "${s.name}"`}
@@ -1102,12 +1335,75 @@ function WorkList({
   return (
     <section
       ref={container}
-      className={`panel workspace-list${dockMax && session ? ' is-dock-max' : ''}`}
+      className={`panel workspace-list${session || run ? ' has-dock' : ''}${dockMax && session ? ' is-dock-max' : ''}`}
       aria-label="All agent work"
     >
       {/* No title row: the page is already "Agents". Filters and the count share one row, so the
           list and its terminal get the height (PM-50). */}
       <div className="work-list-top">
+        {visibleSessions.length > 0 && (
+          <div className="work-bulk">
+            <button
+              type="button"
+              className="btn btn-sm"
+              popoverTarget="workspace-bulk-actions"
+              popoverTargetAction="toggle"
+              ref={bulkButton}
+              onClick={positionBulkMenu}
+              aria-label={`Actions for ${visibleSessions.length} filtered sessions`}
+            >
+              {bulkBusy ? (
+                'Working…'
+              ) : (
+                <>
+                  Actions<span className="phone-hide"> ({visibleSessions.length})</span>
+                </>
+              )}
+            </button>
+            <div
+              ref={bulkMenu}
+              id="workspace-bulk-actions"
+              popover="auto"
+              className="work-bulk-menu"
+              onToggle={positionBulkMenu}
+            >
+              <span className="faint">
+                {visibleSessions.length} sessions matching current filters
+              </span>
+              <button
+                className="btn btn-sm"
+                disabled={bulkBusy}
+                onClick={() => onShowAllInPanes(visibleSessions.map((s) => s.id))}
+              >
+                Show in panes ({visibleSessions.length > 4 ? 'first 4' : visibleSessions.length})
+              </button>
+              <BatchSessionMessage sessions={visibleSessions} />
+              <button
+                className="btn btn-sm"
+                disabled={bulkBusy || !liveSessions.length}
+                onClick={() => void bulk(liveSessions, 'restart')}
+              >
+                Restart running ({liveSessions.length})
+              </button>
+              <button
+                className="btn btn-sm"
+                disabled={bulkBusy || !liveSessions.length}
+                onClick={() => void bulk(liveSessions, 'stop')}
+              >
+                Stop running ({liveSessions.length})
+              </button>
+              {!bulkBusy && (
+                <ConfirmDelete
+                  label="Delete visible sessions"
+                  text={`Delete (${visibleSessions.length})`}
+                  heading={`Delete ${visibleSessions.length} filtered sessions?`}
+                  message="Stops these sessions and permanently deletes their logs. Only sessions matching the current filters are affected."
+                  onConfirm={() => bulk(visibleSessions, 'delete')}
+                />
+              )}
+            </div>
+          </div>
+        )}
         {allItems.length > 0 && (
           <WorkFilters
             items={allItems}

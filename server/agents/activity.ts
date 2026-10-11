@@ -17,6 +17,10 @@ const PROMPT_PATTERNS = [
   /ask\s+\S+\s+to\s+do\s+anything/gi,
   // Claude Code: a bare ❯ prompt as the last thing on a line.
   /❯[ \t]*$/gm,
+  // Antigravity & Grok: bare > prompt (alone on a line or bounded by box borders │)
+  /^[ \t│]*>[ \t│]*$/gm,
+  // Antigravity input hint below the prompt line
+  /esc\s*to\s*cancel/gi,
 ];
 
 /** The CLI is working on a turn right now. */

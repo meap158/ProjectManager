@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 /**
- * A name you can click to rename in place: Enter or leaving the field saves, Escape cancels.
+ * A separate pencil action renames the name in place: Enter or leaving the field saves, Escape cancels.
  * `onEditingChange` lets a draggable parent turn dragging off while the text box is open.
  */
 export function InlineRename({
@@ -41,6 +41,8 @@ export function InlineRename({
         maxLength={80}
         aria-label={`${label[0]!.toUpperCase()}${label.slice(1)} name`}
         onChange={(e) => setDraft(e.target.value)}
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
         onBlur={save}
         onDoubleClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
@@ -54,17 +56,35 @@ export function InlineRename({
     );
   }
   return (
-    <button
-      type="button"
-      className={`inline-rename truncate ${className ?? ''}`}
-      title={`Rename ${label}`}
-      onClick={() => {
-        setDraft(value);
-        setMode(true);
-      }}
-      onDoubleClick={(e) => e.stopPropagation()}
-    >
-      {value}
-    </button>
+    <span className={`inline-rename ${className ?? ''}`}>
+      <span className="truncate" title={value}>
+        {value}
+      </span>
+      <button
+        type="button"
+        className="inline-rename-action"
+        aria-label={`Rename ${label} ${value}`}
+        title={`Rename ${label}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          setDraft(value);
+          setMode(true);
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
+        >
+          <path d="m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5" />
+        </svg>
+      </button>
+    </span>
   );
 }

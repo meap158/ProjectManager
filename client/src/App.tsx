@@ -1,19 +1,32 @@
+import { lazy, Suspense } from 'react';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
 import { MobileTabBar } from './components/MobileTabBar';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ThemeSwitch } from './components/ThemeSwitch';
 import { BoardIcon, GridIcon, SettingsIcon, TerminalIcon } from './components/icons';
 import { RememberLastPage } from './lastPage';
-import { BoardPage } from './pages/BoardPage';
-import { ProjectPage } from './pages/ProjectPage';
-import { ProjectsPage } from './pages/ProjectsPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { WorkspacePage } from './pages/WorkspacePage';
 import { useProjectPanel } from './projectPanel';
+
+const ProjectsPage = lazy(() =>
+  import('./pages/ProjectsPage').then((m) => ({ default: m.ProjectsPage })),
+);
+const ProjectPage = lazy(() =>
+  import('./pages/ProjectPage').then((m) => ({ default: m.ProjectPage })),
+);
+const BoardPage = lazy(() => import('./pages/BoardPage').then((m) => ({ default: m.BoardPage })));
+const WorkspacePage = lazy(() =>
+  import('./pages/WorkspacePage').then((m) => ({ default: m.WorkspacePage })),
+);
+const OrchestratorPage = lazy(() =>
+  import('./pages/OrchestratorPage').then((m) => ({ default: m.OrchestratorPage })),
+);
+const SettingsPage = lazy(() =>
+  import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+);
 
 export function App() {
   // The agent workspace takes the full width: terminals need the screen space more than the list.
-  const fullWidth = useLocation().pathname === '/workspace';
+  const fullWidth = ['/workspace', '/orchestrators'].includes(useLocation().pathname);
   // Phone widths: the project list is a full-screen panel opened from the bottom tab bar.
   const projects = useProjectPanel();
   return (
@@ -50,6 +63,10 @@ export function App() {
             <TerminalIcon />
             <span>Agents</span>
           </NavLink>
+          <NavLink to="/orchestrators" className={({ isActive }) => (isActive ? 'is-active' : '')}>
+            <BoardIcon />
+            <span>Orchestrators</span>
+          </NavLink>
         </nav>
         <div className="topbar-right">
           <ThemeSwitch />
@@ -68,24 +85,33 @@ export function App() {
           <ProjectSidebar panelOpen={projects.open} onNavigate={projects.close} />
         )}
         <div className="app-main">
-          <Routes>
-            <Route path="/" element={<ProjectsPage />} />
-            <Route path="/board" element={<BoardPage />} />
-            <Route path="/projects/:id" element={<ProjectPage />} />
-            <Route path="/workspace" element={<WorkspacePage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route
-              path="*"
-              element={
-                <main className="page">
-                  <div className="empty">
-                    <h2>Page not found</h2>
-                    <Link to="/">Back to projects</Link>
-                  </div>
-                </main>
-              }
-            />
-          </Routes>
+          <Suspense
+            fallback={
+              <main className="page" role="status">
+                Loading page…
+              </main>
+            }
+          >
+            <Routes>
+              <Route path="/" element={<ProjectsPage />} />
+              <Route path="/board" element={<BoardPage />} />
+              <Route path="/projects/:id" element={<ProjectPage />} />
+              <Route path="/workspace" element={<WorkspacePage />} />
+              <Route path="/orchestrators" element={<OrchestratorPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route
+                path="*"
+                element={
+                  <main className="page">
+                    <div className="empty">
+                      <h2>Page not found</h2>
+                      <Link to="/">Back to projects</Link>
+                    </div>
+                  </main>
+                }
+              />
+            </Routes>
+          </Suspense>
         </div>
       </div>
       <MobileTabBar projectsOpen={projects.open} onToggleProjects={projects.toggle} />

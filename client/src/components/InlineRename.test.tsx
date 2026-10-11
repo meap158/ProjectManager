@@ -7,7 +7,7 @@ describe('InlineRename', () => {
   it('saves a changed name on Enter', () => {
     const onSave = vi.fn(async () => undefined);
     render(<InlineRename value="Claude Code" label="session" onSave={onSave} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rename session Claude Code' }));
     const box = screen.getByRole('textbox', { name: 'Session name' });
     fireEvent.change(box, { target: { value: '  Fix login  ' } });
     fireEvent.keyDown(box, { key: 'Enter' });
@@ -25,14 +25,14 @@ describe('InlineRename', () => {
         onEditingChange={onEditingChange}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Shell' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rename session Shell' }));
     expect(onEditingChange).toHaveBeenLastCalledWith(true);
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Other' } });
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
     expect(onEditingChange).toHaveBeenLastCalledWith(false);
-    expect(screen.getByRole('button', { name: 'Shell' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Rename session Shell' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Shell' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rename session Shell' }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '   ' } });
     fireEvent.blur(screen.getByRole('textbox'));
     expect(onSave).not.toHaveBeenCalled();

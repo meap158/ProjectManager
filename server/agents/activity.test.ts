@@ -56,6 +56,14 @@ describe('tailState', () => {
     expect(tailState(footer)).toBe('idle');
   });
 
+  it('Antigravity and Grok at their prompt are idle', () => {
+    const agyTail = '────────────────────────────\n>\n────────────────────────────\nesc to cancel';
+    expect(tailState(agyTail)).toBe('idle');
+    const grokTail =
+      '╭──────────────────────────╮\n│ >                        │\n╰──────────────────────────╯';
+    expect(tailState(grokTail)).toBe('idle');
+  });
+
   it('busy phrases still match when redraws run the words together', () => {
     expect(tailState('✻ Zigzagging… (esctointerrupt)\n❯ ')).toBe('running');
     expect(tailState('✻ Worked for 3m ·1shellstill running\n❯ ')).toBe('running');

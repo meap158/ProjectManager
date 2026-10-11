@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AgentOutput } from '../../../shared/types';
-import { TerminalView } from './TerminalView';
+import { MAX_INITIAL_HISTORY_BYTES, TerminalView } from './TerminalView';
 
 // xterm renders to a canvas jsdom lacks; a fake records what the component does with it.
 const terms = vi.hoisted(
@@ -14,6 +14,13 @@ const terms = vi.hoisted(
       keyHandler: ((e: KeyboardEvent) => boolean) | null;
       element: HTMLElement | undefined;
       pasted: string;
+      buffer: { active: { type: string } };
+      scrolled: number[];
+      cols: number;
+      rows: number;
+      geometryHandler: ((data: string) => boolean) | null;
+      bottomScrolls: number;
+      pendingWrites: (() => void)[];
     }[],
 );
 vi.mock('@xterm/xterm', () => ({
@@ -26,6 +33,28 @@ vi.mock('@xterm/xterm', () => ({
     keyHandler: ((e: KeyboardEvent) => boolean) | null = null;
     element: HTMLElement | undefined = undefined;
     pasted = '';
+    buffer = { active: { type: 'normal' } };
+    scrolled: number[] = [];
+    geometryHandler: ((data: string) => boolean) | null = null;
+    bottomScrolls = 0;
+    pendingWrites: (() => void)[] = [];
+    scrollToBottom() {
+      this.bottomScrolls++;
+    }
+    refresh() {}
+    parser = {
+      registerOscHandler: (_id: number, handler: (data: string) => boolean) => {
+        this.geometryHandler = handler;
+        return { dispose() {} };
+      },
+    };
+    resize(cols: number, rows: number) {
+      this.cols = cols;
+      this.rows = rows;
+    }
+    scrollLines(lines: number) {
+      this.scrolled.push(lines);
+    }
     paste(text: string) {
       this.pasted += text;
     }
@@ -39,12 +68,18 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon() {}
     open(host: HTMLElement) {
       this.element = document.createElement('div');
+      this.element.appendChild(document.createElement('textarea'));
       host.appendChild(this.element);
     }
-    focus() {}
+    focus() {
+      if (this.element?.parentElement?.style.visibility !== 'hidden') {
+        this.element?.querySelector('textarea')?.focus();
+      }
+    }
     dispose() {}
-    write(data: string) {
+    write(data: string, callback?: () => void) {
       this.written += data;
+      if (callback) this.pendingWrites.push(callback);
     }
     onData(cb: (d: string) => void) {
       this.onDataCb = cb;
@@ -95,6 +130,178 @@ const noFetch = vi.fn(async (): Promise<AgentOutput> => {
 });
 
 describe('TerminalView', () => {
+  it('recovers a silent stream that never emits output or an error', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'],
+    });
+    try {
+      const fetchOutput = vi.fn(async (): Promise<AgentOutput> => ({
+        data: '',
+        nextOffset: 0,
+        logBytes: 0,
+        running: false,
+        exitCode: 0,
+      }));
+      render(
+        <TerminalView fetchOutput={fetchOutput} streamUrl={() => '/stream'} historyBytes={100} />,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(16);
+      });
+      expect(FakeEventSource.last).not.toBeNull();
+      expect(fetchOutput).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8000);
+      });
+      expect(fetchOutput).toHaveBeenCalledWith(0);
+      act(() => {
+        terms.at(-1)!.pendingWrites.shift()!();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(16);
+      });
+      expect(screen.getByRole('log').style.visibility).toBe('');
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it('reveals drained history when the initial byte count was stale', async () => {
+    render(<TerminalView fetchOutput={noFetch} streamUrl={() => '/stream'} historyBytes={100} />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const host = screen.getByRole('log', { hidden: true });
+    const term = terms.at(-1)!;
+    FakeEventSource.last!.emit('output', { data: 'short history', nextOffset: 13 });
+    FakeEventSource.last!.emit('state', { running: true, logBytes: 13, nextOffset: 13 });
+    expect(host.style.visibility).toBe('hidden');
+    term.pendingWrites.shift()!();
+    expect(host.style.visibility).toBe('hidden');
+    term.pendingWrites.shift()!();
+    await waitFor(() => expect(host.style.visibility).toBe(''));
+    expect(term.written).toBe('short history');
+  });
+
+  it('unhides an empty log instead of waiting forever for stale history', async () => {
+    render(<TerminalView fetchOutput={noFetch} streamUrl={() => '/stream'} historyBytes={100} />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    FakeEventSource.last!.emit('state', { running: false, logBytes: 0, nextOffset: 0 });
+    terms.at(-1)!.pendingWrites.shift()!();
+    await waitFor(() => expect(screen.getByRole('log').style.visibility).toBe(''));
+    expect(screen.getByText('Waiting for CLI output…')).toBeTruthy();
+  });
+
+  it('recovers streaming failures with a successful output fetch', async () => {
+    const fetchOutput = vi.fn(async (): Promise<AgentOutput> => ({
+      data: 'recovered',
+      nextOffset: 9,
+      logBytes: 9,
+      running: false,
+      exitCode: 0,
+    }));
+    render(
+      <TerminalView fetchOutput={fetchOutput} streamUrl={() => '/stream'} historyBytes={100} />,
+    );
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    FakeEventSource.last!.onerror!();
+    expect(await screen.findByText('Reconnecting…')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(fetchOutput).toHaveBeenCalled());
+    const term = terms.at(-1)!;
+    term.pendingWrites.shift()!();
+    // Poll again to receive the drain after the recovered bytes.
+    fetchOutput.mockResolvedValue({
+      data: '',
+      nextOffset: 9,
+      logBytes: 9,
+      running: false,
+      exitCode: 0,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(fetchOutput).toHaveBeenCalledTimes(2));
+    term.pendingWrites.shift()!();
+    await waitFor(() => expect(screen.getByRole('log').style.visibility).toBe(''));
+    expect(term.written).toBe('recovered');
+  });
+
+  it('focuses the CLI after hidden history replay so typing can begin immediately', async () => {
+    render(
+      <TerminalView
+        fetchOutput={noFetch}
+        streamUrl={() => '/stream'}
+        historyBytes={10}
+        onInput={() => {}}
+      />,
+    );
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const host = screen.getByRole('application', { hidden: true });
+    expect(host.contains(document.activeElement)).toBe(false);
+    FakeEventSource.last!.emit('output', { data: '0123456789', nextOffset: 10 });
+    terms[0]!.pendingWrites.shift()!();
+    await waitFor(() => expect(host.contains(document.activeElement)).toBe(true));
+    expect(screen.queryByText('CLI focused')).toBeNull();
+  });
+
+  it('restores keyboard focus when a preserved project terminal becomes visible again', async () => {
+    const props = { fetchOutput: noFetch, streamUrl: () => '/stream', onInput: () => {} };
+    const { rerender } = render(<TerminalView {...props} paused />);
+    await waitFor(() => expect(terms[0]?.element).toBeTruthy());
+    const host = screen.getByRole('application');
+    expect(host.contains(document.activeElement)).toBe(false);
+    rerender(<TerminalView {...props} paused={false} />);
+    await waitFor(() => expect(host.contains(document.activeElement)).toBe(true));
+  });
+
+  it('reveals restored history only after parsing the final chunk and jumping to the prompt', async () => {
+    render(<TerminalView fetchOutput={noFetch} streamUrl={() => '/stream'} historyBytes={10} />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const host = screen.getByRole('log', { hidden: true });
+    const term = terms.at(-1)!;
+    expect(host.style.visibility).toBe('hidden');
+    FakeEventSource.last!.emit('output', { data: 'first', nextOffset: 5 });
+    term.pendingWrites.shift()!();
+    expect(host.style.visibility).toBe('hidden');
+    FakeEventSource.last!.emit('output', { data: 'last!', nextOffset: 10 });
+    expect(host.style.visibility).toBe('hidden');
+    term.pendingWrites.shift()!();
+    expect(term.bottomScrolls).toBe(1);
+    await waitFor(() => expect(host.style.visibility).toBe(''));
+    FakeEventSource.last!.emit('output', { data: 'live', nextOffset: 14 });
+    expect(term.bottomScrolls).toBe(1);
+  });
+  it('replays stopped terminals at recorded geometry without resizing the stopped process', async () => {
+    const onResize = vi.fn();
+    render(
+      <TerminalView
+        fetchOutput={noFetch}
+        streamUrl={() => '/stream'}
+        stopped
+        onResize={onResize}
+      />,
+    );
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const term = terms.at(-1)!;
+    expect([term.cols, term.rows]).toEqual([120, 30]);
+    FakeEventSource.last!.emit('output', {
+      data: 'legacy',
+      nextOffset: 6,
+      terminalSize: { cols: 320, rows: 30 },
+    });
+    expect([term.cols, term.rows]).toEqual([320, 30]);
+    expect(term.geometryHandler!('pm-size;180;42')).toBe(true);
+    expect([term.cols, term.rows]).toEqual([180, 42]);
+    term.geometryHandler!('pm-size;9999;42');
+    expect(term.cols).toBe(180);
+    expect(onResize).not.toHaveBeenCalled();
+  });
+
+  it('consumes geometry markers without resizing a live viewer', async () => {
+    render(<TerminalView fetchOutput={noFetch} streamUrl={() => '/stream'} />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const term = terms.at(-1)!;
+    term.geometryHandler!('pm-size;180;42');
+    expect([term.cols, term.rows]).toEqual([80, 24]);
+  });
   it('streams live output, ignores replays after a reconnect, and forwards keystrokes', async () => {
     const onInput = vi.fn();
     render(
@@ -170,7 +377,7 @@ describe('TerminalView', () => {
     expect(terms.at(-1)!.options.fontSize).toBe(15);
   });
 
-  it('turns a vertical swipe into wheel scrolling (phones have no touch scrolling in xterm)', async () => {
+  it('scrolls the whole normal terminal on touch and preserves alternate-screen wheel handling', async () => {
     const { container } = render(
       <TerminalView fetchOutput={noFetch} streamUrl={() => '/s'} onInput={() => undefined} />,
     );
@@ -190,8 +397,15 @@ describe('TerminalView', () => {
     const move = touch('touchmove', 140); // Finger down: back through the history.
     touch('touchmove', 120); // Finger up: forward again.
     touch('touchend', null);
-    expect(wheels).toEqual([-40, 20]);
+    await waitFor(() => expect(terms.at(-1)!.scrolled).toEqual([-1]));
+    expect(wheels).toEqual([]);
     expect(move.defaultPrevented).toBe(true); // The page around it doesn't scroll instead.
+    terms.at(-1)!.buffer.active.type = 'alternate';
+    touch('touchstart', 100);
+    touch('touchmove', 140);
+    touch('touchmove', 120);
+    touch('touchend', null);
+    expect(wheels).toEqual([-40, 20]);
   });
 
   it('sends a pasted or dropped image as a file and pastes text through xterm', async () => {
@@ -225,4 +439,114 @@ describe('TerminalView', () => {
     pasteRef.current!('/data/attachments/shot.png');
     expect(term.pasted).toBe('/data/attachments/shot.png');
   });
+});
+
+it('sends mobile shortcut sequences and expands extra desktop keys', () => {
+  const onInput = vi.fn();
+  render(
+    <TerminalView
+      fetchOutput={async () => ({
+        data: '',
+        nextOffset: 0,
+        running: false,
+        exitCode: 0,
+        logBytes: 0,
+      })}
+      onInput={onInput}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Escape' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Arrow up' }));
+  expect(onInput.mock.calls.map((call) => call[0])).toEqual(['\x1b', '\x1b[A']);
+  fireEvent.click(screen.getByRole('button', { name: 'Control A' }));
+  expect(onInput).toHaveBeenLastCalledWith('\x01');
+  fireEvent.click(screen.getByRole('button', { name: 'Interrupt (Control C)' }));
+  expect(screen.queryByRole('button', { name: 'More terminal keys' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Function keys' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Function 12' }));
+  expect(onInput.mock.calls.slice(-2).map((call) => call[0])).toEqual(['\x03', '\x1b[24~']);
+});
+
+it('keeps downward touch movement continuous when xterm rounds its viewport', async () => {
+  const { container } = render(
+    <TerminalView
+      fetchOutput={async () => ({
+        data: '',
+        nextOffset: 0,
+        running: false,
+        exitCode: 0,
+        logBytes: 0,
+      })}
+      onInput={() => undefined}
+    />,
+  );
+  await waitFor(() => expect(terms.at(-1)?.element).toBeDefined());
+  const host = container.querySelector('.terminal')!;
+  const viewport = document.createElement('div');
+  viewport.className = 'xterm-viewport';
+  Object.defineProperties(viewport, {
+    scrollHeight: { value: 1000 },
+    clientHeight: { value: 200 },
+  });
+  viewport.scrollTop = 200;
+  terms.at(-1)!.element!.appendChild(viewport);
+  const touch = (type: string, y: number) => {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'touches', { value: [{ clientX: 10, clientY: y }] });
+    host.dispatchEvent(event);
+  };
+  touch('touchstart', 100);
+  touch('touchmove', 94);
+  await waitFor(() => expect(viewport.scrollTop).toBe(206));
+  viewport.scrollTop = 200; // Renderer synchronizes to the nearest terminal row.
+  touch('touchmove', 88);
+  await waitFor(() => expect(viewport.scrollTop).toBe(212));
+  touch('touchmove', -1000);
+  await waitFor(() => expect(viewport.scrollTop).toBe(800));
+  touch('touchcancel', 0);
+});
+
+it('automatically scrolls to the bottom when user types in an interactive terminal', async () => {
+  const onInput = vi.fn();
+  render(
+    <TerminalView
+      fetchOutput={async () => ({
+        data: '',
+        nextOffset: 0,
+        running: true,
+        exitCode: null,
+        logBytes: 0,
+      })}
+      streamUrl={() => '/stream'}
+      onInput={onInput}
+    />,
+  );
+  await waitFor(() => expect(terms.at(-1)?.onDataCb).toBeDefined());
+  const term = terms.at(-1)!;
+  const initialScrolls = term.bottomScrolls;
+  term.onDataCb?.('ls\r');
+  expect(term.bottomScrolls).toBeGreaterThan(initialScrolls);
+  expect(onInput).toHaveBeenCalledWith('ls\r');
+});
+
+it('tails large history logs exceeding MAX_INITIAL_HISTORY_BYTES and strips broken leading line', async () => {
+  const streamUrl = vi.fn((after: number) => `/stream?after=${after}`);
+  const largeHistory = 1024 * 1024; // 1 MB > 512 KB MAX_INITIAL_HISTORY_BYTES
+  const expectedOffset = largeHistory - MAX_INITIAL_HISTORY_BYTES;
+
+  render(<TerminalView fetchOutput={noFetch} streamUrl={streamUrl} historyBytes={largeHistory} />);
+
+  await waitFor(() => expect(streamUrl).toHaveBeenCalledWith(expectedOffset));
+  expect(FakeEventSource.last?.url).toBe(`/stream?after=${expectedOffset}`);
+
+  act(() => {
+    FakeEventSource.last?.emit('output', {
+      data: 'broken-leading-fragment\nclean line 1\nclean line 2\n',
+      nextOffset: largeHistory,
+    });
+  });
+
+  const term = terms.at(-1)!;
+  expect(term.written).toContain('clean line 1\nclean line 2\n');
+  expect(term.written).not.toContain('broken-leading-fragment\n');
 });

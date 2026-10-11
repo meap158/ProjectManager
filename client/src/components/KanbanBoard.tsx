@@ -14,6 +14,7 @@ import { useStuckTop } from '../stuckTop';
 import { BoardListView, BoardViewTabs } from './BoardListView';
 import { CardDialog } from './CardDialog';
 import { NewCardDialog } from './NewCardDialog';
+import { RecentCache } from '../lib/recentCache';
 
 /** Midpoint ordering: a card's position sits between its neighbours, so a move is one update. */
 function positionBetween(before: Card | undefined, after: Card | undefined): number {
@@ -27,8 +28,8 @@ function positionBetween(before: Card | undefined, after: Card | undefined): num
 // (ProjectPage keeps panels mounted), but a revisit must still be instant. Module-scope caches
 // survive component lifetime; the project page keys the board by project so each project reads
 // its own entry and background refreshes keep it fresh.
-const cardCache = new Map<number, Card[]>();
-const runCache = new Map<number, CardRunSummary[]>();
+const cardCache = new RecentCache<number, Card[]>(8);
+const runCache = new RecentCache<number, CardRunSummary[]>(8);
 
 export function KanbanBoard({
   projectId,

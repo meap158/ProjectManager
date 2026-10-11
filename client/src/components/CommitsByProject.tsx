@@ -202,7 +202,7 @@ export function CommitsByProject({ projects }: { projects: ProjectSummary[] }) {
         <p className="faint">No commits in the last 12 months across tracked projects.</p>
       ) : showTable ? (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table commits-table">
             <thead>
               <tr>
                 <th>Project</th>

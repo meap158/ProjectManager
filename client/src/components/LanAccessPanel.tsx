@@ -3,6 +3,8 @@ import type { LanStatus } from '../../../shared/types';
 import { api } from '../api';
 import { formatRelative } from '../format';
 import { isRemoteClient } from '../remote';
+import QRCode from 'qrcode';
+import { LanQrScanner } from './LanQrScanner';
 
 /**
  * Settings → LAN access (opt-in). Other devices open the address below and type the short code,
@@ -24,6 +26,7 @@ export function LanAccessPanel({ onError }: { onError: (message: string) => void
           are managed in Settings on the computer running it; signing this device out there brings
           you back to the sign-in page.
         </p>
+        <LanQrScanner />
       </section>
     );
   }
@@ -34,6 +37,23 @@ function LocalLanAccessPanel({ onError }: { onError: (message: string) => void }
   const [status, setStatus] = useState<LanStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [qr, setQr] = useState<{ url: string; image: string } | null>(null);
+  const connectionUrl =
+    status?.urls.find((url) => new URL(url).hostname.endsWith('.local')) ?? status?.urls[0];
+  const pairingUrl =
+    status?.running && connectionUrl && status.code ? `${connectionUrl}#pair=${status.code}` : null;
+
+  useEffect(() => {
+    let active = true;
+    if (!pairingUrl) return;
+    QRCode.toDataURL(pairingUrl, { width: 220, margin: 4, errorCorrectionLevel: 'M' }).then(
+      (image) => active && setQr({ url: pairingUrl, image }),
+      () => active && onError('Could not generate the QR code. Use the address and code below.'),
+    );
+    return () => {
+      active = false;
+    };
+  }, [pairingUrl, onError]);
 
   useEffect(() => {
     let active = true;
@@ -88,10 +108,11 @@ function LocalLanAccessPanel({ onError }: { onError: (message: string) => void }
       </div>
       <p className="faint" style={{ margin: '0 0 12px', fontSize: 12.5 }}>
         Use ProjectManager from your phone or another computer on the same network. Open the address
-        on that device and type the code shown here. Signed-in devices can read your tracked folders
-        and drive your agents. Windows may ask to allow Node.js the first time: allow it on Private
-        networks only.
+        on that device, or scan the QR code and tap Sign in. Signed-in devices can read your tracked
+        folders and drive your agents. Windows may ask to allow Node.js the first time: allow it on
+        Private networks only.
       </p>
+      <LanQrScanner />
       {status === null ? (
         <div className="skeleton" style={{ height: 60 }} />
       ) : (
@@ -108,50 +129,74 @@ function LocalLanAccessPanel({ onError }: { onError: (message: string) => void }
           </div>
           {status.error && <div className="error-banner">{status.error}</div>}
           {status.running && (
-            <div className="lan-signin">
-              <div>
-                <div className="lan-label">1. Open on the device</div>
-                {status.urls.length === 0 ? (
-                  <p className="faint" style={{ margin: 0 }}>
-                    No local network address found: connect this computer to a network.
-                  </p>
-                ) : (
-                  <ul className="list lan-links">
-                    {status.urls.map((url) => (
-                      <li key={url}>
-                        <code className="truncate">{url}</code>
-                        <button type="button" className="btn btn-sm" onClick={() => copy(url)}>
-                          {copied === url ? 'Copied' : 'Copy'}
-                        </button>
-                        {/* The name address survives this computer's IP changing (DHCP), so a
-                            saved link or home-screen icon keeps working. */}
-                        {new URL(url).hostname.endsWith('.local') && (
-                          <span className="faint lan-url-note">
-                            this computer's name: keeps working if its IP changes, on phones that
-                            resolve .local names (iPhones do)
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div>
-                <div className="lan-label">2. Type this code</div>
-                <div className="lan-code" aria-label={`Sign-in code ${status.code ?? ''}`}>
-                  {status.code}
+            <div className="lan-connect">
+              {pairingUrl && (
+                <div className="lan-qr">
+                  {qr?.url === pairingUrl ? (
+                    <img
+                      src={qr.image}
+                      width="220"
+                      height="220"
+                      alt="Scan to connect to ProjectManager"
+                    />
+                  ) : (
+                    <div className="skeleton" style={{ width: 220, height: 220 }} />
+                  )}
+                  <b>Scan with your phone, then tap Sign in</b>
+                  <span className="faint">
+                    The code is filled in automatically. This QR refreshes after use or expiry.
+                  </span>
+                  <span className="faint">
+                    Keep using {connectionUrl} in the same browser to stay signed in. Clearing
+                    cookies or private browsing requires pairing again.
+                  </span>
                 </div>
-                <div className="faint" style={{ fontSize: 12 }}>
-                  One device, once · new code{' '}
-                  {status.codeExpiresAt ? formatRelative(status.codeExpiresAt) : ''}{' '}
-                  <button
-                    type="button"
-                    className="link-button"
-                    disabled={busy}
-                    onClick={() => act(() => api.lanNewCode())}
-                  >
-                    New code
-                  </button>
+              )}
+              <div className="lan-signin">
+                <div>
+                  <div className="lan-label">1. Open on the device</div>
+                  {status.urls.length === 0 ? (
+                    <p className="faint" style={{ margin: 0 }}>
+                      No local network address found: connect this computer to a network.
+                    </p>
+                  ) : (
+                    <ul className="list lan-links">
+                      {status.urls.map((url) => (
+                        <li key={url}>
+                          <code className="truncate">{url}</code>
+                          <button type="button" className="btn btn-sm" onClick={() => copy(url)}>
+                            {copied === url ? 'Copied' : 'Copy'}
+                          </button>
+                          {/* The name address survives this computer's IP changing (DHCP), so a
+                            saved link or home-screen icon keeps working. */}
+                          {new URL(url).hostname.endsWith('.local') && (
+                            <span className="faint lan-url-note">
+                              this computer's name: keeps working if its IP changes, on phones that
+                              resolve .local names (iPhones do)
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <div className="lan-label">2. Type this code</div>
+                  <div className="lan-code" aria-label={`Sign-in code ${status.code ?? ''}`}>
+                    {status.code}
+                  </div>
+                  <div className="faint" style={{ fontSize: 12 }}>
+                    One device, once · new code{' '}
+                    {status.codeExpiresAt ? formatRelative(status.codeExpiresAt) : ''}{' '}
+                    <button
+                      type="button"
+                      className="link-button"
+                      disabled={busy}
+                      onClick={() => act(() => api.lanNewCode())}
+                    >
+                      New code
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

@@ -106,10 +106,11 @@ export function sessionFacts(s: AgentSession, now: number, usage?: AgentTokenUsa
     // New tokens processed: input + cache writes + output. Cache reads (re-read context) are
     // listed in the tooltip; counting them would inflate the total many times over.
     const total = usage.input + usage.cacheWrite + usage.output;
+    const providerName = PROVIDER_LABELS[s.providerId] ?? s.providerId;
     facts.push({
       text: `${formatCompact(total)} tokens`,
       title: [
-        `${formatNumber(total)} tokens over ${usage.replies} replies, from Claude's session transcript`,
+        `${formatNumber(total)} tokens over ${usage.replies} replies, from ${providerName}'s session transcript`,
         `Input ${formatNumber(usage.input)} · cache writes ${formatNumber(usage.cacheWrite)} · output ${formatNumber(usage.output)}`,
         `Cache reads ${formatNumber(usage.cacheRead)} (context re-read, not included)`,
       ].join('\n'),
@@ -166,7 +167,7 @@ export function workStatus(w: WorkItem, now: number): WorkStatus {
 }
 
 /** What the row says about state, in words (never colour alone). */
-function stateLabel(
+export function stateLabel(
   w: WorkItem,
   now: number,
 ): {
@@ -176,6 +177,19 @@ function stateLabel(
 } {
   if (w.kind === 'session') {
     const s = w.item;
+    if (s.restartProgress && (s.restartProgress !== 'failed' || s.status !== 'running'))
+      return {
+        text:
+          s.restartProgress === 'failed'
+            ? 'Restart failed'
+            : s.restartProgress === 'restoring'
+              ? 'Restoring…'
+              : s.restartProgress === 'stopping'
+                ? 'Stopping…'
+                : 'Starting…',
+        tone: s.restartProgress === 'failed' ? 'bad' : 'attention',
+      };
+    if (s.autoContinue?.resumesAt) return { text: 'Awaiting reset', tone: 'attention' };
     const activity = sessionActivity(s, now);
     if (activity === 'input') return { text: ACTIVITY_LABEL.input, tone: 'attention', activity };
     if (activity !== 'stopped') return { text: ACTIVITY_LABEL[activity], tone: 'good', activity };
@@ -224,7 +238,7 @@ export function AgentWorkList({
             ? sessionFacts(w.item, now, tokens?.[w.item.id])
             : runFacts(w.item, now);
         return (
-          <li key={key} className={key === selected ? 'selected' : undefined}>
+          <li key={key} data-kind={w.kind} className={key === selected ? 'selected' : undefined}>
             {/* Clicking the row selects it; the name renames in place (its click stops here);
                 the select button keeps the row reachable from the keyboard. */}
             <div
@@ -253,7 +267,7 @@ export function AgentWorkList({
                   />
                 </button>
                 {onRename ? (
-                  <span className="work-name" onClick={(e) => e.stopPropagation()}>
+                  <span className="work-name">
                     <InlineRename
                       value={w.item.name}
                       label={w.kind === 'session' ? 'session' : 'run'}
@@ -273,7 +287,10 @@ export function AgentWorkList({
                   {KIND[w.kind].label}
                 </span>
                 {projectNames && (
-                  <span className="faint truncate">
+                  <span
+                    className="faint truncate work-project"
+                    title={projectNames.get(w.item.projectId)}
+                  >
                     {projectNames.get(w.item.projectId) ?? '—'}
                   </span>
                 )}
@@ -284,6 +301,9 @@ export function AgentWorkList({
                     {f.text}
                   </span>
                 ))}
+                {w.item.cardKey && (
+                  <span className="badge mono work-card-mobile">{w.item.cardKey}</span>
+                )}
               </span>
             </div>
             {/* State and actions share one centre line, beside both text lines. */}
@@ -300,11 +320,18 @@ export function AgentWorkList({
               {state.activity === 'input' ? (
                 <span className="work-state">
                   <span className="input-badge" title="The agent is asking you to choose something">
-                    <span aria-hidden="true">●</span> {state.text}
+                    <span aria-hidden="true">●</span>
+                    <span className="work-state-full">{state.text}</span>
+                    <span className="work-state-compact">Needs input</span>
                   </span>
                 </span>
               ) : (
-                <span className={`work-state tone-${state.tone ?? 'idle'}`}>{state.text}</span>
+                <span className={`work-state tone-${state.tone ?? 'idle'}`}>
+                  <span className="work-state-full">{state.text}</span>
+                  <span className="work-state-compact">
+                    {state.activity ? WORK_STATUS_LABELS[state.activity] : state.text}
+                  </span>
+                </span>
               )}
               {/* Fixed-width actions group (empty for runs) keeps the card and state columns at
                   the same x on every row. */}

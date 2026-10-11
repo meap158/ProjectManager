@@ -25,8 +25,8 @@ export function SessionImageButton({
         type="button"
         className={className}
         disabled={busy}
-        title="Send an image to this session (its path is pasted in, like a dropped file)"
-        aria-label="Send an image"
+        title="Add images to this session (their paths are pasted into the CLI)"
+        aria-label="Add images"
         onClick={() => input.current?.click()}
       >
         {busy ? (
@@ -58,15 +58,28 @@ export function SessionImageButton({
         ref={input}
         type="file"
         accept="image/*"
+        multiple
         hidden
         onChange={(e) => {
-          const file = e.target.files?.[0];
+          const files = Array.from(e.target.files ?? []);
           e.target.value = ''; // Picking the same photo again still fires.
-          if (!file) return;
+          if (!files.length) return;
           setBusy(true);
-          sendImageToSession(sessionId, file, pasteRef.current)
-            .catch((err: Error) => onError(err.message))
-            .finally(() => setBusy(false));
+          // Process photos in order, keeping only one decoded image/upload in memory.
+          // A failed photo does not prevent the remaining selections from being added.
+          const paste = pasteRef.current;
+          const send = async () => {
+            for (const file of files) {
+              try {
+                await sendImageToSession(sessionId, file, paste);
+              } catch (err) {
+                onError(
+                  `${file.name}: ${err instanceof Error ? err.message : 'Could not add image'}`,
+                );
+              }
+            }
+          };
+          void send().finally(() => setBusy(false));
         }}
       />
     </>

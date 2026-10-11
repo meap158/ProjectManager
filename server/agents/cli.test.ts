@@ -224,6 +224,7 @@ describe.skipIf(!ptyAvailable())('PTY sessions', () => {
       rows: 40,
     });
     expect(resized.status).toBe(200);
+    expect(await output(created.id)).toContain('\x1b]777;pm-size;100;40\x07');
     expect(
       (await call('POST', `/agent-sessions/${created.id}/resize`, { cols: 1, rows: 1 })).status,
     ).toBe(400);

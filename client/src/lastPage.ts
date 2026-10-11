@@ -34,7 +34,11 @@ export function sanitizeLastPage(value: string | null): string | null {
   } else if (url.pathname === '/workspace') {
     const open = url.searchParams.get('open');
     if (open && /^\d+$/.test(open)) keep.set('open', open);
-  } else if (url.pathname !== '/' && url.pathname !== '/settings') {
+  } else if (
+    url.pathname !== '/' &&
+    url.pathname !== '/settings' &&
+    url.pathname !== '/orchestrators'
+  ) {
     return null;
   }
 

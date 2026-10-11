@@ -1,4 +1,12 @@
-import { useMemo, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
+import {
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
 import type { LanguageStats } from '../../../shared/types';
 import { formatNumber } from '../format';
 import type { Contribution, ContributionLevel } from './ui/github-activity';
@@ -10,7 +18,7 @@ export function useTooltip() {
   const [tip, setTip] = useState<{ x: number; y: number; content: ReactNode } | null>(null);
   /** Anchors above `anchor` when given (e.g. the visible mark inside a larger hit target). */
   const show = (
-    event: MouseEvent<Element> | FocusEvent<Element>,
+    event: MouseEvent<Element> | FocusEvent<Element> | PointerEvent<Element>,
     content: ReactNode,
     anchor?: Element | null,
   ) => {
@@ -281,6 +289,30 @@ export function ColumnChart({
   height?: number;
 }) {
   const tooltip = useTooltip();
+  const activeIndex = useRef<number | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const readPointer = (event: PointerEvent<HTMLDivElement>) => {
+    const targets = [...event.currentTarget.querySelectorAll<HTMLElement>('.colchart-col')];
+    let nearest = -1;
+    let distance = Infinity;
+    targets.forEach((target, i) => {
+      const rect = target.getBoundingClientRect();
+      const next = Math.abs(event.clientX - (rect.left + rect.width / 2));
+      if (next < distance) {
+        distance = next;
+        nearest = i;
+      }
+    });
+    if (nearest < 0 || activeIndex.current === nearest) return;
+    activeIndex.current = nearest;
+    setSelected(nearest);
+    tooltip.show(event, columns[nearest]!.tip, targets[nearest]!.querySelector('.colchart-bar'));
+  };
+  const clearPointer = () => {
+    activeIndex.current = null;
+    setSelected(null);
+    tooltip.hide();
+  };
   const totals = columns.map((c) => c.segments.reduce((sum, s) => sum + s.value, 0));
   const ticks = columnTicks(Math.max(0, ...totals));
   const top = ticks[ticks.length - 1]!;
@@ -303,20 +335,27 @@ export function ColumnChart({
           ))}
         </div>
       </div>
-      <div className="colchart-plot" style={{ height }}>
+      <div
+        className="colchart-plot"
+        style={{ height }}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          readPointer(event);
+        }}
+        onPointerMove={readPointer}
+        onPointerUp={clearPointer}
+        onPointerCancel={clearPointer}
+        onLostPointerCapture={clearPointer}
+        onPointerLeave={(event) => {
+          if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) clearPointer();
+        }}
+      >
         <div className="colchart-area">
           {ticks.slice(1).map((t) => (
             <span key={t} className="colchart-grid" style={{ bottom: `${(t / top) * 100}%` }} />
           ))}
           {columns.map((c, i) => (
-            <div
-              key={c.key}
-              className="colchart-col"
-              onMouseEnter={(e) =>
-                tooltip.show(e, c.tip, e.currentTarget.querySelector('.colchart-bar'))
-              }
-              onMouseLeave={tooltip.hide}
-            >
+            <div key={c.key} className="colchart-col" data-selected={selected === i || undefined}>
               <div className="colchart-bar" style={{ height: `${(totals[i]! / top) * 100}%` }}>
                 {labelled.has(i) && (
                   <span className="colchart-val">{formatNumber(totals[i]!)}</span>

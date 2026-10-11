@@ -303,7 +303,11 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
             offset = out.nextOffset;
             await stream.writeSSE({
               event: 'output',
-              data: JSON.stringify({ data: out.data, nextOffset: offset }),
+              data: JSON.stringify({
+                data: out.data,
+                nextOffset: offset,
+                terminalSize: out.terminalSize,
+              }),
             });
             continue; // Drain everything available before waiting.
           }
@@ -311,7 +315,12 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
             lastRunning = out.running;
             await stream.writeSSE({
               event: 'state',
-              data: JSON.stringify({ running: out.running, exitCode: out.exitCode }),
+              data: JSON.stringify({
+                running: out.running,
+                exitCode: out.exitCode,
+                logBytes: out.logBytes,
+                nextOffset: out.nextOffset,
+              }),
             });
           }
           // Wait for new output, or wake periodically to notice state changes / keep alive.
@@ -338,6 +347,14 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
       if (e instanceof AgentError) throw e;
       throw new AgentError(400, (e as Error).message);
     }
+  });
+
+  app.post('/agent-sessions/:id/restart', async (c) =>
+    c.json(await supervisor.restartSession(parseId(c))),
+  );
+  app.post('/agent-sessions/:id/auto-continue', async (c) => {
+    const body = await parseBody(c, z.object({ enabled: z.boolean() }));
+    return c.json(supervisor.setAutoContinue(parseId(c), body.enabled));
   });
 
   app.post('/agent-sessions/:id/stop', async (c) => {

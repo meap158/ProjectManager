@@ -10,6 +10,7 @@ import type { AgentRun, AgentSession } from '../../shared/types.js';
 import { createApp } from '../app.js';
 import { openDb, type Db } from '../db.js';
 import { AgentSupervisor } from './supervisor.js';
+import { setSetting, getSetting } from '../store.js';
 
 const HOST = { host: 'localhost:5180' };
 const NODE = process.execPath;
@@ -24,6 +25,7 @@ let app: ReturnType<typeof createApp>;
 let call: (method: string, url: string, body?: unknown) => Promise<Response>;
 let projectDir: string;
 let projectId: number;
+let testDb: Db;
 
 async function waitFor<T>(
   fn: () => Promise<T>,
@@ -48,7 +50,8 @@ beforeAll(async () => {
   projectDir = path.join(tmp, 'proj');
   const { mkdirSync } = await import('node:fs');
   mkdirSync(projectDir, { recursive: true });
-  app = createApp(openDb(':memory:'), { dataDir: tmp });
+  testDb = openDb(':memory:');
+  app = createApp(testDb, { dataDir: tmp });
   // Mirror the real GUI client: every write carries a JSON body + content type
   // (the server rejects non-JSON writes as a CSRF guard).
   call = (method: string, url: string, body?: unknown) =>
@@ -71,6 +74,113 @@ afterAll(async () => {
 });
 
 describe('providers', () => {
+  it('replays recorded geometry without inferring a legacy canvas from the archive', async () => {
+    const created = (await (
+      await call('POST', `/projects/${projectId}/agent-sessions`, {
+        command: [
+          NODE,
+          '-e',
+          `process.stdout.write('\u001b]777;pm-size;80;24\u0007\\x1b[40;319Hlegacy-wide-text')`,
+        ],
+        terminal: 'pipe',
+        supervise: false,
+      })
+    ).json()) as AgentSession;
+    try {
+      await waitFor(
+        () => getSession(created.id),
+        (s) => s.status !== 'running',
+        'geometry log',
+      );
+      // The fixture process uses pipes so no installed/native PTY is required.
+      testDb.prepare("UPDATE agent_sessions SET terminal = 'pty' WHERE id = ?").run(created.id);
+      const out = app.supervisor.readSessionOutput(created.id, 0)!;
+      expect(out.data).toContain('\x1b]777;pm-size;80;24\x07');
+      expect(out.terminalSize).toBeUndefined();
+      expect(out.nextOffset).toBe(out.logBytes);
+    } finally {
+      await call('DELETE', `/agent-sessions/${created.id}`);
+    }
+  });
+  it('restarts through one endpoint and reports shared progress', async () => {
+    const created = await call('POST', `/projects/${projectId}/agent-sessions`, {
+      command: [NODE, '-e', LONG],
+      terminal: 'pipe',
+      supervise: false,
+    });
+    expect(created.status).toBe(201);
+    const session = (await created.json()) as AgentSession;
+    const restarted = await call('POST', `/agent-sessions/${session.id}/restart`);
+    expect(restarted.status).toBe(200);
+    const next = (await restarted.json()) as AgentSession;
+    expect(next.status).toBe('running');
+    expect(next.restartProgress).toBe('restoring');
+    expect(next.pid).not.toBe(session.pid);
+    await call('DELETE', `/agent-sessions/${session.id}`);
+  });
+
+  it('clears restoring progress once the restarted session is ready', async () => {
+    const created = await call('POST', `/projects/${projectId}/agent-sessions`, {
+      command: [NODE, '-e', `console.log('\\n>\\n'); setInterval(()=>{}, 1000)`],
+      terminal: 'pipe',
+      supervise: false,
+    });
+    expect(created.status).toBe(201);
+    const session = (await created.json()) as AgentSession;
+    await call('POST', `/agent-sessions/${session.id}/restart`);
+    const restored = await waitFor(
+      () => getSession(session.id),
+      (s) => s.restartProgress === null,
+      'readiness confirmation',
+    );
+    expect(restored.restartProgress).toBeNull();
+    expect(restored.status).toBe('running');
+    await call('DELETE', `/agent-sessions/${session.id}`);
+  });
+
+  it('keeps the saved conversation when a manual restart fails to resume', async () => {
+    const created = await call('POST', `/projects/${projectId}/agent-sessions`, {
+      command: [NODE, '-e', LONG],
+      terminal: 'pipe',
+      supervise: true,
+    });
+    const session = (await created.json()) as AgentSession;
+    const resume = JSON.stringify([NODE, '-e', 'process.exit(1)']);
+    testDb
+      .prepare('UPDATE agent_sessions SET resume_json = ? WHERE id = ?')
+      .run(resume, session.id);
+    await call('POST', `/agent-sessions/${session.id}/restart`);
+    const failed = await waitFor(
+      () => getSession(session.id),
+      (s) => s.restartProgress === 'failed',
+      'resume failure',
+    );
+    expect(failed.restartError).toContain('saved conversation failed to resume');
+    expect(
+      testDb.prepare('SELECT resume_json FROM agent_sessions WHERE id = ?').get(session.id)
+        ?.resume_json,
+    ).toBe(resume);
+    const retry = await call('POST', `/agent-sessions/${session.id}/restart`);
+    expect(retry.status).toBe(409);
+    await call('DELETE', `/agent-sessions/${session.id}`);
+  });
+
+  it('rejects managed continuation for unsupported sessions', async () => {
+    const created = await call('POST', `/projects/${projectId}/agent-sessions`, {
+      command: [NODE, '-e', LONG],
+      terminal: 'pipe',
+      supervise: false,
+    });
+    const session = (await created.json()) as AgentSession;
+    expect(
+      (await call('POST', `/agent-sessions/${session.id}/auto-continue`, { enabled: true })).status,
+    ).toBe(400);
+    expect(
+      (await call('POST', `/agent-sessions/${session.id}/auto-continue`, { enabled: 'yes' }))
+        .status,
+    ).toBe(400);
+    await call('DELETE', `/agent-sessions/${session.id}`);
+  });
   it('lists the catalog with availability', async () => {
     const res = await call('GET', '/agents/providers');
     expect(res.status).toBe(200);
@@ -108,6 +218,33 @@ describe('providers', () => {
 });
 
 describe('sessions', () => {
+  it('cancels persisted continuation on real input, but preserves it for terminal reports', async () => {
+    const created = await call('POST', `/projects/${projectId}/agent-sessions`, {
+      command: [NODE, '-e', LONG],
+      terminal: 'pipe',
+      supervise: false,
+    });
+    const session = (await created.json()) as AgentSession;
+    const key = `session-auto-continue:${session.id}`;
+    setSetting(testDb, key, {
+      enabled: true,
+      resumesAt: '2099-01-01T00:00:00Z',
+      message: 'Waiting',
+    });
+    await call('POST', `/agent-sessions/${session.id}/input`, { data: '\x1b[1;1R' });
+    expect(getSetting<{ enabled: boolean }>(testDb, key)?.enabled).toBe(true);
+    await call('POST', `/agent-sessions/${session.id}/input`, { data: 'x' });
+    expect(getSetting<{ enabled: boolean }>(testDb, key)?.enabled).toBe(false);
+    setSetting(testDb, key, {
+      enabled: true,
+      resumesAt: '2099-01-01T00:00:00Z',
+      message: 'Waiting',
+    });
+    await call('POST', `/agent-sessions/${session.id}/stop`);
+    expect(getSetting<{ enabled: boolean }>(testDb, key)?.enabled).toBe(false);
+    await call('DELETE', `/agent-sessions/${session.id}`);
+    expect(getSetting(testDb, key)).toBeNull();
+  });
   it('runs a one-shot command and serves its output', async () => {
     const res = await call('POST', `/projects/${projectId}/agent-sessions`, {
       providerId: 'custom',
@@ -124,6 +261,8 @@ describe('sessions', () => {
     );
     expect(done.status).toBe('exited');
     expect(done.exitCode).toBe(0);
+    const caches = app.supervisor as unknown as { logs: Map<string, { chunks: unknown[] }> };
+    expect(caches.logs.get(`session:${created.id}`)?.chunks).toHaveLength(0);
     const out = (await (
       await call('GET', `/agent-sessions/${created.id}/output?after=0`)
     ).json()) as { data: string; nextOffset: number };
@@ -243,6 +382,34 @@ describe('sessions', () => {
 });
 
 describe('runs and card lifecycle', () => {
+  it('reuses a durable dispatch key without creating another worker', async () => {
+    const card = (await (
+      await call('POST', `/projects/${projectId}/cards`, { title: 'Idempotent task' })
+    ).json()) as { id: number };
+    const input = { command: [NODE, '-e', ECHO], dispatchKey: `test-dispatch-${card.id}` };
+    await expect(
+      app.supervisor.dispatchCard(projectId, card.id, { ...input, canCommit: () => false }),
+    ).rejects.toThrow('ownership or policy changed');
+    expect(
+      testDb
+        .prepare('SELECT COUNT(*) AS n FROM agent_runs WHERE dispatch_key = ?')
+        .get(input.dispatchKey)?.n,
+    ).toBe(0);
+    const first = await app.supervisor.dispatchCard(projectId, card.id, input);
+    const again = await app.supervisor.dispatchCard(projectId, card.id, input);
+    expect(again.id).toBe(first.id);
+    expect(
+      testDb
+        .prepare('SELECT COUNT(*) AS n FROM agent_runs WHERE dispatch_key = ?')
+        .get(input.dispatchKey)?.n,
+    ).toBe(1);
+    await waitFor(
+      () => getRun(first.id),
+      (r) => r.status === 'succeeded',
+      'idempotent run',
+    );
+    expect((await app.supervisor.dispatchCard(projectId, card.id, input)).id).toBe(first.id);
+  });
   it('dispatches a card, succeeds it, and validates it to Review', async () => {
     const card = (await (
       await call('POST', `/projects/${projectId}/cards`, { title: 'Agent task' })
@@ -266,6 +433,8 @@ describe('runs and card lifecycle', () => {
     );
     expect(done.status).toBe('succeeded');
     expect(done.exitCode).toBe(0);
+    const caches = app.supervisor as unknown as { logs: Map<string, { chunks: unknown[] }> };
+    expect(caches.logs.get(`run:${run.id}`)?.chunks).toHaveLength(0);
     const out = (await (await call('GET', `/agent-runs/${run.id}/output?after=0`)).json()) as {
       data: string;
     };

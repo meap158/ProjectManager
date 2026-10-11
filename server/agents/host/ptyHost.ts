@@ -23,7 +23,9 @@ import {
 } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
+import { compactLog, LOG_KEEP_BYTES, logBase } from '../logFile.js';
 import { spawnPty, type AgentProc } from '../proc.js';
+import { OutputDelivery } from './outputDelivery.js';
 import {
   hostSocketPath,
   rendezvousFile,
@@ -37,10 +39,14 @@ const IDLE_EXIT_MS = 60_000;
 
 interface HostedSession {
   key: string;
-  proc: AgentProc;
+  proc: AgentProc | null;
+  pid: number | null;
   logPath: string;
   fd: number | null;
+  /** Logical offset of the next byte (never shrinks; see logFile.ts). */
   logBytes: number;
+  /** Physical size of the log file, bounded by maxLogBytes through compaction. */
+  fileBytes: number;
   maxLogBytes: number;
   alive: boolean;
   exitCode: number | null;
@@ -51,7 +57,7 @@ const dataDir = path.resolve(process.argv[process.argv.indexOf('--data-dir') + 1
 const socketPath = hostSocketPath(dataDir);
 const token = randomBytes(24).toString('hex');
 const sessions = new Map<string, HostedSession>();
-const clients = new Set<net.Socket>();
+const clients = new Map<net.Socket, OutputDelivery>();
 let lastClientAt = Date.now();
 
 function log(message: string): void {
@@ -68,36 +74,41 @@ function log(message: string): void {
   }
 }
 
-function broadcast(message: HostMessage): void {
-  const line = JSON.stringify(message) + '\n';
-  for (const client of clients) client.write(line);
+function broadcast(message: HostMessage, persisted = false): void {
+  for (const delivery of clients.values()) delivery.send(message, persisted);
+}
+
+/** A full log is compacted to its recent tail (offsets keep growing); output never stops. */
+function compactIfFull(session: HostedSession, incoming: number): void {
+  if (session.fd === null || session.fileBytes + incoming <= session.maxLogBytes) return;
+  try {
+    closeSync(session.fd);
+    session.fd = null;
+    const keep = Math.min(LOG_KEEP_BYTES, Math.floor(session.maxLogBytes / 4));
+    session.fileBytes = compactLog(session.logPath, keep);
+    session.fd = openSync(session.logPath, 'a');
+  } catch (error) {
+    // Stop recording (fd stays null) but keep streaming live output to attached viewers.
+    log(`compact ${session.key} failed: ${(error as Error).message}`);
+  }
 }
 
 function appendOutput(session: HostedSession, text: string): void {
   const offset = session.logBytes;
+  const bytes = Buffer.byteLength(text);
+  compactIfFull(session, bytes);
+  let persisted = false;
   if (session.fd !== null) {
-    let chunk = text;
-    if (session.logBytes + Buffer.byteLength(chunk) > session.maxLogBytes) {
-      chunk = `\r\n[log size limit reached: ${session.maxLogBytes} bytes; output is no longer recorded]\r\n`;
-      try {
-        writeSync(session.fd, chunk);
-        closeSync(session.fd);
-      } catch {
-        // Ignore: logging must never take a session down.
-      }
-      session.fd = null;
-      session.logBytes += Buffer.byteLength(chunk);
-      broadcast({ ev: 'data', key: session.key, offset, data: chunk });
-      return;
-    }
     try {
-      writeSync(session.fd, chunk);
+      const written = writeSync(session.fd, text);
+      session.fileBytes += written;
+      persisted = written === bytes;
     } catch {
       // Disk full / file removed: keep the session running regardless.
     }
-    session.logBytes += Buffer.byteLength(chunk);
-    broadcast({ ev: 'data', key: session.key, offset, data: chunk });
   }
+  session.logBytes += bytes;
+  broadcast({ ev: 'data', key: session.key, offset, data: text }, persisted);
 }
 
 function killTree(pid: number): void {
@@ -119,7 +130,7 @@ function killTree(pid: number): void {
 function info(s: HostedSession): HostSessionInfo {
   return {
     key: s.key,
-    pid: s.proc.pid ?? null,
+    pid: s.pid,
     alive: s.alive,
     exitCode: s.exitCode,
     signal: s.signal,
@@ -135,7 +146,8 @@ function handle(request: HostRequest): unknown {
       mkdirSync(path.dirname(request.logPath), { recursive: true });
       const fd = openSync(request.logPath, 'a');
       // Continue offsets from what is already in the log (earlier runs, server banners).
-      const logBytes = statSync(request.logPath, { throwIfNoEntry: false })?.size ?? 0;
+      const fileBytes = statSync(request.logPath, { throwIfNoEntry: false })?.size ?? 0;
+      const logBytes = logBase(request.logPath) + fileBytes;
       const proc = spawnPty(request.argv, {
         cwd: request.cwd,
         env: request.env,
@@ -145,20 +157,25 @@ function handle(request: HostRequest): unknown {
       const session: HostedSession = {
         key: request.key,
         proc,
+        pid: proc.pid ?? null,
         logPath: request.logPath,
         fd,
         logBytes,
+        fileBytes,
         maxLogBytes: request.maxLogBytes,
         alive: true,
         exitCode: null,
         signal: null,
       };
       sessions.set(request.key, session);
+      appendOutput(session, `\x1b]777;pm-size;${request.cols};${request.rows}\x07`);
       proc.onData((text) => appendOutput(session, text));
       proc.onExit((exitCode, signal) => {
         session.alive = false;
         session.exitCode = exitCode;
         session.signal = signal;
+        // Retain reconnect metadata, not the exited native PTY and its callbacks.
+        session.proc = null;
         if (session.fd !== null) {
           try {
             closeSync(session.fd);
@@ -175,14 +192,20 @@ function handle(request: HostRequest): unknown {
     }
     case 'write': {
       const s = sessions.get(request.key);
-      return s?.alive ? s.proc.write(request.data) : false;
+      return s?.alive ? (s.proc?.write(request.data) ?? false) : false;
     }
-    case 'resize':
-      sessions.get(request.key)?.proc.resize(request.cols, request.rows);
+    case 'resize': {
+      const session = sessions.get(request.key);
+      if (session?.alive) {
+        // The host remains the sole log writer, keeping SSE byte offsets exact.
+        appendOutput(session, `\x1b]777;pm-size;${request.cols};${request.rows}\x07`);
+        session.proc?.resize(request.cols, request.rows);
+      }
       return true;
+    }
     case 'kill': {
       const s = sessions.get(request.key);
-      if (s?.alive && s.proc.pid) killTree(s.proc.pid);
+      if (s?.alive && s.pid) killTree(s.pid);
       return true;
     }
     case 'forget': {
@@ -218,7 +241,9 @@ const server = net.createServer((socket) => {
       if (!authed) {
         if (message.op === 'hello' && message.token === token) {
           authed = true;
-          clients.add(socket);
+          const delivery = new OutputDelivery(socket);
+          clients.set(socket, delivery);
+          socket.on('drain', () => delivery.flush());
           socket.write(
             JSON.stringify({ id: message.id, ok: true, result: { pid: process.pid } }) + '\n',
           );

@@ -1,3 +1,5 @@
+import { OrchestratorService } from './orchestrator/service.js';
+import { registerOrchestratorRoutes } from './orchestrator/routes.js';
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -83,7 +85,11 @@ function parseId(c: Context, name = 'id'): number {
   return result.data;
 }
 
-export type AppWithAgents = Hono & { supervisor: AgentSupervisor; scanner: Scanner };
+export type AppWithAgents = Hono & {
+  supervisor: AgentSupervisor;
+  scanner: Scanner;
+  orchestrator: OrchestratorService;
+};
 
 export function createApp(
   db: Db,
@@ -140,6 +146,10 @@ export function createApp(
   app.get('/health', (c) => c.json({ ok: true }));
 
   registerAgentRoutes(app, db, supervisor);
+  const orchestrator = new OrchestratorService(db, supervisor, options.dataDir ?? null, () =>
+    store.listProjects(db, (id) => scanner.state(id)),
+  );
+  registerOrchestratorRoutes(app, orchestrator);
   // Card images live beside the agent logs: <dataDir>/attachments/<cardId>/.
   const attachmentsRoot = path.join(path.dirname(logDir), 'attachments');
   registerAttachmentRoutes(app, db, attachmentsRoot);
@@ -334,7 +344,7 @@ export function createApp(
     return c.json(browse(db, requested ? resolveFolder(requested) : os.homedir()));
   });
 
-  return Object.assign(app, { supervisor, scanner });
+  return Object.assign(app, { supervisor, scanner, orchestrator });
 }
 
 function resolveFolder(input: string): string {

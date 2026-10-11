@@ -1,4 +1,14 @@
 /* PM-57: account usage gets a dedicated desktop row below the workspace controls. */
+@media (max-width: 768px) {
+  .workspace .workspace-orchestrator-link {
+    display: none;
+  }
+  .workspace.mobile-tools-open .workspace-orchestrator-link {
+    display: inline-flex;
+    order: 10;
+    min-height: 40px;
+  }
+}
 @media (min-width: 769px) {
   .workspace-bar > .limits-strip.is-inline {
     order: 1;
@@ -35,5 +45,159 @@
   }
   .workspace .pane-meta > a.truncate {
     display: block;
+  }
+}
+
+/* Pane actions share a single size; text actions expand horizontally only. */
+.workspace .pane-head {
+  --pane-action-size: 28px;
+  min-height: 34px;
+  height: auto;
+}
+.workspace .pane-head > .icon-btn,
+.workspace .pane-head .pane-controls .icon-btn {
+  box-sizing: border-box;
+  width: var(--pane-action-size);
+  min-width: var(--pane-action-size);
+  height: var(--pane-action-size);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  align-self: center;
+}
+.workspace .pane-head .pane-controls .icon-btn-text {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.workspace .pane-head > .icon-btn svg,
+.workspace .pane-head .pane-controls .icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.workspace .pane-head > .icon-btn:hover,
+.workspace .pane-head .pane-controls .icon-btn:hover {
+  border-color: var(--border);
+  background: var(--surface-hover);
+}
+.workspace .pane-head > .icon-btn:focus-visible,
+.workspace .pane-head .pane-controls .icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+@media (max-width: 768px) {
+  .workspace .pane-head {
+    --pane-action-size: 36px;
+    grid-template-columns: 8px minmax(0, 1fr) repeat(3, 36px);
+  }
+  .workspace .pane-head > .icon-btn svg,
+  .workspace .pane-head .pane-controls .icon-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.work-bulk {
+  position: relative;
+  flex: none;
+  order: 1;
+}
+.work-bulk-menu {
+  position: fixed;
+  inset: var(--bulk-top, 100px) var(--bulk-right, 20px) auto auto;
+  margin: 0;
+  z-index: 100;
+  width: 240px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+}
+.work-bulk-menu:not(:popover-open) {
+  display: none;
+}
+@media (max-width: 768px) {
+  .workspace-list .work-list-top {
+    flex-wrap: wrap;
+  }
+  .work-bulk-menu {
+    inset: auto 12px calc(76px + env(safe-area-inset-bottom, 0px)) 12px;
+    width: auto;
+    max-width: none;
+    max-height: 60dvh;
+    padding: 12px;
+  }
+  .work-bulk-menu .btn {
+    min-height: 44px;
+    height: auto;
+    white-space: normal;
+  }
+}
+
+/* Text-based Start/Stop glyphs should match the SVG action icons, not text-button sizing. */
+.workspace .pane-head .pane-controls .icon-btn[title='Start session'],
+.workspace .pane-head .pane-controls .icon-btn[title='Stop session'] {
+  font-size: 13px;
+}
+@media (max-width: 768px) {
+  .workspace .pane-head .pane-controls .icon-btn[title='Start session'],
+  .workspace .pane-head .pane-controls .icon-btn[title='Stop session'] {
+    font-size: 15px;
+  }
+}
+
+/* A phone status picker preserves access to every status without a clipped chip strip. */
+.work-status-picker {
+  display: none;
+}
+.session-auto-continue {
+  white-space: nowrap;
+}
+.session-auto-continue[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+@media (max-width: 768px) {
+  .workspace .work-status-chips {
+    display: none;
+  }
+  .workspace .work-status-picker {
+    display: block;
+    min-width: 0;
+    flex: 1 1 0;
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .workspace .work-status-picker .dropdown,
+  .workspace .work-status-picker .dropdown-trigger {
+    width: 100%;
+    min-width: 0;
+  }
+  .workspace .work-status-picker .dropdown-trigger {
+    min-height: 44px;
+  }
+  .workspace .work-filters.is-expanded .work-filter-toggle {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .workspace .work-list .work-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace .work-list .work-actions {
+    grid-column: 1;
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
 }

@@ -1,3 +1,4 @@
+import { projectAttention } from '../../../shared/projectAttention';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
@@ -15,7 +16,6 @@ import { BytesTile, StatTile } from '../components/StatTile';
 import { formatBytes, formatCompact, formatDate, formatNumber, formatRelative } from '../format';
 
 const POLL_MS = 1000;
-const STALE_AFTER_MS = 90 * 86_400_000;
 
 /** Commits in the last `days` days, from the per-day map. */
 function recentCommits(project: ProjectSummary, days: number): number {
@@ -106,46 +106,21 @@ export function ProjectsPage() {
     return [...byName.values()].sort((a, b) => b.code - a.code);
   }, [projects]);
 
-  // What needs attention: missing folders, failed scans, repos untouched for 90+ days.
-  const attention = useMemo(() => {
-    const items: { project: ProjectSummary; kind: string; detail: string }[] = [];
-    for (const p of projects ?? []) {
-      if (p.missing) {
-        items.push({ project: p, kind: 'Folder missing', detail: p.path });
-      } else if (p.scan.status === 'error') {
-        items.push({ project: p, kind: 'Scan failed', detail: p.scan.error ?? 'Unknown error' });
-      } else if (
-        p.git?.isRepo &&
-        p.git.lastCommitAt &&
-        now - Date.parse(p.git.lastCommitAt) > STALE_AFTER_MS
-      ) {
-        items.push({
-          project: p,
-          kind: 'Stale',
-          detail: `No commits for over 90 days (last ${formatRelative(p.git.lastCommitAt)})`,
-        });
-      }
-      // Work that only exists on this machine: uncommitted files, commits not pushed yet.
-      if (!p.missing && p.git?.dirtyFiles) {
-        const n = p.git.dirtyFiles;
-        items.push({
-          project: p,
-          kind: 'Uncommitted',
-          detail: `${n} changed file${n === 1 ? '' : 's'}`,
-        });
-      }
-      if (!p.missing && p.git?.ahead) {
-        const n = p.git.ahead;
-        items.push({
-          project: p,
-          kind: 'Unpushed',
-          detail: `${n} commit${n === 1 ? '' : 's'} not pushed to ${p.git.branch ?? 'upstream'}`,
-        });
-      }
-    }
-    return items;
-  }, [projects, now]);
-
+  // Shared with orchestrator follow-up so both surfaces use the same signals.
+  const attention = useMemo(
+    () =>
+      (projects ?? []).flatMap((project) =>
+        projectAttention(project, now).map((item) => ({
+          project,
+          ...item,
+          detail:
+            item.kind === 'Stale'
+              ? `No commits for over 90 days (last ${formatRelative(project.git!.lastCommitAt!)})`
+              : item.detail,
+        })),
+      ),
+    [projects, now],
+  );
   return (
     <main className="page">
       {/* Sticky chrome: title and action stay put while the dashboard scrolls. */}

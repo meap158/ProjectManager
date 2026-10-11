@@ -11,12 +11,15 @@ type FilterStatus = Exclude<WorkStatus, 'input' | 'review'> | 'attention' | 'all
 
 export interface WorkFilterState {
   status: FilterStatus;
-  agent: string; // provider id or 'all'
-  project: number; // project id or 0 = all
-  kind: 'all' | 'session' | 'run';
+  agent: string | string[]; // provider id or 'all'
+  project: number | number[]; // project id or 0 = all
+  kind: 'all' | 'session' | 'run' | ('all' | 'session' | 'run')[];
   query: string;
 }
 
+export function selectedFilters<T extends string | number>(value: T | T[], all: T): T[] {
+  return (Array.isArray(value) ? value : [value]).filter((v) => v !== all);
+}
 const KEY = 'pm.workspace.listFilters';
 export const NO_FILTERS: WorkFilterState = {
   status: 'all',
@@ -31,8 +34,9 @@ export function readWorkFilters(): WorkFilterState {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<WorkFilterState> & {
       status?: string;
     };
-    const status = ['input', 'review'].includes(saved.status ?? '') ? 'attention' : saved.status;
-    return { ...NO_FILTERS, ...saved, status: (status ?? 'all') as FilterStatus };
+    const savedStatus = Array.isArray(saved.status) ? saved.status.at(-1) : saved.status;
+    const status = ['input', 'review'].includes(savedStatus ?? '') ? 'attention' : savedStatus;
+    return { ...NO_FILTERS, ...saved, status: (status ?? 'all') as WorkFilterState['status'] };
   } catch {
     return NO_FILTERS;
   }
@@ -52,10 +56,10 @@ export function useWorkFilters() {
 }
 
 export const filtersActive = (f: WorkFilterState) =>
-  f.status !== 'all' ||
-  f.agent !== 'all' ||
-  f.project !== 0 ||
-  f.kind !== 'all' ||
+  selectedFilters(f.status, 'all').length > 0 ||
+  selectedFilters(f.agent, 'all').length > 0 ||
+  selectedFilters(f.project, 0).length > 0 ||
+  selectedFilters(f.kind, 'all').length > 0 ||
   !!f.query.trim();
 
 /** Running includes work awaiting input; the row keeps its more specific state. */
@@ -77,12 +81,18 @@ export function applyWorkFilters(
   { ignoreStatus = false } = {},
 ): WorkItem[] {
   const q = f.query.trim().toLowerCase();
+  const statuses = selectedFilters(f.status, 'all');
+  const agents = selectedFilters(f.agent, 'all');
+  const projects = selectedFilters(f.project, 0);
+  const kinds = selectedFilters(f.kind, 'all');
   return items.filter(
     (w) =>
-      (ignoreStatus || matchesWorkStatus(w, f.status, now)) &&
-      (f.agent === 'all' || w.item.providerId === f.agent) &&
-      (f.project === 0 || w.item.projectId === f.project) &&
-      (f.kind === 'all' || w.kind === f.kind) &&
+      (ignoreStatus ||
+        !statuses.length ||
+        statuses.some((status) => matchesWorkStatus(w, status, now))) &&
+      (!agents.length || agents.includes(w.item.providerId)) &&
+      (!projects.length || projects.includes(w.item.projectId)) &&
+      (!kinds.length || kinds.includes(w.kind)) &&
       (!q ||
         w.item.name.toLowerCase().includes(q) ||
         (w.item.cardKey ?? '').toLowerCase().includes(q)),
@@ -112,9 +122,9 @@ export function WorkFilters({
   const set = (patch: Partial<WorkFilterState>) => onChange({ ...filters, ...patch });
   const [expanded, setExpanded] = useState(false);
   const extraCount =
-    Number(filters.agent !== 'all') +
-    Number(filters.project !== 0) +
-    Number(filters.kind !== 'all') +
+    Number(selectedFilters(filters.agent, 'all').length > 0) +
+    Number(selectedFilters(filters.project, 0).length > 0) +
+    Number(selectedFilters(filters.kind, 'all').length > 0) +
     Number(!!filters.query.trim());
 
   return (
@@ -123,6 +133,17 @@ export function WorkFilters({
       role="search"
       aria-label="Filter agent work"
     >
+      <div className="work-status-picker">
+        <Dropdown
+          label="Status"
+          value={filters.status}
+          options={(['all', 'attention', 'running', 'idle', 'ended'] as const).map((status) => ({
+            value: status,
+            label: `${status === 'all' ? 'All' : status === 'attention' ? 'Needs attention' : WORK_STATUS_LABELS[status]} (${count(status)})`,
+          }))}
+          onChange={(status) => set({ status })}
+        />
+      </div>
       <div className="work-status-chips" role="group" aria-label="Status">
         {(['all', 'attention', 'running', 'idle', 'ended'] as const).map((s) => (
           <button
@@ -146,56 +167,93 @@ export function WorkFilters({
         type="button"
         className="btn btn-sm work-filter-toggle"
         aria-expanded={expanded}
+        aria-label={`Filters${extraCount ? ` (${extraCount} active)` : ''}`}
         onClick={() => setExpanded(!expanded)}
       >
-        Filters{extraCount ? ` (${extraCount})` : ''}
+        <svg
+          className="work-filter-icon"
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+        >
+          <path
+            d="M2 3h12L9.5 8v4l-3 1V8Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="phone-hide">Filters</span>
+        {extraCount ? ` (${extraCount})` : ''}
       </button>
-      <Dropdown
-        label="Agent"
-        value={filters.agent}
-        options={[
-          { value: 'all', label: 'All agents' },
-          ...agents.map((id) => ({
-            value: id,
-            label: PROVIDER_LABELS[id] ?? id,
-            icon: <ProviderIcon id={id} size={14} />,
-          })),
-        ]}
-        onChange={(agent) => set({ agent })}
-      />
-      <Dropdown
-        label="Project"
-        value={filters.project}
-        options={[
-          { value: 0, label: 'All projects' },
-          ...projects.map((id) => ({ value: id, label: projectNames.get(id) ?? `Project ${id}` })),
-        ]}
-        onChange={(project) => set({ project })}
-      />
-      <Dropdown
-        label="Kind"
-        value={filters.kind}
-        options={[
-          { value: 'all' as const, label: 'All kinds' },
-          { value: 'session' as const, label: 'Terminals', sub: 'Interactive sessions' },
-          { value: 'run' as const, label: 'One-shot runs', sub: 'Card dispatches' },
-        ]}
-        onChange={(kind) => set({ kind })}
-      />
-      <input
-        className="input work-search"
-        type="search"
-        value={filters.query}
-        onChange={(e) => set({ query: e.target.value })}
-        placeholder="Search…"
-        title="Search by name or card key"
-        aria-label="Search agent work by name or card"
-      />
-      {filtersActive(filters) && (
-        <button type="button" className="link-button" onClick={() => onChange(NO_FILTERS)}>
-          Clear filters
-        </button>
-      )}
+      <div className="work-filter-extras">
+        <Dropdown
+          label="Agent"
+          value={'all'}
+          multiple={{
+            values: selectedFilters(filters.agent, 'all'),
+            allValue: 'all',
+            onChange: (agent) => set({ agent }),
+          }}
+          options={[
+            { value: 'all', label: 'All agents' },
+            ...agents.map((id) => ({
+              value: id,
+              label: PROVIDER_LABELS[id] ?? id,
+              icon: <ProviderIcon id={id} size={14} />,
+            })),
+          ]}
+          onChange={(agent) => set({ agent })}
+        />
+        <Dropdown
+          label="Project"
+          value={0}
+          multiple={{
+            values: selectedFilters(filters.project, 0),
+            allValue: 0,
+            onChange: (project) => set({ project }),
+          }}
+          options={[
+            { value: 0, label: 'All projects' },
+            ...projects.map((id) => ({
+              value: id,
+              label: projectNames.get(id) ?? `Project ${id}`,
+            })),
+          ]}
+          onChange={(project) => set({ project })}
+        />
+        <Dropdown
+          label="Kind"
+          value={'all'}
+          multiple={{
+            values: selectedFilters(filters.kind, 'all'),
+            allValue: 'all',
+            onChange: (kind) => set({ kind }),
+          }}
+          options={[
+            { value: 'all' as const, label: 'All kinds' },
+            { value: 'session' as const, label: 'Terminals', sub: 'Interactive sessions' },
+            { value: 'run' as const, label: 'One-shot runs', sub: 'Card dispatches' },
+          ]}
+          onChange={(kind) => set({ kind })}
+        />
+        <input
+          className="input work-search"
+          type="search"
+          value={filters.query}
+          onChange={(e) => set({ query: e.target.value })}
+          placeholder="Search…"
+          title="Search by name or card key"
+          aria-label="Search agent work by name or card"
+        />
+        {filtersActive(filters) && (
+          <button type="button" className="link-button" onClick={() => onChange(NO_FILTERS)}>
+            Clear filters
+          </button>
+        )}
+      </div>
     </div>
   );
 }

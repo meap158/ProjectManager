@@ -14,7 +14,7 @@ import { getSetting, setSetting } from './store.js';
 //    retired after 5 wrong tries, so a guesser gets at most 5 tries out of ~920,000 per code (the
 //    code is only ever shown on this computer). Wrong tries are also rate-limited per client.
 //  - A successful sign-in gives the device its own long random token (stored hashed) in an
-//    HttpOnly, SameSite=Strict cookie; Settings lists devices and can sign each (or all) out.
+//    HttpOnly, SameSite=Lax cookie; Settings lists devices and can sign each (or all) out.
 //  - Signed-in devices stay signed in (PM-37): devices live in the settings table, the cookie is
 //    renewed on every page load (a year from last use, not from sign-in), the listener reuses
 //    its last port across restarts so saved links and home-screen icons keep working, and the
@@ -93,7 +93,7 @@ const FAILURE_WINDOW_MS = 10 * 60_000;
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 /** The device cookie, valid a year from now (re-sent on page loads, so a year from last use). */
 const deviceCookie = (token: string) =>
-  `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;
+  `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`;
 /** EADDRINUSE retries for the remembered port: a restarting server may still be releasing it. */
 const PORT_RETRIES = 6;
 const PORT_RETRY_MS = 500;
@@ -160,7 +160,15 @@ ${message ? `<p class="err" role="alert">${escapeHtml(message)}</p>` : ''}
 <form method="post" action="${PAIR_PATH}">
 <input type="hidden" name="next" value="${escapeHtml(next)}">
 <input name="code" aria-label="Sign-in code" maxlength="9" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" autofocus required>
-<button type="submit">Sign in</button></form></main></html>`;
+<button type="submit">Sign in</button></form>
+<p style="margin-top:12px">This browser stays signed in. Save this address and use the same browser next time.</p>
+</main><script>
+const pairing = new URLSearchParams(location.hash.slice(1)).get('pair');
+if (pairing) {
+  history.replaceState(null, '', location.pathname + location.search);
+  if (/^[A-HJKMNP-Z2-9]{4}$/.test(pairing)) document.querySelector('input[name="code"]').value = pairing;
+}
+</script></html>`;
 }
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void;
@@ -326,6 +334,12 @@ export class LanAccess {
     }
     const url = new URL(req.url ?? '/', 'http://lan');
     const client = req.socket.remoteAddress ?? 'unknown';
+    // Guard all writes, including pairing, before inspecting or consuming credentials.
+    const origin = req.headers.origin;
+    if (req.method !== 'GET' && req.method !== 'HEAD' && origin && origin !== `http://${rawHost}`) {
+      res.writeHead(403, { ...HARDENING, 'content-type': 'text/plain' }).end('Forbidden origin');
+      return;
+    }
 
     if (url.pathname === PAIR_PATH && req.method === 'POST') {
       const record = this.failures.get(client);
@@ -365,8 +379,7 @@ export class LanAccess {
       };
       const others = settings.devices.filter((d) => d.id !== previous?.id);
       this.save({ ...settings, devices: [...others, device].slice(-MAX_DEVICES) });
-      // 303 from a same-origin form POST: the navigation is same-site, so the Strict cookie
-      // is sent on the very next request.
+      // Lax also sends the cookie when returning via a bookmark, link, or QR scanner.
       res
         .writeHead(303, {
           ...HARDENING,
@@ -389,11 +402,6 @@ export class LanAccess {
       return;
     }
     // Writes must come from this app's own LAN origin (on top of SameSite and JSON-only writes).
-    const origin = req.headers.origin;
-    if (req.method !== 'GET' && req.method !== 'HEAD' && origin && origin !== `http://${rawHost}`) {
-      res.writeHead(403, { ...HARDENING, 'content-type': 'text/plain' }).end('Forbidden origin');
-      return;
-    }
     this.touch(device);
     // Sliding expiry: page loads renew the cookie, so a device in use never reaches the end.
     if (req.method === 'GET' && (req.headers.accept ?? '').includes('text/html')) {

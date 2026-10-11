@@ -92,7 +92,7 @@ describe.skipIf(!ip)('LAN access', () => {
     const ok = await signIn(typed, '/board');
     expect(ok.status).toBe(303);
     expect(ok.headers.location).toBe('/board');
-    expect(String(ok.headers['set-cookie'])).toMatch(/HttpOnly; SameSite=Strict/);
+    expect(String(ok.headers['set-cookie'])).toMatch(/HttpOnly; SameSite=Lax/);
     const cookie = cookieOf(ok);
     expect((await signIn(status.code!)).status).toBe(401); // Single use.
     expect(lan.status().code).not.toBe(status.code); // A fresh code replaced it.
@@ -117,6 +117,20 @@ describe.skipIf(!ip)('LAN access', () => {
 
   it('guards hosts, origins and the next redirect', async () => {
     const { lan, host, port, signIn } = await setup(47_450);
+    const code = lan.status().code!;
+    const foreignPair = await send(
+      port,
+      'POST',
+      '/__pm/sign-in',
+      {
+        host,
+        origin: 'https://evil.example',
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      new URLSearchParams({ code }).toString(),
+    );
+    expect(foreignPair.status).toBe(403);
+    expect(lan.status().code).toBe(code);
     expect((await send(port, 'GET', '/', { host: 'evil.example' })).status).toBe(403);
     // An off-site "next" falls back to the app root (no open redirect).
     const ok = await signIn(lan.status().code!, '//evil.example/x');
@@ -171,6 +185,15 @@ describe.skipIf(!ip)('LAN access', () => {
     };
     const first = make(47_510);
     expect((await first.setEnabled(true)).port).toBe(47_510);
+    const host = `${ip}:47510`;
+    const paired = await send(
+      47_510,
+      'POST',
+      '/__pm/sign-in',
+      { host },
+      new URLSearchParams({ code: first.status().code! }).toString(),
+    );
+    const cookie = cookieOf(paired);
     await first.stop();
     // The previous server still holds the port for a moment, and the app port moved meanwhile.
     const holder = createServer().listen(47_510, '127.0.0.1');
@@ -178,6 +201,8 @@ describe.skipIf(!ip)('LAN access', () => {
     const second = make(47_530);
     await second.restore();
     expect(second.status().port).toBe(47_510); // Same address: saved links keep working.
+    expect((await send(47_510, 'GET', '/', { host, cookie })).status).toBe(200);
+    expect(second.status().devices).toHaveLength(1);
   });
 
   it('through the real app: the API works, LAN settings stay local-only', async () => {

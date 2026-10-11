@@ -371,6 +371,9 @@ export interface AgentTokenUsage {
 }
 
 export interface AgentSession {
+  restartProgress?: 'stopping' | 'starting' | 'restoring' | 'failed' | null;
+  restartError?: string | null;
+  autoContinue?: { enabled: boolean; resumesAt: string | null; message: string };
   id: number;
   projectId: number;
   name: string;
@@ -444,6 +447,7 @@ export interface RunChanges {
 
 /** A slice of a session/run log, addressed by byte offset. */
 export interface AgentOutput {
+  terminalSize?: { cols: number; rows: number };
   data: string;
   nextOffset: number;
   running: boolean;

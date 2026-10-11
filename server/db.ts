@@ -149,6 +149,24 @@ export const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   CREATE INDEX board_agent_audit_by_card ON board_agent_audit(card_id, id);`,
+  `CREATE TABLE orchestrator_assignments (
+    card_id INTEGER PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
+    orchestrator_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('dispatching', 'assigned', 'error')),
+    run_id INTEGER,
+    attempts INTEGER NOT NULL DEFAULT 1,
+    retry_after INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE orchestrator_lease (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    owner TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  );`,
+  `ALTER TABLE agent_runs ADD COLUMN dispatch_key TEXT;
+  CREATE UNIQUE INDEX agent_runs_dispatch_key ON agent_runs(dispatch_key) WHERE dispatch_key IS NOT NULL;
+  ALTER TABLE orchestrator_assignments ADD COLUMN dispatch_key TEXT;`,
+  `ALTER TABLE orchestrator_lease ADD COLUMN epoch INTEGER NOT NULL DEFAULT 1;`,
 ];
 
 export function openDb(dataDir: string): Db {

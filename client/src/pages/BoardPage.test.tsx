@@ -27,6 +27,11 @@ vi.mock('../api', () => ({
       card(3, 1, 'Alpha', 'done', 'Ship v1'),
     ]),
     listProjects: vi.fn(async () => []),
+    listAttachments: vi.fn(async () => []),
+    listProviders: vi.fn(async () => []),
+    listSessions: vi.fn(async () => []),
+    listRuns: vi.fn(async () => []),
+    runSummaries: vi.fn(async () => []),
   },
 }));
 
@@ -70,5 +75,11 @@ describe('BoardPage', () => {
     renderAt('/board?project=2');
     await screen.findByText('Fix login');
     expect(screen.queryByText('Plan the release')).toBeNull();
+  });
+
+  it('?card=2 automatically opens the card detail dialog', async () => {
+    renderAt('/board?card=2');
+    await screen.findByText('Fix login');
+    expect(await screen.findByText('Edit card')).toBeTruthy();
   });
 });

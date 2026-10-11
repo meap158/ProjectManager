@@ -23,13 +23,15 @@ import {
   mkdirSync,
   openSync,
   readSync,
+  readFileSync,
   closeSync,
+  fstatSync,
   statSync,
   realpathSync,
-  rmSync,
 } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { inferTerminalGeometry, legacyTerminalSnapshot } from './terminalGeometry.js';
 import type {
   AgentAutonomy,
   AgentDesiredState,
@@ -60,6 +62,8 @@ import {
 } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
 import { tailState, workingInTail } from './activity.js';
+import { readLimits } from './limits.js';
+import { allowanceReset, emptyCodexPrompt } from './continuation.js';
 import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
 import {
   antigravityConversationFor,
@@ -84,6 +88,14 @@ import {
   supportsAutonomy,
 } from './providers.js';
 import { resolveArgv } from './resolve.js';
+import {
+  compactLog,
+  LOG_KEEP_BYTES,
+  logBase,
+  logicalSize,
+  physicalSize,
+  removeLog,
+} from './logFile.js';
 
 const now = () => new Date().toISOString();
 
@@ -137,26 +149,27 @@ export class AgentError extends Error {
 // ---- Output log -----------------------------------------------------------------------------
 
 interface Chunk {
-  text: string;
+  data: Buffer;
   bytes: number;
 }
 
 /** File-backed, offset-addressed log with a capped in-memory window. */
-class OutputLog {
+export class OutputLog {
   private chunks: Chunk[] = [];
   private memBytes = 0;
   private baseOffset = 0; // bytes dropped from the head of `chunks`
-  private capped = false;
   totalBytes = 0;
 
   constructor(
     readonly file: string,
     private onAppend?: () => void,
+    private maxFileBytes = MAX_LOG_BYTES,
   ) {
     mkdirSync(path.dirname(file), { recursive: true });
     // Continue from what is already on disk, so byte offsets match the file across server
-    // restarts (a reconnecting terminal asks for "everything after byte N").
-    const size = statSync(file, { throwIfNoEntry: false })?.size ?? 0;
+    // restarts (a reconnecting terminal asks for "everything after byte N"). Offsets are logical:
+    // compacted logs record the bytes dropped from their head (logFile.ts).
+    const size = logicalSize(file);
     this.baseOffset = size;
     this.totalBytes = size;
   }
@@ -178,16 +191,21 @@ class OutputLog {
     this.totalBytes = size;
   }
 
+  /** Drop inactive cache only when disk can still serve every byte (writes are best-effort). */
+  releaseCache(): boolean {
+    if (logicalSize(this.file) < this.totalBytes) return false;
+    this.chunks = [];
+    this.memBytes = 0;
+    this.baseOffset = this.totalBytes;
+    return true;
+  }
+
   append(text: string): void {
-    if (!text || this.capped) return;
+    if (!text) return;
     try {
-      const size = statSync(this.file, { throwIfNoEntry: false })?.size ?? 0;
-      if (size >= MAX_LOG_BYTES) {
-        this.capped = true;
-        const marker = `\n[log truncated: ${MAX_LOG_BYTES} byte cap reached]\n`;
-        appendFileSync(this.file, marker);
-        this.push(marker);
-        return;
+      // A full log is compacted to its recent tail; output keeps flowing at growing offsets.
+      if (physicalSize(this.file) + Buffer.byteLength(text) > this.maxFileBytes) {
+        compactLog(this.file, Math.min(LOG_KEEP_BYTES, Math.floor(this.maxFileBytes / 4)));
       }
       appendFileSync(this.file, text);
     } catch {
@@ -199,13 +217,45 @@ class OutputLog {
   private push(text: string): void {
     this.onAppend?.();
     const bytes = Buffer.byteLength(text);
-    this.chunks.push({ text, bytes });
-    this.memBytes += bytes;
-    this.totalBytes += bytes;
-    while (this.memBytes > MEM_CAP_BYTES && this.chunks.length > 1) {
-      const dropped = this.chunks.shift()!;
-      this.memBytes -= dropped.bytes;
-      this.baseOffset += dropped.bytes;
+    let tail = this.chunks.at(-1);
+    if (!tail || tail.bytes === 4096) {
+      tail = { data: Buffer.allocUnsafe(4096), bytes: 0 };
+      this.chunks.push(tail);
+    }
+    // Most PTY events fit in the current block. Encode directly into it, avoiding a
+    // temporary Buffer allocation per keystroke/progress update.
+    if (bytes <= 4096 - tail.bytes) {
+      tail.data.write(text, tail.bytes, bytes, 'utf8');
+      tail.bytes += bytes;
+      this.memBytes += bytes;
+      this.totalBytes += bytes;
+      while (this.memBytes > MEM_CAP_BYTES) {
+        const dropped = this.chunks.shift()!;
+        this.memBytes -= dropped.bytes;
+        this.baseOffset += dropped.bytes;
+      }
+      return;
+    }
+    const data = Buffer.from(text, 'utf8');
+    this.totalBytes += data.length;
+    // Fixed blocks bound object overhead even for one-character output events. Store bytes
+    // once instead of encoding every cached chunk for every connected viewer's read.
+    for (let offset = 0; offset < data.length;) {
+      let tail = this.chunks.at(-1);
+      if (!tail || tail.bytes === 4096) {
+        tail = { data: Buffer.allocUnsafe(4096), bytes: 0 };
+        this.chunks.push(tail);
+      }
+      const take = Math.min(4096 - tail.bytes, data.length - offset);
+      data.copy(tail.data, tail.bytes, offset, offset + take);
+      tail.bytes += take;
+      offset += take;
+      this.memBytes += take;
+      while (this.memBytes > MEM_CAP_BYTES) {
+        const dropped = this.chunks.shift()!;
+        this.memBytes -= dropped.bytes;
+        this.baseOffset += dropped.bytes;
+      }
     }
   }
 
@@ -215,7 +265,7 @@ class OutputLog {
     if (after < this.baseOffset) return this.readFile(after);
     // Serve from memory; slice chunks by bytes so multibyte chars never split.
     let skip = after - this.baseOffset;
-    const parts: string[] = [];
+    const parts: Buffer[] = [];
     let used = 0;
     for (const c of this.chunks) {
       if (used >= MAX_READ_BYTES) break;
@@ -224,29 +274,33 @@ class OutputLog {
         continue;
       }
       const take = Math.min(c.bytes - skip, MAX_READ_BYTES - used);
-      parts.push(
-        Buffer.from(c.text, 'utf8')
-          .subarray(skip, skip + take)
-          .toString('utf8'),
-      );
+      parts.push(c.data.subarray(skip, skip + take));
       used += take;
       skip = 0;
     }
-    const data = parts.join('');
+    // A byte-limited read can end inside a multibyte glyph. Leave that suffix for the next
+    // read instead of inserting replacement characters and advancing beyond its true offset.
+    const data = new TextDecoder('utf-8', { ignoreBOM: true }).decode(Buffer.concat(parts), {
+      stream: true,
+    });
     return { data, nextOffset: after + Buffer.byteLength(data) };
   }
 
   /** Positioned read straight from the file for ranges that fell out of memory. */
   private readFile(after: number): { data: string; nextOffset: number } {
     try {
+      const base = logBase(this.file);
       const fd = openSync(this.file, 'r');
       try {
-        const size = statSync(this.file).size;
-        const start = Math.min(after, size);
-        const len = Math.min(MAX_READ_BYTES, size - start);
-        const buf = Buffer.alloc(len);
-        readSync(fd, buf, 0, len, start);
-        const data = buf.toString('utf8');
+        const size = fstatSync(fd).size;
+        // Offsets are logical; anything older than the compacted head resumes at the head.
+        const start = Math.min(Math.max(after, base), base + size);
+        const len = Math.min(MAX_READ_BYTES, base + size - start);
+        if (len <= 0) return { data: '', nextOffset: start };
+        const buf = Buffer.allocUnsafe(len);
+        const bytesRead = readSync(fd, buf, 0, len, start - base);
+        const slice = bytesRead < len ? buf.subarray(0, bytesRead) : buf;
+        const data = new TextDecoder('utf-8', { ignoreBOM: true }).decode(slice, { stream: true });
         return { data, nextOffset: start + Buffer.byteLength(data) };
       } finally {
         closeSync(fd);
@@ -395,14 +449,20 @@ const seenTitleKey = (id: number) => `session-cli-title:${id}`;
 
 export class AgentSupervisor {
   private live = new Map<string, LiveProc>();
+  private sessionSizes = new Map<number, { cols: number; rows: number }>();
   private logs = new Map<string, OutputLog>();
   /** Keys whose spawn is in flight (argv resolution is async): guards double starts. */
   private starting = new Set<string>();
   /** When each session last spawned and whether that spawn resumed a conversation. */
-  private lastSpawn = new Map<string, { at: number; resumed: boolean }>();
+  private lastSpawn = new Map<string, { at: number; resumed: boolean; byUser: boolean }>();
   /** Sessions whose last resume died right away: their next relaunch starts fresh. */
   private resumeFailed = new Set<string>();
   private closed = false;
+  private restarting = new Map<
+    number,
+    { phase: 'stopping' | 'starting' | 'restoring' | 'failed'; error?: string; since: number }
+  >();
+  private continuationTimer?: ReturnType<typeof setInterval>;
   /** Emits `output:<kind>:<id>` whenever a log grows, for live streaming to the GUI. */
   readonly events = new EventEmitter().setMaxListeners(0);
   /** Interactive sessions live in the session host (survive server restarts) when enabled. */
@@ -456,6 +516,16 @@ export class AgentSupervisor {
     this.ready = this.reconcile().catch((e: Error) => {
       console.error('[agents] reconcile failed:', e);
     });
+    this.continuationTimer = setInterval(() => {
+      if (!this.closed) {
+        try {
+          this.tickContinuation();
+        } catch (e) {
+          console.error('[agents] auto-continue:', e);
+        }
+      }
+    }, 10_000);
+    this.continuationTimer.unref();
   }
 
   // ---- Session host ------------------------------------------------------------------------
@@ -812,12 +882,17 @@ export class AgentSupervisor {
   }
 
   /** Write stdin: straight to the live process, or queued durably when it is down. */
-  sendInput(id: number, data: string): { queued: boolean; session: AgentSession | null } {
+  sendInput(
+    id: number,
+    data: string,
+    manual = true,
+  ): { queued: boolean; session: AgentSession | null } {
     const row = this.getSessionRow(id);
     if (!row) return { queued: false, session: null };
     if (!data) throw new AgentError(400, 'Input is empty');
     if (Buffer.byteLength(data) > 64 * 1024)
       throw new AgentError(400, 'Input too large (64KB max)');
+    if (manual && !isTerminalReport(data)) this.cancelContinuation(id, 'Cancelled by manual input');
     const live = this.live.get(`session:${id}`);
     if (live && live.proc.write(data)) return { queued: false, session: this.getSession(id) };
     // A terminal's automatic replies (focus, device attributes, cursor reports) mean nothing to
@@ -840,31 +915,90 @@ export class AgentSupervisor {
   /** Resize a PTY session's terminal to match the viewer (no-op for pipe sessions). */
   resizeSession(id: number, cols: number, rows: number): boolean {
     if (!this.getSessionRow(id)) return false;
-    this.live.get(`session:${id}`)?.proc.resize(cols, rows);
+    const previous = this.sessionSizes.get(id);
+    this.sessionSizes.set(id, { cols, rows });
+    const live = this.live.get(`session:${id}`);
+    if (live && (previous?.cols !== cols || previous?.rows !== rows)) {
+      // Record geometry before the redraw so stopped viewers can replay cursor motion faithfully.
+      if (!(live.proc instanceof HostedProc)) {
+        live.log.append(`\x1b]777;pm-size;${cols};${rows}\x07`);
+      }
+      live.proc.resize(cols, rows);
+    }
     return true;
   }
 
   readSessionOutput(id: number, after: number): AgentOutput | null {
     const row = this.getSessionRow(id);
     if (!row) return null;
-    return this.readOutput(
+    const output = this.readOutput(
       `session:${id}`,
       row.log_path,
       row.status === 'running',
       row.exit_code,
       after,
     );
+    if (
+      after === 0 &&
+      row.terminal === 'pty' &&
+      row.status !== 'running' &&
+      !output.data.includes('\x1b]777;pm-size;')
+    ) {
+      try {
+        const st = { size: physicalSize(row.log_path) };
+        const maxLegacyBytes = 1024 * 1024;
+        let log: string;
+        if (st.size > maxLegacyBytes) {
+          const fd = openSync(row.log_path, 'r');
+          try {
+            const buf = Buffer.allocUnsafe(maxLegacyBytes);
+            const bytesRead = readSync(fd, buf, 0, maxLegacyBytes, st.size - maxLegacyBytes);
+            log = buf.subarray(0, bytesRead).toString('utf8');
+          } finally {
+            closeSync(fd);
+          }
+        } else {
+          log = readFileSync(row.log_path, 'utf8');
+        }
+        const snapshot = row.provider_id === 'opencode' ? legacyTerminalSnapshot(log) : null;
+        if (snapshot) {
+          output.data = snapshot;
+          // Snapshot represents the whole archive, not a new log with different byte offsets.
+          output.nextOffset = output.logBytes;
+        } else {
+          output.terminalSize = inferTerminalGeometry(log);
+        }
+      } catch {
+        // Missing logs still return the normal output response.
+      }
+    }
+    return output;
   }
 
   async stopSession(id: number): Promise<AgentSession | null> {
     const row = this.getSessionRow(id);
     if (!row) return null;
+    this.cancelContinuation(id, 'Cancelled by Stop or Restart');
     this.db.prepare(`UPDATE agent_sessions SET desired_state = 'stopped' WHERE id = ?`).run(id);
     const live = this.live.get(`session:${id}`);
     if (live) {
       live.stoppedByUser = true;
       if (live.timer) clearTimeout(live.timer);
-      await this.killLive(live);
+      // The host can acknowledge kill before its exit notification clears the live entry.
+      // Wait for that notification so an immediate Start cannot race the old process.
+      let exitTimer: ReturnType<typeof setTimeout> | undefined;
+      const exited = new Promise<void>((resolve, reject) => {
+        live.proc.onExit(() => resolve());
+        exitTimer = setTimeout(
+          () => reject(new AgentError(409, 'Timed out waiting for session to stop')),
+          10_000,
+        );
+      });
+      try {
+        await Promise.all([this.killLive(live), exited]);
+      } finally {
+        clearTimeout(exitTimer);
+      }
     } else if (row.status === 'running') {
       this.db
         .prepare(
@@ -876,17 +1010,165 @@ export class AgentSupervisor {
   }
 
   /** (Re)start a stopped/dead/exited session. Resets the restart counter. */
+  async restartSession(id: number): Promise<AgentSession> {
+    if (!this.getSessionRow(id)) throw new AgentError(404, 'Session not found');
+    const pending = this.restarting.get(id);
+    if (pending && pending.phase !== 'failed')
+      throw new AgentError(409, 'Restart already in progress');
+    const state = {
+      phase: 'stopping' as 'stopping' | 'starting' | 'restoring' | 'failed',
+      since: Date.now(),
+      error: undefined as string | undefined,
+    };
+    this.restarting.set(id, state);
+    try {
+      await this.stopSession(id);
+      state.phase = 'starting';
+      const session = await this.startSession(id);
+      if (session.status !== 'running')
+        throw new AgentError(400, 'CLI failed to start. Inspect the terminal log.');
+      state.phase = 'restoring';
+      state.since = Date.now();
+      return this.getSession(id)!;
+    } catch (e) {
+      state.phase = 'failed';
+      state.error = (e as Error).message;
+      throw e;
+    }
+  }
+
+  setAutoContinue(id: number, enabled: boolean): AgentSession {
+    const row = this.getSessionRow(id);
+    if (!row) throw new AgentError(404, 'Session not found');
+    if (row.provider_id !== 'codex' || row.terminal !== 'pty')
+      throw new AgentError(
+        400,
+        'Use Claude’s native auto-continue; managed continuation supports Codex terminals.',
+      );
+    setSetting(this.db, `session-auto-continue:${id}`, {
+      enabled,
+      resumesAt: null,
+      message: enabled ? 'Watching for an allowance limit' : 'Auto-continue off',
+      offset: this.fileSize(row.log_path),
+      conversation: this.conversationOf(row),
+      attempts: 0,
+      startedAt: row.started_at,
+      checkedAt: Date.now(),
+    });
+    // Allow opting in after the visible error has already occurred.
+    if (enabled) this.armContinuation(row);
+    return this.getSession(id)!;
+  }
+
+  private cancelContinuation(id: number, message: string): void {
+    const key = `session-auto-continue:${id}`;
+    const state = getSetting<{ enabled: boolean; resumesAt: string | null; message: string }>(
+      this.db,
+      key,
+    );
+    if (state?.enabled)
+      setSetting(this.db, key, { ...state, enabled: false, resumesAt: null, message });
+  }
+
+  private armContinuation(row: SessionRow): void {
+    const key = `session-auto-continue:${row.id}`;
+    const state = getSetting<{ enabled: boolean; resumesAt: string | null; attempts: number }>(
+      this.db,
+      key,
+    );
+    if (!state?.enabled || state.resumesAt) return;
+    const limits = readLimits(this.dataDir).find((p) => p.providerId === 'codex');
+    const resumesAt = allowanceReset(
+      this.logTail(row.log_path) ?? '',
+      limits?.windows ?? [],
+      Date.now(),
+    );
+    if (!resumesAt) return;
+    setSetting(this.db, key, { ...state, resumesAt, message: 'Waiting for allowance reset' });
+  }
+
+  private tickContinuation(): void {
+    const rows = this.db
+      .prepare(`SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'`)
+      .all() as unknown as SessionRow[];
+    for (const row of rows) {
+      const key = `session-auto-continue:${row.id}`;
+      let state = getSetting<{
+        enabled: boolean;
+        resumesAt: string | null;
+        message: string;
+        offset: number;
+        conversation: string | null;
+        startedAt: string;
+        checkedAt: number;
+        attempts: number;
+      }>(this.db, key);
+      if (!state?.enabled) continue;
+      if (
+        state.startedAt !== row.started_at ||
+        (state.conversation && state.conversation !== this.conversationOf(row))
+      ) {
+        this.cancelContinuation(row.id, 'Cancelled: session or conversation changed');
+        continue;
+      }
+      const previousCheck = state.checkedAt;
+      state.checkedAt = Date.now();
+      setSetting(this.db, key, state);
+      const size = this.fileSize(row.log_path);
+      if (!state.resumesAt && size > state.offset) {
+        this.armContinuation(row);
+        state = getSetting(this.db, key)!;
+        state.offset = size;
+        setSetting(this.db, key, state);
+      }
+      if (!state.resumesAt || Date.parse(state.resumesAt) > Date.now()) continue;
+      if (Date.now() - previousCheck > 30 * 60_000) {
+        this.cancelContinuation(row.id, 'Allowance reset while offline. Continue manually.');
+        continue;
+      }
+      const tail = this.logTail(row.log_path) ?? '';
+      // A placeholder is evidence that the CLI draft is empty; never overwrite typed text.
+      if (
+        this.sessionActivity(row, this.fileModifiedAt(row.log_path)) !== 'idle' ||
+        !emptyCodexPrompt(tail)
+      )
+        continue;
+      const live = this.live.get(`session:${row.id}`);
+      if (!live || this.queuedInputBytes(row.id)) continue;
+      // Persist the claim before sending, so reconnect/restart cannot duplicate submission.
+      this.cancelContinuation(row.id, 'Continuation sent; enable again for another reset');
+      if (
+        !live.proc.write(
+          '\x1b[200~Continue the interrupted task from where you stopped.\x1b[201~\r',
+        )
+      ) {
+        setSetting(this.db, key, {
+          ...state,
+          enabled: false,
+          resumesAt: null,
+          message: 'Could not send continuation. Continue manually.',
+        });
+      }
+    }
+  }
+
   async startSession(id: number): Promise<AgentSession> {
     const row = this.getSessionRow(id);
     if (!row) throw new AgentError(404, 'Session not found');
     if (this.live.has(`session:${id}`)) throw new AgentError(409, 'Session is already running');
+    if (this.restarting.get(id)?.phase === 'failed') this.restarting.delete(id);
     this.db
       .prepare(`UPDATE agent_sessions SET desired_state = 'running', restarts = 0 WHERE id = ?`)
       .run(id);
     const fresh = this.getSessionRow(id)!;
     // Starting a stopped session continues its conversation, like a relaunch: launching the
     // original command again would replay its first prompt or reuse a pinned id (which CLIs refuse).
-    await this.spawnSession(fresh, true, true).catch((e) => this.markSessionDead(id, String(e)));
+    try {
+      await this.spawnSession(fresh, true, true);
+    } catch (e) {
+      this.markSessionDead(id, String(e));
+      throw e;
+    }
     return this.getSession(id)!;
   }
 
@@ -897,12 +1179,14 @@ export class AgentSupervisor {
     this.db.prepare(`DELETE FROM agent_sessions WHERE id = ?`).run(id);
     deleteSetting(this.db, renameKey(id));
     deleteSetting(this.db, seenTitleKey(id));
+    deleteSetting(this.db, `session-auto-continue:${id}`);
+    this.restarting.delete(id);
     // Forget the record's process and log now: SQLite reuses ids, and a new session with this id
     // must not be mistaken for the old one while the old process is still exiting.
     this.live.delete(`session:${id}`);
     this.logs.delete(`session:${id}`);
     try {
-      rmSync(row.log_path, { force: true });
+      removeLog(row.log_path);
     } catch {
       // Log cleanup is best-effort.
     }
@@ -1002,12 +1286,27 @@ export class AgentSupervisor {
       timeoutMin?: number;
       maxAttempts?: number;
       autonomy?: AgentAutonomy;
+      dispatchKey?: string;
+      /** Internal scheduler fence, evaluated synchronously immediately before insertion. */
+      canCommit?: () => boolean;
     },
   ): Promise<AgentRun> {
     const project = getProjectRow(this.db, projectId);
     if (!project) throw new AgentError(404, 'Project not found');
     const card = getCard(this.db, cardId);
     if (!card || card.projectId !== projectId) throw new AgentError(404, 'Card not found');
+    const existingDispatch = () =>
+      input.dispatchKey
+        ? (this.db
+            .prepare('SELECT * FROM agent_runs WHERE dispatch_key = ?')
+            .get(input.dispatchKey) as unknown as RunRow | undefined)
+        : undefined;
+    const existing = existingDispatch();
+    if (existing) {
+      if (existing.project_id !== projectId || existing.card_id !== cardId)
+        throw new AgentError(409, 'Dispatch key belongs to another task');
+      return this.toRun(existing);
+    }
     const running = (
       this.db
         .prepare(
@@ -1061,6 +1360,14 @@ export class AgentSupervisor {
       throw new AgentError(400, 'maxAttempts must be 1–10');
     }
 
+    const repeated = existingDispatch();
+    if (repeated) {
+      if (repeated.project_id !== projectId || repeated.card_id !== cardId)
+        throw new AgentError(409, 'Dispatch key belongs to another task');
+      return this.toRun(repeated);
+    }
+    if (input.canCommit && !input.canCommit())
+      throw new AgentError(409, 'Orchestrator ownership or policy changed before dispatch');
     const ts = now();
     const logPath = path.join(
       this.logDir,
@@ -1071,8 +1378,8 @@ export class AgentSupervisor {
         .prepare(
           `INSERT INTO agent_runs
              (project_id, card_id, name, provider_id, command_json, prompt, status,
-              attempts, max_attempts, created_at, log_path, autonomy)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?)`,
+              attempts, max_attempts, created_at, log_path, autonomy, dispatch_key)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)`,
         )
         .run(
           projectId,
@@ -1085,6 +1392,7 @@ export class AgentSupervisor {
           ts,
           logPath,
           autonomy,
+          input.dispatchKey ?? null,
         ).lastInsertRowid,
     );
     // Dispatching work starts it: backlog/todo cards move to In progress.
@@ -1206,7 +1514,7 @@ export class AgentSupervisor {
     this.live.delete(`run:${id}`);
     this.logs.delete(`run:${id}`);
     try {
-      rmSync(row.log_path, { force: true });
+      removeLog(row.log_path);
     } catch {
       // Best-effort.
     }
@@ -1236,6 +1544,7 @@ export class AgentSupervisor {
       re-attaches); in-process ones are stopped so the next boot can relaunch them cleanly. */
   async shutdown(): Promise<void> {
     this.closed = true;
+    clearInterval(this.continuationTimer);
     const installKills = [...this.installing.values()].map(async (live) => {
       if (live.timer) clearTimeout(live.timer);
       try {
@@ -1306,12 +1615,7 @@ export class AgentSupervisor {
     // No live log (server restarted since): serve the persisted file directly.
     const tmp = new OutputLog(file);
     const { data, nextOffset } = tmp.read(safeAfter);
-    let logBytes = nextOffset;
-    try {
-      logBytes = Math.max(nextOffset, statSync(file).size);
-    } catch {
-      // Missing file: report what we read.
-    }
+    const logBytes = Math.max(nextOffset, logicalSize(file));
     return { data, nextOffset, running, exitCode, logBytes };
   }
 
@@ -1361,6 +1665,12 @@ export class AgentSupervisor {
       if (isRelaunch && resume && row.provider_id === 'claude') {
         const stale = staleClaudeResume(resume, row.cwd);
         if (stale) {
+          if (byUser) {
+            throw new AgentError(
+              409,
+              `Cannot resume Claude conversation ${stale}: its saved transcript is missing. Restart cancelled to preserve the conversation target.`,
+            );
+          }
           note(`Claude has no saved conversation ${stale} (it was never saved) — starting fresh`);
           resume = null;
         }
@@ -1398,14 +1708,20 @@ export class AgentSupervisor {
       }
       // The last resume attempt died within seconds (e.g. "No conversation found"): start
       // fresh instead of burning the restart budget on the same failure.
-      const resumeFailed = this.resumeFailed.delete(key);
+      const resumeFailed = !byUser && this.resumeFailed.delete(key);
+      if (byUser && this.resumeFailed.has(key)) {
+        throw new AgentError(
+          409,
+          'The saved conversation failed to resume. Restart cancelled rather than starting a fresh conversation. Inspect the terminal log.',
+        );
+      }
       if (isRelaunch && resumeFailed) note('the last resume failed right away — starting fresh');
       const baseArgv = isRelaunch
         ? resumeFailed
           ? launch
           : (resume ?? this.resumeLatestArgv(row) ?? launch)
         : launch;
-      this.lastSpawn.set(key, { at: Date.now(), resumed: baseArgv !== launch });
+      this.lastSpawn.set(key, { at: Date.now(), resumed: baseArgv !== launch, byUser });
       forgetTurn(row.id); // A new process: its hooks report afresh.
       const connection = this.dataDir
         ? boardConnection(
@@ -1429,6 +1745,9 @@ export class AgentSupervisor {
       const argv = connection.command;
       const log = this.outputFor(key, row.log_path);
       if (isRelaunch) {
+        // A killed TUI may leave cursor position, scroll margins and alternate-screen modes
+        // active. Reset them before the next process writes into this same output stream.
+        if (row.terminal === 'pty') log.append('\x1bc');
         log.append(
           (byUser
             ? '\r\n[supervisor] session started again'
@@ -1452,13 +1771,16 @@ export class AgentSupervisor {
             argv: resolved,
             cwd: row.cwd,
             env: processEnv(connection.env),
-            cols: 120,
-            rows: 30,
+            cols: this.sessionSizes.get(row.id)?.cols ?? 120,
+            rows: this.sessionSizes.get(row.id)?.rows ?? 30,
             logPath: row.log_path,
             maxLogBytes: MAX_LOG_BYTES,
           })) as HostSessionInfo;
           // Shutting down meanwhile: leave it running in the host; the next boot re-attaches.
           if (this.closed) return;
+          this.db
+            .prepare('UPDATE agent_sessions SET started_at = ? WHERE id = ?')
+            .run(now(), row.id);
           this.wireHosted(row, host, info, log);
           return;
         }
@@ -1505,6 +1827,11 @@ export class AgentSupervisor {
     signal: string | null,
   ): void {
     if (this.live.get(key) === live) this.live.delete(key);
+    // After exit markers have been appended, archives need no retained byte window.
+    // A replacement process may have started meanwhile; never evict its active cache.
+    queueMicrotask(() => {
+      if (!this.live.has(key) && this.logs.get(key) === live.log) live.log.releaseCache();
+    });
     // Shutdown kills everything: leave the row 'running' + wanted so the next boot relaunches
     // it (reboot-proof by design). The DB may already be closed, so touch nothing.
     if (this.closed) return;
@@ -1533,6 +1860,14 @@ export class AgentSupervisor {
     const spawned = this.lastSpawn.get(key);
     if (spawned?.resumed && code !== 0 && Date.now() - spawned.at < RESUME_FAIL_MS) {
       this.resumeFailed.add(key);
+      if (spawned.byUser) {
+        const error =
+          'The saved conversation failed to resume. Kept the conversation target; inspect the terminal log before retrying.';
+        this.restarting.set(id, { phase: 'failed', since: Date.now(), error });
+        this.db.prepare("UPDATE agent_sessions SET desired_state = 'stopped' WHERE id = ?").run(id);
+        this.markSessionDead(id, error);
+        return;
+      }
     }
     if (current.supervise && current.restarts < MAX_RESTARTS) {
       const restarts = current.restarts + 1;
@@ -1625,7 +1960,7 @@ export class AgentSupervisor {
           .map((ch) => (ch < ' ' || ch === '\x7f' ? ' ' : ch))
           .join('')
           .trim();
-        this.sendInput(row.id, `\x1b[200~/rename ${clean}\x1b[201~\r`);
+        this.sendInput(row.id, `\x1b[200~/rename ${clean}\x1b[201~\r`, false);
         setSetting(this.db, seenTitleKey(row.id), pending);
         deleteSetting(this.db, renameKey(row.id));
         continue;
@@ -1820,6 +2155,9 @@ export class AgentSupervisor {
         row.id,
         row.log_path,
       );
+    const key = `run:${row.id}`;
+    const log = this.logs.get(key);
+    if (!this.live.has(key) && log?.file === row.log_path) log.releaseCache();
   }
 
   // ---- Installs (Settings: one-click agent CLI installs) ---------------------------------------
@@ -1999,7 +2337,7 @@ export class AgentSupervisor {
     await this.cancelInstall(id);
     this.db.prepare(`DELETE FROM agent_installs WHERE id = ?`).run(id);
     try {
-      rmSync(row.log_path, { force: true });
+      removeLog(row.log_path);
     } catch {
       // Best-effort.
     }
@@ -2044,8 +2382,41 @@ export class AgentSupervisor {
   private toSession(row: SessionRow): AgentSession {
     const { command } = JSON.parse(row.command_json) as { command: string[] };
     const live = this.live.get(`session:${row.id}`);
-    const lastOutputAt = this.fileModifiedAt(row.log_path);
+    const { size: diskLogBytes, mtime: lastOutputAt } = this.fileStat(row.log_path);
+    const progress = this.restarting.get(row.id);
+    if (progress?.phase === 'restoring') {
+      const activity = this.sessionActivity(row, lastOutputAt);
+      const hasOutputSince = !!lastOutputAt && Date.parse(lastOutputAt) >= progress.since;
+      if (
+        (hasOutputSince &&
+          (activity === 'idle' || activity === 'input' || activity === 'running')) ||
+        (live && hasOutputSince && Date.now() - progress.since > 5_000)
+      ) {
+        this.restarting.delete(row.id);
+      } else if (!live && Date.now() - progress.since > 10_000) {
+        progress.phase = 'failed';
+        progress.error = 'CLI exited shortly after launch. Inspect the terminal before retrying.';
+      } else if (Date.now() - progress.since > 60_000) {
+        if (live) {
+          this.restarting.delete(row.id);
+        } else {
+          progress.phase = 'failed';
+          progress.error =
+            'CLI readiness could not be confirmed. Inspect the terminal before retrying.';
+        }
+      }
+    } else if (progress?.phase === 'failed' && (live || row.status === 'running')) {
+      // The session process is alive and running; clear stale restart failure.
+      this.restarting.delete(row.id);
+    }
     return {
+      restartProgress: this.restarting.get(row.id)?.phase ?? null,
+      restartError: this.restarting.get(row.id)?.error ?? null,
+      autoContinue: getSetting(this.db, `session-auto-continue:${row.id}`) ?? {
+        enabled: false,
+        resumesAt: null,
+        message: '',
+      },
       id: row.id,
       projectId: row.project_id,
       name: row.name,
@@ -2067,7 +2438,7 @@ export class AgentSupervisor {
       createdAt: row.created_at,
       startedAt: row.started_at,
       endedAt: row.ended_at,
-      logBytes: live ? live.log.totalBytes : this.fileSize(row.log_path),
+      logBytes: live ? live.log.totalBytes : diskLogBytes,
       lastOutputAt,
       tailState: row.status === 'running' || live ? this.sessionActivity(row, lastOutputAt) : null,
     };
@@ -2107,13 +2478,19 @@ export class AgentSupervisor {
     };
   }
 
+  /** Log size as a logical offset (includes bytes compacted away) and last modification. */
+  private fileStat(file: string): { size: number; mtime: string | null } {
+    try {
+      const st = statSync(file);
+      return { size: logBase(file) + st.size, mtime: st.mtime.toISOString() };
+    } catch {
+      return { size: 0, mtime: null };
+    }
+  }
+
   /** When the log last grew: the session's last output (the host writes the log itself). */
   private fileModifiedAt(file: string): string | null {
-    try {
-      return statSync(file).mtime.toISOString();
-    } catch {
-      return null;
-    }
+    return this.fileStat(file).mtime;
   }
 
   /**
@@ -2137,12 +2514,13 @@ export class AgentSupervisor {
     try {
       const fd = openSync(file, 'r');
       try {
-        const size = statSync(file).size;
+        const size = fstatSync(fd).size;
         const len = Math.min(4096, size);
         if (len === 0) return null;
-        const buf = Buffer.alloc(len);
-        readSync(fd, buf, 0, len, size - len);
-        return buf.toString('utf8');
+        const buf = Buffer.allocUnsafe(len);
+        const bytesRead = readSync(fd, buf, 0, len, size - len);
+        const slice = bytesRead < len ? buf.subarray(0, bytesRead) : buf;
+        return slice.toString('utf8');
       } finally {
         closeSync(fd);
       }
@@ -2152,11 +2530,7 @@ export class AgentSupervisor {
   }
 
   private fileSize(file: string): number {
-    try {
-      return statSync(file).size;
-    } catch {
-      return 0;
-    }
+    return this.fileStat(file).size;
   }
 }
 

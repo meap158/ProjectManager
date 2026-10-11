@@ -5,10 +5,9 @@ import { Dropdown } from './Dropdown';
 import { formatBytes, formatDuration, formatRelative } from '../format';
 import { ConfirmDelete } from './ConfirmDelete';
 
-// xterm is heavy: it loads only when output is opened.
-const TerminalView = lazy(() =>
-  import('./TerminalView').then((m) => ({ default: m.TerminalView })),
-);
+// Preload TerminalView chunk as soon as run card loads so it is ready when output is opened.
+const terminalViewPromise = import('./TerminalView');
+const TerminalView = lazy(() => terminalViewPromise.then((m) => ({ default: m.TerminalView })));
 
 const STATUS_BADGE: Record<AgentRun['status'], string> = {
   queued: 'badge',
@@ -238,6 +237,7 @@ export function RunCard({
             fetchOutput={(after) => api.runOutput(run.id, after)}
             height={280}
             paused={paused}
+            historyBytes={run.logBytes}
           />
         </Suspense>
       )}

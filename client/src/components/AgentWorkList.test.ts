@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentRun, AgentSession } from '../../../shared/types';
-import { mergeWork, runFacts, sessionFacts, workKey } from './AgentWorkList';
+import { mergeWork, runFacts, sessionFacts, stateLabel, workKey } from './AgentWorkList';
 
 const NOW = Date.parse('2026-10-06T12:00:00Z');
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
@@ -60,5 +60,40 @@ describe('facts', () => {
     );
     expect(facts[0]).toBe('took 2m 0s');
     expect(facts).toContain('2 files changed');
+  });
+
+  it('formats provider name dynamically in the session token facts tooltip', () => {
+    const usage = { input: 100, cacheWrite: 20, output: 50, cacheRead: 5, replies: 3 };
+    const facts = sessionFacts(session(1, { providerId: 'codex' }), NOW, usage);
+    const tokenFact = facts.find((f) => f.text.includes('tokens'));
+    expect(tokenFact?.title).toContain("from Codex's session transcript");
+
+    const grokFacts = sessionFacts(session(2, { providerId: 'grok' }), NOW, usage);
+    const grokTokenFact = grokFacts.find((f) => f.text.includes('tokens'));
+    expect(grokTokenFact?.title).toContain("from Grok's session transcript");
+  });
+});
+
+describe('stateLabel', () => {
+  it('does not display Restart failed when a session is actively running', () => {
+    const s = session(1, {
+      status: 'running',
+      restartProgress: 'failed',
+      tailState: 'running',
+    });
+    const label = stateLabel({ kind: 'session', item: s }, NOW);
+    expect(label.text).not.toBe('Restart failed');
+    expect(label.tone).not.toBe('bad');
+    expect(label.text).toBe('running');
+  });
+
+  it('displays Restart failed with tone bad when a session is not running', () => {
+    const s = session(1, {
+      status: 'killed',
+      restartProgress: 'failed',
+    });
+    const label = stateLabel({ kind: 'session', item: s }, NOW);
+    expect(label.text).toBe('Restart failed');
+    expect(label.tone).toBe('bad');
   });
 });

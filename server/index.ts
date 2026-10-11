@@ -62,6 +62,7 @@ async function main() {
   api.scanner.refreshPeriodically();
   // Session names follow /rename in the CLIs, and renames here reach the CLIs.
   api.supervisor.syncTitlesPeriodically();
+  api.orchestrator.start();
 
   const server = createServer();
 
@@ -128,6 +129,7 @@ async function main() {
   const shutdown = () => {
     void (async () => {
       try {
+        await api.orchestrator.stop();
         await api.supervisor.shutdown();
       } finally {
         releaseInstance(config.dataDir, process.pid);

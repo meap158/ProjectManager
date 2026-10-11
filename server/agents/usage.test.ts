@@ -1,11 +1,17 @@
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   claudeSessionId,
   codexSessionFor,
+  findCodexRolloutFile,
+  readCodexRolloutUsage,
+  readGrokUsage,
+  readOpenCodeUsage,
   readTranscriptUsage,
+  sessionUsage,
   staleClaudeResume,
   transcriptPath,
 } from './usage.js';
@@ -81,7 +87,13 @@ describe('Claude session usage', () => {
     const meta = (id: string, cwd: string, at: string, source?: unknown) =>
       JSON.stringify({
         type: 'session_meta',
-        payload: { id, cwd, timestamp: at, ...(source ? { source } : {}) },
+        payload: {
+          id,
+          cwd,
+          timestamp: at,
+          instructions: 'x'.repeat(8000),
+          ...(source ? { source } : {}),
+        },
       }) + '\n';
     const cwd = 'S:\\Vibe Coding\\Codex';
     writeFileSync(path.join(day, 'rollout-a.jsonl'), meta('old', cwd, '2026-10-06T01:00:00Z'));
@@ -101,5 +113,141 @@ describe('Claude session usage', () => {
     // Another session already resumes "mine": take the next one.
     expect(codexSessionFor(cwd, started, new Set(['mine']), home)).toBe('later');
     expect(codexSessionFor('S:\\Nowhere', started, new Set(), home)).toBeNull();
+  });
+});
+
+describe('Codex rollout usage and file lookup', () => {
+  it('reads token metrics from a Codex rollout file', () => {
+    const file = path.join(home, 'codex-test-rollout.jsonl');
+    const line = JSON.stringify({
+      type: 'event',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: {
+            input_tokens: 1500,
+            output_tokens: 250,
+            cached_input_tokens: 300,
+            cache_write_input_tokens: 50,
+          },
+        },
+      },
+    });
+    writeFileSync(file, line + '\n');
+    expect(readCodexRolloutUsage(file)).toEqual({
+      input: 1500,
+      output: 250,
+      cacheRead: 300,
+      cacheWrite: 50,
+      replies: 1,
+    });
+  });
+
+  it('locates rollout file by resumeId', () => {
+    const dir = path.join(home, '.codex', 'sessions', '2026', '10', '10');
+    mkdirSync(dir, { recursive: true });
+    const targetFile = path.join(dir, 'rollout-resume-xyz.jsonl');
+    writeFileSync(targetFile, '{"type":"session_meta"}\n');
+    expect(
+      findCodexRolloutFile('S:\\Vibe Coding\\Codex', '2026-10-10T12:00:00Z', 'resume-xyz', home),
+    ).toBe(targetFile);
+  });
+});
+
+describe('Grok session usage', () => {
+  it('reads usage.json in grok session directory', () => {
+    const cwd = 'S:\\Vibe Coding\\Grok';
+    const encCwd = encodeURIComponent(cwd);
+    const sessionDir = path.join(home, '.grok', 'sessions', encCwd, 'session-123');
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(
+      path.join(sessionDir, 'usage.json'),
+      JSON.stringify({
+        session: {
+          inputTokens: 500,
+          outputTokens: 80,
+          cachedReadTokens: 120,
+          cacheCreationTokens: 30,
+          turnCount: 4,
+        },
+      }),
+    );
+    expect(readGrokUsage(cwd, 'session-123', home)).toEqual({
+      input: 500,
+      output: 80,
+      cacheRead: 120,
+      cacheWrite: 30,
+      replies: 4,
+    });
+  });
+});
+
+describe('OpenCode session usage', () => {
+  it('reads token metrics from OpenCode SQLite database', () => {
+    const dbDir = path.join(home, '.local', 'share', 'opencode');
+    mkdirSync(dbDir, { recursive: true });
+    const dbPath = path.join(dbDir, 'opencode.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY,
+        directory TEXT,
+        tokens_input INTEGER,
+        tokens_output INTEGER,
+        tokens_cache_read INTEGER,
+        tokens_cache_write INTEGER,
+        time_updated INTEGER
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY,
+        session_id TEXT
+      );
+    `);
+    db.prepare(
+      `
+      INSERT INTO session (id, directory, tokens_input, tokens_output, tokens_cache_read, tokens_cache_write, time_updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run('ses-1', 'S:\\Vibe Coding\\OpenCode', 800, 150, 200, 40, Date.now());
+    db.prepare(`INSERT INTO message (id, session_id) VALUES (?, ?)`).run('msg-1', 'ses-1');
+    db.prepare(`INSERT INTO message (id, session_id) VALUES (?, ?)`).run('msg-2', 'ses-1');
+    db.close();
+
+    const usage = readOpenCodeUsage('S:\\Vibe Coding\\OpenCode', 'ses-1', home);
+    expect(usage).toEqual({
+      input: 800,
+      output: 150,
+      cacheRead: 200,
+      cacheWrite: 40,
+      replies: 2,
+    });
+  });
+});
+
+describe('sessionUsage multi-provider', () => {
+  it('handles multiple provider rows and returns null for unknown/empty', () => {
+    const memDb = new DatabaseSync(':memory:');
+    memDb.exec(`
+      CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY,
+        provider_id TEXT,
+        command_json TEXT,
+        resume_json TEXT,
+        cwd TEXT,
+        started_at TEXT
+      );
+    `);
+    memDb
+      .prepare(
+        `
+      INSERT INTO agent_sessions (id, provider_id, command_json, resume_json, cwd, started_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run(1, 'unknown', JSON.stringify(['other']), null, home, new Date().toISOString());
+
+    const result = sessionUsage(memDb, [1]);
+    expect(result[1]).toBeNull();
+    memDb.close();
   });
 });

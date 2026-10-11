@@ -2,7 +2,7 @@
   "name": "projectmanager",
   "version": "0.1.0",
   "private": true,
-  "description": "Local-first dashboard for tracking project folders: code stats, commit heatmaps and a per-project Kanban board.",
+  "description": "Local-first workspace for persistent AI coding CLI sessions across projects and agent harnesses, with mobile LAN access, terminal panes, task boards and code stats.",
   "type": "module",
   "engines": {
     "node": ">=22.13"
@@ -13,7 +13,7 @@
   "scripts": {
     "launch": "node scripts/launch.mjs",
     "dev": "node scripts/launch.mjs",
-    "build": "vite build && tsc -p tsconfig.server.json",
+    "build": "node scripts/build.mjs",
     "start": "node scripts/launch.mjs --prod",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "lint": "eslint .",
@@ -28,7 +28,9 @@
     "@xterm/xterm": "5.5.0",
     "clsx": "^2.1.1",
     "hono": "^4.13.13",
+    "jsqr": "^1.4.0",
     "motion": "^14.0.0",
+    "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^7.18.4",
@@ -41,6 +43,7 @@
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^22.20.5",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

@@ -101,3 +101,42 @@ it('combines input and review under attention while keeping live waiting session
     ),
   ).toEqual([4]);
 });
+
+it('unions choices within each filter and intersects filter groups', () => {
+  expect(
+    applyWorkFilters(
+      items,
+      {
+        ...NO_FILTERS,
+        agent: ['claude', 'codex'],
+        project: [1, 2],
+        kind: ['session', 'run'],
+        status: 'running',
+      },
+      NOW,
+    ).map((w) => w.item.id),
+  ).toEqual([1, 6]);
+  expect(
+    applyWorkFilters(
+      items,
+      {
+        ...NO_FILTERS,
+        agent: ['codex'],
+        project: [1, 2],
+        kind: ['run'],
+        status: 'ended',
+      },
+      NOW,
+    ).map((w) => w.item.id),
+  ).toEqual([5]);
+  expect(
+    applyWorkFilters(
+      items,
+      { ...NO_FILTERS, agent: [], project: [], kind: [], status: 'all' },
+      NOW,
+    ),
+  ).toEqual(items);
+  expect(filtersActive({ ...NO_FILTERS, agent: [], project: [], kind: [], status: 'all' })).toBe(
+    false,
+  );
+});

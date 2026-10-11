@@ -1,7 +1,15 @@
-import { closeSync, existsSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  statSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import type { AgentTokenUsage } from '../../shared/types.js';
 
 // Token usage for Claude Code sessions, read (never written) from Claude's own transcript:
@@ -123,21 +131,249 @@ export function readTranscriptUsage(file: string): AgentTokenUsage {
   return total;
 }
 
-/** Usage per session id (null where unknown: not Claude, no session id, or no transcript yet). */
+/** Reads the latest cumulative token usage from a Codex session rollout. */
+export function readCodexRolloutUsage(file: string): AgentTokenUsage | null {
+  try {
+    const size = statSync(file).size;
+    const len = Math.min(256 * 1024, size);
+    const buf = Buffer.alloc(len);
+    const fd = openSync(file, 'r');
+    try {
+      readSync(fd, buf, 0, len, size - len);
+    } finally {
+      closeSync(fd);
+    }
+    const lines = buf.toString('utf8').split('\n');
+    let replies = 0;
+    let latestUsage: AgentTokenUsage | null = null;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]!;
+      if (!line.includes('"token_count"')) continue;
+      try {
+        const event = JSON.parse(line) as {
+          payload?: { info?: { total_token_usage?: Record<string, number> } };
+        };
+        const u = event.payload?.info?.total_token_usage;
+        if (u && !latestUsage) {
+          latestUsage = {
+            input: u.input_tokens ?? 0,
+            output: u.output_tokens ?? 0,
+            cacheRead: u.cached_input_tokens ?? 0,
+            cacheWrite: u.cache_write_input_tokens ?? 0,
+            replies: 1,
+          };
+        }
+        replies++;
+      } catch {
+        /* ignore invalid line */
+      }
+    }
+    if (latestUsage) {
+      latestUsage.replies = Math.max(1, replies);
+      return latestUsage;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Locates the rollout file for a Codex session by its resume id or cwd/startedAt. */
+export function findCodexRolloutFile(
+  cwd: string,
+  startedAt?: string | null,
+  resumeId?: string | null,
+  home = os.homedir(),
+): string | null {
+  const root = path.join(home, '.codex', 'sessions');
+  const start = startedAt ? Date.parse(startedAt) : NaN;
+  const folders: string[] = [];
+  const baseTime = Number.isFinite(start) ? start : Date.now();
+  for (let t = baseTime - 86_400_000; t <= Date.now() + 86_400_000; t += 86_400_000) {
+    const d = new Date(t);
+    const dir = path.join(
+      root,
+      String(d.getFullYear()),
+      String(d.getMonth() + 1).padStart(2, '0'),
+      String(d.getDate()).padStart(2, '0'),
+    );
+    if (!folders.includes(dir) && existsSync(dir)) folders.push(dir);
+  }
+  if (resumeId) {
+    for (const dir of folders) {
+      try {
+        for (const file of readdirSync(dir)) {
+          if (file.includes(resumeId) && file.endsWith('.jsonl')) return path.join(dir, file);
+        }
+      } catch {
+        /* unreadable folder */
+      }
+    }
+  }
+  const want = path.resolve(cwd).toLowerCase();
+  let best: { file: string; at: number } | null = null;
+  for (const dir of folders) {
+    try {
+      for (const file of readdirSync(dir)) {
+        if (!file.startsWith('rollout-') || !file.endsWith('.jsonl')) continue;
+        const full = path.join(dir, file);
+        try {
+          const fd = openSync(full, 'r');
+          const buf = Buffer.alloc(256 * 1024);
+          const n = readSync(fd, buf, 0, buf.length, 0);
+          closeSync(fd);
+          const first = buf.subarray(0, n).toString('utf8').split('\n')[0] ?? '';
+          const meta = JSON.parse(first) as {
+            type?: string;
+            payload?: { id?: string; cwd?: string; timestamp?: string; source?: unknown };
+          };
+          const p = meta.payload;
+          if (meta.type !== 'session_meta' || !p?.id || !p.cwd || !p.timestamp) continue;
+          if (p.source && typeof p.source === 'object') continue;
+          if (path.resolve(p.cwd).toLowerCase() !== want) continue;
+          const at = Date.parse(p.timestamp);
+          if (Number.isFinite(start) && at < start - 5_000) continue;
+          if (!best || at < best.at) best = { file: full, at };
+        } catch {
+          /* unreadable file */
+        }
+      }
+    } catch {
+      /* unreadable folder */
+    }
+  }
+  return best?.file ?? null;
+}
+
+/** Grok usage reader from ~/.grok/sessions/<url-encoded-cwd>/<sessionId>/usage.json. */
+export function readGrokUsage(
+  cwd: string,
+  sessionId?: string | null,
+  home = os.homedir(),
+): AgentTokenUsage | null {
+  const encCwd = encodeURIComponent(cwd);
+  const root = path.join(home, '.grok', 'sessions', encCwd);
+  if (!existsSync(root)) return null;
+  let dir = sessionId ? path.join(root, sessionId) : null;
+  if (!dir || !existsSync(dir)) {
+    try {
+      const dirs = readdirSync(root)
+        .map((f) => ({ dir: path.join(root, f), mtime: statSync(path.join(root, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+      if (dirs.length > 0) dir = dirs[0]!.dir;
+    } catch {
+      return null;
+    }
+  }
+  if (!dir) return null;
+  const usageFile = path.join(dir, 'usage.json');
+  if (!existsSync(usageFile)) return null;
+  try {
+    const data = JSON.parse(readFileSync(usageFile, 'utf8')) as {
+      session?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        cachedReadTokens?: number;
+        cacheCreationTokens?: number;
+        turnCount?: number;
+        modelCalls?: number;
+      };
+    };
+    const s = data.session;
+    if (!s) return null;
+    return {
+      input: s.inputTokens ?? 0,
+      output: s.outputTokens ?? 0,
+      cacheRead: s.cachedReadTokens ?? 0,
+      cacheWrite: s.cacheCreationTokens ?? 0,
+      replies: s.turnCount || s.modelCalls || 1,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** OpenCode usage reader from OpenCode's SQLite database (~/.local/share/opencode/opencode.db). */
+export function readOpenCodeUsage(
+  cwd: string,
+  sessionId?: string | null,
+  home = os.homedir(),
+): AgentTokenUsage | null {
+  const dbPath = process.env.XDG_DATA_HOME
+    ? path.join(process.env.XDG_DATA_HOME, 'opencode', 'opencode.db')
+    : path.join(home, '.local', 'share', 'opencode', 'opencode.db');
+  if (!existsSync(dbPath)) return null;
+  let db: DatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+    let row:
+      | {
+          id: string;
+          tokens_input: number | null;
+          tokens_output: number | null;
+          tokens_cache_read: number | null;
+          tokens_cache_write: number | null;
+          replies: number | null;
+        }
+      | undefined;
+    if (sessionId) {
+      row = db
+        .prepare(
+          `SELECT id, tokens_input, tokens_output, tokens_cache_read, tokens_cache_write,
+                  (SELECT COUNT(*) FROM message WHERE session_id = s.id) AS replies
+           FROM session s WHERE id = ?`,
+        )
+        .get(sessionId) as typeof row;
+    }
+    if (!row) {
+      const want1 = path.resolve(cwd);
+      const want2 = cwd.replace(/\\/g, '/');
+      row = db
+        .prepare(
+          `SELECT id, tokens_input, tokens_output, tokens_cache_read, tokens_cache_write,
+                  (SELECT COUNT(*) FROM message WHERE session_id = s.id) AS replies
+           FROM session s
+           WHERE directory = ? OR directory = ? OR directory = ?
+           ORDER BY time_updated DESC LIMIT 1`,
+        )
+        .get(want1, want2, cwd) as typeof row;
+    }
+    if (!row || (row.tokens_input == null && row.tokens_output == null)) return null;
+    return {
+      input: row.tokens_input ?? 0,
+      output: row.tokens_output ?? 0,
+      cacheRead: row.tokens_cache_read ?? 0,
+      cacheWrite: row.tokens_cache_write ?? 0,
+      replies: row.replies || 1,
+    };
+  } catch {
+    return null;
+  } finally {
+    db?.close();
+  }
+}
+
+/** Usage per session id across supported providers (Claude, Codex, Grok, OpenCode). */
 export function sessionUsage(
   db: DatabaseSync,
   ids: number[],
 ): Record<number, AgentTokenUsage | null> {
   const result: Record<number, AgentTokenUsage | null> = {};
   const query = db.prepare(
-    'SELECT provider_id, command_json, resume_json, cwd FROM agent_sessions WHERE id = ?',
+    'SELECT provider_id, command_json, resume_json, cwd, started_at FROM agent_sessions WHERE id = ?',
   );
   for (const id of ids) {
     const row = query.get(id) as
-      | { provider_id: string; command_json: string; resume_json: string | null; cwd: string }
+      | {
+          provider_id: string;
+          command_json: string;
+          resume_json: string | null;
+          cwd: string;
+          started_at: string;
+        }
       | undefined;
     result[id] = null;
-    if (!row || row.provider_id !== 'claude') continue;
+    if (!row) continue;
     const parse = (json: string | null) => {
       try {
         return json ? (JSON.parse(json) as string[]) : null;
@@ -145,13 +381,27 @@ export function sessionUsage(
         return null;
       }
     };
-    const sessionId = claudeSessionId(parse(row.command_json), parse(row.resume_json));
-    const file = sessionId ? transcriptPath(row.cwd, sessionId) : null;
-    if (!file) continue;
+    const command = parse(row.command_json);
+    const resume = parse(row.resume_json);
     try {
-      result[id] = readTranscriptUsage(file);
+      if (row.provider_id === 'claude') {
+        const sessionId = claudeSessionId(command, resume);
+        const file = sessionId ? transcriptPath(row.cwd, sessionId) : null;
+        if (file) result[id] = readTranscriptUsage(file);
+      } else if (row.provider_id === 'codex') {
+        const resumeId =
+          resume && resume[0] === 'codex' && resume[1] === 'resume' ? resume[2] : null;
+        const file = findCodexRolloutFile(row.cwd, row.started_at, resumeId);
+        if (file) result[id] = readCodexRolloutUsage(file);
+      } else if (row.provider_id === 'grok') {
+        const sessionId = claudeSessionId(command, resume);
+        result[id] = readGrokUsage(row.cwd, sessionId);
+      } else if (row.provider_id === 'opencode') {
+        const sessionId = resume && resume[1] === '--session' ? resume[2] : null;
+        result[id] = readOpenCodeUsage(row.cwd, sessionId);
+      }
     } catch {
-      // Unreadable transcript: report unknown rather than failing the request.
+      // Unreadable transcript or log: report unknown rather than failing the request.
     }
   }
   return result;
@@ -191,7 +441,7 @@ export function codexSessionFor(
       if (!file.startsWith('rollout-') || !file.endsWith('.jsonl')) continue;
       try {
         const fd = openSync(path.join(dir, file), 'r');
-        const buf = Buffer.alloc(4096);
+        const buf = Buffer.alloc(256 * 1024);
         const n = readSync(fd, buf, 0, buf.length, 0);
         closeSync(fd);
         const first = buf.subarray(0, n).toString('utf8').split('\n')[0] ?? '';
