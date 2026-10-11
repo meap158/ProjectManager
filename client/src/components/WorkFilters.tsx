@@ -10,7 +10,7 @@ import { PROVIDER_LABELS, ProviderIcon } from './icons';
 type FilterStatus = Exclude<WorkStatus, 'input' | 'review'> | 'attention' | 'all';
 
 export interface WorkFilterState {
-  status: FilterStatus;
+  status: FilterStatus | FilterStatus[];
   agent: string | string[]; // provider id or 'all'
   project: number | number[]; // project id or 0 = all
   kind: 'all' | 'session' | 'run' | ('all' | 'session' | 'run')[];
@@ -34,9 +34,18 @@ export function readWorkFilters(): WorkFilterState {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<WorkFilterState> & {
       status?: string;
     };
-    const savedStatus = Array.isArray(saved.status) ? saved.status.at(-1) : saved.status;
-    const status = ['input', 'review'].includes(savedStatus ?? '') ? 'attention' : savedStatus;
-    return { ...NO_FILTERS, ...saved, status: (status ?? 'all') as WorkFilterState['status'] };
+    const raw = Array.isArray(saved.status) ? saved.status : [saved.status ?? 'all'];
+    const valid = raw
+      .map((value) => (['input', 'review'].includes(value ?? '') ? 'attention' : value))
+      .filter((value): value is FilterStatus =>
+        ['all', 'attention', 'running', 'idle', 'ended'].includes(value ?? ''),
+      );
+    const status = [...new Set(valid.filter((value) => value !== 'all'))];
+    return {
+      ...NO_FILTERS,
+      ...saved,
+      status: status.length === 1 ? (status[0] ?? 'all') : status.length ? status : 'all',
+    };
   } catch {
     return NO_FILTERS;
   }
@@ -136,7 +145,12 @@ export function WorkFilters({
       <div className="work-status-picker">
         <Dropdown
           label="Status"
-          value={filters.status}
+          value={'all'}
+          multiple={{
+            values: selectedFilters(filters.status, 'all'),
+            allValue: 'all',
+            onChange: (status) => set({ status }),
+          }}
           options={(['all', 'attention', 'running', 'idle', 'ended'] as const).map((status) => ({
             value: status,
             label: `${status === 'all' ? 'All' : status === 'attention' ? 'Needs attention' : WORK_STATUS_LABELS[status]} (${count(status)})`,
@@ -149,14 +163,30 @@ export function WorkFilters({
           <button
             key={s}
             type="button"
-            aria-pressed={filters.status === s}
-            className={`work-chip${filters.status === s ? ' active' : ''}`}
+            aria-pressed={
+              s === 'all'
+                ? !selectedFilters(filters.status, 'all').length
+                : selectedFilters(filters.status, 'all').includes(s)
+            }
+            className={`work-chip${(s === 'all' ? !selectedFilters(filters.status, 'all').length : selectedFilters(filters.status, 'all').includes(s)) ? ' active' : ''}`}
             title={
               s === 'attention'
                 ? 'Waiting for your input or a finished run awaiting review'
                 : undefined
             }
-            onClick={() => set({ status: s })}
+            onClick={(event) => {
+              if (!event.shiftKey || s === 'all') {
+                set({ status: s });
+                return;
+              }
+              const current = selectedFilters(filters.status, 'all');
+              const status = current.includes(s)
+                ? current.filter((value) => value !== s)
+                : [...current, s];
+              set({
+                status: status.length === 1 ? (status[0] ?? 'all') : status.length ? status : 'all',
+              });
+            }}
           >
             {s === 'all' ? 'All' : s === 'attention' ? 'Needs attention' : WORK_STATUS_LABELS[s]}
             <span className="work-chip-count num">{count(s)}</span>
