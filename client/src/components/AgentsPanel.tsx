@@ -38,7 +38,7 @@ const runsCache = new RecentCache<number, AgentRun[]>(8);
 export function AgentsPanel({ projectId, visible }: { projectId: number; visible: boolean }) {
   const [providers, setProviders] = useState<AgentProviderStatus[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[] | null>(
-    () => sessionsCache.get(projectId) ?? null,
+    () => sessionsCache.get(projectId)?.filter((s) => !s.orchestratorId) ?? null,
   );
   const [runs, setRuns] = useState<AgentRun[] | null>(() => runsCache.get(projectId) ?? null);
   const [selected, setSelectedState] = useState<WorkKey | null>(() => readSelection(projectId));
@@ -62,7 +62,8 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   const load = useCallback(
     () =>
       Promise.all([api.listSessions(projectId), api.listRuns(projectId)]).then(
-        ([s, r]) => {
+        ([allSessions, r]) => {
+          const s = allSessions.filter((item) => !item.orchestratorId);
           sessionsCache.set(projectId, s);
           // Token counts come from Claude's own transcripts; other CLIs report none.
           const claude = s.filter((x) => x.providerId === 'claude').map((x) => x.id);

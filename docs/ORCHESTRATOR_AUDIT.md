@@ -290,3 +290,12 @@ quota guidance requests fresh verification and links usage; unavailable CLIs lin
 cooldown links the task. Ready decisions add no extra guidance. Four component tests and
 thirteen page tests pass. This is navigation/explanation, not automatic recovery or a retry
 budget reset; physical mobile verification and classified runtime failures remain open.
+
+Master chat ownership is now reflected in navigation: regular global/project Agents views
+filter sessions carrying `orchestratorId`, including their cached initial lists. Orchestrator
+chat opens its terminal inline rather than sending the user to Workspace. The inline terminal
+retains ordered input, output streaming, resizing and image attachment, with Start/Stop/Restart,
+restart feedback and error reporting. Hiding the chat unmounts its stream without stopping it.
+Sixteen focused chat/terminal/page tests pass. Project card workers remain project work; master
+control sessions are the separate Orchestrator-owned sessions currently identified by the API.
+Explicit historical run ownership is not persisted on AgentRun and remains a schema/design gap.

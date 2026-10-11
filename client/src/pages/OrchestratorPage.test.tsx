@@ -789,8 +789,8 @@ it("asks an orchestrator's chat for a one-time check and links to it (PM-89)", a
   const checks = within(screen.getByRole('group', { name: 'One-time check' }));
   fireEvent.click(checks.getByRole('button', { name: 'In progress' }));
   await waitFor(() => expect(api.checkOrchestrator).toHaveBeenCalledWith('m1', 'in_progress'));
-  const link = await screen.findByRole('link', { name: 'Watch it work →' });
-  expect(link.getAttribute('href')).toBe('/workspace?open=41');
+  expect(await screen.findByRole('button', { name: 'Watch it work' })).toBeDefined();
+  expect(screen.queryByRole('link', { name: /Watch it work/ })).toBeNull();
   vi.mocked(api.orchestrators).mockReset();
   vi.mocked(api.orchestrators).mockImplementation(async () => ({ instances: [], events: [] }));
 });

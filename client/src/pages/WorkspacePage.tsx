@@ -154,7 +154,9 @@ export function placeSession(layout: WorkspaceLayout, sessionId: number): Worksp
 export function WorkspacePage() {
   const [params, setParams] = useSearchParams();
   const [layout, setLayout] = useState<WorkspaceLayout | null>(() => cachedWorkspaceLayout);
-  const [sessions, setSessions] = useState<AgentSession[] | null>(() => cachedSessions);
+  const [sessions, setSessions] = useState<AgentSession[] | null>(
+    () => cachedSessions?.filter((s) => !s.orchestratorId) ?? null,
+  );
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [providers, setProviders] = useState<AgentProviderStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -190,7 +192,11 @@ export function WorkspacePage() {
   };
 
   const loadSessions = useCallback(
-    () => api.listAllSessions().then(setSessions, (e: Error) => setError(e.message)),
+    () =>
+      api.listAllSessions().then(
+        (next) => setSessions(next.filter((s) => !s.orchestratorId)),
+        (e: Error) => setError(e.message),
+      ),
     [],
   );
 
@@ -219,7 +225,7 @@ export function WorkspacePage() {
       () =>
         api.listAllSessions().then(
           (s) => {
-            if (active) setSessions(s);
+            if (active) setSessions(s.filter((item) => !item.orchestratorId));
           },
           (e: Error) => {
             if (active) setError(e.message);

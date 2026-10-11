@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { OrchestratorTerminal } from './OrchestratorTerminal';
 import { api } from '../api';
 import type { AgentSession } from '../../../shared/types';
 import type { OrchestratorConfig } from '../../../shared/orchestrator';
@@ -45,7 +45,8 @@ export function OrchestratorChat({
   disabled: boolean;
   onChanged: () => void;
 }) {
-  const navigate = useNavigate();
+  const [opened, setOpened] = useState<AgentSession | null>(null);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [sent, setSent] = useState<{ sessionId: number; label: string } | null>(null);
@@ -65,14 +66,18 @@ export function OrchestratorChat({
   const open = () =>
     run('open', async () => {
       const opened = await api.openOrchestratorChat(instance.id);
-      void navigate(`/workspace?open=${opened.id}`);
+      setOpened(opened);
+      setTerminalOpen(true);
+      onChanged();
     });
   const check = (focus: Focus, label: string) =>
     run(focus, async () => {
       const chat = await api.checkOrchestrator(instance.id, focus);
       setSent({ sessionId: chat.id, label });
+      setOpened(chat);
       onChanged();
     });
+  const activeSession = opened && session?.id === opened.id ? session : (opened ?? session);
   return (
     <div className="orchestrator-chat" aria-label={`${instance.name} chat`}>
       <div className="orchestrator-chat-head">
@@ -89,8 +94,19 @@ export function OrchestratorChat({
           >
             {chatState(session)}
           </span>
-          <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={open}>
-            {working === 'open' ? 'Opening…' : session ? 'Open chat' : 'Start chat'}
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={busy}
+            onClick={() => (terminalOpen ? setTerminalOpen(false) : void open())}
+          >
+            {working === 'open'
+              ? 'Opening…'
+              : terminalOpen
+                ? 'Hide chat'
+                : session
+                  ? 'Open chat'
+                  : 'Start chat'}
           </button>
         </div>
       </div>
@@ -113,8 +129,13 @@ export function OrchestratorChat({
         <p role="status" className="orchestrator-chat-sent">
           Asked it to check{' '}
           {sent.label === 'Everything pending' ? 'everything pending' : sent.label}.{' '}
-          <Link to={`/workspace?open=${sent.sessionId}`}>Watch it work →</Link>
+          <button type="button" className="btn btn-sm" onClick={() => setTerminalOpen(true)}>
+            Watch it work
+          </button>
         </p>
+      )}
+      {terminalOpen && activeSession && (
+        <OrchestratorTerminal session={activeSession} onChanged={onChanged} />
       )}
       {error && (
         <p className="error-banner" role="alert">
