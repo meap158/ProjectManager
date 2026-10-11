@@ -8,6 +8,7 @@ import { sessionActivity } from '../sessionActivity';
 import { AddProjectDialog } from './AddProjectDialog';
 import { applyCustomOrder, mergeVisibleOrder, moveBefore, moveBy } from '../projectOrder';
 import { PlanUsage } from './PlanUsage';
+import { navigateProjectPane } from '../projectPaneNavigation';
 
 // Sorter modelled on the KDP Publishing Pipeline Library sorter: each mode has
 // a natural direction, re-selecting the active mode flips it, switching modes
@@ -301,6 +302,8 @@ export function ProjectSidebar({
       id="project-panel"
       className={`sidebar${panelOpen ? ' is-open' : ''}`}
       aria-label="Tracked projects"
+      tabIndex={-1}
+      onKeyDown={(e) => navigateProjectPane(e, navigate)}
       // Picking any link (even the page already shown) closes the phone panel.
       onClick={(e) => {
         if ((e.target as Element).closest('a')) onNavigate?.();
