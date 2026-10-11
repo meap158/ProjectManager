@@ -2,6 +2,14 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Planner preview and dispatch snapshots now select narrow run fields from SQLite: global
+  live occupancy, latest eligible-card runs and scoped project last-served identities. No
+  command/prompt/change payload decoding or 100,000-row cutoff on these paths. Database
+  equivalence test preserves review gates, external occupancy and project fairness; 51
+  Orchestrator tests pass. Full check currently stops on concurrent SessionProgress.test.tsx
+  updatedAt type error. Attention busy checks and resolve result history remain unoptimized;
+  index/query-plan and end-to-end benchmarks remain open.
+
 - Assignment recovery now reads only assigned-run identities and legacy dispatching-card
   candidates from SQLite, after keyed insertion recovery. Scheduler no longer supplies a
   100,000-run history snapshot to reconciliation. Legacy recovery chooses the earliest

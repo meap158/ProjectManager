@@ -14,6 +14,7 @@ import type {
 import { buildSituation, cardContext } from './situation.js';
 import { situationRunIds } from './situationRuns.js';
 import { planOrchestration } from './planner.js';
+import { planningRuns } from './planningRuns.js';
 import {
   clearDismissedAttention,
   dismissProjectAttention,
@@ -84,7 +85,7 @@ export class OrchestratorService {
       cards: projects
         .filter((p) => !instance.projectIds.length || instance.projectIds.includes(p.id))
         .flatMap((p) => listCards(this.db, p.id)),
-      runs: this.supervisor.listAllRuns(100000),
+      runs: planningRuns(this.db, instance.projectIds),
       sessions: this.supervisor.listAllSessions(),
       availableProviders: providers.filter((p) => p.available).map((p) => p.id),
       limits: readLimits(this.dataDir),
@@ -423,7 +424,7 @@ export class OrchestratorService {
         cards: projects
           .filter((p) => !initial.projectIds.length || initial.projectIds.includes(p.id))
           .flatMap((p) => listCards(this.db, p.id)),
-        runs: this.supervisor.listAllRuns(100000),
+        runs: planningRuns(this.db, initial.projectIds),
         sessions: this.supervisor.listAllSessions(),
         availableProviders: providers,
         limits: readLimits(this.dataDir),

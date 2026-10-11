@@ -193,3 +193,9 @@ cards-by-attention scans. The full synthetic output matches the earlier builder,
 scope/context tests passing. The 1k-card/100k-history benchmark improves median builder time
 from 2,769.92ms to 12.51ms. This closes a measured computation bottleneck, while indexed SQL
 history projection, bounded situation responses and actionable UI remain open.
+
+Planner preview and dispatch snapshots now use a narrow SQLite projection for global live
+workers, latest eligible-card runs and last-served scoped projects. A database regression
+compares complete planner decisions with the full-history input. Attention busy checks and
+resolve-result collection still use history lists; query-plan and end-to-end benchmarks remain
+required before claiming broad performance completion.

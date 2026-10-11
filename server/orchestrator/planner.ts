@@ -2,6 +2,11 @@ import type { AgentRun, AgentSession, Card } from '../../shared/types.js';
 import type { ProviderLimits } from '../../shared/limits.js';
 import type { OrchestratorWaitReason } from '../../shared/orchestrator.js';
 
+export type PlanningRun = Pick<
+  AgentRun,
+  'id' | 'projectId' | 'cardId' | 'providerId' | 'status' | 'validation'
+>;
+
 export interface OrchestratorPolicy {
   projectIds: number[];
   providers: string[];
@@ -32,7 +37,7 @@ export function planOrchestration(
   policy: OrchestratorPolicy,
   snapshot: {
     cards: Card[];
-    runs: AgentRun[];
+    runs: PlanningRun[];
     sessions: AgentSession[];
     availableProviders: string[];
     limits: ProviderLimits[];
@@ -60,7 +65,7 @@ export function planOrchestration(
     providerCounts.set(worker.providerId, (providerCounts.get(worker.providerId) ?? 0) + 1);
     if (worker.cardId != null) liveCards.add(worker.cardId);
   }
-  const latestRuns = new Map<number, AgentRun>();
+  const latestRuns = new Map<number, PlanningRun>();
   for (const run of snapshot.runs) {
     if (run.cardId != null && run.id > (latestRuns.get(run.cardId)?.id ?? -1))
       latestRuns.set(run.cardId, run);

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDb } from '../db.js';
 import { OrchestratorService } from './service.js';
+import * as planning from './planningRuns.js';
 import type { AgentSupervisor } from '../agents/supervisor.js';
 import { providerStatuses } from '../agents/providers.js';
 vi.mock('../agents/providers.js', () => ({
@@ -15,7 +16,10 @@ vi.mock('../agents/limits.js', () => ({
   ],
 }));
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'pm-orchestrator-'));
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+});
 describe('orchestrator service', () => {
   it('does not reload full history for every waiting card', async () => {
     const db = openDb(':memory:');
@@ -50,7 +54,7 @@ describe('orchestrator service', () => {
     });
     try {
       await service.tick();
-      expect(listAllRuns).toHaveBeenCalledTimes(1);
+      expect(listAllRuns).not.toHaveBeenCalled();
       expect(dispatchCard).not.toHaveBeenCalled();
       expect(service.state().events.filter((event) => event.action === 'review')).toHaveLength(100);
       const transitions = service.state().events;
@@ -234,6 +238,9 @@ describe('orchestrator service', () => {
         return run;
       },
     );
+    vi.spyOn(planning, 'planningRuns').mockImplementation(
+      () => runs as ReturnType<typeof planning.planningRuns>,
+    );
     const supervisor = {
       listAllRuns: () => runs,
       listAllSessions: () => [],
@@ -329,6 +336,9 @@ describe('orchestrator service', () => {
       runs.push(run);
       return run;
     });
+    vi.spyOn(planning, 'planningRuns').mockImplementation(
+      () => runs as ReturnType<typeof planning.planningRuns>,
+    );
     const supervisor = {
       listAllRuns: () => runs,
       listAllSessions: () => [],
