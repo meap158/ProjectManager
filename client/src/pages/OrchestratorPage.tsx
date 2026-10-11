@@ -1,6 +1,7 @@
 ﻿import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
+import { OrchestratorPending } from '../components/OrchestratorPending';
 import { Dropdown } from '../components/Dropdown';
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { PROVIDER_LABELS } from '../components/icons';
@@ -312,6 +313,14 @@ export function OrchestratorPage() {
               ? 'Provider, quota and worker limits apply; completed runs await review.'
               : 'Queued tasks stay pending while this master is paused or observing.'}
           </p>
+          <OrchestratorPending
+            key={`${quickMaster.id}-${selectedQuickProject?.id ?? 'all'}`}
+            masterId={quickMaster.id}
+            projectId={selectedQuickProject?.id}
+            busy={busy}
+            canRun={quickCanRun}
+            onFollowUp={(id) => void resolvePending(quickMaster, id)}
+          />
         </section>
       )}
       {actionResult && (

@@ -1,5 +1,6 @@
 import type {
   OrchestratorConfig,
+  OrchestratorSituation,
   OrchestratorPlanDecision,
   OrchestratorState,
 } from '../../shared/orchestrator';
@@ -49,6 +50,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
+  orchestratorSituation: (id: string) =>
+    request<OrchestratorSituation>('GET', `/orchestrators/${encodeURIComponent(id)}/situation`),
   orchestrators: () => request<OrchestratorState>('GET', '/orchestrators'),
   previewOrchestrator: (id: string, offset = 0) =>
     request<{

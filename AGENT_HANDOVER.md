@@ -2,6 +2,14 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Orchestrators Quick runs now offers explicit pending-work inspection in the selected master/
+  project scope. Project alerts can queue or run policy-controlled follow-ups; review, stalled
+  and input-needed items link to their task/session/project. Inspection is on demand, retains
+  its timestamp and prior result on refresh errors, and displays ten items at a time. Changing
+  scope remounts the panel and invalidates old requests. Thirteen panel/page tests pass, plus
+  owned lint/format. Full npm run check passes types/lint, but stops on concurrent formatting
+  in AgentWorkList.interactions.test.tsx and Dropdown.test.tsx. Physical mobile QA remains open.
+
 - Home situation builder indexes workers and attention flags by card once, removing repeated
   per-card scans of history. Existing five identity/scope/context tests pass. Synthetic 1,000
   review cards / 100,000 runs comparison verified complete output equality: median 2,769.92ms

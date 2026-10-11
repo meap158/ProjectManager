@@ -661,3 +661,26 @@ dialog.orchestrator-form-dialog > .orchestrator-form-panel {
     border-radius: 0;
   }
 }
+
+.orchestrator-pending-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+.orchestrator-pending-list li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.orchestrator-pending-list p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 6px 0;
+  max-height: 8em;
+  overflow: auto;
+}
+
+@media (max-width: 768px) {
+  .orchestrator-pending .btn {
+    min-height: 44px;
+  }
+}
