@@ -9,7 +9,7 @@ chronological findings later in this document preserve earlier implementation ev
 | Controls and convenience | Scoped Check now, paged read-only preview, pending-work queue/run actions, card/worker links, Pause/Observe/Autonomous modes, manual chat tools                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                |
 | Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Commit coordinated partial-index migration; measure whole API/tick and index write cost; versioned summary and situation pagination |
 | Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                    |
-| Evaluation               | 66 Orchestrator tests pass, including process-boundary recovery; server types and targeted lint passed                                                                                                      | Current full-suite completion, live runtime/mobile checks, end-to-end latency and completion metrics                                |
+| Evaluation               | Full regression suite: 451 tests / 93 files pass, including four process-boundary cases; server types and targeted lint passed                                                                              | Live runtime/mobile checks, end-to-end latency and completion metrics                                                               |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -278,3 +278,8 @@ Process recovery also covers exit after assignment acknowledgement. Child proces
 source modules and the TypeScript loader independently of their working directory and run from
 the temporary fixture directory. All four process-boundary cases pass. The acknowledged run
 remains assigned through repeated reconciliation and refuses a replacement claim.
+
+Full regression run after the portable recovery harness: `npm test -- --maxWorkers=1`
+passes 451 tests across 93 files (123.53 seconds on this host). This independently reaches the
+full test gate even though `npm run check` still stops earlier on concurrent UI formatting.
+No physical-browser/provider-runtime claims are inferred from the regression result.
