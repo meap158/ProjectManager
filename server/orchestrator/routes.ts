@@ -40,7 +40,15 @@ export function registerOrchestratorRoutes(app: Hono, service: OrchestratorServi
     return situation ? c.json(situation) : c.json({ error: 'Orchestrator not found' }, 404);
   });
   app.get('/orchestrators/:id/preview', async (c) => {
-    const result = await service.preview(c.req.param('id'));
+    const page = z
+      .object({
+        offset: z.coerce.number().int().min(0).max(1000000).default(0),
+        limit: z.coerce.number().int().min(1).max(200).default(100),
+      })
+      .strict()
+      .safeParse(c.req.query());
+    if (!page.success) return c.json({ error: 'Invalid preview page' }, 400);
+    const result = await service.preview(c.req.param('id'), page.data.offset, page.data.limit);
     if (!result) return c.json({ error: 'Orchestrator not found' }, 404);
     return c.json(result);
   });

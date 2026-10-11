@@ -202,9 +202,9 @@ it('renders masters dashboard with pills, collapses form, supports edit and dele
   );
 
   // Masters dashboard rendered
-  expect(await screen.findByText('Primary Orchestrator')).toBeDefined();
+  expect(await screen.findByRole('heading', { name: 'Primary Orchestrator' })).toBeDefined();
   expect(screen.getByText('Active')).toBeDefined();
-  expect(screen.getByText(/Project one/)).toBeDefined();
+  expect(screen.getAllByText(/Project one/)[0]).toBeDefined();
   expect(screen.getByText(/Codex, Claude/)).toBeDefined();
   expect(screen.getByText(/Up to 6 workers/)).toBeDefined();
   expect(screen.getByText(/15% reserve/)).toBeDefined();
@@ -580,6 +580,10 @@ it('renders Plan Preview with typed wait reasons, occupancy metrics, and shows l
 
   vi.mocked(api.previewOrchestrator).mockResolvedValue({
     at: '2026-10-10T12:05:00Z',
+    total: 201,
+    offset: 0,
+    limit: 100,
+    summary: { dispatch: 1, review: 0, wait: 200 },
     enabled: true,
     strategy: 'autonomous',
     decisions: [
@@ -637,7 +641,86 @@ it('renders Plan Preview with typed wait reasons, occupancy metrics, and shows l
   expect(screen.getByText(/Managed: 1 · External: 2/)).toBeDefined();
   expect(screen.getByText(/1\/3 used/)).toBeDefined();
 
+  expect(screen.getByRole('button', { name: 'Previous tasks' }).hasAttribute('disabled')).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Next tasks' }));
+  await waitFor(() => expect(api.previewOrchestrator).toHaveBeenLastCalledWith('m1', 100));
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Next tasks' }).hasAttribute('disabled')).toBe(false),
+  );
+  expect(api.tickOrchestrators).not.toHaveBeenCalled();
+
   // Close preview
   fireEvent.click(screen.getByRole('button', { name: 'Close preview' }));
   expect(screen.queryByText('Plan preview')).toBeNull();
 });
+
+it.each([true, false])(
+  'quick actions retain results and respect paused state (enabled=%s)',
+  async (enabled) => {
+    const master = {
+      id: 'quick',
+      name: 'Quick master',
+      enabled,
+      projectIds: [1],
+      providers: ['codex'],
+      maxWorkers: 2,
+      maxWorkersPerProject: 1,
+      maxWorkersPerProvider: 1,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
+    };
+    vi.mocked(api.orchestrators).mockResolvedValue({ instances: [master], events: [] });
+    vi.mocked(api.listProjects).mockResolvedValue([
+      {
+        id: 1,
+        name: 'Pending project',
+        cardCounts: { todo: 0, in_progress: 0, review: 0, done: 0, backlog: 0 },
+        path: '/missing',
+        createdAt: '',
+        lastScannedAt: null,
+        missing: true,
+        scan: { status: 'idle', error: null, startedAt: null, moves: [] },
+        code: null,
+        disk: null,
+        git: null,
+        boardPreset: 'full',
+        runningSessions: 0,
+      },
+    ]);
+    vi.mocked(api.listAllRuns).mockResolvedValue([]);
+    vi.mocked(api.listAllSessions).mockResolvedValue([]);
+    vi.mocked(api.listCardsInFlight).mockResolvedValue([]);
+    vi.mocked(api.resolveOrchestratorAttention).mockResolvedValue({
+      ok: true,
+      state: { instances: [master], events: [] },
+      result: { resolvedCards: [42], dispatchedRuns: enabled ? [10] : [] },
+    });
+    render(
+      <MemoryRouter>
+        <OrchestratorPage />
+      </MemoryRouter>,
+    );
+    const button = await screen.findByRole('button', {
+      name: enabled ? 'Run pending issues' : 'Queue follow-ups',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Quick run project' }));
+    fireEvent.click(
+      screen.getByRole('option', { name: 'Pending project' }).querySelector('button')!,
+    );
+    fireEvent.click(button);
+    await waitFor(() => expect(api.resolveOrchestratorAttention).toHaveBeenCalledWith('quick', 1));
+    expect((await screen.findByRole('link', { name: 'Task PM-42' })).getAttribute('href')).toBe(
+      '/board?card=42',
+    );
+    expect(screen.getByRole('status').textContent).toContain(
+      enabled ? '1 run dispatched' : 'master is paused',
+    );
+    expect(api.saveOrchestrator).not.toHaveBeenCalled();
+    if (enabled) expect(screen.getByRole('link', { name: 'Run #10' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss result' }));
+    expect(screen.queryByRole('region', { name: 'Action result' })).toBeNull();
+  },
+);

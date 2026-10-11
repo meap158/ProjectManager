@@ -135,3 +135,16 @@ Commit fencing: supervisor canCommit runs synchronously before insertion, after 
 Full regression suite: 355 tests / 76 files pass with one worker. Final commit validation now rechecks quota, capacity and current card readiness, excluding only the owned dispatch reservation. Service test exercises capacity changing while dispatch is pending. Full runtime/mobile, benchmarks and repository lint/format/build gates remain open.
 
 Pure planner benchmark added in scripts/benchmark-orchestrator.mjs and docs/ORCHESTRATOR_BENCHMARK.md. 10k cards/100k history: one-master p50 22.84ms; 20-master batch p50 393.85ms. Decision array alone is 1,854,399 bytes/master. Prioritize compact summaries and paginated details for mobile; end-to-end SQL/quota/transport measurements remain open.
+
+## Current convenience and transport improvements
+
+Quick runs select a master and project, reuse deduplicated Dashboard follow-up cards and
+check that master's policy-controlled board queue. Persistent results distinguish queued
+cards from dispatched runs and link to their tasks. Paused and Observe settings are preserved.
+The quick action checks the master's whole board queue; it is not an isolated project scheduler.
+
+Preview responses now include whole-queue dispatch/review/wait counts and return 100 tasks
+by default, maximum 200 with validated pagination. This addresses the measured multi-megabyte
+mobile response/render issue. Planning still loads the full snapshot and computes all decisions;
+indexed latest-run projections and end-to-end SQL/quota benchmarks remain open. Each page is
+a fresh read-only snapshot, so changing queues can shift tasks between pages.

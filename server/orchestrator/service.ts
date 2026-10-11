@@ -71,35 +71,44 @@ export class OrchestratorService {
     });
   }
 
-  async preview(id: string) {
+  async preview(id: string, offset = 0, limit = 100) {
     const instance = this.state().instances.find((i) => i.id === id);
     if (!instance) return null;
     const projects = this.db.prepare('SELECT id FROM projects').all() as { id: number }[];
     const providers = await providerStatuses();
     const retryPlans = new OrchestratorAssignments(this.db).retryPlans();
+    const decisions = planOrchestration(instance, {
+      cards: projects
+        .filter((p) => !instance.projectIds.length || instance.projectIds.includes(p.id))
+        .flatMap((p) => listCards(this.db, p.id)),
+      runs: this.supervisor.listAllRuns(100000),
+      sessions: this.supervisor.listAllSessions(),
+      availableProviders: providers.filter((p) => p.available).map((p) => p.id),
+      limits: readLimits(this.dataDir),
+      blockedCardIds: new OrchestratorAssignments(this.db).blockedCards(),
+    }).map((decision) => ({
+      ...decision,
+      retry: retryPlans.get(decision.cardId) ?? {
+        attemptsUsed: 0,
+        attemptsRemaining: 3,
+        retryAt: null,
+        blocker: null,
+      },
+      execution: { autonomy: 'edit' as const, supervisorAttempts: 1, requiresReview: true },
+    }));
     return {
       at: new Date().toISOString(),
       enabled: instance.enabled,
       strategy: instance.strategy ?? 'autonomous',
-      decisions: planOrchestration(instance, {
-        cards: projects
-          .filter((p) => !instance.projectIds.length || instance.projectIds.includes(p.id))
-          .flatMap((p) => listCards(this.db, p.id)),
-        runs: this.supervisor.listAllRuns(100000),
-        sessions: this.supervisor.listAllSessions(),
-        availableProviders: providers.filter((p) => p.available).map((p) => p.id),
-        limits: readLimits(this.dataDir),
-        blockedCardIds: new OrchestratorAssignments(this.db).blockedCards(),
-      }).map((decision) => ({
-        ...decision,
-        retry: retryPlans.get(decision.cardId) ?? {
-          attemptsUsed: 0,
-          attemptsRemaining: 3,
-          retryAt: null,
-          blocker: null,
-        },
-        execution: { autonomy: 'edit' as const, supervisorAttempts: 1, requiresReview: true },
-      })),
+      total: decisions.length,
+      offset,
+      limit,
+      summary: {
+        dispatch: decisions.filter((d) => d.action === 'dispatch').length,
+        review: decisions.filter((d) => d.action === 'review').length,
+        wait: decisions.filter((d) => d.action === 'wait').length,
+      },
+      decisions: decisions.slice(offset, offset + limit),
     };
   }
   save(input: Omit<OrchestratorConfig, 'id'> & { id?: string }): OrchestratorConfig {

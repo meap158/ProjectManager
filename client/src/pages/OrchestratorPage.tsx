@@ -82,6 +82,13 @@ export function OrchestratorPage() {
   const [draft, setDraft] = useState<Omit<OrchestratorConfig, 'id'> & { id?: string }>(defaults);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
+  const [quickMasterId, setQuickMasterId] = useState('');
+  const [quickProjectId, setQuickProjectId] = useState('');
+  const [actionResult, setActionResult] = useState<{
+    message: string;
+    cards: number[];
+    runs: number[];
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [preview, setPreview] = useState<{
@@ -152,6 +159,7 @@ export function OrchestratorPage() {
     refreshEpoch.current++;
     setBusy(true);
     setError('');
+    setActionResult(null);
     try {
       await action();
       const [nextState, nextProjects, nextRuns, nextSessions, nextInFlight] = await Promise.all([
@@ -174,6 +182,35 @@ export function OrchestratorPage() {
       setBusy(false);
     }
   };
+
+  const resolvePending = (instance: OrchestratorConfig, projectId?: number) =>
+    perform(async () => {
+      const { result } = await (projectId
+        ? api.resolveOrchestratorAttention(instance.id, projectId)
+        : api.resolveOrchestratorAttention(instance.id));
+      const count = result.dispatchedRuns.length;
+      setActionResult({
+        cards: result.resolvedCards,
+        runs: result.dispatchedRuns,
+        message: count
+          ? `${count} run${count === 1 ? '' : 's'} dispatched. Results will need review.`
+          : !result.resolvedCards.length
+            ? 'No pending Dashboard issues found in this scope.'
+            : !instance.enabled
+              ? 'Follow-ups queued. This master is paused; start it when ready to dispatch.'
+              : instance.strategy === 'observe'
+                ? 'Follow-ups queued. Observe mode does not dispatch; switch to Autonomous board work to run them.'
+                : 'Follow-ups queued; no new run started. Preview plan shows worker, quota and review blockers.',
+      });
+    });
+  const quickMaster = state.instances.find((i) => i.id === quickMasterId) ?? state.instances[0];
+  const quickProjects = projects.filter(
+    (p) => !quickMaster?.projectIds.length || quickMaster.projectIds.includes(p.id),
+  );
+  const selectedQuickProject = quickProjects.find((p) => String(p.id) === quickProjectId);
+  const quickScope = selectedQuickProject ? [selectedQuickProject] : quickProjects;
+  const quickIssueCount = quickScope.reduce((sum, p) => sum + projectAttention(p).length, 0);
+  const quickCanRun = Boolean(quickMaster?.enabled && quickMaster.strategy !== 'observe');
 
   const isFormVisible = showForm || Boolean(draft.id) || state.instances.length === 0;
   const hasActiveMasters = state.instances.some((i) => i.enabled);
@@ -210,6 +247,100 @@ export function OrchestratorPage() {
         <div className="error-banner" role="alert">
           {error}
         </div>
+      )}
+
+      {state.instances.length > 0 && quickMaster && (
+        <section className="panel orchestrator-quick-actions" aria-labelledby="quick-runs-heading">
+          <h2 id="quick-runs-heading">Quick runs</h2>
+          <div className="orchestrator-quick-controls">
+            <div className="orchestrator-quick-field">
+              <label htmlFor="quick-master">Master</label>
+              <Dropdown
+                id="quick-master"
+                label="Quick run master"
+                disabled={busy}
+                value={quickMaster.id}
+                options={state.instances.map((i) => ({ value: i.id, label: i.name }))}
+                onChange={(id) => {
+                  setQuickMasterId(id);
+                  setQuickProjectId('');
+                }}
+              />
+            </div>
+            <div className="orchestrator-quick-field">
+              <label htmlFor="quick-project">Project</label>
+              <Dropdown
+                id="quick-project"
+                label="Quick run project"
+                disabled={busy}
+                value={selectedQuickProject ? String(selectedQuickProject.id) : ''}
+                options={[
+                  { value: '', label: 'All projects in scope' },
+                  ...quickProjects.map((p) => ({ value: String(p.id), label: p.name })),
+                ]}
+                onChange={setQuickProjectId}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || quickIssueCount === 0}
+              onClick={() => void resolvePending(quickMaster, selectedQuickProject?.id)}
+            >
+              {busy ? 'Working...' : quickCanRun ? 'Run pending issues' : 'Queue follow-ups'}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy}
+              onClick={() =>
+                void perform(async () => {
+                  setPreview({
+                    id: quickMaster.id,
+                    data: await api.previewOrchestrator(quickMaster.id),
+                  });
+                })
+              }
+            >
+              Inspect queue
+            </button>
+          </div>
+          <p className="faint">
+            {quickIssueCount} Dashboard issue{quickIssueCount === 1 ? '' : 's'} in scope. Creates or
+            reuses follow-up tasks and checks this master's board queue.{' '}
+            {quickCanRun
+              ? 'Provider, quota and worker limits apply; completed runs await review.'
+              : 'Queued tasks stay pending while this master is paused or observing.'}
+          </p>
+        </section>
+      )}
+      {actionResult && (
+        <section className="panel orchestrator-action-result" aria-label="Action result">
+          <p role="status">{actionResult.message}</p>
+          <div className="orchestrator-result-links">
+            {actionResult.cards.map((id) => (
+              <Link key={id} className="btn btn-sm" to={`/board?card=${id}`}>
+                Task PM-{id}
+              </Link>
+            ))}
+            {actionResult.runs.map((id) => (
+              <Link
+                key={id}
+                className="btn btn-sm"
+                to={
+                  runs.find((run) => run.id === id)?.cardId
+                    ? `/board?card=${runs.find((run) => run.id === id)!.cardId}`
+                    : '/workspace'
+                }
+              >
+                Run #{id}
+              </Link>
+            ))}
+            <button type="button" className="btn btn-sm" onClick={() => setActionResult(null)}>
+              Dismiss result
+            </button>
+          </div>
+        </section>
       )}
 
       {/* Primary Masters dashboard panel */}
@@ -486,6 +617,15 @@ export function OrchestratorPage() {
                             ? 'Paused; start to allow dispatch.'
                             : 'Actual dispatch rechecks quota and capacity before assigning work.'}
                       </p>
+                      {preview.data.summary && (
+                        <p className="faint">
+                          {preview.data.total} tasks: {preview.data.summary.dispatch} ready,{' '}
+                          {preview.data.summary.review} review, {preview.data.summary.wait} waiting.{' '}
+                          Showing{' '}
+                          {preview.data.decisions.length ? (preview.data.offset ?? 0) + 1 : 0}-
+                          {(preview.data.offset ?? 0) + preview.data.decisions.length}.
+                        </p>
+                      )}
                       {!preview.data.decisions.length ? (
                         <p className="orchestrator-preview-empty">No board tasks in scope.</p>
                       ) : (
@@ -550,6 +690,53 @@ export function OrchestratorPage() {
                             </li>
                           ))}
                         </ul>
+                      )}
+                      {(preview.data.total ?? 0) > (preview.data.limit ?? 100) && (
+                        <div className="orchestrator-result-links">
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            disabled={busy || !preview.data.offset}
+                            onClick={() =>
+                              void perform(async () =>
+                                setPreview({
+                                  id: instance.id,
+                                  data: await api.previewOrchestrator(
+                                    instance.id,
+                                    Math.max(
+                                      0,
+                                      (preview.data.offset ?? 0) - (preview.data.limit ?? 100),
+                                    ),
+                                  ),
+                                }),
+                              )
+                            }
+                          >
+                            Previous tasks
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            disabled={
+                              busy ||
+                              (preview.data.offset ?? 0) + preview.data.decisions.length >=
+                                (preview.data.total ?? 0)
+                            }
+                            onClick={() =>
+                              void perform(async () =>
+                                setPreview({
+                                  id: instance.id,
+                                  data: await api.previewOrchestrator(
+                                    instance.id,
+                                    (preview.data.offset ?? 0) + (preview.data.limit ?? 100),
+                                  ),
+                                }),
+                              )
+                            }
+                          >
+                            Next tasks
+                          </button>
+                        </div>
                       )}
                     </section>
                   )}
@@ -661,9 +848,7 @@ export function OrchestratorPage() {
                           className="btn btn-sm btn-primary"
                           disabled={busy || totalAttentionCount === 0}
                           title="Queue attention tasks and check this master under its current strategy, quota and worker limits"
-                          onClick={() =>
-                            void perform(() => api.resolveOrchestratorAttention(instance.id))
-                          }
+                          onClick={() => void resolvePending(instance)}
                         >
                           Resolve attention
                         </button>
@@ -754,11 +939,7 @@ export function OrchestratorPage() {
                                       className="btn btn-xs btn-primary attention-resolve-btn"
                                       disabled={busy}
                                       title="Queue this attention task; dispatch respects pause, strategy, quota and worker limits"
-                                      onClick={() =>
-                                        void perform(() =>
-                                          api.resolveOrchestratorAttention(instance.id, p.id),
-                                        )
-                                      }
+                                      onClick={() => void resolvePending(instance, p.id)}
                                     >
                                       Resolve
                                     </button>

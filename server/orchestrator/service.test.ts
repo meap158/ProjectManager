@@ -257,6 +257,12 @@ describe('orchestrator service', () => {
       supervisorAttempts: 1,
       requiresReview: true,
     });
+    expect(preview?.total).toBe(1);
+    expect(preview?.summary).toEqual({ dispatch: 1, review: 0, wait: 0 });
+    const beyond = await service.preview(saved.id, 1, 1);
+    expect(beyond?.decisions).toEqual([]);
+    expect(beyond?.total).toBe(1);
+    expect(beyond?.summary).toEqual(preview?.summary);
     expect(service.state()).toEqual(beforePreview);
     expect(dispatch).not.toHaveBeenCalled();
     await service.tick(saved.id);

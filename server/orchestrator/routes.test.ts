@@ -67,3 +67,24 @@ it('rejects invalid attention scopes and malformed JSON without invoking actions
   expect(all.status).toBe(200);
   expect(action).toHaveBeenCalledExactlyOnceWith(undefined, undefined);
 });
+
+it('bounds and validates plan preview pages before inspecting tasks', async () => {
+  const preview = vi.fn(async () => ({ total: 1000, decisions: [] }));
+  const app = new Hono();
+  registerOrchestratorRoutes(app, { preview } as unknown as OrchestratorService);
+  for (const query of [
+    'limit=201',
+    'limit=0',
+    'offset=-1',
+    'offset=1.5',
+    'offset=invalid',
+    'unknown=1',
+  ]) {
+    expect((await app.request(`/orchestrators/master/preview?${query}`)).status).toBe(400);
+  }
+  expect(preview).not.toHaveBeenCalled();
+  expect((await app.request('/orchestrators/master/preview')).status).toBe(200);
+  expect(preview).toHaveBeenLastCalledWith('master', 0, 100);
+  expect((await app.request('/orchestrators/master/preview?offset=100&limit=50')).status).toBe(200);
+  expect(preview).toHaveBeenLastCalledWith('master', 100, 50);
+});

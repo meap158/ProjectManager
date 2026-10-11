@@ -2,6 +2,22 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Orchestrator quick actions select a master and project scope, queue deduplicated Dashboard
+  follow-ups and invoke its policy-controlled scheduler. Paused/Observe masters stay unchanged.
+  Persistent action results distinguish queued work from dispatched runs and link to board tasks.
+  Existing per-master and per-project Resolve actions use the same feedback. Eleven page tests
+  pass, including selected scope and paused dispatch prevention. The duplicate Agents toolbar
+  Orchestrators link is removed; primary navigation and mobile tools remain available.
+
+- Plan preview now returns at most 100 decisions by default (validated maximum 200),
+  aggregate dispatch/review/wait counts and offset/limit/total metadata. Page controls fetch
+  fresh read-only snapshots; task changes between pages may shift ordering. Scheduling still
+  evaluates the full queue, so this bounds network/render cost, not planner or SQL memory.
+  Tests cover invalid query rejection, empty later pages and unchanged scheduler state.
+  Full npm run check passes: 370 tests / 76 files. Follow-up page navigation regression
+  passes too. Live read-only preview verified total=2, limit=1, returned=1 with aggregate
+  counts; browser/mobile visual verification unavailable (no connected browsers).
+
 - **OpenCode full-log recovery (2026-10-11)**: Detached hosts can keep running obsolete code
   across server reloads. The live October 8 host still suppressed output at 32 MB despite the
   committed rotation fix. Host generation 2 uses a separate authenticated socket/rendezvous.

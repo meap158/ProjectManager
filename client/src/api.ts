@@ -47,13 +47,17 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 
 export const api = {
   orchestrators: () => request<OrchestratorState>('GET', '/orchestrators'),
-  previewOrchestrator: (id: string) =>
+  previewOrchestrator: (id: string, offset = 0) =>
     request<{
       at: string;
       enabled: boolean;
       strategy: string;
       decisions: OrchestratorPlanDecision[];
-    }>('GET', `/orchestrators/${encodeURIComponent(id)}/preview`),
+      total?: number;
+      offset?: number;
+      limit?: number;
+      summary?: { dispatch: number; review: number; wait: number };
+    }>('GET', `/orchestrators/${encodeURIComponent(id)}/preview?offset=${offset}&limit=100`),
   saveOrchestrator: (config: Omit<OrchestratorConfig, 'id'> & { id?: string }) =>
     request<OrchestratorConfig>('POST', '/orchestrators', config),
   tickOrchestrators: (id?: string) =>

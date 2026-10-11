@@ -6,6 +6,13 @@ or chat history.
 
 ## 1. Principles
 
+Orchestrators quick actions use master/project selectors and explicit Run pending issues or
+Queue follow-ups actions. Results remain visible with task/run links and queue explanations.
+Actions preserve paused/Observe configuration and existing quota, capacity and review policy.
+Plan preview shows aggregate readiness counts with 100-task pages and explicit Previous/Next
+controls. Each page is a fresh inspection; it never starts work.
+Desktop Agents toolbar does not repeat the primary Orchestrators navigation link.
+
 Orchestrator strategy is explicit: Observe reports proposals; Autonomous board work dispatches
 within existing limits and retains review. Preview plan works while paused, shows snapshot
 time and reasons, and never dispatches. Manual attention actions are distinct from strategy.
