@@ -2120,6 +2120,17 @@ dialog::backdrop {
 .pane-empty-head h3 {
   margin: 0;
 }
+.pane-empty-head .icon-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+}
+@media (max-width: 768px) {
+  .pane-empty-head .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+}
 .session-pick {
   display: flex;
   align-items: center;

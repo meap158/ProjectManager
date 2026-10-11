@@ -71,6 +71,18 @@ const paneNames = () =>
   );
 
 describe('Agents workspace interactions', () => {
+  it('an empty pane has a close button that shrinks the grid by one (PM-63, PM-68)', async () => {
+    localStorage.setItem('pm.workspace.view', 'panes');
+    await renderWorkspace({ preset: '2v', panes: [1, null], maximized: null });
+    const close = await screen.findByRole('button', { name: 'Close empty pane 2' });
+    fireEvent.click(close);
+    await waitFor(() =>
+      expect(api.saveWorkspace).toHaveBeenLastCalledWith(
+        expect.objectContaining({ preset: '1', panes: [1] }),
+      ),
+    );
+  });
+
   it('brings a selected mobile list terminal into view and lets it maximise and close', async () => {
     localStorage.setItem('pm.workspace.view', 'list');
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
