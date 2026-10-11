@@ -1,37 +1,60 @@
 # Orchestrator audit and upgrade plan
 
-Implementation status, revalidated 2026-10-11:
+Implementation status, revalidated 2026-10-12. This table is the current assessment;
+chronological findings later in this document preserve earlier implementation evidence.
 
-| Area                     | Evidence now                                                                                                                                                           | Remaining acceptance work                                                              |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Durable execution        | Persisted dispatch identity, direct keyed reconciliation, orphan cooldown, lease epochs/heartbeat and synchronous pre-insertion policy fence; service/assignment tests | Task revision identity and broader crash/failure matrix                                |
-| Controls and convenience | Scoped Check now, read-only paged preview, quick pending-work actions and unified Home inspection with context links, explicit Pause/Observe/Autonomous modes          | Physical mobile/browser verification; review evidence and recovery workflows           |
-| Efficiency               | Single-flight checks, settled polling/stale response guard, idle snapshot reuse, transition dedup, project round-robin, bounded preview responses                      | Indexed latest-run projections, compact/versioned summary, SQL/quota/LAN benchmarks    |
-| Follow-through           | Persisted retry budget, cooldown, review reservation and episode-based attention dedup                                                                                 | Classified recovery, task generations, evidence-linked review and bounded worker reuse |
-| Evaluation               | Pure planner baseline and full repository checks (370 tests at prior checkpoint)                                                                                       | End-to-end completion/latency/token metrics and runtime failure drills                 |
+| Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Durable execution        | Keyed reservations/reconciliation, lease epochs, scheduler and chat heartbeats, synchronous insertion fences, task revision checks, superseded-attempt refunds                                              | Request replay identity, durable task generations, process crash matrix                                                             |
+| Controls and convenience | Scoped Check now, paged read-only preview, pending-work queue/run actions, card/worker links, Pause/Observe/Autonomous modes, manual chat tools                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                |
+| Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Commit coordinated partial-index migration; measure whole API/tick and index write cost; versioned summary and situation pagination |
+| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                    |
+| Evaluation               | 62 Orchestrator tests passed before the final additional refund test; 14 chat/intent tests then passed; server types and targeted lint passed                                                               | Current full-suite completion, live runtime/mobile checks, end-to-end latency and completion metrics                                |
 
-Preview enrichment now happens after pagination. Retry metadata is selected only for page
-card IDs using the assignment primary key, with no query for an empty page. This reduces
-metadata allocations and full-table retry reads; full planning/history costs remain unchanged.
+Planning reads only global live workers, latest eligible-card runs and last-served scoped
+projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
+runs, excluding accepted history without a fixed history cutoff. Reconciliation loads only
+assignment-linked rows; live occupancy reads distinct project IDs; attention result collection
+compares exact indexed identities for its follow-up cards. OrchestratorService no longer
+hydrates full run history. Query correctness tests retain global caps, pending review and
+fairness semantics, including history exceeding 100,000 rows.
 
-Situation inspection now selects scoped live workers, all finished unreviewed runs, and the
-latest run for each active card in SQLite before decoding run payloads. Closed accepted
-history is excluded, and pending work is no longer hidden by the 100,000-row history cutoff.
-The latest-card lookup uses the existing `(card_id, id)` index. Review/status selection still
-needs indexes and response pagination; planning history reads remain unchanged. Database
-regressions cover more than 100,000 accepted runs and service hydration selection. This is
-allocation/correctness evidence, not an end-to-end latency benchmark.
+The measured 1k-card/100k-history situation builder median fell from 2,769.92ms to 12.51ms.
+In isolated database fixtures, partial indexes reduced planning projection median from 9.49ms
+to 0.53ms and live occupancy from 41.43ms to 0.02ms. See
+[benchmark scope and reproduction](ORCHESTRATOR_BENCHMARK.md). These are synthetic component
+measurements, not whole-request or mobile latency claims. The production migration remains
+uncommitted alongside another agent's append-only schema change; preserve migration order.
 
-Assignment reconciliation now loads narrow database rows linked to assigned claims or legacy
-dispatching cards, and recovers keyed insertions before collecting lifecycle rows. It preserves
-earliest legacy-run identity and explicit validation gates, while avoiding per-historical-run
-SQL updates and the 100,000-run cap. The waiting-card regression now observes one history
-read per tick instead of two. Planning snapshots and dispatch revalidation still load full
-history; replacing those requires preserving global occupancy and project fairness evidence.
+## Next upgrades and release evidence
 
-Completion is not yet proven for the full upgrade: task generations, broader crash testing,
-runtime/mobile verification and end-to-end efficiency benchmarks remain open. Historical
-findings below describe the initial audit, not the current implemented state.
+1. **Finish durable request recovery.** Persist a request identity separate from each attempt,
+   tied to master, card revision and requested provider/instructions. Replays return the existing
+   pending/completed result; conflicting reuse rejects. Verify process termination before claim,
+   after claim, after insertion and before acknowledgement using an isolated database and fake
+   worker executable. Pass only if the same request creates at most one worker and recovery
+   reports its actual state without consuming duplicate attempts.
+2. **Make blocked work actionable.** Classify quota, authentication, unavailable provider,
+   capacity, task readiness, pending review and exhausted retry budgets. Show the specific next
+   action and effective permission mode beside the task. Authentication/configuration failures
+   wait for correction; quota reset schedules fresh verification. Preserve explicit review and
+   never send automatic input into manual terminals or permission prompts. Test policy changes,
+   drafts, retry exhaustion and scoped result links before physical mobile review.
+3. **Finish measured efficiency.** Adopt the tested partial indexes after the shared migration
+   is committed. Measure complete read-only inspection/preview and isolated dispatch ticks at
+   1k/10k cards, 100k history and 1/5/20 masters: p50/p95, SQL/quota reads, writes, RSS and response
+   bytes. Include many unreviewed runs and unscoped masters. Then introduce a versioned summary
+   and paginated situation details where measured payloads require it. Preserve the current
+   fresh insertion fence and populated-view/stale-response behavior.
+4. **Evaluate follow-through after those gates.** Add evidence-linked review, task dependencies,
+   provider preferences and bounded managed-worker reuse. Keep optional decomposition/planning
+   separately budgeted. Compare validated completions, manual interventions and token cost;
+   convenience must not weaken scope, permissions or review controls.
+
+Full `npm run check` currently passes typechecking and lint but stops at formatting in shared
+UI files, before the whole test suite. Those edits are owned by another agent and were not
+included in the Orchestrator commits. Physical mobile and runtime crash evidence is missing.
+The full upgrade is therefore not yet proven complete; the remaining gates above are explicit.
 
 Audited against the current worktree on 2026-10-11. No masters were enabled and no
 worker input was sent. Findings below derive from code; they are not live incident claims.
@@ -45,7 +68,7 @@ The UI supports Start/Pause, editing, Check now, board summaries, live workers a
 filtered decision history. Paused masters avoid expensive inspections; recurring ticks
 wait for completion. These foundations should remain.
 
-## Prioritized findings
+## Initial prioritized findings (historical)
 
 | Priority | Code evidence                                                                        | Consequence and upgrade                                                                                                                                                                       |
 | -------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
