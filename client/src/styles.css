@@ -5903,3 +5903,19 @@ span.path-link:hover .path-icon {
     display: none;
   }
 }
+
+/* Project Agents tab (PM-91): the open terminal or run sits above the work list, set off from it
+   by a divider below instead of the terminal's usual divider above. */
+.agent-work-open {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.agent-work-open > .terminal-wrap {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}

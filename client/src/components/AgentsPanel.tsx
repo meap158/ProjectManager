@@ -274,6 +274,138 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             Terminals keep running until stopped · one-shot runs wait for your review
           </span>
         </div>
+        {/* The open terminal or run comes first, above the list (owner request, PM-91): it's
+            what you work in, and a long list would otherwise push it below the fold. */}
+        {(active || activeRun) && (
+          <div className="agent-work-open">
+            {active && (
+              <div className="terminal-wrap">
+                <div className="terminal-head">
+                  <InlineRename
+                    value={active.name}
+                    label="session"
+                    onSave={(name) =>
+                      api.patchSession(active.id, { name }).then(
+                        (next) =>
+                          setSessions(
+                            (prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev,
+                          ),
+                        (e: Error) => setError(e.message),
+                      )
+                    }
+                  />
+                  <span className="faint mono truncate" title={active.cwd}>
+                    {active.cwd}
+                  </span>
+                  <span className="faint" style={{ fontSize: 12 }}>
+                    {active.status}
+                    {active.pid ? ` · pid ${active.pid}` : ''}
+                  </span>
+                  {active.terminal === 'pty' && <SessionProgress session={active} />}
+                  <SessionRestartStatus session={active} />
+                  {active.status === 'running' && active.terminal === 'pty' && (
+                    <SessionImageButton
+                      sessionId={active.id}
+                      pasteRef={pasteRef}
+                      onError={setError}
+                      className="btn btn-sm"
+                    />
+                  )}
+                </div>
+                <Suspense fallback={<div className="terminal skeleton" style={{ height: 380 }} />}>
+                  <TerminalView
+                    key={`${active.id}-${active.terminal}-${active.startedAt}`}
+                    historyBytes={active.logBytes}
+                    stopped={active.terminal === 'pty' && active.status !== 'running'}
+                    height={active.terminal === 'pty' ? 380 : 320}
+                    fetchOutput={(after) => api.sessionOutput(active.id, after)}
+                    streamUrl={(after) => api.sessionStreamUrl(active.id, after)}
+                    paused={!visible}
+                    {...(active.terminal === 'pty'
+                      ? {
+                          pasteRef,
+                          onImage: (file: File) =>
+                            sendImageToSession(active.id, file, pasteRef.current).catch(
+                              (e: Error) => setError(e.message),
+                            ),
+                          // A stopped session only queues real typing, not the terminal's auto-replies.
+                          onInput: (data: string) => {
+                            if (active.status === 'running' || !isTerminalReport(data)) {
+                              sendKeys(active.id, data);
+                            }
+                          },
+                          onResize: (cols: number, rows: number) => {
+                            api.resizeSession(active.id, cols, rows).catch(() => undefined);
+                          },
+                        }
+                      : {})}
+                  />
+                </Suspense>
+                {active.terminal === 'pty' ? (
+                  <p className="faint" style={{ margin: '6px 0 0', fontSize: 12.5 }}>
+                    Click the terminal and type: keystrokes (including Ctrl+C and arrow keys) go
+                    straight to the session.
+                    {active.status !== 'running' &&
+                      ' The session is down; input queues until it restarts.'}
+                  </p>
+                ) : (
+                  <form className="terminal-input" onSubmit={sendInput}>
+                    <input
+                      className="input mono"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder={
+                        active.status === 'running'
+                          ? 'Type input for the session… (Enter to send)'
+                          : 'Session is down — input will queue for relaunch'
+                      }
+                      spellCheck={false}
+                      autoComplete="off"
+                      aria-label="Session input"
+                    />
+                    <button
+                      type="button"
+                      className="btn"
+                      title="Send Ctrl+C (interrupt)"
+                      onClick={async () => {
+                        try {
+                          const { queued } = await api.sendSessionInput(active.id, '\x03');
+                          setQueuedNote(queued);
+                        } catch (e) {
+                          setError((e as Error).message);
+                        }
+                      }}
+                    >
+                      ^C
+                    </button>
+                    <button type="submit" className="btn btn-primary" disabled={!input}>
+                      Send
+                    </button>
+                  </form>
+                )}
+                {queuedNote && (
+                  <div className="notice" role="status">
+                    <span>Queued — it flushes into the session when the process is back.</span>
+                    <button className="btn btn-sm" onClick={() => setQueuedNote(false)}>
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {activeRun && (
+              <div className="runs">
+                <RunCard
+                  run={activeRun}
+                  now={now}
+                  paused={!visible}
+                  onChanged={upsertRun}
+                  onDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
+                />
+              </div>
+            )}
+          </div>
+        )}
         {work === null ? (
           <div className="skeleton" style={{ height: 120 }} />
         ) : work.length === 0 ? (
@@ -295,133 +427,6 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                 : api.renameRun(w.item.id, name).then(upsertRun, (e: Error) => setError(e.message))
             }
           />
-        )}
-
-        {active && (
-          <div className="terminal-wrap">
-            <div className="terminal-head">
-              <InlineRename
-                value={active.name}
-                label="session"
-                onSave={(name) =>
-                  api.patchSession(active.id, { name }).then(
-                    (next) =>
-                      setSessions(
-                        (prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev,
-                      ),
-                    (e: Error) => setError(e.message),
-                  )
-                }
-              />
-              <span className="faint mono truncate" title={active.cwd}>
-                {active.cwd}
-              </span>
-              <span className="faint" style={{ fontSize: 12 }}>
-                {active.status}
-                {active.pid ? ` · pid ${active.pid}` : ''}
-              </span>
-              {active.terminal === 'pty' && <SessionProgress session={active} />}
-              <SessionRestartStatus session={active} />
-              {active.status === 'running' && active.terminal === 'pty' && (
-                <SessionImageButton
-                  sessionId={active.id}
-                  pasteRef={pasteRef}
-                  onError={setError}
-                  className="btn btn-sm"
-                />
-              )}
-            </div>
-            <Suspense fallback={<div className="terminal skeleton" style={{ height: 380 }} />}>
-              <TerminalView
-                key={`${active.id}-${active.terminal}-${active.startedAt}`}
-                historyBytes={active.logBytes}
-                stopped={active.terminal === 'pty' && active.status !== 'running'}
-                height={active.terminal === 'pty' ? 380 : 320}
-                fetchOutput={(after) => api.sessionOutput(active.id, after)}
-                streamUrl={(after) => api.sessionStreamUrl(active.id, after)}
-                paused={!visible}
-                {...(active.terminal === 'pty'
-                  ? {
-                      pasteRef,
-                      onImage: (file: File) =>
-                        sendImageToSession(active.id, file, pasteRef.current).catch((e: Error) =>
-                          setError(e.message),
-                        ),
-                      // A stopped session only queues real typing, not the terminal's auto-replies.
-                      onInput: (data: string) => {
-                        if (active.status === 'running' || !isTerminalReport(data)) {
-                          sendKeys(active.id, data);
-                        }
-                      },
-                      onResize: (cols: number, rows: number) => {
-                        api.resizeSession(active.id, cols, rows).catch(() => undefined);
-                      },
-                    }
-                  : {})}
-              />
-            </Suspense>
-            {active.terminal === 'pty' ? (
-              <p className="faint" style={{ margin: '6px 0 0', fontSize: 12.5 }}>
-                Click the terminal and type: keystrokes (including Ctrl+C and arrow keys) go
-                straight to the session.
-                {active.status !== 'running' &&
-                  ' The session is down; input queues until it restarts.'}
-              </p>
-            ) : (
-              <form className="terminal-input" onSubmit={sendInput}>
-                <input
-                  className="input mono"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder={
-                    active.status === 'running'
-                      ? 'Type input for the session… (Enter to send)'
-                      : 'Session is down — input will queue for relaunch'
-                  }
-                  spellCheck={false}
-                  autoComplete="off"
-                  aria-label="Session input"
-                />
-                <button
-                  type="button"
-                  className="btn"
-                  title="Send Ctrl+C (interrupt)"
-                  onClick={async () => {
-                    try {
-                      const { queued } = await api.sendSessionInput(active.id, '\x03');
-                      setQueuedNote(queued);
-                    } catch (e) {
-                      setError((e as Error).message);
-                    }
-                  }}
-                >
-                  ^C
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={!input}>
-                  Send
-                </button>
-              </form>
-            )}
-            {queuedNote && (
-              <div className="notice" role="status">
-                <span>Queued — it flushes into the session when the process is back.</span>
-                <button className="btn btn-sm" onClick={() => setQueuedNote(false)}>
-                  Dismiss
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-        {activeRun && (
-          <div className="runs">
-            <RunCard
-              run={activeRun}
-              now={now}
-              paused={!visible}
-              onChanged={upsertRun}
-              onDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
-            />
-          </div>
         )}
       </section>
       {/* Plan usage in its own slim section under Agent work and its terminal (PM-42). */}
