@@ -1045,6 +1045,10 @@ a.t:hover {
   color: var(--danger-text);
 }
 .btn-danger-solid:hover:not(:disabled) {
+  /* Keep the red: the generic .btn hover would swap in the grey hover surface, leaving the
+     label (white in light mode, near-black in dark mode) unreadable. */
+  background: var(--danger);
+  color: var(--danger-text);
   filter: brightness(1.08);
 }
 .btn-ghost {
