@@ -561,6 +561,12 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   pane headers. A header shows a status dot, the session name, project link and card link, plus
   stop/start, maximise (also by double-clicking the header) and remove-from-layout. Removing a
   pane never kills the session.
+- **Coming back to a section** (PM-72, `client/src/sectionMemory.ts`): the top bar and the phone
+  tab bar link each section to the address last open in it (e.g. the Board filtered to one
+  project), every address restores its scroll position, and the Agents page reopens the terminal
+  that was open. Kept per browser tab (sessionStorage).
+- **Orchestrators on a phone** (PM-71): not in the bottom tab bar; reached from the Agents tools
+  menu (⋯), and the Agents tab stays highlighted while on Orchestrators.
 - **Agents on a phone** (PM-62): the filter bar is one row (status picker, Filters toggle);
   expanded, agent / project / kind sit side by side in three columns, then search with an inline
   Clear. Each work row is two lines: identity (dot, agent, name, project), then the state word,

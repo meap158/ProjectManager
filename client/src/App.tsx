@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
 import { MobileTabBar } from './components/MobileTabBar';
+import { sectionHref, useSectionMemory } from './sectionMemory';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ThemeSwitch } from './components/ThemeSwitch';
 import { BoardIcon, GridIcon, SettingsIcon, TerminalIcon } from './components/icons';
@@ -29,6 +30,8 @@ export function App() {
   const fullWidth = ['/workspace', '/orchestrators'].includes(useLocation().pathname);
   // Phone widths: the project list is a full-screen panel opened from the bottom tab bar.
   const projects = useProjectPanel();
+  // Each section reopens where it was left, scroll position included (PM-72).
+  useSectionMemory();
   return (
     <>
       <RememberLastPage />
@@ -48,7 +51,7 @@ export function App() {
             <span>All projects</span>
           </NavLink>
           <NavLink
-            to="/board"
+            to={sectionHref('/board')}
             aria-label="Board"
             className={({ isActive }) => (isActive ? 'is-active' : '')}
           >
@@ -56,14 +59,17 @@ export function App() {
             <span>Board</span>
           </NavLink>
           <NavLink
-            to="/workspace"
+            to={sectionHref('/workspace')}
             aria-label="Agents"
             className={({ isActive }) => (isActive ? 'is-active' : '')}
           >
             <TerminalIcon />
             <span>Agents</span>
           </NavLink>
-          <NavLink to="/orchestrators" className={({ isActive }) => (isActive ? 'is-active' : '')}>
+          <NavLink
+            to={sectionHref('/orchestrators')}
+            className={({ isActive }) => (isActive ? 'is-active' : '')}
+          >
             <BoardIcon />
             <span>Orchestrators</span>
           </NavLink>
@@ -71,7 +77,7 @@ export function App() {
         <div className="topbar-right">
           <ThemeSwitch />
           <NavLink
-            to="/settings"
+            to={sectionHref('/settings')}
             aria-label="Settings"
             className={({ isActive }) => (isActive ? 'is-active' : '')}
           >

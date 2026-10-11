@@ -38,6 +38,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 const session = (id: number, name: string): AgentSession =>

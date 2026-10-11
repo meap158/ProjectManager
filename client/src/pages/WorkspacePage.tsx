@@ -55,6 +55,24 @@ const TerminalView = lazy(() => terminalViewPromise.then((m) => ({ default: m.Te
 // Memory cache: returning to /workspace renders previous layout and sessions immediately
 // without showing an empty skeleton banner while waiting for network fetches.
 let cachedWorkspaceLayout: WorkspaceLayout | null = null;
+
+const SELECTED_KEY = 'pm.workspace.selected';
+function readSelectedWork(): WorkKey | null {
+  try {
+    const value = sessionStorage.getItem(SELECTED_KEY);
+    return value && /^(session|run):\d+$/.test(value) ? (value as WorkKey) : null;
+  } catch {
+    return null;
+  }
+}
+function saveSelectedWork(key: WorkKey | null): void {
+  try {
+    if (key) sessionStorage.setItem(SELECTED_KEY, key);
+    else sessionStorage.removeItem(SELECTED_KEY);
+  } catch {
+    // Private mode: the selection just isn't remembered.
+  }
+}
 let cachedSessions: AgentSession[] | null = null;
 
 export function resetWorkspaceCache(): void {
@@ -152,7 +170,12 @@ export function WorkspacePage() {
   const [view, setViewState] = useState<View>(readView);
   const [runs, setRuns] = useState<AgentRun[] | null>(null);
   const [usage, setUsage] = useState<Record<number, AgentTokenUsage | null>>({});
-  const [selectedWork, setSelectedWork] = useState<WorkKey | null>(null);
+  // The open terminal in List view survives leaving the page and coming back (PM-72).
+  const [selectedWork, setSelectedWorkState] = useState<WorkKey | null>(readSelectedWork);
+  const setSelectedWork = (key: WorkKey | null) => {
+    setSelectedWorkState(key);
+    saveSelectedWork(key);
+  };
   const [now, setNow] = useState(0);
   const [mobileNewOpen, setMobileNewOpen] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
@@ -350,6 +373,11 @@ export function WorkspacePage() {
     >
       <div className="workspace-bar">
         <h1>Agents</h1>
+        {/* Phones only (agents-toolbar.css shows it inside the tools menu): the phone tab bar has
+            no Orchestrators entry, while desktop has it in the top bar (PM-71). */}
+        <Link className="btn btn-sm workspace-orchestrator-link" to="/orchestrators">
+          Orchestrators
+        </Link>
         <div className="bar-group">
           <span className="bar-label" id="ws-view-label">
             View
