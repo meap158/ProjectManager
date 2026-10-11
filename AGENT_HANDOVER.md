@@ -2,6 +2,16 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Situation inspection selects only scoped live runs, all unreviewed finished runs, and the
+  latest run per in-progress/review card before supervisor hydration. This removes historical
+  command/prompt/change decoding and the old 100,000-row visibility cutoff. Existing card/run
+  index serves latest-card lookup; status/review selection still scans eligible history and
+  needs indexed pagination. A 100,001 accepted-history fixture verifies scope, deduplication,
+  older pending visibility and killed latest-run context. Service integration verifies no
+  listAllRuns call. All 48 current Orchestrator tests pass. Full check passes types/lint but
+  stops on formatting in concurrent AgentWorkList.interactions.test.tsx and Dropdown.test.tsx.
+  Scheduler snapshots/reconciliation still load history; no end-to-end latency claim is made.
+
 - Orchestrators Quick runs now offers explicit pending-work inspection in the selected master/
   project scope. Project alerts can queue or run policy-controlled follow-ups; review, stalled
   and input-needed items link to their task/session/project. Inspection is on demand, retains

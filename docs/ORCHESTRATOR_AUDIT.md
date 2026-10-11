@@ -14,6 +14,14 @@ Preview enrichment now happens after pagination. Retry metadata is selected only
 card IDs using the assignment primary key, with no query for an empty page. This reduces
 metadata allocations and full-table retry reads; full planning/history costs remain unchanged.
 
+Situation inspection now selects scoped live workers, all finished unreviewed runs, and the
+latest run for each active card in SQLite before decoding run payloads. Closed accepted
+history is excluded, and pending work is no longer hidden by the 100,000-row history cutoff.
+The latest-card lookup uses the existing `(card_id, id)` index. Review/status selection still
+needs indexes and response pagination; scheduler history reads remain unchanged. Database
+regressions cover more than 100,000 accepted runs and service hydration selection. This is
+allocation/correctness evidence, not an end-to-end latency benchmark.
+
 Completion is not yet proven for the full upgrade: task generations, broader crash testing,
 runtime/mobile verification and end-to-end efficiency benchmarks remain open. Historical
 findings below describe the initial audit, not the current implemented state.
