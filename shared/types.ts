@@ -384,6 +384,8 @@ export interface AgentSession {
   terminal: AgentTerminal;
   /** Kanban card this session works on, if it was started from one. */
   cardId: number | null;
+  /** Set when this session is a master orchestrator's chat CLI (PM-89). */
+  orchestratorId?: string | null;
   cardKey: string | null;
   pid: number | null;
   status: AgentSessionStatus;

@@ -1,6 +1,7 @@
 ﻿import type { Hono } from 'hono';
 import { z } from 'zod';
 import type { OrchestratorService } from './service.js';
+import type { OrchestratorChat } from './chat.js';
 const attentionScope = z.object({ projectId: z.number().int().positive().optional() }).strict();
 const attentionDismiss = z
   .object({
@@ -30,8 +31,32 @@ const config = z.object({
   allowUnknownQuota: z.boolean(),
   quotaMaxAgeMs: z.number().int().min(60000).max(86400000),
 });
-export function registerOrchestratorRoutes(app: Hono, service: OrchestratorService) {
+const chatOpen = z
+  .object({ providerId: z.enum(['claude', 'codex', 'antigravity', 'opencode']).optional() })
+  .strict();
+const chatCheck = z
+  .object({ focus: z.enum(['all', 'todo', 'in_progress', 'review']).optional() })
+  .strict();
+export function registerOrchestratorRoutes(
+  app: Hono,
+  service: OrchestratorService,
+  chat?: OrchestratorChat,
+) {
   app.get('/orchestrators', (c) => c.json(service.state()));
+  if (chat) {
+    // The master's own chat CLI (PM-89): open (or reopen) it, or ask it for a one-time check
+    // on pending work. AgentErrors (404 / 409 / 400) carry their own status.
+    app.post('/orchestrators/:id/chat', async (c) => {
+      const parsed = chatOpen.safeParse((await c.req.json().catch(() => null)) ?? {});
+      if (!parsed.success) return c.json({ error: 'Invalid chat request' }, 400);
+      return c.json(await chat.open(c.req.param('id'), parsed.data.providerId));
+    });
+    app.post('/orchestrators/:id/check', async (c) => {
+      const parsed = chatCheck.safeParse((await c.req.json().catch(() => null)) ?? {});
+      if (!parsed.success) return c.json({ error: 'Invalid check request' }, 400);
+      return c.json(await chat.check(c.req.param('id'), parsed.data.focus));
+    });
+  }
   // What the orchestrators see of Home, with trace-back identity (PM-70). Registered before
   // '/orchestrators/:id/…' so "situation" is never read as an id.
   app.get('/orchestrators/situation', (c) => c.json(service.situation()));

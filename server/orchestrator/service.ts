@@ -232,6 +232,10 @@ export class OrchestratorService {
       .map((run) => run.id);
     return { resolvedCards: [...cardIds], dispatchedRuns };
   }
+  /** Records something done outside a tick (the master's chat, PM-89) in Decision history. */
+  record(event: Omit<OrchestratorEvent, 'at'>): void {
+    this.event(event);
+  }
   private event(event: Omit<OrchestratorEvent, 'at'>) {
     const state = this.state();
     const last = [...state.events]

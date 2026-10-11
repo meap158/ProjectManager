@@ -420,6 +420,8 @@ interface SessionRow {
   log_path: string;
   terminal: AgentTerminal;
   card_id: number | null;
+  /** Set for an orchestrator's chat CLI (PM-89). */
+  orchestrator_id: string | null;
 }
 
 interface RunRow {
@@ -718,6 +720,8 @@ export class AgentSupervisor {
       cardId?: number;
       /** First prompt for the interactive CLI (defaults to the card's task when cardId is set). */
       prompt?: string;
+      /** The master orchestrator this session is the chat of (PM-89). */
+      orchestratorId?: string;
     },
   ): Promise<AgentSession> {
     const project = getProjectRow(this.db, projectId);
@@ -728,10 +732,13 @@ export class AgentSupervisor {
     }
     const count = (
       this.db
-        .prepare(`SELECT COUNT(*) AS n FROM agent_sessions WHERE project_id = ?`)
+        // Orchestrator chats only borrow a project as their home; they don't use its slots.
+        .prepare(
+          `SELECT COUNT(*) AS n FROM agent_sessions WHERE project_id = ? AND orchestrator_id IS NULL`,
+        )
         .get(projectId) as { n: number }
     ).n;
-    if (count >= MAX_SESSIONS_PER_PROJECT) {
+    if (!input.orchestratorId && count >= MAX_SESSIONS_PER_PROJECT) {
       throw new AgentError(409, `Session limit reached (${MAX_SESSIONS_PER_PROJECT} per project)`);
     }
 
@@ -789,8 +796,9 @@ export class AgentSupervisor {
       .prepare(
         `INSERT INTO agent_sessions
            (project_id, name, provider_id, command_json, resume_json, cwd, status,
-            desired_state, supervise, created_at, started_at, log_path, terminal, card_id)
-         VALUES (?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?, ?, ?)`,
+            desired_state, supervise, created_at, started_at, log_path, terminal, card_id,
+            orchestrator_id)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         projectId,
@@ -805,6 +813,7 @@ export class AgentSupervisor {
         logPath,
         terminal,
         card?.id ?? null,
+        input.orchestratorId ?? null,
       );
     const id = Number(result.lastInsertRowid);
     // CLIs without a launch flag for the name get it by /rename once they're ready.
@@ -2444,6 +2453,7 @@ export class AgentSupervisor {
       terminal: row.terminal,
       cardId: row.card_id,
       cardKey: row.card_id ? (getCard(this.db, row.card_id)?.key ?? null) : null,
+      orchestratorId: row.orchestrator_id ?? null,
       pid: live?.proc.pid ?? row.pid,
       status: live ? 'running' : row.status,
       exitCode: row.exit_code,

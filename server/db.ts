@@ -167,6 +167,8 @@ export const MIGRATIONS: string[] = [
   CREATE UNIQUE INDEX agent_runs_dispatch_key ON agent_runs(dispatch_key) WHERE dispatch_key IS NOT NULL;
   ALTER TABLE orchestrator_assignments ADD COLUMN dispatch_key TEXT;`,
   `ALTER TABLE orchestrator_lease ADD COLUMN epoch INTEGER NOT NULL DEFAULT 1;`,
+  // An orchestrator's own chat CLI (PM-89): its board tools cover the master's projects.
+  `ALTER TABLE agent_sessions ADD COLUMN orchestrator_id TEXT;`,
 ];
 
 export function openDb(dataDir: string): Db {

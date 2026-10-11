@@ -201,16 +201,43 @@ export const boardTaskNote =
   '\n\nProjectManager board tools: call projectmanager get_card to read your current task and image list, read_image for each attachment, add_note for progress/validation evidence, and update_status to review after validating. Use done only when all requirements are fulfilled.' +
   ' Commit atomically, one coherent change per commit with a descriptive message, and reference your card key in it ("Refs PM-12" while working, "Fixes PM-12" when complete): the board follows your commits automatically.';
 
-export function registerBoardMcp(app: Hono, db: Db, attachmentsRoot: string): void {
+/**
+ * An orchestrator's chat CLI gets the master's tools instead of the single-card ones (PM-89):
+ * same transport and capability token, scoped to the master's projects by the host.
+ */
+export interface OrchestratorToolHost {
+  tools: unknown[];
+  call(
+    orchestratorId: string,
+    sessionId: number,
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown>;
+}
+
+export function registerBoardMcp(
+  app: Hono,
+  db: Db,
+  attachmentsRoot: string,
+  orchestratorTools?: OrchestratorToolHost,
+): void {
   app.post('/board-mcp', async (c) => {
     const token = c.req.header('authorization')?.replace(/^Bearer /, '') ?? '';
     const owner = token ? getSetting<Owner>(db, tokenKey(token)) : null;
     if (!owner) return c.json({ error: 'Invalid board capability' }, 403);
     const table = owner.kind === 'session' ? 'agent_sessions' : 'agent_runs';
     const row = db
-      .prepare(`SELECT card_id, project_id, log_path FROM ${table} WHERE id = ?`)
+      .prepare(
+        `SELECT card_id, project_id, log_path${owner.kind === 'session' ? ', orchestrator_id' : ''} FROM ${table} WHERE id = ?`,
+      )
       .get(owner.id) as
-      { card_id: number | null; project_id: number; log_path: string } | undefined;
+      | {
+          card_id: number | null;
+          project_id: number;
+          log_path: string;
+          orchestrator_id?: string | null;
+        }
+      | undefined;
     if (!row || row.log_path !== owner.logPath)
       return c.json({ error: 'Board capability revoked' }, 403);
     const rpc = z
@@ -236,13 +263,24 @@ export function registerBoardMcp(app: Hono, db: Db, attachmentsRoot: string): vo
         serverInfo: { name: 'projectmanager', version: '1.0.0' },
       });
     if (method === 'ping') return reply({});
-    if (method === 'tools/list') return reply({ tools: BOARD_TOOLS });
+    const orchestratorId = row.orchestrator_id && orchestratorTools ? row.orchestrator_id : null;
+    if (method === 'tools/list')
+      return reply({ tools: orchestratorId ? orchestratorTools!.tools : BOARD_TOOLS });
     if (method !== 'tools/call')
       return c.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } });
     try {
       const call = z
         .object({ name: z.string(), arguments: z.record(z.string(), z.unknown()).default({}) })
         .parse(params);
+      if (orchestratorId) {
+        const value = await orchestratorTools!.call(
+          orchestratorId,
+          owner.id,
+          call.name,
+          call.arguments,
+        );
+        return reply({ content: [{ type: 'text', text: JSON.stringify(value, null, 1) }] });
+      }
       const assigned = row.card_id ? getCard(db, row.card_id) : null;
       if (call.name === 'create_card') {
         if (assigned) throw new Error(`You already have a card (${assigned.key}); use it.`);

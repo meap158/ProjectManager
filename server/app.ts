@@ -1,5 +1,6 @@
 import { OrchestratorService } from './orchestrator/service.js';
 import { registerOrchestratorRoutes } from './orchestrator/routes.js';
+import { OrchestratorChat } from './orchestrator/chat.js';
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -155,12 +156,19 @@ export function createApp(
   const orchestrator = new OrchestratorService(db, supervisor, options.dataDir ?? null, () =>
     store.listProjects(db, (id) => scanner.state(id)),
   );
-  registerOrchestratorRoutes(app, orchestrator);
+  const orchestratorChat = new OrchestratorChat(
+    db,
+    supervisor,
+    orchestrator,
+    () => store.listProjects(db, (id) => scanner.state(id)),
+    options.dataDir ?? null,
+  );
+  registerOrchestratorRoutes(app, orchestrator, orchestratorChat);
   // Card images live beside the agent logs: <dataDir>/attachments/<cardId>/.
   const attachmentsRoot = path.join(path.dirname(logDir), 'attachments');
   registerAttachmentRoutes(app, db, attachmentsRoot);
   registerSessionImageRoutes(app, db, attachmentsRoot);
-  registerBoardMcp(app, db, attachmentsRoot);
+  registerBoardMcp(app, db, attachmentsRoot, orchestratorChat);
 
   // ---- Projects -------------------------------------------------------------------------------
 
