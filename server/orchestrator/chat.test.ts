@@ -9,6 +9,7 @@ import type { AgentRun, AgentSession, ProjectSummary } from '../../shared/types.
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { OrchestratorService } from './service.js';
 import { OrchestratorChat, briefing } from './chat.js';
+import { readLimits } from '../agents/limits.js';
 
 vi.mock('../agents/providers.js', () => ({
   providerStatuses: vi.fn(async () => [
@@ -18,9 +19,9 @@ vi.mock('../agents/providers.js', () => ({
 }));
 
 vi.mock('../agents/limits.js', () => ({
-  readLimits: () => [
+  readLimits: vi.fn(() => [
     { providerId: 'codex', asOf: new Date().toISOString(), windows: [{ usedPercent: 20 }] },
-  ],
+  ]),
 }));
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'pm-orch-chat-'));
@@ -97,7 +98,7 @@ function setup(overrides: Partial<OrchestratorConfig> = {}) {
   );
   const call = (name: string, args: Record<string, unknown> = {}) =>
     chat.call('master-1', 5, name, args);
-  return { db, a, b, mine, other, chat, call, sessions, runs, supervisor, record };
+  return { db, a, b, mine, other, chat, call, sessions, runs, supervisor, record, instance };
 }
 
 describe('orchestrator chat tools (PM-89)', () => {
@@ -214,6 +215,34 @@ describe('orchestrator chat tools (PM-89)', () => {
     const outcomes = await Promise.allSettled(requests);
     expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(inserted).toBe(1);
+    db.close();
+  });
+
+  it('rechecks quota, scope, provider policy and review before insertion without toggling manual mode', async () => {
+    const { call, mine, supervisor, db, instance, b } = setup({
+      enabled: false,
+      strategy: 'observe',
+    });
+    await call('dispatch_worker', { card: mine.key });
+    const options = supervisor.dispatchCard.mock.calls[0]?.[2] as { canCommit: () => boolean };
+    expect(options.canCommit()).toBe(true);
+    expect(instance.enabled).toBe(false);
+    expect(instance.strategy).toBe('observe');
+    vi.mocked(readLimits).mockReturnValueOnce([
+      { providerId: 'codex', asOf: new Date().toISOString(), windows: [{ usedPercent: 100 }] },
+    ]);
+    expect(options.canCommit()).toBe(false);
+    expect(options.canCommit()).toBe(true);
+    instance.projectIds = [b];
+    expect(options.canCommit()).toBe(false);
+    instance.projectIds = [mine.projectId];
+    instance.providers = ['claude'];
+    expect(options.canCommit()).toBe(false);
+    instance.providers = ['codex'];
+    db.prepare(
+      "INSERT INTO agent_runs(id,project_id,card_id,name,provider_id,command_json,status,created_at,log_path) VALUES (88,?,?, 'Worker','codex','[]','succeeded','2026-10-12','')",
+    ).run(mine.projectId, mine.id);
+    expect(options.canCommit()).toBe(false);
     db.close();
   });
 

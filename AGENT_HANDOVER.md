@@ -2,6 +2,11 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Chat insertion fence regression now covers quota becoming exhausted, scope removal,
+  provider-policy change and newly unreviewed completion. Explicit chat requests can run
+  under paused/Observe policy without changing that mode; the test verifies settings remain
+  unchanged. Nine chat tests pass. Durable request identity/recovery remain outstanding.
+
 - Chat concurrency regression gates two simultaneous same-card requests immediately before
   insertion, persists the winning run in SQLite and verifies the second fence rejects it.
   All eight chat tests pass, plus server types and lint. This proves in-process persisted
