@@ -2,6 +2,14 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Chat dispatch now uses shared planner decisions for quota, provider/global/scoped capacity,
+  current scope, readiness, pending review and persisted reservation checks. Supervisor gets
+  maxAttempts=1 and a synchronous canCommit fence that rechecks current policy/occupancy/quota
+  and captured task content/status/time. Manual action retains current mode without toggling
+  pause/Observe. Todo context includes project identity. Fifty-six Orchestrator tests pass,
+  including task edits and competing global workers. Durable chat claim/idempotency and
+  concurrent request tests remain outstanding; the P0 finding is only partially closed.
+
 - New P0 audit finding: master chat dispatch_worker bypasses scheduler quota/provider/global
   caps, review/claim reservation, durable dispatch identity and final canCommit fence. Initial
   occupancy/scope checks occur before provider awaits. See ORCHESTRATOR_AUDIT.md for shared

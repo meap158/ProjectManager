@@ -17,6 +17,10 @@ import {
 import type { OrchestratorConfig, OrchestratorEvent } from '../../shared/orchestrator.js';
 import type { OrchestratorToolHost } from '../boardMcp.js';
 import { cardContext } from './situation.js';
+import { planOrchestration } from './planner.js';
+import { planningRuns } from './planningRuns.js';
+import { OrchestratorAssignments } from './assignments.js';
+import { readLimits } from '../agents/limits.js';
 import type { OrchestratorService } from './service.js';
 
 // An orchestrator's own chat CLI (PM-89). The user talks to it like any agent terminal;
@@ -503,8 +507,41 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const providerId = input.providerId ?? instance.providers.find((p) => available.has(p));
       if (!providerId || !available.has(providerId))
         fail(`None of your providers is installed: ${instance.providers.join(', ')}`);
+      const check = () => {
+        if (!providerId) return { allowed: false, reason: 'No provider selected' };
+        const policy = this.instance(orchestratorId);
+        const latest = getCard(this.db, c.id);
+        if (
+          !latest ||
+          latest.title !== c.title ||
+          latest.description !== c.description ||
+          latest.status !== c.status ||
+          latest.updatedAt !== c.updatedAt
+        )
+          return { allowed: false, reason: 'Task changed before launch; inspect it again' };
+        const decision = planOrchestration(
+          { ...policy, providers: [providerId] },
+          {
+            cards: [latest],
+            runs: planningRuns(this.db, policy.projectIds),
+            sessions: this.supervisor.listAllSessions().filter((s) => !s.orchestratorId),
+            availableProviders:
+              available.has(providerId) && policy.providers.includes(providerId)
+                ? [providerId]
+                : [],
+            limits: readLimits(this.dataDir),
+            blockedCardIds: new OrchestratorAssignments(this.db).blockedCards(),
+          },
+        )[0];
+        return {
+          allowed: decision?.action === 'dispatch',
+          reason: decision?.reason ?? 'Task is outside current scope or not ready',
+        };
+      };
+      const permission = check();
+      if (!permission.allowed) fail(permission.reason);
       const context = [
-        cardContext(this.service.situation(orchestratorId)!, c.id),
+        cardContext(this.service.situation(orchestratorId)!, c.id, c.projectId),
         input.instructions ? `Instructions from the orchestrator:\n${input.instructions}` : '',
       ]
         .filter(Boolean)
@@ -512,6 +549,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const run = await this.supervisor.dispatchCard(c.projectId, c.id, {
         providerId,
         ...(context ? { context } : {}),
+        maxAttempts: 1,
+        canCommit: () => check().allowed,
       });
       this.record(
         orchestratorId,

@@ -17,6 +17,12 @@ vi.mock('../agents/providers.js', () => ({
   ]),
 }));
 
+vi.mock('../agents/limits.js', () => ({
+  readLimits: () => [
+    { providerId: 'codex', asOf: new Date().toISOString(), windows: [{ usedPercent: 20 }] },
+  ],
+}));
+
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'pm-orch-chat-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -62,7 +68,7 @@ function setup(overrides: Partial<OrchestratorConfig> = {}) {
     getRun: () => null,
     sessionScreen: () => 'screen text',
     sendInput: vi.fn(),
-    dispatchCard: vi.fn(async (projectId: number, cardId: number) => ({
+    dispatchCard: vi.fn(async (projectId: number, cardId: number, _options?: unknown) => ({
       id: 77,
       projectId,
       cardId,
@@ -133,6 +139,8 @@ describe('orchestrator chat tools (PM-89)', () => {
     expect(result.dispatched.runId).toBe(77);
     expect(supervisor.dispatchCard).toHaveBeenCalledWith(a, mine.id, {
       providerId: 'codex',
+      maxAttempts: 1,
+      canCommit: expect.any(Function),
       context: 'Instructions from the orchestrator:\nCheck the tests first',
     });
     // The project now has a live worker: its per-project limit (1) refuses another.
@@ -141,6 +149,30 @@ describe('orchestrator chat tools (PM-89)', () => {
     await expect(call('dispatch_worker', { card: mine.key, providerId: 'claude' })).rejects.toThrow(
       /already has|one of your providers/,
     );
+  });
+
+  it('fences changed tasks and competing global workers immediately before insertion', async () => {
+    const { call, mine, supervisor, db, sessions, b } = setup();
+    await call('dispatch_worker', { card: mine.key });
+    const options = supervisor.dispatchCard.mock.calls[0]?.[2] as unknown as {
+      canCommit: () => boolean;
+    };
+    expect(options.canCommit()).toBe(true);
+    db.prepare("UPDATE cards SET description = 'New instructions' WHERE id = ?").run(mine.id);
+    expect(options.canCommit()).toBe(false);
+    db.prepare('UPDATE cards SET description = ? WHERE id = ?').run(mine.description, mine.id);
+    sessions.push(
+      ...Array.from({ length: 32 }, (_, id) => ({
+        id,
+        projectId: b,
+        providerId: 'other',
+        status: 'running' as const,
+      })),
+    );
+    expect(options.canCommit()).toBe(false);
+    sessions.length = 0;
+    expect(options.canCommit()).toBe(true);
+    db.close();
   });
 
   it('messages only idle workers in scope, never one working or asking the user', async () => {

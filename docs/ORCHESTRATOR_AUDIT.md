@@ -238,3 +238,8 @@ request identity reconciles its existing run; context includes the Todo task's p
 Provider/auth waits must not blindly retry or send input. Full suite and runtime verification
 remain required after implementing this shared path. This finding is an implementation
 review, not evidence that a duplicate worker has occurred in a live project.
+
+Chat policy gap partially closed: dispatch_worker now uses shared planner checks before
+launch and inside supervisor canCommit, captures task revision, passes one supervisor attempt
+and explicit task project context. Tests cover task edits and competing global workers.
+Durable claim/idempotency and complete concurrent/scope/quota acceptance coverage remain open.
