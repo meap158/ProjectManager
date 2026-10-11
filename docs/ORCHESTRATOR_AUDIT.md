@@ -154,3 +154,14 @@ by default, maximum 200 with validated pagination. This addresses the measured m
 mobile response/render issue. Planning still loads the full snapshot and computes all decisions;
 indexed latest-run projections and end-to-end SQL/quota benchmarks remain open. Each page is
 a fresh read-only snapshot, so changing queues can shift tasks between pages.
+
+## Task revision race protection
+
+Dispatch now captures the card's instructions and update timestamp before asynchronous
+provider preparation. The existing synchronous insertion fence rejects changed content,
+status or timestamp, preventing a stale prompt from launching after an edit. Tests exercise
+same-timestamp content changes and revision-only changes alongside capacity races.
+This is in-flight protection, not a durable generation counter: edits reverted to identical
+content/timestamp and crash-spanning task revisions still require the planned generation work.
+A rejected stale dispatch currently consumes the existing attempt/cooldown budget; distinguishing
+superseded intents from provider failures is part of that remaining recovery design.

@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../db.js';
 import type { AgentSupervisor } from '../agents/supervisor.js';
-import { getSetting, setSetting, listCards, listCardsInFlight } from '../store.js';
+import { getSetting, setSetting, getCard, listCards, listCardsInFlight } from '../store.js';
 import { providerStatuses } from '../agents/providers.js';
 import { readLimits } from '../agents/limits.js';
 import type {
@@ -457,6 +457,16 @@ export class OrchestratorService {
           });
           continue;
         }
+        const task = getCard(this.db, fresh.cardId);
+        if (!task) continue;
+        // Capture the instructions before any asynchronous dispatch preparation. A newer
+        // revision must be planned on a later tick rather than launching this stale intent.
+        const taskRevision = {
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          updatedAt: task.updatedAt,
+        };
         // Fenced lease renewal before claiming
         if (!assignments.renew(this.owner, epoch)) return;
         if (!assignments.claim(fresh.cardId, initial.id, Date.now(), this.owner, epoch)) {
@@ -492,6 +502,15 @@ export class OrchestratorService {
               )
                 return false;
               const latest = snapshot();
+              const latestTask = latest.cards.find((card) => card.id === fresh.cardId);
+              if (
+                !latestTask ||
+                latestTask.title !== taskRevision.title ||
+                latestTask.description !== taskRevision.description ||
+                latestTask.status !== taskRevision.status ||
+                latestTask.updatedAt !== taskRevision.updatedAt
+              )
+                return false;
               // The current dispatch owns this reservation; all other claims stay blocked.
               latest.blockedCardIds.delete(fresh.cardId);
               const checked = planOrchestration(

@@ -2,6 +2,12 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Orchestrator commit fence captures task title/description/status/update timestamp before
+  async provider preparation and rejects changed instructions immediately before insertion.
+  Content checks catch same-timestamp edits; timestamp catches revision-only changes. Uses a
+  single-card lookup before claiming, preserving snapshot costs. Eight service tests pass.
+  Durable task-generation identities across crashes and bounded recovery remain outstanding.
+
 - Preview retry metadata now uses page card IDs and enriches only returned decisions.
   Empty pages skip the retry query. Whole-queue capacity/summary evaluation is preserved.
   Audit header revalidated into an evidence/remaining-work matrix; old claims that fairness

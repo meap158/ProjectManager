@@ -213,6 +213,15 @@ describe('orchestrator service', () => {
       async (projectId: number, cardId: number, input: { canCommit?: () => boolean }) => {
         await Promise.resolve();
         expect(input.canCommit?.()).toBe(true);
+        // Same timestamp simulates fast edits: content identity must also be checked.
+        db.prepare("UPDATE cards SET description = 'New instructions' WHERE id = ?").run(cardId);
+        expect(input.canCommit?.()).toBe(false);
+        db.prepare("UPDATE cards SET description = '' WHERE id = ?").run(cardId);
+        expect(input.canCommit?.()).toBe(true);
+        db.prepare("UPDATE cards SET updated_at = 'new-revision' WHERE id = ?").run(cardId);
+        expect(input.canCommit?.()).toBe(false);
+        db.prepare('UPDATE cards SET updated_at = created_at WHERE id = ?').run(cardId);
+        expect(input.canCommit?.()).toBe(true);
         runs.push(
           { id: 90, projectId, cardId: 90, providerId: 'codex', status: 'running' },
           { id: 91, projectId, cardId: 91, providerId: 'codex', status: 'running' },
