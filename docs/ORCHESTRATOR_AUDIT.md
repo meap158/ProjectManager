@@ -199,3 +199,7 @@ workers, latest eligible-card runs and last-served scoped projects. A database r
 compares complete planner decisions with the full-history input. Attention busy checks and
 resolve-result collection still use history lists; query-plan and end-to-end benchmarks remain
 required before claiming broad performance completion.
+
+Dashboard attention occupancy now reads distinct live-run project IDs from SQLite, preserving
+running-session occupancy and removing historical payload hydration and the history cutoff.
+Resolve-result collection remains the last full-history use in OrchestratorService.

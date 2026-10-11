@@ -2,6 +2,13 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Dashboard attention occupancy checks now select distinct live-run project IDs directly
+  from SQLite. Historical prompts/commands/changes are no longer decoded just to determine
+  busy projects, and live workers cannot disappear behind the 100,000-run cutoff. Running
+  sessions still count separately. All 52 Orchestrator tests pass, including live/unlinked
+  worker deduplication and terminal-status exclusion. Resolve-result collection still uses
+  full history and remains an efficiency gap.
+
 - Planner preview and dispatch snapshots now select narrow run fields from SQLite: global
   live occupancy, latest eligible-card runs and scoped project last-served identities. No
   command/prompt/change payload decoding or 100,000-row cutoff on these paths. Database

@@ -15,6 +15,7 @@ import { buildSituation, cardContext } from './situation.js';
 import { situationRunIds } from './situationRuns.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
+import { liveRunProjects } from './liveProjects.js';
 import {
   clearDismissedAttention,
   dismissProjectAttention,
@@ -384,10 +385,7 @@ export class OrchestratorService {
             .listAllSessions()
             .filter((s) => s.status === 'running')
             .map((s) => s.projectId),
-          ...this.supervisor
-            .listAllRuns(100000)
-            .filter((r) => r.status === 'running' || r.status === 'queued')
-            .map((r) => r.projectId),
+          ...liveRunProjects(this.db),
         ]);
         for (const project of this.attentionProjects?.() ?? []) {
           if (
