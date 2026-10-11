@@ -2,7 +2,7 @@
 // so they survive ProjectManager server restarts — code reloads in dev, crashes, out-of-memory
 // kills — like tmux does for a shell. Only a reboot (or deliberately stopping a session) ends them.
 //
-//  - Started detached by the server when needed (one per data folder), outside the server's
+//  - Started detached by the server when needed (one per data folder/generation), outside the server's
 //    process tree so killing the server tree never takes sessions down with it.
 //  - Writes each session's output straight to its log file, so nothing is missed while no server
 //    is attached; attached servers also get live `data` events with exact byte offsets.
@@ -27,6 +27,7 @@ import { compactLog, LOG_KEEP_BYTES, logBase } from '../logFile.js';
 import { spawnPty, type AgentProc } from '../proc.js';
 import { OutputDelivery } from './outputDelivery.js';
 import {
+  HOST_GENERATION,
   hostSocketPath,
   rendezvousFile,
   type HostMessage,
@@ -54,7 +55,8 @@ interface HostedSession {
 }
 
 const dataDir = path.resolve(process.argv[process.argv.indexOf('--data-dir') + 1] ?? 'data');
-const socketPath = hostSocketPath(dataDir);
+const generation = process.argv.includes('--generation') ? HOST_GENERATION : undefined;
+const socketPath = hostSocketPath(dataDir, generation);
 const token = randomBytes(24).toString('hex');
 const sessions = new Map<string, HostedSession>();
 const clients = new Map<net.Socket, OutputDelivery>();
@@ -245,7 +247,11 @@ const server = net.createServer((socket) => {
           clients.set(socket, delivery);
           socket.on('drain', () => delivery.flush());
           socket.write(
-            JSON.stringify({ id: message.id, ok: true, result: { pid: process.pid } }) + '\n',
+            JSON.stringify({
+              id: message.id,
+              ok: true,
+              result: { pid: process.pid, generation: HOST_GENERATION },
+            }) + '\n',
           );
         } else {
           socket.destroy(); // Wrong or missing token: drop without answering.
@@ -285,7 +291,9 @@ server.listen(socketPath, () => {
     startedAt: new Date().toISOString(),
   };
   mkdirSync(dataDir, { recursive: true });
-  writeFileSync(rendezvousFile(dataDir), JSON.stringify(rendezvous, null, 2), { mode: 0o600 });
+  writeFileSync(rendezvousFile(dataDir, generation), JSON.stringify(rendezvous, null, 2), {
+    mode: 0o600,
+  });
   log(`listening pid=${process.pid}`);
 });
 
@@ -299,7 +307,7 @@ setInterval(() => {
 
 function shutdownHost(code: number): void {
   try {
-    rmSync(rendezvousFile(dataDir), { force: true });
+    rmSync(rendezvousFile(dataDir, generation), { force: true });
   } catch {
     // Ignore.
   }

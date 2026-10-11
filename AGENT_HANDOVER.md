@@ -2,6 +2,16 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- **OpenCode full-log recovery (2026-10-11)**: Detached hosts can keep running obsolete code
+  across server reloads. The live October 8 host still suppressed output at 32 MB despite the
+  committed rotation fix. Host generation 2 uses a separate authenticated socket/rendezvous.
+  The server retains legacy sessions and routes their input/resize/stop/events to the old host;
+  new sessions and stopped-then-restarted sessions use generation 2. No bulk terminal shutdown.
+  Runtime TiemNet OpenCode session 40 was restarted with its existing conversation, and its
+  physical log compacted to about 1 MB with increasing logical offsets. Tests cover migration,
+  preserving live legacy sessions, duplicate-spawn prevention and output past the old cap.
+  Frontend files reserved for Claude were not edited.
+
 - **Orchestrator Durable Lifecycle, Epoch Fencing, and Scoped Planning (2026-10-11)**:
   - **Lease Owner Epoch & Fencing**: Added migration 15 adding `epoch` column to `orchestrator_lease`. Reclaiming an expired lease increments `epoch`; heartbeat renewal preserves `epoch`. Long-running async dispatches in `executeLeased` renew the lease and fence transitions (`claim` and `assigned`) against stale owners/epochs to prevent conflicting writes if another node takes the lease.
   - **Orphan Dispatch Recovery**: `reconcile` automatically detects claims in `dispatching` state older than 120s with no matching inserted run in `agent_runs` (e.g. server crash before run creation). Automatically recovers orphan claims to `error` cooldown rather than permanently stranding them, allowing retry within the persisted attempt budget.

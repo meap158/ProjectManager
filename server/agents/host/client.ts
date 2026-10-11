@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { processEnv } from '../proc.js';
 import {
+  HOST_GENERATION,
   rendezvousFile,
   type HostMessage,
   type HostRendezvous,
@@ -35,6 +36,9 @@ export class HostClient extends EventEmitter<HostClientEvents> {
   private pending = new Map<number, Pending>();
   private buffer = '';
   connected = true;
+  private generation = 0;
+  private legacy: HostClient | null = null;
+  private legacyKeys = new Set<string>();
 
   private constructor(
     private socket: net.Socket,
@@ -48,6 +52,7 @@ export class HostClient extends EventEmitter<HostClientEvents> {
       this.connected = false;
       for (const p of this.pending.values()) p.reject(new Error('Session host disconnected'));
       this.pending.clear();
+      this.legacy?.close();
       this.emit('disconnect');
     };
     socket.on('close', lost);
@@ -56,23 +61,48 @@ export class HostClient extends EventEmitter<HostClientEvents> {
 
   /** Connects to the data folder's host, starting one if none is running. Null if impossible. */
   static async connect(dataDir: string): Promise<HostClient | null> {
-    const existing = await HostClient.tryConnect(dataDir);
+    // A detached host outlives code reloads. Keep its active PTYs, but route new/restarted
+    // sessions to the generation with rotating logs rather than killing every user's session.
+    const legacy = await HostClient.tryConnect(dataDir);
+    if (legacy?.generation === HOST_GENERATION) return legacy;
+    const current = await HostClient.connectCurrent(dataDir);
+    if (!current) return legacy;
+    if (legacy) {
+      current.legacy = legacy;
+      await current.list();
+      legacy.on('data', (key, offset, data) => {
+        if (current.legacyKeys.has(key)) current.emit('data', key, offset, data);
+      });
+      legacy.on('exit', (key, code, signal) => {
+        if (current.legacyKeys.has(key)) current.emit('exit', key, code, signal);
+      });
+      legacy.on('disconnect', () => {
+        for (const key of current.legacyKeys) current.emit('exit', key, null, 'legacy host exited');
+        current.legacyKeys.clear();
+        current.legacy = null;
+      });
+    }
+    return current;
+  }
+
+  private static async connectCurrent(dataDir: string): Promise<HostClient | null> {
+    const existing = await HostClient.tryConnect(dataDir, HOST_GENERATION);
     if (existing) return existing;
-    const before = readRendezvous(dataDir)?.startedAt;
     startHostProcess(dataDir);
     const deadline = Date.now() + START_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 150));
-      const current = readRendezvous(dataDir);
-      if (!current || current.startedAt === before) continue;
-      const client = await HostClient.tryConnect(dataDir);
+      const client = await HostClient.tryConnect(dataDir, HOST_GENERATION);
       if (client) return client;
     }
     return null;
   }
 
-  private static async tryConnect(dataDir: string): Promise<HostClient | null> {
-    const rendezvous = readRendezvous(dataDir);
+  private static async tryConnect(
+    dataDir: string,
+    generation?: number,
+  ): Promise<HostClient | null> {
+    const rendezvous = readRendezvous(dataDir, generation);
     if (!rendezvous) return null;
     const socket = await new Promise<net.Socket | null>((resolve) => {
       const s = net.connect(rendezvous.socket);
@@ -83,12 +113,13 @@ export class HostClient extends EventEmitter<HostClientEvents> {
     if (!socket) return null;
     const client = new HostClient(socket, rendezvous.pid);
     try {
-      await Promise.race([
+      const hello = (await Promise.race([
         client.request({ op: 'hello', token: rendezvous.token }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), CONNECT_TIMEOUT_MS),
         ),
-      ]);
+      ])) as { generation?: number };
+      client.generation = hello?.generation ?? 0;
       return client;
     } catch {
       socket.destroy();
@@ -96,7 +127,20 @@ export class HostClient extends EventEmitter<HostClientEvents> {
     }
   }
 
-  request(message: HostRequest): Promise<unknown> {
+  async request(message: HostRequest): Promise<unknown> {
+    if ('key' in message && this.legacyKeys.has(message.key) && this.legacy) {
+      if (message.op === 'spawn') {
+        const session = (await this.legacy.list()).find((s) => s.key === message.key);
+        if (session?.alive) return session; // Never duplicate a still-running process.
+        this.legacyKeys.delete(message.key);
+      } else {
+        return this.legacy.request(message);
+      }
+    }
+    return this.requestLocal(message);
+  }
+
+  private requestLocal(message: HostRequest): Promise<unknown> {
     if (!this.connected) return Promise.reject(new Error('Session host disconnected'));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
@@ -105,14 +149,21 @@ export class HostClient extends EventEmitter<HostClientEvents> {
     });
   }
 
-  list(): Promise<HostSessionInfo[]> {
-    return this.request({ op: 'list' }) as Promise<HostSessionInfo[]>;
+  async list(): Promise<HostSessionInfo[]> {
+    const current = (await this.requestLocal({ op: 'list' })) as HostSessionInfo[];
+    if (!this.legacy?.connected) return current;
+    const previous = await this.legacy.list();
+    const keys = new Set(current.map((s) => s.key));
+    const retained = previous.filter((s) => !keys.has(s.key));
+    this.legacyKeys = new Set(retained.map((s) => s.key));
+    return [...current, ...retained];
   }
 
   /** Detach without affecting any session. */
   close(): void {
     this.connected = false;
     this.socket.end();
+    this.legacy?.close();
   }
 
   private onData(chunk: string): void {
@@ -137,9 +188,9 @@ export class HostClient extends EventEmitter<HostClientEvents> {
   }
 }
 
-function readRendezvous(dataDir: string): HostRendezvous | null {
+function readRendezvous(dataDir: string, generation?: number): HostRendezvous | null {
   try {
-    return JSON.parse(readFileSync(rendezvousFile(dataDir), 'utf8')) as HostRendezvous;
+    return JSON.parse(readFileSync(rendezvousFile(dataDir, generation), 'utf8')) as HostRendezvous;
   } catch {
     return null;
   }
@@ -163,6 +214,8 @@ function startHostProcess(dataDir: string): void {
     HOST_SCRIPT,
     '--data-dir',
     dataDir,
+    '--generation',
+    String(HOST_GENERATION),
   ];
   const intermediate = `const [cmd, ...args] = JSON.parse(process.argv[1]);
 require('child_process').spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref();`;

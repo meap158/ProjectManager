@@ -52,11 +52,16 @@ export interface HostRendezvous {
   startedAt: string;
 }
 
-export function hostSocketPath(dataDir: string): string {
-  const hash = createHash('sha1').update(path.resolve(dataDir).toLowerCase()).digest('hex');
+// Generation 2 rotates full logs instead of suppressing PTY output.
+export const HOST_GENERATION = 2;
+
+export function hostSocketPath(dataDir: string, generation?: number): string {
+  const identity = path.resolve(dataDir).toLowerCase() + (generation ? `:v${generation}` : '');
+  const hash = createHash('sha1').update(identity).digest('hex');
   return process.platform === 'win32'
     ? `\\\\.\\pipe\\projectmanager-agent-host-${hash.slice(0, 16)}`
     : path.join(os.tmpdir(), `pm-agent-host-${hash.slice(0, 16)}.sock`);
 }
 
-export const rendezvousFile = (dataDir: string) => path.join(dataDir, 'agent-host.json');
+export const rendezvousFile = (dataDir: string, generation?: number) =>
+  path.join(dataDir, generation ? `agent-host-v${generation}.json` : 'agent-host.json');

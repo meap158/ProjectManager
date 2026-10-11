@@ -10,7 +10,7 @@ import { createApp } from '../app.js';
 import { openDb } from '../db.js';
 import { isAlive } from '../instance.js';
 import { ptyAvailable } from './proc.js';
-import { rendezvousFile } from './host/protocol.js';
+import { HOST_GENERATION, rendezvousFile } from './host/protocol.js';
 
 const NODE = process.execPath;
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'pm-host-'));
@@ -21,7 +21,9 @@ const dbs: ReturnType<typeof openDb>[] = [];
 afterAll(() => {
   // Stop the host so the test leaves nothing behind.
   try {
-    const { pid } = JSON.parse(readFileSync(rendezvousFile(tmp), 'utf8')) as { pid: number };
+    const { pid } = JSON.parse(readFileSync(rendezvousFile(tmp, HOST_GENERATION), 'utf8')) as {
+      pid: number;
+    };
     process.kill(pid);
   } catch {
     // Already gone.
