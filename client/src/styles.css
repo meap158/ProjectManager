@@ -1376,6 +1376,13 @@ a.t:hover {
 .list li:last-child {
   border-bottom: none;
 }
+.settings-cli-list > li {
+  align-items: center;
+}
+.settings-cli-list > li > .badge {
+  flex-shrink: 0;
+  line-height: 1;
+}
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;

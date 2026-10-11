@@ -117,7 +117,7 @@ export function SettingsPage() {
         {providers === null ? (
           <div className="skeleton" style={{ height: 120 }} />
         ) : (
-          <ul className="list">
+          <ul className="list settings-cli-list">
             {clis.map((p) => (
               <li key={p.id}>
                 <span
