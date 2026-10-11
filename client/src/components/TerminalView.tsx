@@ -4,7 +4,6 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import type { AgentOutput } from '../../../shared/types';
-import { TerminalClipboard } from './TerminalClipboard';
 
 /**
  * Max history bytes to replay on initial mount. 512 KB covers ~5,000 lines of scrollback (xterm's max limit).
@@ -758,11 +757,6 @@ export function TerminalView({
           >
             <div className="terminal-key-row">
               <div className="terminal-key-scroll">
-                <TerminalClipboard
-                  onImage={onImage}
-                  disabled={paused}
-                  onText={(text) => live.current?.term.paste(text)}
-                />
                 {[
                   ['Esc', '\x1b', 'Escape'],
                   ['Tab', '\t', 'Tab'],
