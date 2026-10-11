@@ -66,7 +66,10 @@ four terminal panes. See which sessions are working, idle, or waiting for your i
 
 Link sessions to board cards and hand work directly to an agent. Commits and pull requests move
 cards through **Backlog → To do → In progress → Review → Done**. Code stats, languages, disk
-usage and commit charts keep the bigger picture close to the work.
+usage and commit charts keep the bigger picture close to the work. The **Pull requests** tab
+works like GitHub's own page: see checks, reviews and whether a PR can merge, then merge (merge
+commit, squash or rebase, or auto-merge), update the branch, mark ready or draft, close or
+reopen, and delete or restore the branch.
 
 </td>
 <td width="50%" valign="top">
@@ -138,11 +141,11 @@ harnesses as needed; use **List** to find them or **Panes** to work side by side
 <summary><b>Optional extras</b></summary>
 <br>
 
-| Install this                                                     | And you get                                                |
-| ---------------------------------------------------------------- | ---------------------------------------------------------- |
-| An AI coding CLI: `claude`, `codex`, `grok`, `agy` or `opencode` | Persistent terminal sessions and agents that work on cards |
-| [GitHub CLI](https://cli.github.com) (`gh auth login`)           | Pull requests on each project, and cards that follow them  |
-| [scc](https://github.com/boyter/scc)                             | Faster, more precise line counts                           |
+| Install this                                                     | And you get                                                   |
+| ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| An AI coding CLI: `claude`, `codex`, `grok`, `agy` or `opencode` | Persistent terminal sessions and agents that work on cards    |
+| [GitHub CLI](https://cli.github.com) (`gh auth login`)           | Pull requests to review and merge, and cards that follow them |
+| [scc](https://github.com/boyter/scc)                             | Faster, more precise line counts                              |
 
 Missing an agent CLI? **Settings** can install it for you, using each vendor's official method.
 

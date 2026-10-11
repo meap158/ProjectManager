@@ -14,7 +14,13 @@ import * as store from './store.js';
 import { AgentError, AgentSupervisor } from './agents/supervisor.js';
 import { registerAgentRoutes } from './agents/routes.js';
 import { registerBoardMcp } from './boardMcp.js';
-import { pullRequests } from './pullRequests.js';
+import {
+  parsePullRequestNumber,
+  pullRequestAction,
+  pullRequestActionBody,
+  PullRequestActionError,
+  pullRequests,
+} from './pullRequests.js';
 import { openInFileManager } from './openFolder.js';
 import {
   registerAttachmentRoutes,
@@ -207,7 +213,27 @@ export function createApp(
   app.get('/projects/:id/pull-requests', async (c) => {
     const project = store.getProjectRow(db, parseId(c));
     if (!project) throw new HttpError(404, 'Project not found');
-    return c.json(await pullRequests(project.path));
+    const state = c.req.query('state') ?? 'open';
+    if (state !== 'open' && state !== 'closed')
+      throw new HttpError(400, 'state must be open or closed');
+    return c.json(await pullRequests(project.path, state));
+  });
+
+  // Act on one pull request (merge, close, branches…) through gh in the project folder. The
+  // number and the action are validated here; pullRequests.ts re-reads the PR before acting.
+  app.post('/projects/:id/pull-requests/:number/actions', async (c) => {
+    const project = store.getProjectRow(db, parseId(c));
+    if (!project) throw new HttpError(404, 'Project not found');
+    const number = parsePullRequestNumber(c.req.param('number'));
+    if (number === null) throw new HttpError(400, 'Pull request number must be a positive integer');
+    const body = await parseBody(c, pullRequestActionBody);
+    try {
+      return c.json(await pullRequestAction(project.path, number, body));
+    } catch (error) {
+      if (error instanceof PullRequestActionError)
+        return c.json({ error: error.message }, error.status);
+      throw error;
+    }
   });
 
   app.get('/projects/:id', (c) => {

@@ -497,18 +497,117 @@ export interface WorkspaceLayout {
 
 export const WORKSPACE_FONT_SIZES = { min: 10, max: 20, default: 12.5 } as const;
 
+export const PR_MERGE_METHODS = ['merge', 'squash', 'rebase'] as const;
+/** How GitHub merges a pull request: a merge commit, one squashed commit, or rebased commits. */
+export type PullRequestMergeMethod = (typeof PR_MERGE_METHODS)[number];
+
+/** Which pull requests the tab lists: open ones, or recently closed and merged ones. */
+export type PullRequestListState = 'open' | 'closed';
+
+export interface PullRequestCheck {
+  name: string;
+  state: 'pass' | 'fail' | 'pending' | 'skipped';
+  /** https only; null when GitHub gave none. */
+  url: string | null;
+}
+
+export interface PullRequestChecks {
+  /** Overall: failing beats pending beats passing; 'none' when the head has no checks. */
+  state: 'none' | 'passing' | 'failing' | 'pending';
+  passing: number;
+  failing: number;
+  pending: number;
+  skipped: number;
+  items: PullRequestCheck[];
+}
+
+/**
+ * Whether a pull request can be merged now, and if not why, as GitHub's merge box words it.
+ * Derived on the server from gh's mergeable/mergeStateStatus, checks, review and repo settings.
+ */
+export interface PullRequestMergeability {
+  status:
+    'clean' | 'unstable' | 'conflicts' | 'behind' | 'blocked' | 'draft' | 'checking' | 'closed';
+  canMerge: boolean;
+  /** Why it can't merge (or the warning when it can, e.g. non-required checks failing). */
+  reason: string | null;
+  /** "Update branch": merge or rebase the base into the head (GitHub offers it when behind). */
+  canUpdateBranch: boolean;
+  /** "Enable auto-merge": merge once requirements pass (repo setting allow_auto_merge). */
+  canAutoMerge: boolean;
+  /** Admins may merge without waiting for requirements (gh pr merge --admin). */
+  canBypass: boolean;
+}
+
+/** The repository's merge settings, from `gh api repos/{owner}/{repo}`. */
+export interface PullRequestRepoSettings {
+  /** Merge methods the repo allows (all three when GitHub withholds the settings). */
+  mergeMethods: PullRequestMergeMethod[];
+  allowAutoMerge: boolean;
+  /** GitHub deletes head branches itself after a merge. */
+  deleteBranchOnMerge: boolean;
+  canPush: boolean;
+  isAdmin: boolean;
+}
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  url: string;
+  author: { login: string } | null;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  isDraft: boolean;
+  headRefName: string;
+  headRefOid: string;
+  baseRefName: string;
+  /** Head branch lives in a fork: its branch can't be deleted or restored from here. */
+  isCrossRepository: boolean;
+  /** Whether the head branch still exists on GitHub; null when unknown (forks, lookup failed). */
+  headBranchExists: boolean | null;
+  updatedAt: string;
+  closedAt: string | null;
+  mergedAt: string | null;
+  reviewDecision: string | null;
+  /** Auto-merge is enabled, with this method. */
+  autoMerge: { method: PullRequestMergeMethod | null } | null;
+  checks: PullRequestChecks;
+  mergeability: PullRequestMergeability;
+}
+
 export interface PullRequestsResult {
-  requests: {
-    number: number;
-    title: string;
-    url: string;
-    author: { login: string } | null;
-    isDraft: boolean;
-    headRefName: string;
-    baseRefName: string;
-    updatedAt: string;
-    reviewDecision: string | null;
-  }[];
+  state: PullRequestListState;
+  requests: PullRequest[];
+  /** Null when the repo settings couldn't be read (actions then fall back to gh's own errors). */
+  repo: PullRequestRepoSettings | null;
   error: string | null;
   fetchedAt: string;
+}
+
+/** One action from the Pull requests tab; the server re-reads the PR before acting on it. */
+export type PullRequestAction =
+  | {
+      action: 'merge';
+      method: PullRequestMergeMethod;
+      /** Delete the head branch (remote, and local when safe) after merging. */
+      deleteBranch: boolean;
+      /** Enable auto-merge instead of merging now. */
+      auto: boolean;
+      /** Merge without waiting for requirements (admins only). */
+      admin: boolean;
+      /** Only merge if the head is still this commit (what the user saw). */
+      headOid?: string;
+    }
+  | { action: 'disable-auto-merge' }
+  | { action: 'update-branch'; rebase: boolean }
+  | { action: 'ready' }
+  | { action: 'draft' }
+  | { action: 'close'; deleteBranch: boolean }
+  | { action: 'reopen' }
+  | { action: 'delete-branch' }
+  | { action: 'restore-branch' };
+
+export interface PullRequestActionResult {
+  ok: true;
+  /** What happened, e.g. "Merged #12. Deleted branch fix (remote and local)." */
+  message: string;
 }
