@@ -2,6 +2,11 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Chat concurrency regression gates two simultaneous same-card requests immediately before
+  insertion, persists the winning run in SQLite and verifies the second fence rejects it.
+  All eight chat tests pass, plus server types and lint. This proves in-process persisted
+  occupancy revalidation, not durable request identity or crash recovery; those remain open.
+
 - Chat dispatch now uses shared planner decisions for quota, provider/global/scoped capacity,
   current scope, readiness, pending review and persisted reservation checks. Supervisor gets
   maxAttempts=1 and a synchronous canCommit fence that rechecks current policy/occupancy/quota

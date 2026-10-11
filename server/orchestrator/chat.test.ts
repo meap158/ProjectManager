@@ -175,6 +175,48 @@ describe('orchestrator chat tools (PM-89)', () => {
     db.close();
   });
 
+  it('rejects a competing request after the first run is inserted', async () => {
+    const { call, mine, supervisor, db } = setup();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let inserted = 0;
+    supervisor.dispatchCard.mockImplementation(async (projectId, cardId, input) => {
+      await gate;
+      const options = input as { canCommit: () => boolean };
+      if (!options.canCommit()) throw new Error('Policy changed before insertion');
+      inserted++;
+      db.prepare(
+        "INSERT INTO agent_runs(id,project_id,card_id,name,provider_id,command_json,status,created_at,log_path) VALUES (77,?,?, 'Worker','codex','[]','queued','2026-10-12','')",
+      ).run(projectId, cardId);
+      return {
+        id: 77,
+        projectId,
+        cardId,
+        name: 'run',
+        providerId: 'codex',
+        status: 'queued',
+        error: null,
+        validation: null,
+        changes: null,
+        startedAt: null,
+        endedAt: null,
+      };
+    });
+    const requests = [
+      call('dispatch_worker', { card: mine.key }),
+      call('dispatch_worker', { card: mine.key }),
+    ];
+    // Both requests finish provider discovery and wait at the insertion gate.
+    await vi.waitFor(() => expect(supervisor.dispatchCard).toHaveBeenCalledTimes(2));
+    release();
+    const outcomes = await Promise.allSettled(requests);
+    expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(inserted).toBe(1);
+    db.close();
+  });
+
   it('messages only idle workers in scope, never one working or asking the user', async () => {
     const { call, sessions, supervisor, a, b } = setup();
     sessions.push(
