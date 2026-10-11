@@ -2,19 +2,22 @@
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../db.js';
 import type { AgentSupervisor } from '../agents/supervisor.js';
-import { getSetting, setSetting, listCards } from '../store.js';
+import { getSetting, setSetting, listCards, listCardsInFlight } from '../store.js';
 import { providerStatuses } from '../agents/providers.js';
 import { readLimits } from '../agents/limits.js';
 import type {
   OrchestratorConfig,
   OrchestratorEvent,
+  OrchestratorSituation,
   OrchestratorState,
 } from '../../shared/orchestrator.js';
+import { buildSituation, cardContext } from './situation.js';
 import { planOrchestration } from './planner.js';
 import {
   clearDismissedAttention,
   dismissProjectAttention,
   followProjectAttention,
+  getDismissedAttention,
   pruneProjectAttention,
 } from './attention.js';
 import type { ProjectSummary } from '../../shared/types.js';
@@ -50,6 +53,24 @@ export class OrchestratorService {
       },
     };
   }
+  /**
+   * What this orchestrator sees of Home (PM-70): needs attention and being worked on, with the
+   * identity to trace each item back. Limited to one master's projects when given.
+   */
+  situation(instanceId?: string): OrchestratorSituation | null {
+    const instance = instanceId ? this.state().instances.find((i) => i.id === instanceId) : null;
+    if (instanceId && !instance) return null;
+    return buildSituation({
+      projects: this.attentionProjects?.() ?? [],
+      cards: listCardsInFlight(this.db),
+      sessions: this.supervisor.listAllSessions(),
+      runs: this.supervisor.listAllRuns(100000),
+      dismissed: (projectId) => getDismissedAttention(this.db, projectId),
+      screen: (sessionId) => this.supervisor.sessionScreen(sessionId),
+      projectIds: instance?.projectIds,
+    });
+  }
+
   async preview(id: string) {
     const instance = this.state().instances.find((i) => i.id === id);
     if (!instance) return null;
@@ -441,8 +462,11 @@ export class OrchestratorService {
           message: `Assigning to ${fresh.providerId}`,
         });
         try {
+          // The worker starts from what Home shows about this card and its project.
+          const situation = this.situation(initial.id);
           const run = await this.supervisor.dispatchCard(fresh.projectId, fresh.cardId, {
             providerId: fresh.providerId,
+            context: situation ? cardContext(situation, fresh.cardId) : undefined,
             maxAttempts: 1,
             dispatchKey: assignments.dispatchKey(fresh.cardId),
             canCommit: () => {

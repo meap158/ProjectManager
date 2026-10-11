@@ -429,6 +429,11 @@ atomic commits). Nothing is pending in the working tree.
 - **Names ↔ CLI /rename:** `syncTitles` (every 10s) sends pending app renames as `/rename` when the
   CLI is idle and adopts manual CLI renames (Claude custom-title, Codex session_index, Grok
   title_is_manual). State in settings `session-rename:<id>` / `session-cli-title:<id>`.
+- **Orchestrator situation (PM-70):** `server/orchestrator/situation.ts` builds the masters'
+  view of Home (needs attention incl. sessions asking for input, runs awaiting review, stalled
+  cards; being worked on with workers, latest run, moved-by), served at
+  `/api/orchestrators/situation` and `/api/orchestrators/:id/situation`; dispatched workers get
+  their card's slice in the prompt (`dispatchCard({ context })`). See docs/ORCHESTRATOR.md.
 - **Running vs idle:** Claude sessions report turns through the same hook (UserPromptSubmit, Stop,
   waiting Notifications, Subagent start/stop) into `server/agents/turnState.ts` (in memory; a
   "running" with a screen silent for 60s counts as idle, since Esc skips Stop). Other CLIs use the

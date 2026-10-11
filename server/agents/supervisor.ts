@@ -63,6 +63,7 @@ import {
 import { diffSince, snapshotTree } from './gitChanges.js';
 import {
   animatingInTail,
+  stripTerminal,
   elapsedTimer,
   tailState,
   timerTicking,
@@ -1302,6 +1303,8 @@ export class AgentSupervisor {
       maxAttempts?: number;
       autonomy?: AgentAutonomy;
       dispatchKey?: string;
+      /** Extra context for the default prompt (e.g. what the orchestrator knows, PM-70). */
+      context?: string;
       /** Internal scheduler fence, evaluated synchronously immediately before insertion. */
       canCommit?: () => boolean;
     },
@@ -1352,7 +1355,7 @@ export class AgentSupervisor {
       throw new AgentError(400, `${provider.name} needs an explicit command for a one-shot run`);
     }
     const prompt = this.withImages(
-      input.prompt ?? defaultPrompt(card.key, card.title, card.description),
+      input.prompt ?? defaultPrompt(card.key, card.title, card.description, input.context),
       card.id,
       providerId,
     ).slice(0, 20_000);
@@ -2543,6 +2546,23 @@ export class AgentSupervisor {
     return turnState(row.id, lastOutputAt) ?? screen;
   }
 
+  /**
+   * The last lines a session shows, as plain text (escapes stripped, blank runs folded), for
+   * orchestrator context such as what an agent waiting for input is asking (PM-70).
+   */
+  sessionScreen(id: number, maxChars = 500): string | null {
+    const row = this.getSessionRow(id);
+    const tail = row ? this.logTail(row.log_path) : null;
+    if (!tail) return null;
+    const text = stripTerminal(tail)
+      .split('\n')
+      .map((line) => line.replace(/\s+$/, ''))
+      .filter((line, i, all) => line || (i > 0 && all[i - 1]))
+      .join('\n')
+      .trim();
+    return text.slice(-maxChars) || null;
+  }
+
   /** The last 4 KB of a session log (the current screen and a little scrollback). */
   private logTail(file: string): string | null {
     try {
@@ -2608,10 +2628,11 @@ function resolveCwd(cwd: string): string {
   }
 }
 
-function defaultPrompt(key: string, title: string, description: string): string {
+function defaultPrompt(key: string, title: string, description: string, context?: string): string {
   const parts = [
     `Task ${key}: ${title}`,
     description.trim(),
+    context?.trim() ?? '',
     '---',
     'Work in the project root directory (your current working directory).',
     'Implement the task above. When finished, summarise what changed.',

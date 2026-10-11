@@ -32,6 +32,13 @@ const config = z.object({
 });
 export function registerOrchestratorRoutes(app: Hono, service: OrchestratorService) {
   app.get('/orchestrators', (c) => c.json(service.state()));
+  // What the orchestrators see of Home, with trace-back identity (PM-70). Registered before
+  // '/orchestrators/:id/…' so "situation" is never read as an id.
+  app.get('/orchestrators/situation', (c) => c.json(service.situation()));
+  app.get('/orchestrators/:id/situation', (c) => {
+    const situation = service.situation(c.req.param('id'));
+    return situation ? c.json(situation) : c.json({ error: 'Orchestrator not found' }, 404);
+  });
   app.get('/orchestrators/:id/preview', async (c) => {
     const result = await service.preview(c.req.param('id'));
     if (!result) return c.json({ error: 'Orchestrator not found' }, 404);

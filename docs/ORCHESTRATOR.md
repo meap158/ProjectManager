@@ -20,6 +20,24 @@ No production instances have been enabled. Recovery, master tools and UI remain 
 - Responsive scope/provider filters, board progress summary, live workers, event log, Start/Pause/Run now, and links to cards and agent terminals.
 - Tests for quota exhaustion/staleness, scope isolation, concurrency, duplicate prevention, recovery, pause, reboot, review and UI behavior; full project checks and browser verification.
 
+## What an orchestrator sees of Home (situation)
+
+`GET /api/orchestrators/situation` (all projects) and `GET /api/orchestrators/:id/situation`
+(one master's projects) return what the Home dashboard shows, with the identity to trace each
+item back (`server/orchestrator/situation.ts`, types in `shared/orchestrator.ts`):
+
+- **needsAttention**: Home's project alerts (folder missing, scan failed, stale, uncommitted,
+  unpushed; dismissed kinds left out), sessions asking for input (with what is on screen),
+  finished runs awaiting review, and stalled cards (in progress, no live worker, unchanged for
+  24 h). Each item carries its project and, where it applies, card, session and run ids.
+- **beingWorkedOn**: every In progress / Review card with its live sessions and runs (and their
+  state), its latest run's outcome, what last moved it (commit, PR or branch) and the attention
+  kinds that concern it.
+
+When a master dispatches a card, the worker's prompt gets that card's slice of the situation
+(`cardContext`): board status, live workers, latest run, what moved it, card-level attention and
+its project's alerts, so it can trace back and coordinate instead of starting blind.
+
 ## Next integration work
 
 1. Persistent instance/assignment/event storage and validated API.
