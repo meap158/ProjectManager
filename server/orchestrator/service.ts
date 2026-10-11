@@ -16,6 +16,7 @@ import { situationRunIds } from './situationRuns.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
 import { liveRunProjects } from './liveProjects.js';
+import { attentionRunIds } from './attentionRuns.js';
 import {
   clearDismissedAttention,
   dismissProjectAttention,
@@ -206,7 +207,6 @@ export class OrchestratorService {
       : this.state().instances;
     const projects = this.attentionProjects?.() ?? [];
     const resolvedCards: number[] = [];
-    const previousRuns = new Set(this.supervisor.listAllRuns(100000).map((run) => run.id));
 
     for (const inst of instances) {
       const scopedProjects = inst.projectIds.length
@@ -226,13 +226,11 @@ export class OrchestratorService {
         }
       }
     }
+    const cardIds = [...new Set(resolvedCards)];
+    const previousRuns = new Set(attentionRunIds(this.db, cardIds));
     await this.tick(orchestratorId);
-    const cardIds = new Set(resolvedCards);
-    const dispatchedRuns = this.supervisor
-      .listAllRuns(100000)
-      .filter((run) => !previousRuns.has(run.id) && run.cardId != null && cardIds.has(run.cardId))
-      .map((run) => run.id);
-    return { resolvedCards: [...cardIds], dispatchedRuns };
+    const dispatchedRuns = attentionRunIds(this.db, cardIds).filter((id) => !previousRuns.has(id));
+    return { resolvedCards: cardIds, dispatchedRuns };
   }
   /** Records something done outside a tick (the master's chat, PM-89) in Decision history. */
   record(event: Omit<OrchestratorEvent, 'at'>): void {

@@ -2,6 +2,13 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Resolve attention now compares indexed run IDs for the deduplicated follow-up card set
+  before/after the scheduler check, preserving newest-first results without decoding history.
+  Exact sets preserve ID reuse after newest-run deletion; a global high-water mark would not.
+  OrchestratorService has no listAllRuns calls remaining. All 53 Orchestrator tests pass;
+  full check stops on concurrent SessionProgress.test.tsx updatedAt type error. Query-plan
+  benchmarks, classified recovery and physical mobile verification remain outstanding.
+
 - Dashboard attention occupancy checks now select distinct live-run project IDs directly
   from SQLite. Historical prompts/commands/changes are no longer decoded just to determine
   busy projects, and live workers cannot disappear behind the 100,000-run cutoff. Running

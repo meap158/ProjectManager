@@ -203,3 +203,8 @@ required before claiming broad performance completion.
 Dashboard attention occupancy now reads distinct live-run project IDs from SQLite, preserving
 running-session occupancy and removing historical payload hydration and the history cutoff.
 Resolve-result collection remains the last full-history use in OrchestratorService.
+
+Resolve attention compares indexed run identities only for its follow-up cards before and
+after the tick. Exact ID sets handle deletion/reuse correctly. OrchestratorService now has no
+full-history supervisor list calls; underlying query/index and runtime latency verification
+are still required, as are broader recovery and mobile acceptance gates.

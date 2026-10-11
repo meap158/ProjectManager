@@ -333,6 +333,9 @@ describe('orchestrator service', () => {
     }[] = [];
     const dispatch = vi.fn(async (projectId: number, cardId: number) => {
       const run = { id: 10, projectId, cardId, providerId: 'codex', status: 'running' };
+      db.prepare(
+        "INSERT INTO agent_runs (id, project_id, card_id, name, provider_id, command_json, status, created_at, log_path) VALUES (10, ?, ?, 'Worker', 'codex', '[]', 'running', ?, '')",
+      ).run(projectId, cardId, new Date().toISOString());
       runs.push(run);
       return run;
     });
