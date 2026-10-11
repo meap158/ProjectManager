@@ -76,7 +76,6 @@ export class OrchestratorService {
     if (!instance) return null;
     const projects = this.db.prepare('SELECT id FROM projects').all() as { id: number }[];
     const providers = await providerStatuses();
-    const retryPlans = new OrchestratorAssignments(this.db).retryPlans();
     const decisions = planOrchestration(instance, {
       cards: projects
         .filter((p) => !instance.projectIds.length || instance.projectIds.includes(p.id))
@@ -86,16 +85,12 @@ export class OrchestratorService {
       availableProviders: providers.filter((p) => p.available).map((p) => p.id),
       limits: readLimits(this.dataDir),
       blockedCardIds: new OrchestratorAssignments(this.db).blockedCards(),
-    }).map((decision) => ({
-      ...decision,
-      retry: retryPlans.get(decision.cardId) ?? {
-        attemptsUsed: 0,
-        attemptsRemaining: 3,
-        retryAt: null,
-        blocker: null,
-      },
-      execution: { autonomy: 'edit' as const, supervisorAttempts: 1, requiresReview: true },
-    }));
+    });
+    const page = decisions.slice(offset, offset + limit);
+    const retryPlans = new OrchestratorAssignments(this.db).retryPlans(
+      Date.now(),
+      page.map((decision) => decision.cardId),
+    );
     return {
       at: new Date().toISOString(),
       enabled: instance.enabled,
@@ -108,7 +103,16 @@ export class OrchestratorService {
         review: decisions.filter((d) => d.action === 'review').length,
         wait: decisions.filter((d) => d.action === 'wait').length,
       },
-      decisions: decisions.slice(offset, offset + limit),
+      decisions: page.map((decision) => ({
+        ...decision,
+        retry: retryPlans.get(decision.cardId) ?? {
+          attemptsUsed: 0,
+          attemptsRemaining: 3,
+          retryAt: null,
+          blocker: null,
+        },
+        execution: { autonomy: 'edit' as const, supervisorAttempts: 1, requiresReview: true },
+      })),
     };
   }
   save(input: Omit<OrchestratorConfig, 'id'> & { id?: string }): OrchestratorConfig {

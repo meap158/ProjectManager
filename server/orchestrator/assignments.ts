@@ -76,10 +76,19 @@ export class OrchestratorAssignments {
     }
   }
 
-  retryPlans(now = Date.now()) {
+  retryPlans(now = Date.now(), cardIds?: readonly number[]) {
+    if (cardIds?.length === 0) return new Map();
     const rows = this.db
-      .prepare('SELECT card_id, state, attempts, retry_after FROM orchestrator_assignments')
-      .all() as { card_id: number; state: string; attempts: number; retry_after: number }[];
+      .prepare(
+        'SELECT card_id, state, attempts, retry_after FROM orchestrator_assignments' +
+          (cardIds ? ` WHERE card_id IN (${cardIds.map(() => '?').join(',')})` : ''),
+      )
+      .all(...(cardIds ?? [])) as {
+      card_id: number;
+      state: string;
+      attempts: number;
+      retry_after: number;
+    }[];
     return new Map(
       rows.map((row) => [
         row.card_id,

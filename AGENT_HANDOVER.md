@@ -2,6 +2,12 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Preview retry metadata now uses page card IDs and enriches only returned decisions.
+  Empty pages skip the retry query. Whole-queue capacity/summary evaluation is preserved.
+  Audit header revalidated into an evidence/remaining-work matrix; old claims that fairness
+  and provider fencing were entirely unimplemented were corrected. Runtime/mobile and full
+  indexed history/task generation work remain open. Full npm run check passes: 371 tests.
+
 - Orchestrator quick actions select a master and project scope, queue deduplicated Dashboard
   follow-ups and invoke its policy-controlled scheduler. Paused/Observe masters stay unchanged.
   Persistent action results distinguish queued work from dispatched runs and link to board tasks.

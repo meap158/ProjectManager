@@ -1,16 +1,22 @@
 # Orchestrator audit and upgrade plan
 
-Implementation update:
+Implementation status, revalidated 2026-10-11:
 
-- Phase 1 & 2 partially implemented: lease fencing with owner epoch, orphan dispatch recovery without blind redispatch,
-  scoped vs external occupancy partitioning, typed wait reasons with retry cooldown timestamps,
-  single-flight coalesced ticks with live execution status reporting, per-master Check now,
-  and dashboard attention resolution/auto-pruning with deep links.
-- Phase 3-5 remaining: versioned summary endpoint, project round-robin fairness, and evidence-linked follow-through.
+| Area                     | Evidence now                                                                                                                                                           | Remaining acceptance work                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Durable execution        | Persisted dispatch identity, direct keyed reconciliation, orphan cooldown, lease epochs/heartbeat and synchronous pre-insertion policy fence; service/assignment tests | Task revision identity and broader crash/failure matrix                                |
+| Controls and convenience | Scoped Check now, read-only paged preview, quick pending-work actions with retained results, explicit Pause/Observe/Autonomous modes; 11 page tests                    | Physical mobile/browser verification and actionable unified Home situation UI          |
+| Efficiency               | Single-flight checks, settled polling/stale response guard, idle snapshot reuse, transition dedup, project round-robin, bounded preview responses                      | Indexed latest-run projections, compact/versioned summary, SQL/quota/LAN benchmarks    |
+| Follow-through           | Persisted retry budget, cooldown, review reservation and episode-based attention dedup                                                                                 | Classified recovery, task generations, evidence-linked review and bounded worker reuse |
+| Evaluation               | Pure planner baseline and full repository checks (370 tests at prior checkpoint)                                                                                       | End-to-end completion/latency/token metrics and runtime failure drills                 |
 
-Completion is not yet proven: provider-side fencing, task generations, broader crash testing,
-runtime/mobile verification and the efficiency benchmarks below remain open. Historical findings
-below describe the initial audit; implementation corrections are recorded at the end of this file.
+Preview enrichment now happens after pagination. Retry metadata is selected only for page
+card IDs using the assignment primary key, with no query for an empty page. This reduces
+metadata allocations and full-table retry reads; full planning/history costs remain unchanged.
+
+Completion is not yet proven for the full upgrade: task generations, broader crash testing,
+runtime/mobile verification and end-to-end efficiency benchmarks remain open. Historical
+findings below describe the initial audit, not the current implemented state.
 
 Audited against the current worktree on 2026-10-11. No masters were enabled and no
 worker input was sent. Findings below derive from code; they are not live incident claims.

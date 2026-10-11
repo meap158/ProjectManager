@@ -191,3 +191,12 @@ it('preserves fencing epochs across release and rejects expired renewal and stal
   expect(a.lease('same-owner', 121002)).toBe(true);
   expect(a.currentLease()?.epoch).toBe(3);
 });
+
+it('limits retry metadata to requested preview cards and skips empty pages', () => {
+  const assignments = new OrchestratorAssignments(db);
+  expect(assignments.claim(1, 'master', Date.now())).toBe(true);
+  expect(assignments.retryPlans(Date.now(), [1]).get(1)?.attemptsUsed).toBe(1);
+  expect(assignments.retryPlans(Date.now(), [999]).size).toBe(0);
+  expect(assignments.retryPlans(Date.now(), []).size).toBe(0);
+  expect(assignments.retryPlans().size).toBe(1);
+});
