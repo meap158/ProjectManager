@@ -189,10 +189,16 @@ export function buildSituation(input: SituationInput): OrchestratorSituation {
  * Home says about the card and its project, so the worker can trace back (sessions, runs,
  * commits) instead of starting blind.
  */
-export function cardContext(situation: OrchestratorSituation, cardId: number): string {
+export function cardContext(
+  situation: OrchestratorSituation,
+  cardId: number,
+  taskProjectId?: number,
+): string {
   const card = situation.beingWorkedOn.find((c) => c.cardId === cardId);
   const projectId =
-    card?.projectId ?? situation.needsAttention.find((i) => i.cardId === cardId)?.projectId;
+    taskProjectId ??
+    card?.projectId ??
+    situation.needsAttention.find((i) => i.cardId === cardId)?.projectId;
   const lines: string[] = [];
   if (card) {
     lines.push(

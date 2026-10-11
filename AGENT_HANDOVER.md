@@ -2,6 +2,19 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Dispatch passes the task project ID into Home context generation. New Todo tasks are
+  absent from beingWorkedOn, so project identity could previously be missing and omit
+  uncommitted/unpushed project alerts from worker context. Regression verifies selected
+  project alerts and no cross-project leakage. All 55 current Orchestrator tests pass.
+
+- PM-64 partial-index migration is implemented but intentionally uncommitted after the
+  pending PM-93 last_input_at migration in server/db.ts. Preserve that order: the earlier
+  pending migration may already have been applied locally. Commit PM-64 only after PM-93
+  is committed, staging only the index hunk and indexMigration.test.ts. Upgrade tests verify
+  run preservation, idempotent reopen and SQLite live/review index selection. All 57 current
+  database/Orchestrator tests passed; server types/lint pass. Full check remains stopped by
+  concurrent SessionProgress.test.tsx updatedAt type error. No live database was migrated.
+
 - Reproducible database benchmark added in scripts/benchmark-orchestrator-db.mjs. Isolated
   100,000-run fixture verifies identical projection outputs with candidate partial indexes.
   Planning median 9.49ms to 0.53ms; occupancy 41.43ms to 0.02ms. Candidate indexes are not

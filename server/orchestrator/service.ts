@@ -496,7 +496,7 @@ export class OrchestratorService {
           const situation = this.situation(initial.id);
           const run = await this.supervisor.dispatchCard(fresh.projectId, fresh.cardId, {
             providerId: fresh.providerId,
-            context: situation ? cardContext(situation, fresh.cardId) : undefined,
+            context: situation ? cardContext(situation, fresh.cardId, fresh.projectId) : undefined,
             maxAttempts: 1,
             dispatchKey,
             canCommit: () => {

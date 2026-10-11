@@ -136,6 +136,14 @@ describe('cardContext (worker prompt)', () => {
     expect(text).toContain('Uncommitted: web'); // The project's own alert.
   });
 
+  it('includes project alerts for a new Todo task without leaking another project', () => {
+    const situation = buildSituation({ ...input(), cards: [], sessions: [], runs: [] });
+    const context = cardContext(situation, 999, 1);
+    expect(context).toContain('Uncommitted: web');
+    expect(context).not.toContain('Live session');
+    expect(cardContext(situation, 999, 2)).toBe('');
+  });
+
   it('is empty for a card Home says nothing about', () => {
     expect(cardContext(buildSituation({ ...input(), projects: [] }), 999)).toBe('');
   });
