@@ -2,6 +2,13 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- ChatDispatchIntent primitive added for durable manual dispatch reservation. It shares
+  scheduler retry claims, keys heartbeat/ack/failure transitions to the current intent,
+  verifies inserted run identity before acknowledgement, and refuses to mark inserted work
+  failed. Database test covers overlap, heartbeat/orphan protection and keyed crash recovery.
+  Not yet integrated into chat dispatch; next step must exclude only its own reservation
+  during planner checks, maintain/clear heartbeat and pass dispatchKey to the supervisor.
+
 - Chat insertion fence regression now covers quota becoming exhausted, scope removal,
   provider-policy change and newly unreviewed completion. Explicit chat requests can run
   under paused/Observe policy without changing that mode; the test verifies settings remain
