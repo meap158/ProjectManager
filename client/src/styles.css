@@ -2991,7 +2991,11 @@ span.path-link:hover .path-icon {
 }
 .status-dot.is-running {
   box-shadow: 0 0 0 0 var(--good, #0ca30c);
-  animation: activity-pulse 1.6s ease-out infinite;
+  /* A gentle blink while the CLI works (owner request): the dot fades full ↔ 55%, with a soft
+     ring. */
+  animation:
+    activity-blink 1.8s ease-in-out infinite,
+    activity-pulse 1.8s ease-out infinite;
 }
 .status-dot.is-idle {
   background: transparent !important;
@@ -2999,16 +3003,24 @@ span.path-link:hover .path-icon {
 }
 @keyframes activity-pulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good, #0ca30c) 55%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good, #0ca30c) 35%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 5px transparent;
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+@keyframes activity-blink {
+  50% {
+    opacity: 0.55;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .badge-spinner,
-  .status-dot.is-running {
+  .badge-spinner {
     animation: none;
+  }
+  /* Reduced motion keeps the meaning without movement: a slower, softer fade, no ring. */
+  .status-dot.is-running {
+    animation: activity-blink 2.8s ease-in-out infinite;
   }
 }
 
