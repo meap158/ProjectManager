@@ -97,7 +97,16 @@ export function tailState(logTail: string): TailState | null {
   const words = text.replace(/[⠀-⣿─-▟\s]/g, '');
   if (text.trim().length > 0 && !/[\p{L}\p{N}]/u.test(words)) return 'idle';
   // A choice on screen, with no turn running below it, needs you.
-  const end = text.slice(-CHOICE_TAIL_CHARS);
+  // A returned conversation prompt supersedes an earlier permission/menu draw. A log tail
+  // retains dismissed choices even after the TUI erases them; inspect only choices after the
+  // newest normal input prompt. Menu hints (Esc to cancel, Ctrl+P) are not dismissal evidence.
+  let conversationPrompt = -1;
+  for (const pattern of PROMPT_PATTERNS.slice(0, 3)) {
+    for (const match of text.matchAll(new RegExp(pattern.source, pattern.flags))) {
+      conversationPrompt = Math.max(conversationPrompt, match.index!);
+    }
+  }
+  const end = text.slice(Math.max(0, text.length - CHOICE_TAIL_CHARS, conversationPrompt));
   if (CHOICE_PATTERNS.some((p) => p.test(end)) && !BUSY_PATTERNS.some((p) => p.test(end))) {
     return 'input';
   }
