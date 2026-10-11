@@ -93,33 +93,44 @@ export function buildSituation(input: SituationInput): OrchestratorSituation {
     });
   }
 
-  const workersFor = (cardId: number): SituationWorker[] => [
-    ...liveSessions
-      .filter((s) => s.cardId === cardId)
-      .map((s) => ({
-        kind: 'session' as const,
+  // Index live workers once; historical runs must not be rescanned for every card.
+  const workersByCard = new Map<number, SituationWorker[]>();
+  const addWorker = (cardId: number, worker: SituationWorker) => {
+    const workers = workersByCard.get(cardId) ?? [];
+    workers.push(worker);
+    workersByCard.set(cardId, workers);
+  };
+  for (const s of liveSessions) {
+    if (s.cardId != null)
+      addWorker(s.cardId, {
+        kind: 'session',
         id: s.id,
         name: s.name,
         providerId: s.providerId,
         state: s.tailState ?? 'unknown',
         lastOutputAt: s.lastOutputAt,
-      })),
-    ...input.runs
-      .filter((r) => r.cardId === cardId && (r.status === 'running' || r.status === 'queued'))
-      .map((r) => ({
-        kind: 'run' as const,
+      });
+  }
+  for (const r of input.runs) {
+    if (
+      r.cardId != null &&
+      inScope(r.projectId) &&
+      (r.status === 'running' || r.status === 'queued')
+    )
+      addWorker(r.cardId, {
+        kind: 'run',
         id: r.id,
         name: r.name,
         providerId: r.providerId,
         state: r.status,
-      })),
-  ];
+      });
+  }
 
   const beingWorkedOn: SituationCard[] = input.cards
     .filter((c) => (c.status === 'in_progress' || c.status === 'review') && inScope(c.projectId))
     .map((c) => {
       const run = latestRun.get(c.id) ?? null;
-      const workers = workersFor(c.id);
+      const workers = workersByCard.get(c.id) ?? [];
       if (
         c.status === 'in_progress' &&
         workers.length === 0 &&
@@ -161,12 +172,15 @@ export function buildSituation(input: SituationInput): OrchestratorSituation {
       };
     });
 
-  // Tie card-level attention back to the cards it concerns.
-  for (const card of beingWorkedOn) {
-    card.flags = [
-      ...new Set(needsAttention.filter((i) => i.cardId === card.cardId).map((i) => i.kind)),
-    ];
+  // Tie card-level attention back to cards without a cards-by-attention cross product.
+  const flagsByCard = new Map<number, Set<SituationItem['kind']>>();
+  for (const item of needsAttention) {
+    if (item.cardId == null) continue;
+    const flags = flagsByCard.get(item.cardId) ?? new Set<SituationItem['kind']>();
+    flags.add(item.kind);
+    flagsByCard.set(item.cardId, flags);
   }
+  for (const card of beingWorkedOn) card.flags = [...(flagsByCard.get(card.cardId) ?? [])];
   return { generatedAt: new Date(now).toISOString(), needsAttention, beingWorkedOn };
 }
 

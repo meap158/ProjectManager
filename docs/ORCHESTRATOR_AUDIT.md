@@ -170,3 +170,11 @@ change accounting; an inserted run stays reserved and counted. Replanning occurs
 next tick, not an immediate retry loop. Tests cover edited-task redispatch, duplicate refund,
 wrong owner/key and crash-after-insertion protection. Durable revision identities and
 classified provider/auth failures remain separate recovery work.
+
+## Situation builder efficiency
+
+Worker and card-attention lookup now uses one-pass indexes, removing cards-by-history and
+cards-by-attention scans. The full synthetic output matches the earlier builder, with existing
+scope/context tests passing. The 1k-card/100k-history benchmark improves median builder time
+from 2,769.92ms to 12.51ms. This closes a measured computation bottleneck, while indexed SQL
+history projection, bounded situation responses and actionable UI remain open.

@@ -2,6 +2,14 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Home situation builder indexes workers and attention flags by card once, removing repeated
+  per-card scans of history. Existing five identity/scope/context tests pass. Synthetic 1,000
+  review cards / 100,000 runs comparison verified complete output equality: median 2,769.92ms
+  before, 12.51ms after (five samples, one warm-up). See benchmark report for fixture/limits.
+  Database/history loading, screen collection and transport are not measured by this result.
+  All 40 Orchestrator tests and owned lint/format checks pass. Full check passes types/lint
+  but formatting stops on concurrent AgentWorkList.interactions.test.tsx and Dropdown.test.tsx.
+
 - Superseded pre-launch tasks now replan on the next tick without a five-minute cooldown or
   consuming an execution attempt. Refund requires current lease epoch, matching dispatch key,
   dispatching state and no inserted run for that key; repeated refunds are rejected. Real runs

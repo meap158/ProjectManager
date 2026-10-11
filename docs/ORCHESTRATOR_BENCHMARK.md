@@ -25,3 +25,22 @@ It excludes SQL, quota IO, provider subprocesses and transport, and touches no l
 Still measure complete tick p50/p95, query count, quota reads, writes, actual API bytes,
 and mobile transfer/render time. Repeat under controlled memory/load before selecting
 release thresholds; twelve samples are insufficient for firm tail-latency guarantees.
+
+## Home situation indexing (2026-10-11)
+
+Compared HEAD's pre-index situation builder with the revised builder using identical synthetic
+inputs and JSON equality of the complete output. Fixture: 1,000 review cards, 100,000 runs
+spread across those cards, 20 running runs and the rest accepted/succeeded, no sessions or
+project alerts. One warm-up and five measured calls per implementation on this Windows host.
+
+| Builder               | Median      | Maximum observed |
+| --------------------- | ----------- | ---------------- |
+| Per-card scans        | 2,769.92 ms | 3,230.85 ms      |
+| Indexed workers/flags | 12.51 ms    | 20.07 ms         |
+
+The revised builder indexes live workers by card and attention kinds by card once instead
+of rescanning all runs/sessions/attention for every card. Session-first/run-second ordering
+and deduplicated flag ordering are preserved. Existing situation identity/scope tests pass.
+This is an isolated synthetic builder benchmark, not an end-to-end latency guarantee; it
+excludes SQL, provider/quota reads, session screen collection and network transfer. Temporary
+baseline module was removed after measurement; no live tasks or terminals were changed.
