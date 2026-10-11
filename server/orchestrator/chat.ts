@@ -21,6 +21,7 @@ import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
 import { OrchestratorAssignments } from './assignments.js';
 import { readLimits } from '../agents/limits.js';
+import { ChatDispatchIntent } from './chatIntent.js';
 import type { OrchestratorService } from './service.js';
 
 // An orchestrator's own chat CLI (PM-89). The user talks to it like any agent terminal;
@@ -507,7 +508,10 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const providerId = input.providerId ?? instance.providers.find((p) => available.has(p));
       if (!providerId || !available.has(providerId))
         fail(`None of your providers is installed: ${instance.providers.join(', ')}`);
+      const reservation: { intent?: ChatDispatchIntent } = {};
       const check = () => {
+        if (reservation.intent && !reservation.intent.current())
+          return { allowed: false, reason: 'Dispatch reservation changed' };
         if (!providerId) return { allowed: false, reason: 'No provider selected' };
         const policy = this.instance(orchestratorId);
         const latest = getCard(this.db, c.id);
@@ -519,6 +523,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
           latest.updatedAt !== c.updatedAt
         )
           return { allowed: false, reason: 'Task changed before launch; inspect it again' };
+        const blockedCardIds = new OrchestratorAssignments(this.db).blockedCards();
+        if (reservation.intent) blockedCardIds.delete(c.id);
         const decision = planOrchestration(
           { ...policy, providers: [providerId] },
           {
@@ -530,7 +536,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
                 ? [providerId]
                 : [],
             limits: readLimits(this.dataDir),
-            blockedCardIds: new OrchestratorAssignments(this.db).blockedCards(),
+            blockedCardIds,
           },
         )[0];
         return {
@@ -540,25 +546,38 @@ export class OrchestratorChat implements OrchestratorToolHost {
       };
       const permission = check();
       if (!permission.allowed) fail(permission.reason);
-      const context = [
-        cardContext(this.service.situation(orchestratorId)!, c.id, c.projectId),
-        input.instructions ? `Instructions from the orchestrator:\n${input.instructions}` : '',
-      ]
-        .filter(Boolean)
-        .join('\n\n');
-      const run = await this.supervisor.dispatchCard(c.projectId, c.id, {
-        providerId,
-        ...(context ? { context } : {}),
-        maxAttempts: 1,
-        canCommit: () => check().allowed,
-      });
-      this.record(
-        orchestratorId,
-        'dispatched',
-        `${c.key}: one-time ${providerId} worker, run #${run.id} (chat)`,
-        c.id,
-      );
-      return { dispatched: runBrief(run), card: brief(getCard(this.db, c.id) ?? c) };
+      const intent = new ChatDispatchIntent(this.db, c.id, orchestratorId);
+      reservation.intent = intent;
+      const heartbeat = setInterval(() => intent?.heartbeat(), 30000);
+      heartbeat.unref();
+      try {
+        const context = [
+          cardContext(this.service.situation(orchestratorId)!, c.id, c.projectId),
+          input.instructions ? `Instructions from the orchestrator:\n${input.instructions}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+        const run = await this.supervisor.dispatchCard(c.projectId, c.id, {
+          providerId,
+          ...(context ? { context } : {}),
+          dispatchKey: intent.key,
+          maxAttempts: 1,
+          canCommit: () => check().allowed,
+        });
+        intent.assigned(run.id);
+        this.record(
+          orchestratorId,
+          'dispatched',
+          `${c.key}: one-time ${providerId} worker, run #${run.id} (chat)`,
+          c.id,
+        );
+        return { dispatched: runBrief(run), card: brief(getCard(this.db, c.id) ?? c) };
+      } catch (error) {
+        intent.failed();
+        throw error;
+      } finally {
+        clearInterval(heartbeat);
+      }
     }
 
     if (name === 'worker_output') {

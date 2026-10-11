@@ -243,3 +243,9 @@ Chat policy gap partially closed: dispatch_worker now uses shared planner checks
 launch and inside supervisor canCommit, captures task revision, passes one supervisor attempt
 and explicit task project context. Tests cover task edits and competing global workers.
 Durable claim/idempotency and complete concurrent/scope/quota acceptance coverage remain open.
+
+Durable chat intents are integrated with keyed reservation/heartbeat/insertion/acknowledgement.
+Failure transitions cannot reclassify an inserted keyed run; scheduler reconciliation recovers
+it. Only the current owned reservation is excluded from planner blockers. Integration tests
+verify single preparation for concurrent same-card calls and durable winning-run assignment.
+Request-level replay, long-await integration timer cleanup and runtime crash drills remain open.

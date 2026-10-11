@@ -141,6 +141,7 @@ describe('orchestrator chat tools (PM-89)', () => {
     expect(supervisor.dispatchCard).toHaveBeenCalledWith(a, mine.id, {
       providerId: 'codex',
       maxAttempts: 1,
+      dispatchKey: expect.any(String),
       canCommit: expect.any(Function),
       context: 'Instructions from the orchestrator:\nCheck the tests first',
     });
@@ -185,12 +186,12 @@ describe('orchestrator chat tools (PM-89)', () => {
     let inserted = 0;
     supervisor.dispatchCard.mockImplementation(async (projectId, cardId, input) => {
       await gate;
-      const options = input as { canCommit: () => boolean };
+      const options = input as { canCommit: () => boolean; dispatchKey: string };
       if (!options.canCommit()) throw new Error('Policy changed before insertion');
       inserted++;
       db.prepare(
-        "INSERT INTO agent_runs(id,project_id,card_id,name,provider_id,command_json,status,created_at,log_path) VALUES (77,?,?, 'Worker','codex','[]','queued','2026-10-12','')",
-      ).run(projectId, cardId);
+        "INSERT INTO agent_runs(id,project_id,card_id,name,provider_id,command_json,status,created_at,log_path,dispatch_key) VALUES (77,?,?, 'Worker','codex','[]','queued','2026-10-12','',?)",
+      ).run(projectId, cardId, options.dispatchKey);
       return {
         id: 77,
         projectId,
@@ -209,12 +210,18 @@ describe('orchestrator chat tools (PM-89)', () => {
       call('dispatch_worker', { card: mine.key }),
       call('dispatch_worker', { card: mine.key }),
     ];
-    // Both requests finish provider discovery and wait at the insertion gate.
-    await vi.waitFor(() => expect(supervisor.dispatchCard).toHaveBeenCalledTimes(2));
+    const results = Promise.allSettled(requests);
+    // The durable reservation blocks the second request before preparation.
+    await vi.waitFor(() => expect(supervisor.dispatchCard).toHaveBeenCalledTimes(1));
     release();
-    const outcomes = await Promise.allSettled(requests);
+    const outcomes = await results;
     expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(inserted).toBe(1);
+    expect(
+      db
+        .prepare('SELECT state,run_id FROM orchestrator_assignments WHERE card_id = ?')
+        .get(mine.id),
+    ).toMatchObject({ state: 'assigned', run_id: 77 });
     db.close();
   });
 

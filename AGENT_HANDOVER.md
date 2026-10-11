@@ -2,6 +2,13 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Durable chat intents are now integrated: reservation before supervisor preparation,
+  30-second heartbeat cleared in finally, keyed supervisor insertion, acknowledgement and
+  guarded failure transition. Planner excludes only the still-current owned reservation.
+  Concurrent same-card request is blocked before a second preparation, and the winning keyed
+  run is persisted as assigned. All 59 Orchestrator tests pass. Request-level replay API and
+  full runtime crash drills remain open; failed pre-launch policy changes still consume budget.
+
 - ChatDispatchIntent primitive added for durable manual dispatch reservation. It shares
   scheduler retry claims, keys heartbeat/ack/failure transitions to the current intent,
   verifies inserted run identity before acknowledgement, and refuses to mark inserted work
