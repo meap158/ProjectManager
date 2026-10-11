@@ -2,6 +2,351 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- **Orchestrator Durable Lifecycle, Epoch Fencing, and Scoped Planning (2026-10-11)**:
+  - **Lease Owner Epoch & Fencing**: Added migration 15 adding `epoch` column to `orchestrator_lease`. Reclaiming an expired lease increments `epoch`; heartbeat renewal preserves `epoch`. Long-running async dispatches in `executeLeased` renew the lease and fence transitions (`claim` and `assigned`) against stale owners/epochs to prevent conflicting writes if another node takes the lease.
+  - **Orphan Dispatch Recovery**: `reconcile` automatically detects claims in `dispatching` state older than 120s with no matching inserted run in `agent_runs` (e.g. server crash before run creation). Automatically recovers orphan claims to `error` cooldown rather than permanently stranding them, allowing retry within the persisted attempt budget.
+  - **Scoped Capacity & External Occupancy Partitioning**: `planOrchestration` differentiates between managed workers in scoped projects (`managedWorkers`), external workers in unmanaged projects (`externalWorkers`), and a host safety cap (32). Unmanaged sessions in unrelated projects no longer starve scoped orchestrators, while per-project editing concurrency (1 worker/project) and host safety caps are preserved.
+  - **Typed Wait Reasons & Occupancy Reporting**: Decisions emit structured `waitReason` (`active_worker`, `review_required`, `assignment_reserved`, `retry_cooldown`, `retry_budget_exhausted`, `project_capacity`, `managed_capacity`, `global_capacity`, `provider_capacity`, `quota_exceeded`, `quota_unknown`, `no_provider_available`) and occupancy breakdown (`{ managedWorkers, externalWorkers, projectWorkers }`).
+  - **Single-Flight Coalesced Execution**: Coalesced rapid manual and scheduled `tick()` requests into a single in-flight execution and at most one queued follow-up execution. Multiple overlapping clicks on "Check now" or "Check all" resolve cleanly together without queueing runaway inspection loops.
+  - **Live Execution Status**: Exposes live `status: { executing: boolean, lastTickAt: string | null }` on `OrchestratorState`. The UI displays a live `● Checking…` indicator in the Masters panel header and disables buttons while execution is active.
+  - **Plan Preview UI Polish**: Decisions display typed wait reason badges ("Project busy", "Worker limit", "Cooldown", "Needs review"), external occupancy indicators ("Managed: 1 · External: 2"), and exact retry cooldown times.
+
+- Plan preview includes persisted attempts used/remaining, cooldown time, claim blocker,
+  actual edit autonomy, single supervisor attempt and review requirement. Read-only inspection
+  does not reset budgets, release claims or send terminal input.
+
+- Orchestrator strategy supports Observe (scheduled checks log proposals; no worker dispatch
+  or attention-card mutation) and Autonomous board work (existing quota/capacity/review policy).
+  Legacy configs default to existing autonomous behavior. Per-master Preview plan is a read-only
+  GET endpoint with snapshot time and board decisions, available even while paused. Explicit
+  manual attention actions remain separate from scheduled strategy. Broader recovery gaps remain.
+
+- Hide keyboard uses a centered SVG chevron rather than a baseline-dependent text glyph,
+  keeping the mobile caret vertically centered within its 44px flex button.
+
+- Keyed dispatch reconciliation now looks up agent_runs by persisted identity directly,
+  independent of bounded history snapshots. Manual later runs cannot satisfy keyed intents;
+  legacy keyless claims retain timestamp reconciliation. Pre-insertion orphan recovery remains open.
+
+- Append-only migration adds unique optional agent-run dispatch keys and persisted
+  assignment intent keys. Supervisor checks before and after async provider validation,
+  returning the existing run on repeated dispatch. Orchestrator passes the claim key.
+  This establishes durable identity; full pre-run orphan recovery and owner fencing remain open.
+
+- Reviewed rejected/accepted runs whose cards explicitly return to Todo release assigned
+  claims for bounded retry; unvalidated/review work remains protected. Orchestrator page
+  polls after all four requests settle instead of overlapping interval batches.
+  Durable dispatch identity/orphan recovery, lease fencing, preview and typed statuses remain open.
+
+- **Terminal Loading & App Performance Optimizations (2026-10-11)**:
+  - **Large Log Tailing Bottleneck Solved**: Real agent logs in `data/agent-logs/` grow up to 10–33.5 MB. Previously, `TerminalView` always started with `offset = 0`, streaming 10–33 MB over SSE in 260+ chunks of 128 KB while hiding the terminal behind `visibility: hidden` until the entire file was parsed by xterm (taking 5–15+ seconds), only for xterm's 5,000-line scrollback buffer to discard the oldest 32.5 MB immediately anyway. Added `MAX_INITIAL_HISTORY_BYTES = 512 * 1024` (512 KB tail), matching xterm's 5,000 scrollback lines. Tailing starts from `totalHistory - MAX_INITIAL_HISTORY_BYTES` for large logs, strips broken leading line fragments on the first chunk, and reveals the terminal in ~50ms.
+  - **Preloading TerminalView Chunks**: Eliminated the network waterfall where lazy `TerminalView` chunks only started downloading after `getWorkspace()` and `listAllSessions()` API calls completed. Preloaded `TerminalView` at module scope in `WorkspacePage`, `AgentsPanel`, and `RunCard`.
+  - **Workspace In-Memory Layout & Session Memory**: Added module-level `cachedWorkspaceLayout` and `cachedSessions` to `WorkspacePage`. Navigating back to `/workspace` renders panes and sessions immediately without skeleton flicker while background synchronization revalidates state.
+  - **Server-Side Disk I/O & Stat Consolidation**: In `supervisor.ts`, replaced duplicate path-based `statSync` calls per session with a consolidated `fileStat` helper. In `OutputLog.readFile` and `logTail`, replaced redundant path `statSync` with `fstatSync(fd).size` and `Buffer.allocUnsafe(len)`. Capped legacy terminal snapshot and geometry inference reads to at most 1 MB from the tail. Lowered terminal stream recovery timeout from 8s to 4s.
+
+- Orchestrator scheduling excludes reserved/cooling-down/exhausted claims before capacity
+  reservation, preventing an older blocked task starving ready cards. Tests cover slot
+  refill and retry eligibility. Per-instance Check now uses /orchestrators/:id/tick and
+  checks only that master; automatic/global checks still cover all enabled masters.
+  Durable terminal/orphan claim lifecycle and lease fencing remain outstanding.
+
+- Orchestrator audit and phased upgrade plan saved in docs/ORCHESTRATOR_AUDIT.md.
+  P0 priorities: terminal/orphan claim lifecycle, claim-aware capacity and lease fencing.
+  Next: scoped checks/preview, typed status, efficient summaries and bounded follow-through.
+  No masters enabled or worker input sent during audit.
+
+- Mobile toolbar explicitly displays Status and Actions in their stable grid slots;
+  F1–F12 now scrolls with shortcut keys, only Hide keyboard stays pinned. Key glyphs
+  use centered flex alignment. Physical-phone verification remains pending.
+
+- Fixed desktop List view Actions popover: eliminated legacy `.work-bulk-menu { position: absolute; top: calc(100% + 4px); right: 0; }` in `agents-toolbar.css` that overrode `styles.css` `position: fixed` and `--bulk-top`/`--bulk-right` popover anchoring (which previously caused top-layer popovers on desktop to render at `top: 100vh + 4px`, completely off the bottom edge of the screen). Wire `positionBulkMenu` across button click, `onToggle`, and window resize/scroll, with resilient programmatic fallback.
+
+- Mobile keyboard strip now portals to document.body to escape pane clipping; standard
+  shortcuts are directly scrollable without a More button, with a grouped F1–F12 toggle.
+  Pane action menu keeps Auto-continue and icons on one row. Expanded filters use compact
+  44px fields with Kind/Search paired and Clear filters right-aligned. Phone QA pending.
+
+- CLI image picker supports multiple photos on desktop/mobile. Uploads run sequentially
+  to bound image-processing memory; individual failures name the photo and do not skip
+  remaining selections. Paths are added to the draft without submitting the message.
+
+## Orchestrators tab redesign, master cards & decision pruning (2026-10-11)
+
+- **Layout Hierarchy & UX**:
+  - Reordered the Orchestrators page to place **Masters** at the top as the primary status and operational view.
+  - The configuration form is now collapsible: hidden by default behind `+ New master` when masters already exist, and automatically shown when no masters exist or when editing an existing master.
+  - Reorganized the configuration form into 3 structured sections: **Scope & Identity**, **Worker Providers & Concurrency**, and **Policies & Quota**.
+- **Rich Master Instance Cards**:
+  - Enhanced master instance rows into clean cards with real-time status dots (green pulsing for Active, gray for Paused).
+  - Added metadata pills: Project Scope (`📁 All projects` / `📁 Project one`), Enabled Providers (`🤖 Codex, Claude Code`), Concurrency Limits (`⚙ Up to 6 workers`), Quota Reserve (`🛡 15% reserve`), Dashboard Attention follow-up (`⚡ Attention follow-up`), and Unknown Quota allowed flag (`⚠ Unknown quota allowed`).
+  - Added **Scope Board Progress**:
+    - Aggregates To do, In progress, Review, and Done card counts across the projects in the master's scope.
+    - Proportional multi-segment progress bar reflecting completion percentage.
+    - Direct `View board →` link targeting the scoped project's board or all boards.
+  - Added **Live Active Workers in Scope**:
+    - Displays active running/queued agent runs and active sessions for projects in scope.
+    - Shows pulsing status indicator, run/session name, provider badge, project name, card PM link, and direct link to terminal / workspace.
+    - Faint empty indicator when no workers are active.
+  - Added **Start / Pause / Run now**:
+    - Individual masters have direct `Check now` trigger button in addition to Start/Pause, Edit, and Delete.
+  - Added **Delete Master** capability using the standard destructive `ConfirmDelete` dialog pattern:
+    - Added `delete(id)` in `server/orchestrator/service.ts`.
+    - Added `DELETE /orchestrators/:id` in `server/orchestrator/routes.ts`.
+    - Added `deleteOrchestrator(id)` in `client/src/api.ts`.
+  - Added check feedback: "Check now" updates to "Checking…" and disables when execution is busy or if all masters are paused.
+- **Decision History**:
+  - Server-side deduplication collapses redundant 30s tick events for the same `(orchestratorId, cardId, action, message)` with a running `count` (`280×`).
+  - Clean client timeline view with action badges, card link tags (`PM-{cardId}`), repetition pills, and monospace timestamps.
+  - Added filter chips (`All`, `Dispatched`, `Waiting`, `Errors`) with live count badges and a "Clear history" action (`DELETE /orchestrators/events`).
+  - Capped initial visible events at 25 with a "Show older decisions" expansion button.
+- **Test Coverage**:
+  - Added tests in `OrchestratorPage.test.tsx` verifying card rendering, scope board progress counts and progress bar, live workers grid with direct links, form toggling, draft editing, deleting with `ConfirmDelete`, and decision history filtering/clearing.
+  - Added test in `service.test.ts` verifying deleting orchestrators.
+  - Fixed jsdom race condition in `WorkspacePage.interactions.test.tsx` by ensuring the second pane's textarea mounts before firing Alt+2.
+
+## Orchestrator Needs Attention resolution & Being worked on tracking (2026-10-11)
+
+- **Needs Attention Queue & Autonomous Resolution**:
+  - In each master instance card, added a dedicated **Needs Attention** section tracking project attention signals (uncommitted files, unpushed commits, stale repos, failed scans, missing directories) and failed runs within that master's scope.
+  - Added **Autonomous Resolution Action (`⚡ Resolve attention` / per-item `Resolve`)**:
+    - Dispatches agent workers directly (`supervisor.dispatchCard`) to investigate, validate, test, commit, and push pending changes to resolve the issues.
+    - If provider capacity is full or reserved, ensures a follow-up card (`Follow up Dashboard attention`) is queued in `todo` on the board for the next orchestrator cycle.
+    - If a scan had failed, triggers re-scan to resolve.
+    - Endpoints: `POST /orchestrators/resolve-attention` and `POST /orchestrators/:id/resolve-attention`.
+  - Added **Auto-Pruning and Dismissal (`Prune / Dismiss`)**:
+    - Automatically prunes resolved or obsolete follow-up cards (marking them `done` with an audit note) when a project's attention signals clear or are resolved on disk.
+    - Endpoints: `POST /orchestrators/prune-attention`, `POST /orchestrators/:id/prune-attention`, `POST /orchestrators/dismiss-attention`, and `DELETE /orchestrators/dismiss-attention/:projectId`.
+    - Added `pruneDashboardAttention` toggle in master orchestrator config and master card pills (`🧹 Auto-prune attention`).
+- **"Being Worked On" Real-time State & Tracking**:
+  - Replaced the standalone Live Workers block with an enhanced **Being worked on** section aggregating all active work in scope:
+    - Live worker runs (running or queued) with provider badges and terminal links.
+    - Interactive agent sessions with terminal links.
+    - Board cards currently `in_progress` or `review` across projects in scope (`api.listCardsInFlight()`), with direct links to the board card.
+  - In the **Needs Attention** queue, items that have an active run, session, or in-flight card show a live pulsing cyan/blue badge: `● Being worked on`, linking directly to the running worker or terminal (`Terminal →`). Unattended items provide the primary `Resolve` action button and secondary `Dismiss` action.
+  - Master header shows `${beingWorkedOnCount} being worked on` live status chip alongside `${totalAttentionCount} issues` / `Clean`.
+- **Test Coverage & Verification**:
+  - Unit and integration tests added in `server/orchestrator/attention.test.ts`, `server/orchestrator/service.test.ts`, and `client/src/pages/OrchestratorPage.test.tsx`.
+  - Full project test suite: 73 test files, 335 tests passing.
+  - Typecheck (`npm run typecheck`) and linter (`npm run lint`) pass with 0 errors.
+
+## Stale restart failure suppression & mobile layout polish (2026-10-10)
+
+- Stale "Restart failed" progress and bad/red status dots are cleared and suppressed when a session is actively running, both on the server (in supervisor `toSession`) and on the client (in `AgentWorkList` `stateLabel`).
+- Fixed inline rename pencil button spacing: hugs the session name with a 2px gap and 20px button (22px on touch with invisible hit-area padding), eliminating excessive separation.
+- Fixed mobile list row facts formatting: suppressed the stray leading interpunct separator on the first visible fact line (`· up ...`).
+- Added unit tests covering running sessions with stale restart progress in `AgentWorkList.test.ts`.
+
+## Memory and overhead optimization in progress
+
+- Scheduler start/stop generation prevents a slow old tick from reviving its timer chain
+  after restart. Regression covers restart while pending and confirms one recurring chain.
+- Current verification: 321 tests across 73 files passed; client/server typechecks, lint,
+  formatting and production build passed. Browser verification unavailable: cua inventory
+  has no browsers and createBrowserTab reports iab unavailable. Whole-app memory audit ongoing.
+
+- App routes now load lazily; navigation/sidebar stay outside Suspense. Identical production
+  builds measured by scripts/benchmark-route-bundle.mjs: initial static JS 673,293 ->
+  307,844 bytes; gzip 208,873 -> 98,147 bytes. Selected-page dependencies load afterwards;
+  this is startup transfer/parse savings, not a whole-app retained-memory measurement.
+- npm run build now uses scripts/build.mjs with explicit production NODE_ENV for Vite and
+  server compilation, preventing inherited development settings from shipping dev React.
+
+- Host entries release AgentProc references on exit, retaining pid/exit/log metadata
+  for reconnect/list until forgotten. Real temporary-host lifecycle test passed for
+  exit metadata, stopped input rejection, respawn and forget. Active host unchanged.
+
+- PTY host coalesces disk-backed data once a client's socket backlog reaches 256 KiB.
+  On drain or before a control/unsaved event it emits a forward-offset empty data event;
+  OutputLog invalidates its byte window, notifies viewers, and replays skipped bytes from disk.
+  No socket disconnect or CLI restart is introduced. Unsaved/partial writes are never coalesced.
+  Tests exercise 10,000 Unicode chunks, exact disk replay, normal output, and exit ordering.
+  Live persistent host remains on its previously loaded code until its normal lifecycle ends;
+  no active sessions were stopped to apply this change. Whole-app measurement remains pending.
+
+- Stopped PTY replay skips full-log legacy geometry/snapshot parsing when its initial
+  output already includes recorded pm-size geometry. The first replay chunk remains
+  bounded at 128 KiB instead of allocating/parsing an archive up to 32 MiB.
+  Archives without initial geometry retain the existing legacy fallback.
+- Host backpressure audit found socket disconnect currently means process exit to the
+  supervisor. Do not drop slow sockets without implementing reattachment first; that
+  would violate the no-regression requirement. Backpressure work remains outstanding.
+
+- Whole-worktree regression audit: both typechecks and ESLint passed; corrected seven
+  existing formatting failures. Full Vitest run passed 302 tests in 67 files.
+- Read-only live snapshot: server processes around 60–200 MiB working set; PTY host
+  PID 29652 had ~2.5 GB private committed memory (working set much lower). These are
+  point-in-time observations, not proof of a leak or before/after savings.
+- Next audit target: host broadcast calls socket.write without checking backpressure;
+  investigate bounded delivery with disk replay and reconnect before changing semantics.
+  Existing host disconnect/recovery path must preserve live sessions and exit notifications.
+
+- Browser agent lists, board cards and board run summaries use an eight-project LRU
+  revisit cache rather than retaining every visited project forever. Mounted view state
+  remains intact; evicted project data reloads through the existing API on revisit.
+  Cache tests cover recency, replacement and retained external references; board/workspace
+  regression suite passes. This bounds project count, not per-project payload bytes.
+
+- Paused orchestrators skip provider checks, history scans and lease writes. Automatic
+  ticks schedule 30s after completion instead of queueing behind slow ticks; 10 tests pass.
+- Mobile terminal keys now use a single horizontal scrolling strip with 44px pill targets,
+  pinned More/Hide keyboard controls and added Insert/Delete. Existing shortcuts and
+  F1–F12 remain; terminal regression tests pass. Physical-phone visual check remains.
+
+- OutputLog caches UTF-8 bytes in 4 KiB blocks rather than per-output-event strings.
+  Tiny-event regression: 100,000 single-byte events occupy 25 blocks rather than
+  100,000 entries. Reads no longer re-encode each retained chunk per viewer.
+- Cache is strictly bounded to 256 KiB even for a single oversized append; complete
+  logs remain on disk. Unicode replay across read/block/eviction boundaries is tested.
+- Finished sessions/runs release byte blocks once disk holds every byte; failed/missing
+  disk writes preserve the memory fallback. Real-process tests check eviction and replay.
+- Reproduce the microbenchmark with node --expose-gc --import tsx
+  scripts/benchmark-output-cache.mjs legacy (then blocks in a separate process).
+  Ten 100,000-event logs: retained heap + buffers 49,175,112 -> 1,144,856 bytes;
+  ingestion 203 -> 97 ms, 100 reads 9,685 -> 15 ms. Synthetic tiny-event workload;
+  not a whole-app memory result. Small events encode directly without temporary buffers.
+- Broader goal remains active: whole-app runtime measurements,
+  stopped-terminal geometry scans and client background work still need investigation.
+- Workspace session/run refresh now schedules after each request settles, preventing
+  overlapping requests on slow servers; cleanup ignores late poll responses.
+  serialPoll tests cover slow responses, cleanup and retry after errors.
+- Orchestrator has optional Follow up Dashboard attention: shares signal extraction with
+  Dashboard, creates one board task per attention episode, extends existing open tasks,
+  respects project scope and skips projects with live workers. Missing folders go to review.
+  Other follow-ups use existing dispatch/quota policy. Old configurations remain unchanged
+  unless opted in. Completed/deleted follow-ups are not recreated while signals persist.
+- LAN settings now has Scan pairing QR on local/remote panels. Uses file/photo capture
+  (camera picker) because HTTP LAN origins cannot use getUserMedia/BarcodeDetector.
+  Added jsqr for cross-browser on-device image decoding, lazy-imported only on scan;
+  canvas limited to 1600px longest edge, object URLs released. No photo upload.
+  Validates local-network root pairing URLs and shows explicit Open sign-in page.
+  Real generated QR decoding and URL-validation tests pass; physical-phone test pending.
+- Mobile Filters is icon-only with active-count badge and full accessible label;
+  desktop retains text. Toolbar expansion geometry remains stable.
+
+## Filtered Actions menu and batch messages
+
+- Batch sending shows completed/total progress, current terminal and paste/Enter stage,
+  sent/failed counts and a progress bar. Counts advance only after each terminal's attempt
+  settles; successful recipients remain excluded from retry. Delivery is distinct from reply.
+
+- Actions uses the native popover toggle exclusively. Removed a delayed fallback that
+  reopened the menu immediately after a second click closed it; positioning remains.
+
+- Show in panes always displays its target count; more than four matches says (first 4),
+  reflecting the existing four-pane limit.
+
+- Mobile message composer initially focuses its heading, leaving keyboard opening to
+  the user; textarea uses 16px touch sizing. Desktop still focuses input without scrolling.
+- Mobile list toolbar keeps Status/Filters/Actions in fixed grid slots when expanded;
+  extra filter fields occupy a separate full-width grid below. No toggle resizing.
+  Focus, filter and workspace regression tests pass; physical-phone visual check pending.
+
+- Show in panes is the first action inside the Actions menu on desktop and mobile.
+
+- Desktop Actions popover anchors beneath its button, repositions on scroll/resize,
+  and flips above when needed. Phones retain the compact bottom sheet.
+- Send message snapshots running, non-restarting filtered sessions, offers a continue
+  preset, pastes and submits input, reports partial failures and retries only failures.
+  Input appends to existing drafts; shell sessions execute it. No real terminals were messaged in tests.
+
+## Blank terminal recovery and mobile restart status (2026-10-10)
+
+- Terminal traffic waits for xterm.open, avoiding a resume-effect race before initialization.
+- SSE drain state reveals parsed history even if the mount's logBytes snapshot is stale;
+  empty logs no longer stay hidden. A silent stream gets an HTTP recovery read after 8s;
+  stream failures recover through HTTP before reconnecting. Existing output is preserved.
+- Loading/waiting/reconnecting notices replace unexplained blanks, with Retry on failures.
+- Restart progress has a compact independent header badge, on a small second line on phones;
+  it remains visible with the actions menu closed. Mobile action menus wrap within the viewport.
+- Regression coverage includes stale/empty history, failed/silent streams, initialization,
+  stopped geometry and terminal persistence. No CLI process was restarted for these checks.
+
+## Master orchestrator in progress (2026-10-10)
+
+- Full requested scope and integration checklist: docs/ORCHESTRATOR.md.
+- Implemented pure scheduler in server/orchestrator/planner.ts: project scope, ordered
+  provider selection, quota freshness/reserve, concurrency reservations, live assignment
+  deduplication and review handoff. Four scheduler tests and typecheck pass.
+- Added durable instance settings/events, validated list/save/tick API, serialized dispatch
+  with per-action capacity rechecks, and production 30-second ticks with shutdown draining.
+  No instances were enabled in the user's database. Five planner/service tests pass.
+- Still pending: cross-process leases/assignment recovery, retry cooldowns, master tools,
+  existing-worker handoff and review coordination. Keep the goal active.
+- Added separate /orchestrators control page with persisted scope/provider selection,
+  concurrency/quota settings, Start/Pause/Check now, editing and decision history.
+  Desktop navigation and mobile Agents tools link reach it. Seven tests and typecheck pass.
+
+## Mobile agent row alignment (2026-10-10)
+
+- Shared agent list rows use consistent name/pencil spacing, flexible project labels,
+  aligned status/action rows, 40px action targets and 44px filter toolbar controls.
+  Actions wrap only when needed; Stop uses its labelled icon on mobile.
+- CSS formatting and typecheck verified; phone screenshot verification remains.
+
+## Filtered terminal persistence (2026-10-10)
+
+- The selected list terminal is resolved from all sessions, independently of visible rows.
+  An Idle-to-Running update while typing no longer unmounts the terminal or loses focus.
+  Filters still constrain list rows and bulk actions.
+- Audited project Agents tabs and workspace panes for filter-dependent selection. Regression
+  coverage verifies every status tab, search and Kind filtering on desktop and mobile keeps
+  the same terminal mounted with its draft intact.
+
+## List view cleanup (2026-10-10)
+
+- Auto-continue buttons and continuation messages are removed from List view rows and
+  the docked terminal panel (`Pane inList`). Auto-continue is exclusive to Panes view terminals.
+- Docked terminal panel in List view omits the pane index number ("1") and only renders if the
+  selected session/run matches the active filters.
+- Stale cancellation messages are suppressed when Auto-continue is disabled.
+- Supervisor continuation check only cancels if a saved conversation actually changed.
+
+## Multi-select agent work filters (2026-10-10)
+
+- Agent, Project and Kind dropdowns support multiple choices. Status is single-select
+  on desktop and mobile. Choices are OR within a group and AND across groups.
+- Menus stay open while toggling, show selected counts, and All clears that group.
+  Saved single selections remain compatible; multi-selections persist in localStorage.
+
+## Restart preservation and explicit Rename (2026-10-10)
+
+- Manual resume failures keep the saved conversation target and report failed progress;
+  they cannot silently auto-relaunch a fresh conversation. Missing Claude transcripts report
+  an actionable error. Codex discovery reads larger metadata records (256 KiB).
+- Names have a separate accessible pencil Rename action, with larger touch targets.
+- Added PM-58 to the project board: refine Auto-continue using the supplied Claude desktop
+  checkbox, usage-limit status, reset time, details and retry reference.
+- Typecheck and 30 rename/workspace/usage/agent tests passed; final server checks also passed.
+
+## Agents list controls (2026-10-10)
+
+- Mobile status filtering uses a compact dropdown with live counts rather than clipped chips.
+  Desktop keeps status chips and the visible agent/project/kind/search filters.
+- Auto-continue is a direct pressed-state button instead of a one-item overflow menu.
+  Mobile row actions wrap as needed. Typecheck and 11 filter/workspace tests passed.
+
+## Mobile CLI focus update (2026-10-10)
+
+- Mobile density follow-up: compact continuation popover, icon Stop, card key in the facts
+  line, aligned 44px Filters/Actions, shortened mobile bulk trigger, neutral New toggle.
+  Top-layer popovers avoid list overflow clipping and dismiss with outside click/Escape.
+  Browser automation failed to initialize in this environment; visual mobile QA remains.
+
+- Restart UX: dedicated POST restart endpoint serializes Stop/Start and exposes shared
+  stopping/starting/restoring/failed progress in rows and terminal headers. Bulk restart
+  uses the same endpoint. Readiness needs new output plus recognized CLI activity.
+- Codex Auto-continue: one-shot opt-in persisted in settings, checked server-side every 10s.
+  Recent limit denial + near-exhausted window with known reset required; waits through all
+  matching windows plus 30s, validates conversation, idle/empty input, then claims before
+  writing a continuation. Manual input/lifecycle changes cancel. Long offline gaps cancel.
+  Unknown reset times remain watching; Claude's native feature handles Claude continuation.
+  Live provider reset has not been exercised; regression tests cover parsing and lifecycle.
+
+- Fixed shared TerminalView autofocus: history replay hides the input, so focus now waits for
+  the final replay frame. Returning to a preserved project tab also restores keyboard focus.
+- Interactive terminals show an accent outline only while their input has real keyboard focus.
+  Removed the focus text badge. Added replay and tab-resume regression tests.
+
 ## Current state (2026-10-06, everything committed)
 
 All owner tasks to date are implemented and committed (both parallel sessions' work, split into
@@ -261,6 +606,11 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
 
 - **Session host processes** (`ptyHost`) legitimately outlive the server while sessions run.
   Rendezvous: `<dataDir>/agent-host.json`; diagnostics: `<dataDir>/agent-host.log`.
+  A running host keeps its old code: host-side fixes (e.g. log compaction) only take effect
+  after it restarts (reboot, or every session stopped so it idles out after a minute).
+- **Session log offsets are logical** (`server/agents/logFile.ts`): a log over 32 MB is compacted
+  to its last 1 MB, with the dropped byte count in `<log>.base`. Use `logicalSize()` for
+  offsets/`logBytes` and `physicalSize()` only for raw file reads; delete logs with `removeLog()`.
 - `client/src/components/Dropdown.tsx` and some workspace toolbar changes came from another actor
   (they ended up in commit 104669c).
 - Don't put backticks inside double-quoted `node -e` / shell strings: bash runs them as commands
@@ -287,3 +637,37 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
   Review the diff after adding any component.
 - Other projects' dev servers on this machine can eat RAM (TrendRelay's Next server reached 11 GB
   on 2026-10-05 and caused OOM crashes). Check memory before blaming ProjectManager.
+
+## 2026-10-11 batch delivery completion
+
+Fixed zero-recipient completion heading and disappearing progress. Per-terminal server acknowledgments distinguish delivered, queued and failed input. Successful batches close after three seconds; queued/failed batches remain visible. Six component tests pass, covering retained progress, retry isolation, queued input and delayed close. No messages sent to live user terminals during testing.
+
+Settings Agent CLI alignment: scoped settings-cli-list replaces shared baseline alignment with vertical centering. Installed badge text uses a compact line height and cannot shrink. Install/manual status controls also center within the row. Targeted lint and formatting pass; browser visual verification remains pending.
+
+Mobile clipboard: TerminalClipboard adds a native contenteditable paste dialog outside the keyboard overlay (portal prevents it disappearing when terminal focus leaves). Supports multiple image files and item-only clipboard files; optional Clipboard.read starts within a user gesture. HTTP LAN cannot use the async Clipboard API. Ctrl+A sends control byte 0x01; actual selection behavior depends on the CLI. Clipboard tests 2 pass, TerminalView regression tests 19 pass, client types pass. Physical Safari verification remains pending. Orchestrator audit next priority: resolveAttention bypasses configured providers/quota/capacity/claims and must use the policy-controlled dispatch path.
+
+Orchestrator attention policy bypass removed: resolveAttention queues/deduplicates cards then uses serialized tick instead of direct dispatch. Paused/Observe masters do not launch workers; configured providers, quota/capacity and durable assignments govern dispatch. All 24 Orchestrator tests pass, including pause/Observe/provider/claim regression assertions. Broader audit acceptance gates remain open.
+
+Orchestrator lease fencing strengthened: preserve epochs on release, increment on reacquisition, reject expired renewal, fence failure transitions. All 25 Orchestrator tests pass. Existing orphan recovery verified in current code; remaining long-dispatch heartbeat/provider-side fencing requires audit.
+
+Mobile LAN input: Workspace terminal input now coalesces unsent typing while one request is in flight, preventing accumulated per-frame HTTP round trips on high-latency Wi-Fi. Preserves input order, bounded chunks and no automatic replay of failed writes. Eleven queue/workspace tests pass; client typecheck passes. Continue transport audit for project agent panel, SSE connection limits, terminal replay and physical mobile measurements.
+
+Orchestrator long-dispatch heartbeat: leased execution renews every 30 seconds and clears its timer in finally. Provider checks validate ownership before any attention mutations. Simulated three-minute provider wait prevents takeover; 26 Orchestrator tests pass. Project AgentsPanel now uses per-session TerminalInputQueue coalescing, preserving recipient isolation during selection changes and chunking large pastes.
+
+Orchestrator attention API now validates JSON scopes and dismissal kinds; invalid payloads cannot fall back to all projects. 27 Orchestrator tests and server typecheck pass. Corrected audit phase status to partially implemented: full crash/provider fencing, task generations, runtime/mobile and performance gates remain unproven.
+
+Orchestrator planner fairness: round-robin project queues, least recently served via latest card-run ID, board order preserved within project. Proposed workers count against global cap. 29 Orchestrator tests, server types and targeted lint pass. Snapshot-limited history and efficiency benchmarks remain open.
+
+Orchestrator idle efficiency: skip fresh snapshot reloads for non-dispatch proposals; scope card queries. 100 waiting cards use two history reads per tick, with fresh dispatch checks retained. 30 Orchestrator tests, server typecheck and targeted lint pass. Full indexed projections/dispatch-heavy benchmarks remain outstanding.
+
+Orchestrator event churn reduced: per-card latest-observation comparison skips unchanged wait/review/Observe writes and preserves transition timestamps. Operations still record individual occurrences. 30 Orchestrator tests, server types and lint pass. Full repository checks launched next.
+
+Orchestrator UI refresh race fixed: action start invalidates older polls; polling skips while actions are running; completed action invalidates stale responses; duplicate action entry is guarded synchronously. Nine page tests, including delayed poll after save, client typecheck and targeted lint pass. Full npm run check passed typechecks but failed during whole-repository lint with fatal out-of-memory; it did not reach remaining gates. Physical memory observed ~1.9 GB available of ~32 GB; no unrelated processes terminated.
+
+Supervisor dispatch has an internal canCommit callback, evaluated synchronously after provider awaits and immediately before run insertion. Orchestrator validates current lease epoch and enabled/autonomous/provider/project policy there. Denied commit regression asserts no run inserted. Repeated keyed dispatch now validates task identity after the second lookup too. Tests currently running: full suite session 39515 (one worker), focused agent/orchestrator session 29629. Do not restart solely on output silence; poll their handles.
+
+Full regression suite completed with one worker: 355 tests across 76 files pass. Commit fence now rechecks live capacity, quota and card readiness using current policy immediately before insertion; only the owned reservation is excluded. Capacity race callback test passes. 30 Orchestrator tests, focused service tests, server types and lint pass after latest change. Whole-repository lint/format/build/browser gates remain unverified after prior lint OOM.
+
+Planner baseline benchmark added and executed: 1k/10k cards, 100k history, 1/5/20 masters. Results docs/ORCHESTRATOR_BENCHMARK.md. Reveals ~1.85MB bare decision payload at10k cards; summary/pagination is next efficiency priority. Pure benchmark excludes SQL/providers/LAN. No live tasks touched.
+
+Benchmark report restored after interrupted creation; scripts/benchmark-orchestrator.mjs lint passes. Attention all-scope compatibility verified: request helper serializes undefined as {}, routes accept explicit {} while rejecting malformed JSON. Added regression assertion for valid all-scope resolve. Report next priority is compact/paginated preview payload (~1.85MB bare decisions at10k cards).

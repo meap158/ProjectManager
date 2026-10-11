@@ -6,6 +6,44 @@ or chat history.
 
 ## 1. Principles
 
+Orchestrator strategy is explicit: Observe reports proposals; Autonomous board work dispatches
+within existing limits and retains review. Preview plan works while paused, shows snapshot
+time and reasons, and never dispatches. Manual attention actions are distinct from strategy.
+
+Route pages load on demand. Navigation and the project sidebar remain available while
+the selected page loads, with a short accessible Loading page status in the content area.
+
+Mobile terminal keys sit in one horizontal scrolling row above the software keyboard.
+Use 44px pill targets, with Hide keyboard pinned at the right. F1–F12 and standard
+shortcuts are directly scrollable; F1–F12 reveals function keys in the same row.
+The strip is a body-level overlay aligned to the visual viewport above the keyboard.
+
+Filtered Agents Actions opens below its trigger on desktop (above if space requires),
+and as a bottom sheet on mobile. Show in panes is the first item inside Actions.
+Batch message uses a modal composer with recipient
+count/names, a Continue preset, explicit Send, progress and partial delivery results.
+Recipients are frozen when composing; successful recipients are excluded from retries.
+While sending, show completed/total, current recipient and stage, sent/failed counts,
+and a progress bar. Delivery indicates terminal input submission, not an agent reply.
+On phones the composer opens on its heading, with a 16px message field; typing starts
+when the user taps it. Expanded mobile filters appear beneath the unchanged toolbar row.
+Mobile Filters uses a funnel icon and active-count badge with an accessible label.
+Expanded filters use two compact columns, with Kind beside Search and Clear filters
+aligned at the right. Inputs retain 44px touch targets and 16px search text.
+Mobile pane actions keep Auto-continue and action icons together on one row.
+CLI Add images opens a multi-select photo picker on desktop and mobile. Selected photos
+are added in order; failed photos show their filename while remaining photos continue.
+LAN Scan pairing QR opens the photo/camera picker, reads locally, then shows the detected
+computer and an explicit Open sign-in page action. No photo is sent to a server.
+
+Orchestrators have a separate `/orchestrators` page, reached from desktop navigation or
+mobile Agents tools. Configuration uses project/provider multi-selects, compact worker
+and quota fields, and explicit Start/Pause controls. New masters save paused. Decision
+history keeps waiting, dispatch, review and error outcomes visible.
+Optional Dashboard follow-up creates scoped, deduplicated board tasks for attention
+signals and pending Git work. Missing-folder tasks remain in review; projects with active
+workers defer follow-up. Existing capacity and quota rules govern automatic dispatch.
+
 1. **Calm developer tool.** Dense but quiet, in the spirit of GitHub and Linear. Content (numbers, charts,
    cards) carries the colour. Chrome stays neutral.
 2. **Show, don't explain.** Lead with numbers and charts. Explanatory text is short and secondary.
@@ -378,6 +416,34 @@ tokens and touch targets.
 
 ## 12. Agent CLI sessions and runs
 
+- Terminal history stays hidden only while it is being parsed. A server drain notification
+  overrides stale log-byte estimates; stalled streams recover through an HTTP read after 8s.
+  Loading, empty-output and reconnecting states have compact notices with Retry on failures.
+  Network recovery preserves the CLI process and existing terminal output.
+- Restart progress appears independently of terminal action menus. Phone headers use short
+  labels (Stopping, Starting, Restoring, Restart failed) in a 16px status line below identity;
+  action menus wrap within the viewport rather than stretching the header.
+
+- Mobile Agents rows keep identity, facts/card key, and status/actions in three compact lines.
+  Stop is an accessible icon on phones; continuation options live behind a 40px ellipsis with
+  an armed dot. Bulk Actions and continuation menus use top-layer popovers above the bottom
+  navigation, avoiding clipping inside the scrolling list. Filters and Actions align at 44px.
+  The mobile New disclosure uses neutral button styling; Start is the primary action.
+
+- Restart is a single server operation, shared by row, pane and bulk actions. Its progress
+  (Stopping, Starting, Restoring conversation) appears in both the row and terminal header.
+  Concurrent restarts are rejected; failure remains visible with the reason in the tooltip.
+- Codex PTY sessions offer a one-shot Auto-continue opt-in. A recent usage-limit error and
+  known exhausted usage-window reset arm a server-side wait with a 30-second margin.
+  The header shows the reset time/countdown and cancellation. Submission requires the same
+  conversation/process generation, idle state, empty prompt and no queued input. Manual
+  input, Stop, Restart or a conversation change cancels it. A gap over 30 minutes requires
+  manual continuation. Claude uses its own native auto-continue; we never send a duplicate.
+
+- Interactive terminals take keyboard focus after history replay finishes and when a preserved
+  project tab becomes visible. Actual terminal focus shows an accent outline, which
+  disappears when focus moves to another control.
+
 Persistent, reboot-proof processes for driving AI coding CLIs, modelled on
 [Quil](https://github.com/artyomsv/quil) (typed panes, PATH detection, per-type resume,
 reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) principles
@@ -583,7 +649,10 @@ Sessions are never lost unless you stop or delete them (owner requirement, Resea
     with a token from `<dataDir>/agent-host.json`.
 - **Logs:** the host writes session output straight to the log file, so nothing is missed while no
   server is attached. Attached servers mirror it from live events carrying exact byte offsets. Only
-  one writer touches a log at a time. The cap was raised to 32 MB.
+  one writer touches a log at a time. Logs are capped at 32 MB on disk: a full log is compacted
+  to its last 1 MB and the bytes dropped from its head go in a `<log>.base` sidecar, so offsets
+  only ever grow (`server/agents/logFile.ts`). Output never stops streaming at the cap (it used
+  to, which left restarted OpenCode sessions blank with no input box).
 - **Efficiency:** the host exits on its own when no session is alive and no server has been
   attached for a minute.
 - **Simpler UI:** the "Supervise" option was removed. Every session persists by default.
@@ -603,3 +672,13 @@ Sessions are never lost unless you stop or delete them (owner requirement, Resea
 - Agent board tools are scoped to the owner's assigned card. add_note appends evidence; status
   changes and notes have a persistent audit visible through Agent board history. Native MCP image
   reads avoid relying on browser-terminal clipboard emulation.
+
+## Batch terminal delivery feedback
+
+Batch messaging preserves recipient names and completed progress. Message chunks and Enter require server acknowledgments; queued input is distinguished from confirmed delivery. Each terminal has a result. Entirely delivered batches show a three-second summary before closing. Failures and queued input stay open; only failed recipients can be retried, with a partial-input warning. Delivery confirms input acceptance, not an agent reply.
+
+Settings Agent CLI rows vertically center installation badges, install controls and status dots against the full row, including wrapped descriptions and quota information.
+
+Mobile terminal helpers include Paste and Ctrl+A. Paste opens a body-level native editable field for image/text clipboard events on HTTP LAN pages; Read clipboard is available when supported. Pasted text never submits Enter. Browser clipboard restrictions retain Add images as the fallback.
+
+Orchestrators alternate project task queues, preserving board order within each project and preferring least recently served projects. Preview capacity includes proposed workers as well as live workers.

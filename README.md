@@ -4,9 +4,11 @@
 
 # ProjectManager
 
-**One home for every code project on your computer.**<br>
-See what each project is made of, plan the work on a board, and let AI coding agents do the tasks,
-all in your browser, all on your machine.
+**Persistent AI coding sessions. Every project. Any screen.**<br>
+Organize Claude Code, Codex and other agent CLIs across your projects in one browser workspace.
+Keep sessions running when you close a tab, resume conversations after restarts, and work from
+your phone with compact controls and real terminal access. Your projects and session data stay
+on your computer.
 
 [![Node 22.13+](https://img.shields.io/badge/node-22.13%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -40,39 +42,40 @@ all in your browser, all on your machine.
 <tr>
 <td width="50%" valign="top">
 
-### 📊 Every project at a glance
+### 🔄 Sessions that survive restarts
 
-Add your project folders once. ProjectManager counts the lines of code, finds the languages,
-measures the size on disk and reads the git history. You get a GitHub-style activity heatmap for
-each project and a dashboard that ranks all of them.
+Close the browser without stopping your agents. A separate session host keeps CLI processes
+running across ProjectManager server restarts. After a reboot, active sessions relaunch with
+their saved conversation when the CLI supports resume; terminal history stays with the session.
 
 </td>
 <td width="50%" valign="top">
 
-### 🗂️ A board that updates itself
+### 🤖 Multiple agents, multiple projects
 
-Each project gets a board: **Backlog → To do → In progress → Review → Done**. Mention a card in a
-commit, open a pull request for it or merge it, and the card moves on its own. No clicking, and no
-AI needed for that.
+Run **Claude Code, Codex, Grok, Antigravity and OpenCode** in the same workspace. Mix agent
+harnesses across projects, name your sessions, and switch between a filtered list and up to
+four terminal panes. See which sessions are working, idle, or waiting for your input.
 
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 
-### 🤖 AI agents in real terminals
+### 🗂️ Projects and tasks in context
 
-Hand a card to **Claude Code, Codex, Grok, Antigravity or OpenCode**. Each one runs in a real
-terminal inside the app. Watch up to four side by side, and pick up exactly where you left off
-after a restart.
+Link sessions to board cards and hand work directly to an agent. Commits and pull requests move
+cards through **Backlog → To do → In progress → Review → Done**. Code stats, languages, disk
+usage and commit charts keep the bigger picture close to the work.
 
 </td>
 <td width="50%" valign="top">
 
 ### 📱 Works on your phone too
 
-A phone layout with a bottom tab bar. Turn on LAN access, type a 4-letter code on your phone, and
-check on your agents from the couch.
+Use the same workspace from your phone: compact session rows, collapsible tools and filters,
+touch scrolling, fullscreen terminals and image uploads. Turn on LAN access and scan the host's
+QR code to pair your browser once, then return to your sessions from anywhere on the same network.
 
 </td>
 </tr>
@@ -123,8 +126,9 @@ npm install
 npm run launch
 ```
 
-Your browser opens on **http://localhost:5180**. Click **＋ Add**, pick a project folder, and
-you're done.
+Your browser opens on **http://localhost:5180**. Click **＋ Add**, pick a project folder, then
+open **Agents → + New** to start a CLI session. Add more sessions across projects and agent
+harnesses as needed; use **List** to find them or **Panes** to work side by side.
 
 > [!TIP]
 > On Windows you can double-click **`launch.bat`**. On macOS or Linux run **`./launch.sh`**.
@@ -134,11 +138,11 @@ you're done.
 <summary><b>Optional extras</b></summary>
 <br>
 
-| Install this                                                     | And you get                                               |
-| ---------------------------------------------------------------- | --------------------------------------------------------- |
-| An AI coding CLI: `claude`, `codex`, `grok`, `agy` or `opencode` | Agents that work on your cards                            |
-| [GitHub CLI](https://cli.github.com) (`gh auth login`)           | Pull requests on each project, and cards that follow them |
-| [scc](https://github.com/boyter/scc)                             | Faster, more precise line counts                          |
+| Install this                                                     | And you get                                                |
+| ---------------------------------------------------------------- | ---------------------------------------------------------- |
+| An AI coding CLI: `claude`, `codex`, `grok`, `agy` or `opencode` | Persistent terminal sessions and agents that work on cards |
+| [GitHub CLI](https://cli.github.com) (`gh auth login`)           | Pull requests on each project, and cards that follow them  |
+| [scc](https://github.com/boyter/scc)                             | Faster, more precise line counts                           |
 
 Missing an agent CLI? **Settings** can install it for you, using each vendor's official method.
 
@@ -205,6 +209,17 @@ stateDiagram-v2
 
 ## 🤖 AI agents in real terminals
 
+The **Agents** workspace brings your existing coding CLIs together. Start several sessions for
+one project, or work across several projects and harnesses at once. Every row and pane keeps
+the session's project and linked card visible, so you can switch tasks without losing context.
+
+Session records, terminal logs and conversation identifiers are saved locally. Closing a tab
+leaves the process running. The separate session host keeps CLI processes alive during server
+restarts, and the app reconnects to them. If the host is unavailable, sessions run in the server
+and resume after it restarts. After a reboot, active sessions relaunch when ProjectManager starts
+again, using the CLI's saved conversation when available. A reboot interrupts the current
+process; resuming the conversation does not preserve an in-flight command.
+
 | Agent       | Exact resume after a restart | Name syncs with `/rename` |
 | ----------- | :--------------------------: | :-----------------------: |
 | Claude Code |              ✅              |            ✅             |
@@ -222,8 +237,12 @@ stateDiagram-v2
 - **Watch them side by side.** The **Agents** page shows 1 to 4 terminals at once.
   <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>4</kbd> jumps between panes, <kbd>Alt</kbd>+<kbd>Enter</kbd>
   makes one full size, and you can drag panes to swap them.
-- **Nothing is lost.** Sessions keep running when you close the tab, come back after a reboot,
-  and **Start** reopens the exact conversation each agent was in.
+- **Pick up after a restart.** Hosted sessions keep running across server restarts; after a reboot,
+  active sessions relaunch when ProjectManager starts again.
+  **Start** reopens a stopped session using its saved conversation when the CLI can resume it.
+  Terminal history stays available alongside the resumed session.
+- **Keep many sessions organized.** Filter the list by project, agent, activity, or task name;
+  rename sessions to distinguish several conversations with the same agent.
 - **Working or waiting?** Each session shows whether the agent is busy or waiting for you.
 - **Plan usage at a glance.** See how much of your 5-hour and weekly limits you've used, and
   when they reset (Claude Code and Codex).
@@ -250,8 +269,15 @@ Your CLI config files are never edited: the tools are passed to each process whe
 ## 📱 Use it from your phone
 
 1. Open **Settings → LAN access** and turn it on.
-2. On your phone, open the address shown there.
-3. Type the **4-letter code** from your computer. That's it.
+2. Scan the QR code shown on the host. It opens the address and fills in the current pairing code.
+3. Tap **Sign in**. Use the same address and browser on future visits to stay signed in.
+
+You can also open an address manually and type the **4-character code**. Prefer the computer's
+`.local` address when your phone resolves it: it survives changes to the host's network IP.
+
+Mobile controls prioritize the work: **+ New** opens session setup, **⋯** opens workspace tools,
+and **Filters** reveals extra list filters. Session actions live under **⋯** in a terminal
+header; maximize a pane to give the CLI more screen space.
 
 <details>
 <summary><b>How it stays safe</b></summary>
@@ -261,16 +287,22 @@ Your CLI config files are never edited: the tools are passed to each process whe
   but is a separate, guarded listener: the normal app still only listens on your own computer.
 - A code works **once**, expires after **10 minutes**, and is thrown away after 5 wrong tries.
   Too many wrong tries from one device are blocked for a while.
-- Each signed-in device gets its own secure cookie and appears in Settings, where you can sign it
-  out. Devices stay signed in across restarts.
+- Each browser gets its own HttpOnly device cookie and appears in Settings, where you can sign it
+  out. Tokens survive restarts; the cookie is renewed on page visits. Returning through links or
+  a QR scan sends the cookie too. Clearing cookies, using private browsing, changing browsers or
+  changing from an IP address to a hostname requires pairing that browser/address again.
+- QR codes are generated locally and contain the same short-lived, single-use pairing code.
+  The code is carried in the URL fragment and removed from the address after opening it.
 - Only this computer's own network addresses are accepted, and a phone can't change the LAN
   settings.
 - On Windows, allow Node.js on **Private** networks when asked.
 
 Tip: add it to your home screen (Safari: Share → Add to Home Screen) to open it like an app.
 
-In an agent's terminal, **swipe** to scroll back. To show an agent a picture, tap **Image** in the
-terminal's header and pick a photo or take one: it's sent to the computer and its path is pasted
+In an agent's terminal, **swipe** to scroll back through the terminal, including the prompt and
+footer in normal terminal mode. Touch updates are combined per display frame; full-screen
+terminal apps keep their own scroll handling. To show an agent a picture, open **⋯** in the
+terminal's header, tap the image icon and pick a photo or take one: it's sent to the computer and its path is pasted
 in, so Claude Code attaches it as `[Image #1]`. On a computer you can also paste or drop an image
 onto a terminal.
 
@@ -304,6 +336,23 @@ No. Stats, the activity heatmaps, the dashboard and the self-updating board all 
 </details>
 
 <details>
+<summary><b>Can I use Claude Code and Codex together?</b></summary>
+<br>
+Yes. Each session runs its own CLI in its project's folder. Mix supported agents, keep several
+conversations per project, and use List or Panes to move between them. ProjectManager uses your
+installed CLIs and their existing provider authentication.
+</details>
+
+<details>
+<summary><b>What happens if I close the browser or restart my computer?</b></summary>
+<br>
+Closing the browser leaves sessions running. The separate session host also keeps CLI processes
+running across server restarts. Rebooting the computer interrupts them, then active sessions
+relaunch when ProjectManager starts again. Saved conversation identifiers let supported CLIs
+resume their conversation; terminal history is retained locally.
+</details>
+
+<details>
 <summary><b>Which languages does it count?</b></summary>
 <br>
 Dozens, from TypeScript, Python, Go and Rust to Kotlin, C#, shaders and config files. Generated
@@ -322,12 +371,12 @@ it on the internet. LAN access is for your own devices at home.
 
 ## 🛠️ For developers
 
-| Command          | What it does                                    |
-| ---------------- | ----------------------------------------------- |
-| `npm run launch` | Start with hot reload (same as `npm run dev`)   |
-| `npm run check`  | Typecheck, lint, format check and all the tests |
-| `npm run build`  | Build for production into `dist/`               |
-| `npm start`      | Run the production build                        |
+| Command          | What it does                                                   |
+| ---------------- | -------------------------------------------------------------- |
+| `npm run launch` | Start with hot reload (same as `npm run dev`)                  |
+| `npm run check`  | Typecheck, lint, format check and all the tests                |
+| `npm run build`  | Build for production into `dist/` (sets production `NODE_ENV`) |
+| `npm start`      | Run the production build                                       |
 
 Built with **Node.js** (built-in `node:sqlite`, so no database to set up), **Hono**, **React 19**,
 **Vite**, **xterm.js** and **node-pty** (optional, for terminals).
@@ -349,5 +398,5 @@ stand).
 
 <div align="center">
 <br>
-<sub>Made for people with too many side projects. ⭐ Star it if it helps you keep track of yours.</sub>
+<sub>Made for people running several coding agents across several projects. ⭐ Star it if it helps you keep your work together.</sub>
 </div>
