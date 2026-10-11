@@ -1166,7 +1166,7 @@ a.t:hover {
 }
 @keyframes pulse {
   50% {
-    opacity: 0.55;
+    opacity: 0.4;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2991,11 +2991,10 @@ span.path-link:hover .path-icon {
 }
 .status-dot.is-running {
   box-shadow: 0 0 0 0 var(--good, #0ca30c);
-  /* A gentle blink while the CLI works (owner request): the dot fades full ↔ 55%, with a soft
-     ring. */
+  /* A noticeable but calm blink while the CLI works (owner request): full ↔ 40%, with a ring. */
   animation:
-    activity-blink 1.8s ease-in-out infinite,
-    activity-pulse 1.8s ease-out infinite;
+    activity-blink 1.6s ease-in-out infinite,
+    activity-pulse 1.6s ease-out infinite;
 }
 .status-dot.is-idle {
   background: transparent !important;
@@ -3003,10 +3002,10 @@ span.path-link:hover .path-icon {
 }
 @keyframes activity-pulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good, #0ca30c) 35%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good, #0ca30c) 45%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 4px transparent;
+    box-shadow: 0 0 0 5px transparent;
   }
 }
 @keyframes activity-blink {
