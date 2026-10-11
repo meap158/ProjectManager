@@ -350,9 +350,6 @@ export function WorkspacePage() {
     >
       <div className="workspace-bar">
         <h1>Agents</h1>
-        <Link className="btn btn-sm workspace-orchestrator-link" to="/orchestrators">
-          Orchestrators
-        </Link>
         <div className="bar-group">
           <span className="bar-label" id="ws-view-label">
             View
