@@ -18,9 +18,16 @@ Situation inspection now selects scoped live workers, all finished unreviewed ru
 latest run for each active card in SQLite before decoding run payloads. Closed accepted
 history is excluded, and pending work is no longer hidden by the 100,000-row history cutoff.
 The latest-card lookup uses the existing `(card_id, id)` index. Review/status selection still
-needs indexes and response pagination; scheduler history reads remain unchanged. Database
+needs indexes and response pagination; planning history reads remain unchanged. Database
 regressions cover more than 100,000 accepted runs and service hydration selection. This is
 allocation/correctness evidence, not an end-to-end latency benchmark.
+
+Assignment reconciliation now loads narrow database rows linked to assigned claims or legacy
+dispatching cards, and recovers keyed insertions before collecting lifecycle rows. It preserves
+earliest legacy-run identity and explicit validation gates, while avoiding per-historical-run
+SQL updates and the 100,000-run cap. The waiting-card regression now observes one history
+read per tick instead of two. Planning snapshots and dispatch revalidation still load full
+history; replacing those requires preserving global occupancy and project fairness evidence.
 
 Completion is not yet proven for the full upgrade: task generations, broader crash testing,
 runtime/mobile verification and end-to-end efficiency benchmarks remain open. Historical

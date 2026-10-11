@@ -32,9 +32,15 @@ it('keeps live, all unreviewed and latest active-card runs without unrelated his
     run.run(8, 2, 3, 'queued', null, now);
     run.run(9, 2, 3, 'succeeded', 'accepted', now); // Latest context outside scope.
     // Old pending runs remain visible even beyond the previous 100,000-row cutoff.
-    db.exec('BEGIN');
-    for (let id = 10; id < 100011; id++) run.run(id, 1, 2, 'succeeded', 'accepted', now);
-    db.exec('COMMIT');
+    db.prepare(
+      `
+      WITH RECURSIVE history(id) AS (
+        SELECT 10 UNION ALL SELECT id + 1 FROM history WHERE id < 100010
+      )
+      INSERT INTO agent_runs (id, project_id, card_id, name, command_json, status, validation, created_at, log_path)
+      SELECT id, 1, 2, 'Worker', '[]', 'succeeded', 'accepted', ?, '' FROM history
+    `,
+    ).run(now);
     expect(situationRunIds(db, [1])).toEqual([7, 6, 5, 4]);
     expect(situationRunIds(db, [2])).toEqual([9, 8]);
     expect(situationRunIds(db)).toEqual([9, 8, 7, 6, 5, 4]);

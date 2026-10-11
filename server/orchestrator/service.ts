@@ -364,7 +364,7 @@ export class OrchestratorService {
     epoch: number,
     instanceId?: string,
   ) {
-    assignments.reconcile(this.supervisor.listAllRuns(100000));
+    assignments.reconcile();
     const providers = (await providerStatuses()).filter((p) => p.available).map((p) => p.id);
     if (!assignments.isLeaseValid(this.owner, epoch)) return;
     for (const initial of this.state().instances.filter(

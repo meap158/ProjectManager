@@ -2,6 +2,15 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Assignment recovery now reads only assigned-run identities and legacy dispatching-card
+  candidates from SQLite, after keyed insertion recovery. Scheduler no longer supplies a
+  100,000-run history snapshot to reconciliation. Legacy recovery chooses the earliest
+  eligible ID without sorting all history or issuing per-run no-op SQL updates. Same-pass
+  validated Todo release, pending-review reservation and oldest recovery beyond 100,000
+  newer unrelated runs are covered. All 50 Orchestrator tests pass; waiting-card checks now
+  perform one full-history read instead of two. Planning snapshots still need projections.
+  Large-history fixtures use SQL bulk inserts to reduce contention-related test timeouts.
+
 - Situation inspection selects only scoped live runs, all unreviewed finished runs, and the
   latest run per in-progress/review card before supervisor hydration. This removes historical
   command/prompt/change decoding and the old 100,000-row visibility cutoff. Existing card/run
@@ -10,7 +19,7 @@ _Current-state snapshot. Update it after every meaningful unit of work._
   older pending visibility and killed latest-run context. Service integration verifies no
   listAllRuns call. All 48 current Orchestrator tests pass. Full check passes types/lint but
   stops on formatting in concurrent AgentWorkList.interactions.test.tsx and Dropdown.test.tsx.
-  Scheduler snapshots/reconciliation still load history; no end-to-end latency claim is made.
+  Planning snapshots still load history; no end-to-end latency claim is made.
 
 - Orchestrators Quick runs now offers explicit pending-work inspection in the selected master/
   project scope. Project alerts can queue or run policy-controlled follow-ups; review, stalled

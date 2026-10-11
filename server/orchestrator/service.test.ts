@@ -50,7 +50,7 @@ describe('orchestrator service', () => {
     });
     try {
       await service.tick();
-      expect(listAllRuns).toHaveBeenCalledTimes(2);
+      expect(listAllRuns).toHaveBeenCalledTimes(1);
       expect(dispatchCard).not.toHaveBeenCalled();
       expect(service.state().events.filter((event) => event.action === 'review')).toHaveLength(100);
       const transitions = service.state().events;

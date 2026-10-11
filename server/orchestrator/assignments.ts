@@ -200,13 +200,15 @@ export class OrchestratorAssignments {
 
   /** Reconcile a crash between run creation and recording its id; recover orphan dispatches without blind redispatch. */
   reconcile(
-    runs: {
-      id: number;
-      cardId: number | null;
-      createdAt: string;
-      status?: string;
-      validation?: string | null;
-    }[],
+    runs:
+      | {
+          id: number;
+          cardId: number | null;
+          createdAt: string;
+          status?: string;
+          validation?: string | null;
+        }[]
+      | undefined = undefined,
     now = Date.now(),
   ) {
     // 1. Stable identity survives a crash after insertion but before acknowledgement.
@@ -219,14 +221,43 @@ export class OrchestratorAssignments {
       )
       .run(now);
 
-    // 2. Legacy timestamp fallback for runs without a dispatch_key
-    for (const run of [...runs].sort((a, b) => a.id - b.id)) {
-      if (run.cardId !== null)
-        this.db
-          .prepare(
-            "UPDATE orchestrator_assignments SET state = 'assigned', run_id = ?, updated_at = ? WHERE card_id = ? AND state = 'dispatching' AND dispatch_key IS NULL AND updated_at <= ?",
-          )
-          .run(run.id, now, run.cardId, Date.parse(run.createdAt));
+    // Read only identities needed for recovery; avoid decoding bounded run history.
+    runs ??= this.db
+      .prepare(
+        `
+        SELECT r.id, r.card_id AS cardId, r.created_at AS createdAt, r.status, r.validation
+        FROM orchestrator_assignments a JOIN agent_runs r ON r.id = a.run_id
+        WHERE a.state = 'assigned'
+        UNION
+        SELECT r.id, r.card_id AS cardId, r.created_at AS createdAt, r.status, r.validation
+        FROM orchestrator_assignments a JOIN agent_runs r ON r.card_id = a.card_id
+        WHERE a.state = 'dispatching' AND a.dispatch_key IS NULL
+      `,
+      )
+      .all() as NonNullable<typeof runs>;
+
+    // 2. Legacy timestamp fallback: preserve earliest eligible run identity without
+    // sorting or issuing a no-op SQL update for every historical run.
+    const legacy = this.db
+      .prepare(
+        "SELECT card_id, updated_at FROM orchestrator_assignments WHERE state = 'dispatching' AND dispatch_key IS NULL",
+      )
+      .all() as { card_id: number; updated_at: number }[];
+    const timestamps = new Map(legacy.map((claim) => [claim.card_id, claim.updated_at]));
+    const recovered = new Map<number, { id: number; at: number }>();
+    if (timestamps.size) {
+      for (const run of runs) {
+        if (run.cardId === null) continue;
+        const after = timestamps.get(run.cardId);
+        const at = Date.parse(run.createdAt);
+        if (after === undefined || !(at >= after)) continue;
+        if (run.id < (recovered.get(run.cardId)?.id ?? Infinity))
+          recovered.set(run.cardId, { id: run.id, at });
+      }
+      const update = this.db.prepare(
+        "UPDATE orchestrator_assignments SET state = 'assigned', run_id = ?, updated_at = ? WHERE card_id = ? AND state = 'dispatching' AND dispatch_key IS NULL AND updated_at <= ?",
+      );
+      for (const [cardId, run] of recovered) update.run(run.id, now, cardId, run.at);
     }
 
     // 3. Orphan dispatch recovery:
