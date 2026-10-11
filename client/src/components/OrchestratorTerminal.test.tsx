@@ -21,7 +21,7 @@ const session = {
   logBytes: 0,
 } as AgentSession;
 it('stops the master and refreshes its state only after success', async () => {
-  vi.mocked(api.stopSession).mockResolvedValue({ ...session, status: 'stopped' });
+  vi.mocked(api.stopSession).mockResolvedValue({ ...session, status: 'killed' });
   const refresh = vi.fn();
   render(<OrchestratorTerminal session={session} onChanged={refresh} />);
   fireEvent.click(screen.getByRole('button', { name: 'Stop Master' }));
