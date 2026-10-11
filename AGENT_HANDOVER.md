@@ -2,6 +2,12 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- New P0 audit finding: master chat dispatch_worker bypasses scheduler quota/provider/global
+  caps, review/claim reservation, durable dispatch identity and final canCommit fence. Initial
+  occupancy/scope checks occur before provider awaits. See ORCHESTRATOR_AUDIT.md for shared
+  guarded-dispatch design and concurrent/revision/quota/scope acceptance tests. Scheduler
+  evidence does not prove chat safety; implementation of this gap remains outstanding.
+
 - Dispatch passes the task project ID into Home context generation. New Todo tasks are
   absent from beingWorkedOn, so project identity could previously be missing and omit
   uncommitted/unpushed project alerts from worker context. Regression verifies selected

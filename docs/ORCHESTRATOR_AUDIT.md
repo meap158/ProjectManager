@@ -208,3 +208,33 @@ Resolve attention compares indexed run identities only for its follow-up cards b
 after the tick. Exact ID sets handle deletion/reuse correctly. OrchestratorService now has no
 full-history supervisor list calls; underlying query/index and runtime latency verification
 are still required, as are broader recovery and mobile acceptance gates.
+
+## Master chat dispatch policy gap (revalidated 2026-10-12)
+
+`server/orchestrator/chat.ts` now implements manual `dispatch_worker`. It validates initial
+project scope, configured provider membership/availability, scoped total/project occupancy,
+and existing live card workers. It then awaits provider discovery and calls supervisor
+`dispatchCard` without `dispatchKey`, `canCommit`, or the scheduler's one-attempt limit.
+It does not check provider occupancy, the global safety cap, quota freshness/reserve,
+unreviewed run reservation or persisted assignment claims. Concurrent calls can both pass
+initial occupancy and launch after policy/card changes. This is a distinct execution path
+and is not covered by the scheduler's commit-fence tests. Existing scheduler audit evidence
+must not be used to claim these guarantees for master chat.
+
+Priority P0: extract a shared guarded card-dispatch operation for scheduled and explicit chat
+requests. Keep manual intent distinct from scheduled enablement: an explicit user-directed
+chat action should have a documented policy for paused/Observe masters, while retaining
+scope, quota, capacity, review and permission controls. Do not silently toggle master mode.
+Persist a claim/idempotency identity before awaits and revalidate current task revision,
+project/provider policy, quota and live capacity immediately before insertion. Use one
+supervisor attempt so persisted retry policy governs recovery. Preserve custom instructions
+and record whether work was queued, launched or blocked with actionable reasons.
+
+Acceptance tests: two concurrent requests for the same card insert one run; a provider wait
+followed by scope/provider change, task edit, quota exhaustion or new competing workers
+inserts none; pending review and reserved claims block launch; global/provider caps include
+external workers; explicit manual-mode semantics do not alter master settings; repeated
+request identity reconciles its existing run; context includes the Todo task's project alerts.
+Provider/auth waits must not blindly retry or send input. Full suite and runtime verification
+remain required after implementing this shared path. This finding is an implementation
+review, not evidence that a duplicate worker has occurred in a live project.
