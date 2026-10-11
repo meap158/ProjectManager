@@ -418,6 +418,8 @@ export type AgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'ki
 
 export interface AgentRun {
   id: number;
+  /** Master that dispatched this run; independent of current assignment state. */
+  orchestratorId?: string | null;
   projectId: number;
   cardId: number | null;
   cardKey: string | null;

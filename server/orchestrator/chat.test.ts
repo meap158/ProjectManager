@@ -143,6 +143,7 @@ describe('orchestrator chat tools (PM-89)', () => {
       providerId: 'codex',
       maxAttempts: 1,
       dispatchKey: expect.any(String),
+      orchestratorId: 'master-1',
       canCommit: expect.any(Function),
       context: 'Instructions from the orchestrator:\nCheck the tests first',
     });

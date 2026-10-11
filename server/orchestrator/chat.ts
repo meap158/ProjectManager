@@ -562,6 +562,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
           providerId,
           ...(context ? { context } : {}),
           dispatchKey: intent.key,
+          orchestratorId,
           maxAttempts: 1,
           canCommit: () => {
             const allowed = check().allowed;

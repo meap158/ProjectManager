@@ -171,6 +171,21 @@ export const MIGRATIONS: string[] = [
   `ALTER TABLE agent_sessions ADD COLUMN orchestrator_id TEXT;`,
   // When you last sent the session a message (Enter or a pasted line), for the list sort (PM-94).
   `ALTER TABLE agent_sessions ADD COLUMN last_input_at TEXT;`,
+  // Narrow Orchestrator live/review projections and last-served project lookup (PM-64).
+  `CREATE INDEX agent_runs_live_projects ON agent_runs(project_id, id)
+    WHERE status IN ('running', 'queued');
+  CREATE INDEX agent_runs_pending_review ON agent_runs(project_id, id)
+    WHERE status IN ('succeeded', 'failed') AND validation IS NULL;
+  CREATE INDEX agent_runs_served_projects ON agent_runs(project_id, id)
+    WHERE card_id IS NOT NULL;`,
+  // Preserve master ownership independently of mutable assignment claims (PM-64).
+  `ALTER TABLE agent_runs ADD COLUMN orchestrator_id TEXT;
+  UPDATE agent_runs SET orchestrator_id = (
+    SELECT a.orchestrator_id FROM orchestrator_assignments a
+    WHERE a.run_id = agent_runs.id OR (a.dispatch_key IS NOT NULL AND a.dispatch_key = agent_runs.dispatch_key)
+    LIMIT 1
+  );
+  CREATE INDEX agent_runs_orchestrator ON agent_runs(orchestrator_id, id);`,
 ];
 
 export function openDb(dataDir: string): Db {

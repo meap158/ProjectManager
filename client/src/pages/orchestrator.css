@@ -684,3 +684,82 @@ dialog.orchestrator-form-dialog > .orchestrator-form-panel {
     min-height: 44px;
   }
 }
+
+/* One selected workspace keeps independent orchestrators clearly separated. */
+.orchestrator-workspace {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.orchestrator-picker {
+  display: grid;
+  gap: 6px;
+  position: sticky;
+  top: 64px;
+}
+.orchestrator-picker button {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+  padding: 12px;
+  min-height: 56px;
+  background: var(--surface-1);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+}
+.orchestrator-picker button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.orchestrator-picker button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.orchestrator-picker span {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.orchestrator-instances-list {
+  min-width: 0;
+}
+.orchestrator-owned-runs {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.orchestrator-owned-runs summary {
+  cursor: pointer;
+  min-height: 32px;
+  font-weight: 600;
+}
+@media (max-width: 768px) {
+  .orchestrator-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .orchestrator-picker {
+    position: static;
+    display: flex;
+    overflow-x: auto;
+    padding: 2px;
+  }
+  .orchestrator-picker button {
+    flex: 0 0 180px;
+  }
+  .orchestrator-instance {
+    padding: 12px;
+  }
+  .orchestrator-actions .btn {
+    min-height: 44px;
+  }
+  .orchestrator-scope-section-head {
+    flex-wrap: wrap;
+  }
+  .orchestrator-owned-runs summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+}

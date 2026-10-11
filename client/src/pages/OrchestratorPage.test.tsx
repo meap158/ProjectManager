@@ -794,3 +794,40 @@ it("asks an orchestrator's chat for a one-time check and links to it (PM-89)", a
   vi.mocked(api.orchestrators).mockReset();
   vi.mocked(api.orchestrators).mockImplementation(async () => ({ instances: [], events: [] }));
 });
+
+it('separates created orchestrators into selectable workspaces', async () => {
+  const base = {
+    enabled: false,
+    projectIds: [],
+    providers: ['codex'],
+    maxWorkers: 4,
+    maxWorkersPerProject: 1,
+    maxWorkersPerProvider: 2,
+    reservePercent: 10,
+    allowUnknownQuota: false,
+    quotaMaxAgeMs: 3600000,
+  };
+  vi.mocked(api.orchestrators).mockResolvedValue({
+    instances: [
+      { ...base, id: 'one', name: 'First workspace' },
+      { ...base, id: 'two', name: 'Second workspace' },
+    ],
+    events: [],
+  });
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  const chooser = await screen.findByRole('navigation', { name: 'Choose orchestrator' });
+  expect(screen.getByRole('heading', { name: 'First workspace' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Second workspace' })).toBeNull();
+  fireEvent.click(within(chooser).getByRole('button', { name: /Second workspace/ }));
+  expect(screen.getByRole('heading', { name: 'Second workspace' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'First workspace' })).toBeNull();
+  expect(
+    within(chooser)
+      .getByRole('button', { name: /Second workspace/ })
+      .getAttribute('aria-pressed'),
+  ).toBe('true');
+});

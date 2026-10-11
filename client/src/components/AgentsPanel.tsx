@@ -40,7 +40,9 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   const [sessions, setSessions] = useState<AgentSession[] | null>(
     () => sessionsCache.get(projectId)?.filter((s) => !s.orchestratorId) ?? null,
   );
-  const [runs, setRuns] = useState<AgentRun[] | null>(() => runsCache.get(projectId) ?? null);
+  const [runs, setRuns] = useState<AgentRun[] | null>(
+    () => runsCache.get(projectId)?.filter((r) => !r.orchestratorId) ?? null,
+  );
   const [selected, setSelectedState] = useState<WorkKey | null>(() => readSelection(projectId));
   // The selection is remembered per project (switching projects, reloads, restarts).
   const setSelected = useCallback(
@@ -62,7 +64,8 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   const load = useCallback(
     () =>
       Promise.all([api.listSessions(projectId), api.listRuns(projectId)]).then(
-        ([allSessions, r]) => {
+        ([allSessions, allRuns]) => {
+          const r = allRuns.filter((item) => !item.orchestratorId);
           const s = allSessions.filter((item) => !item.orchestratorId);
           sessionsCache.set(projectId, s);
           // Token counts come from Claude's own transcripts; other CLIs report none.

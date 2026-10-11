@@ -448,6 +448,7 @@ interface RunRow {
   log_path: string;
   autonomy: AgentAutonomy;
   changes_json: string | null;
+  orchestrator_id: string | null;
 }
 
 /** A working line counts only with output this recent (a busy CLI redraws its timer constantly). */
@@ -1322,6 +1323,7 @@ export class AgentSupervisor {
       maxAttempts?: number;
       autonomy?: AgentAutonomy;
       dispatchKey?: string;
+      orchestratorId?: string;
       /** Extra context for the default prompt (e.g. what the orchestrator knows, PM-70). */
       context?: string;
       /** Internal scheduler fence, evaluated synchronously immediately before insertion. */
@@ -1415,8 +1417,8 @@ export class AgentSupervisor {
         .prepare(
           `INSERT INTO agent_runs
              (project_id, card_id, name, provider_id, command_json, prompt, status,
-              attempts, max_attempts, created_at, log_path, autonomy, dispatch_key)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)`,
+              attempts, max_attempts, created_at, log_path, autonomy, dispatch_key, orchestrator_id)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           projectId,
@@ -1430,6 +1432,7 @@ export class AgentSupervisor {
           logPath,
           autonomy,
           input.dispatchKey ?? null,
+          input.orchestratorId ?? null,
         ).lastInsertRowid,
     );
     // Dispatching work starts it: backlog/todo cards move to In progress.
@@ -1487,8 +1490,8 @@ export class AgentSupervisor {
         .prepare(
           `INSERT INTO agent_runs
              (project_id, card_id, name, provider_id, command_json, prompt, status,
-              attempts, max_attempts, created_at, log_path, autonomy)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?)`,
+              attempts, max_attempts, created_at, log_path, autonomy, orchestrator_id)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)`,
         )
         .run(
           row.project_id,
@@ -1501,6 +1504,7 @@ export class AgentSupervisor {
           ts,
           logPath,
           row.autonomy,
+          row.orchestrator_id,
         ).lastInsertRowid,
     );
     const fresh = this.db
@@ -2493,6 +2497,7 @@ export class AgentSupervisor {
     }
     return {
       id: row.id,
+      orchestratorId: row.orchestrator_id ?? null,
       projectId: row.project_id,
       cardId: row.card_id,
       cardKey,

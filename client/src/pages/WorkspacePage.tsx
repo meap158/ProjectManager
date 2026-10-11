@@ -246,7 +246,7 @@ export function WorkspacePage() {
       return api.listAllRuns().then(
         (r) => {
           if (!active) return;
-          setRuns(r);
+          setRuns(r.filter((item) => !item.orchestratorId));
           setNow(Date.now());
         },
         (e: Error) => active && setError(e.message),
