@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { api } from '../api';
 import { OrchestratorPending } from '../components/OrchestratorPending';
 import { OrchestratorNextStep } from '../components/OrchestratorNextStep';
@@ -80,7 +80,12 @@ function formatEventTime(isoString: string): string {
 
 export function OrchestratorPage() {
   const [state, setState] = useState<OrchestratorState>({ instances: [], events: [] });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useSearchParams();
+  const requestedOwner = search.get('orchestrator');
+  const [selectedId, setSelectedId] = useState<string | null>(requestedOwner);
+  useEffect(() => {
+    if (requestedOwner) setSelectedId(requestedOwner);
+  }, [requestedOwner]);
   const selectedInstance =
     state.instances.find((item) => item.id === selectedId) ?? state.instances[0];
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -593,7 +598,18 @@ export function OrchestratorPage() {
                         onChanged={() => void perform(async () => undefined)}
                       />
 
-                      <details className="orchestrator-owned-runs">
+                      <details
+                        className="orchestrator-owned-runs"
+                        id={`orchestrator-runs-${instance.id}`}
+                        open={Boolean(
+                          search.get('run') &&
+                          runs.some(
+                            (run) =>
+                              run.orchestratorId === instance.id &&
+                              String(run.id) === search.get('run'),
+                          ),
+                        )}
+                      >
                         <summary>
                           Dispatched runs (
                           {runs.filter((run) => run.orchestratorId === instance.id).length})
@@ -736,7 +752,11 @@ export function OrchestratorPage() {
                                         </span>
                                         {runningRun && (
                                           <Link
-                                            to="/workspace"
+                                            to={
+                                              runningRun.orchestratorId
+                                                ? `/orchestrators?orchestrator=${runningRun.orchestratorId}&run=${runningRun.id}#orchestrator-runs-${runningRun.orchestratorId}`
+                                                : '/workspace'
+                                            }
                                             className="worker-action-link"
                                             title="Open terminal"
                                           >
@@ -814,7 +834,11 @@ export function OrchestratorPage() {
                                       Retry
                                     </button>
                                     <Link
-                                      to="/workspace"
+                                      to={
+                                        run.orchestratorId
+                                          ? `/orchestrators?orchestrator=${run.orchestratorId}&run=${run.id}#orchestrator-runs-${run.orchestratorId}`
+                                          : '/workspace'
+                                      }
                                       className="worker-action-link"
                                       title="Open terminal"
                                     >
