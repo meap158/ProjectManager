@@ -2522,26 +2522,24 @@ export class AgentSupervisor {
     const tail = this.logTail(row.log_path);
     const screen = tail ? tailState(tail) : null;
     if (screen === 'input') return 'input';
-    // The busy line's elapsed timer is the most reliable signal (PM-67): ticking = working,
-    // frozen = the turn stopped, whatever else changes on screen (typing in the input box
-    // produces output too, but never moves the timer).
     const fresh = !!lastOutputAt && Date.now() - Date.parse(lastOutputAt) < FRESH_OUTPUT_MS;
-    // Busy CLIs rewrite only the changing bits (spinner, timer digits): fresh output that is
-    // that animation means working. Checked first, since a full timer line left on screen may
-    // look frozen while its digits tick in place.
+    // 1. Busy CLIs rewrite only the changing bits (spinner frames, timer digits): fresh output
+    //    that is that animation means working (PM-67, PM-78).
     if (fresh && tail && animatingInTail(tail)) return 'running';
-    const timer = tail ? elapsedTimer(tail) : null;
-    const ticking = timerTicking(this.timers, row.id, timer);
-    if (ticking === true) return 'running';
-    if (ticking === false) return 'idle';
-    // Output that came right after your own keystrokes is their echo in the input box, not work:
-    // never let it read as "running" (the client would otherwise go by output recency).
+    // 2. Output right after your own keystrokes is their echo in the input box, not work.
     const key = this.lastKeystroke.get(row.id);
     const out = lastOutputAt ? Date.parse(lastOutputAt) : 0;
     if (fresh && key && out >= key - 250 && out - key <= ECHO_WINDOW_MS) {
       return turnState(row.id, lastOutputAt) === 'input' ? 'input' : 'idle';
     }
-    // First sighting of a timer (nothing to compare yet), or a busy line without one.
+    // 3. A full busy-line timer: moving means working. Frozen means stopped only when nothing
+    //    new is arriving: while output flows, the full line on screen goes stale as the CLI
+    //    rewrites just its digits, so it can look frozen while the real timer ticks.
+    const timer = tail ? elapsedTimer(tail) : null;
+    const ticking = timerTicking(this.timers, row.id, timer);
+    if (ticking === true) return 'running';
+    if (ticking === false && !fresh) return 'idle';
+    // 4. A busy line with fresh output (first sighting, or digits ticking in place).
     if (fresh && tail && workingInTail(tail)) return 'running';
     return turnState(row.id, lastOutputAt) ?? screen;
   }
