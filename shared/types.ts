@@ -386,6 +386,8 @@ export interface AgentSession {
   cardId: number | null;
   /** Set when this session is a master orchestrator's chat CLI (PM-89). */
   orchestratorId?: string | null;
+  /** When you last sent it a message (Enter or a pasted line); null if never (PM-94). */
+  lastInputAt?: string | null;
   cardKey: string | null;
   pid: number | null;
   status: AgentSessionStatus;

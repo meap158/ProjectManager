@@ -88,6 +88,13 @@ export function sessionFacts(s: AgentSession, now: number, usage?: AgentTokenUsa
     title: `First started ${formatDate(s.createdAt)}, ${new Date(s.createdAt).toLocaleTimeString()}`,
     minor: true,
   });
+  // What the list's default sort goes by (PM-94), so the order explains itself.
+  if (s.lastInputAt) {
+    facts.push({
+      text: `messaged ${formatRelative(s.lastInputAt)}`,
+      title: `You last sent it a message ${new Date(s.lastInputAt).toLocaleString()}`,
+    });
+  }
   if (s.restarts > 0) {
     facts.push({
       text: `${s.restarts} restart${s.restarts === 1 ? '' : 's'}`,

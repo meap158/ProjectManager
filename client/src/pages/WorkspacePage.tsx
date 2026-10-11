@@ -33,6 +33,7 @@ import {
   applyWorkFilters,
   useWorkFilters,
 } from '../components/WorkFilters';
+import { WorkSorter, sortWork, useWorkSort } from '../components/WorkSorter';
 import { readLastAgent, saveLastAgent } from '../lastAgent';
 import { isTerminalReport } from '../../../shared/terminalReports';
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
@@ -1255,6 +1256,7 @@ function WorkList({
   const [dockHeight, setDockHeight] = useState<number | null>(readDockHeight);
   const dockPanel = useRef<HTMLDivElement>(null);
   const [filters, setFilters] = useWorkFilters();
+  const [sort, setSort] = useWorkSort();
   const [dockMax, setDockMax] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const bulkButton = useRef<HTMLButtonElement>(null);
@@ -1325,7 +1327,7 @@ function WorkList({
     dockHeight ?? Math.round(dockPanel.current?.getBoundingClientRect().height ?? 400);
   if (!sessions || !runs) return <div className="skeleton" style={{ flex: 1 }} />;
   const allItems = mergeWork(sessions, runs);
-  const items = applyWorkFilters(allItems, filters, now);
+  const items = sortWork(applyWorkFilters(allItems, filters, now), sort, projectName);
   const visibleSessions = items.flatMap((w) => (w.kind === 'session' ? [w.item] : []));
   const liveSessions = visibleSessions.filter((s) => s.status === 'running');
   const bulk = async (targets: AgentSession[], action: 'stop' | 'restart' | 'delete') => {
@@ -1480,6 +1482,7 @@ function WorkList({
             projectNames={projectName}
           />
         )}
+        {allItems.length > 0 && <WorkSorter sort={sort} onChange={setSort} />}
         <span className="meta">
           {sessions.length} session{sessions.length === 1 ? '' : 's'} · {runs.length} run
           {runs.length === 1 ? '' : 's'}

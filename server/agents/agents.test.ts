@@ -245,6 +245,25 @@ describe('sessions', () => {
     await call('DELETE', `/agent-sessions/${session.id}`);
     expect(getSetting(testDb, key)).toBeNull();
   });
+
+  it('remembers when you last sent a message: Enter, not each keystroke (PM-94)', async () => {
+    const created = await call('POST', `/projects/${projectId}/agent-sessions`, {
+      command: [NODE, '-e', LONG],
+      terminal: 'pipe',
+      supervise: false,
+    });
+    const session = (await created.json()) as AgentSession;
+    const lastInput = async () =>
+      ((await (await call('GET', `/agent-sessions/${session.id}`)).json()) as AgentSession)
+        .lastInputAt;
+    expect(session.lastInputAt).toBeNull();
+    await call('POST', `/agent-sessions/${session.id}/input`, { data: 'fix the bug' });
+    await call('POST', `/agent-sessions/${session.id}/input`, { data: '\x1b[1;1R' });
+    expect(await lastInput()).toBeNull();
+    await call('POST', `/agent-sessions/${session.id}/input`, { data: '\r' });
+    expect(Date.parse((await lastInput())!)).toBeGreaterThan(Date.now() - 60_000);
+    await call('DELETE', `/agent-sessions/${session.id}`);
+  });
   it('runs a one-shot command and serves its output', async () => {
     const res = await call('POST', `/projects/${projectId}/agent-sessions`, {
       providerId: 'custom',

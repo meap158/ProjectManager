@@ -422,6 +422,8 @@ interface SessionRow {
   card_id: number | null;
   /** Set for an orchestrator's chat CLI (PM-89). */
   orchestrator_id: string | null;
+  /** When the user last sent it a message (PM-94). */
+  last_input_at: string | null;
 }
 
 interface RunRow {
@@ -820,6 +822,10 @@ export class AgentSupervisor {
     if (chosenName && !explicit && !provider.nameArg && RENAMABLE.has(providerId)) {
       setSetting(this.db, renameKey(id), chosenName);
     }
+    // A first prompt is the first message you sent it.
+    if (prompt.trim()) {
+      this.db.prepare('UPDATE agent_sessions SET last_input_at = ? WHERE id = ?').run(ts, id);
+    }
     // Starting work on a card moves it to In progress, like a dispatch does.
     if (card && (card.status === 'backlog' || card.status === 'todo')) {
       updateCard(this.db, card.id, { status: 'in_progress' });
@@ -918,6 +924,10 @@ export class AgentSupervisor {
     if (manual && !isTerminalReport(data)) this.cancelContinuation(id, 'Cancelled by manual input');
     // Typed keys come back as echo output; remembered so it isn't mistaken for work (PM-67).
     if (manual && !isTerminalReport(data)) this.lastKeystroke.set(id, Date.now());
+    // A message sent (Enter, or a paste ending a line), not each keystroke: the list sorts by it.
+    if (manual && !isTerminalReport(data) && /[\r\n]/.test(data)) {
+      this.db.prepare('UPDATE agent_sessions SET last_input_at = ? WHERE id = ?').run(now(), id);
+    }
     const live = this.live.get(`session:${id}`);
     if (live && live.proc.write(data)) return { queued: false, session: this.getSession(id) };
     // A terminal's automatic replies (focus, device attributes, cursor reports) mean nothing to
@@ -2454,6 +2464,7 @@ export class AgentSupervisor {
       cardId: row.card_id,
       cardKey: row.card_id ? (getCard(this.db, row.card_id)?.key ?? null) : null,
       orchestratorId: row.orchestrator_id ?? null,
+      lastInputAt: row.last_input_at ?? null,
       pid: live?.proc.pid ?? row.pid,
       status: live ? 'running' : row.status,
       exitCode: row.exit_code,
