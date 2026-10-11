@@ -2,6 +2,7 @@
 import { Link } from 'react-router';
 import { api } from '../api';
 import { OrchestratorPending } from '../components/OrchestratorPending';
+import { OrchestratorNextStep } from '../components/OrchestratorNextStep';
 import { Dropdown } from '../components/Dropdown';
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { PROVIDER_LABELS } from '../components/icons';
@@ -924,6 +925,7 @@ export function OrchestratorPage() {
                                 </span>
                               )}
                               <span className="plan-decision-reason">{d.reason}</span>
+                              <OrchestratorNextStep decision={d} />
                               {d.providerBlockers?.length ? (
                                 <ul>
                                   {d.providerBlockers.map((blocker) => (

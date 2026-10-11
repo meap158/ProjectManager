@@ -283,3 +283,10 @@ Full regression run after the portable recovery harness: `npm test -- --maxWorke
 passes 451 tests across 93 files (123.53 seconds on this host). This independently reaches the
 full test gate even though `npm run check` still stops earlier on concurrent UI formatting.
 No physical-browser/provider-runtime claims are inferred from the regression result.
+
+Queue preview now renders next-step guidance for typed waiting reasons. Review/live/project
+capacity links open that project's Agents tab; global/provider capacity opens all Agents;
+quota guidance requests fresh verification and links usage; unavailable CLIs link Settings;
+cooldown links the task. Ready decisions add no extra guidance. Four component tests and
+thirteen page tests pass. This is navigation/explanation, not automatic recovery or a retry
+budget reset; physical mobile verification and classified runtime failures remain open.
