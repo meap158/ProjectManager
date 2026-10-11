@@ -217,3 +217,27 @@ describe('card keys', () => {
     await waitForScan(call, created.id);
   });
 });
+
+describe('pull request actions API', () => {
+  // Every case here is refused by validation before gh could run, so no real PR is touched.
+  it('validates the PR number, the action and the list state before running gh', async () => {
+    const { call } = setup();
+    const created = (await (await call('POST', '/projects', { path: dir })).json()) as {
+      id: number;
+    };
+    const url = (n: string) => `/projects/${created.id}/pull-requests/${n}/actions`;
+    for (const bad of ['0', '-1', '1.5', '1e3', '0x10', 'abc', '99999999999'])
+      expect((await call('POST', url(bad), { action: 'ready' })).status).toBe(400);
+    expect((await call('POST', url('3'), { action: 'merge', method: 'octopus' })).status).toBe(400);
+    expect((await call('POST', url('3'), { action: 'force-push' })).status).toBe(400);
+    const injected = { action: 'merge', method: 'squash', headOid: 'main; rm' };
+    expect((await call('POST', url('3'), injected)).status).toBe(400);
+    const listAll = await call('GET', `/projects/${created.id}/pull-requests?state=all`);
+    expect(listAll.status).toBe(400);
+    const missing = await call('POST', '/projects/999999/pull-requests/3/actions', {
+      action: 'ready',
+    });
+    expect(missing.status).toBe(404);
+    await waitForScan(call, created.id);
+  });
+});

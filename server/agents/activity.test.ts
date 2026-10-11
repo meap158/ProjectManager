@@ -179,6 +179,12 @@ describe('busy animation in the newest output (PM-67)', () => {
       ),
     ).toBe(true);
     expect(animatingInTail('h•0◦4•◦5•6◦•7◦•8◦9•◦')).toBe(true);
+    // Hyphenated spinner word, frames interleaved with the /goal footer (real tail, PM-78).
+    expect(
+      animatingInTail(
+        '6m)*Fiddle-faddling…✶◎ /goal active (26m)6✻Fiddle-faddling…◎ /goal active (26m)✽Fiddle-faddling…',
+      ),
+    ).toBe(true);
     expect(animatingInTail('unter Strike | TiemNet•11◦•22◦33•◦44•')).toBe(true);
   });
 

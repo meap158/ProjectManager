@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
 
 function TrashIcon() {
   return (
@@ -19,6 +19,8 @@ function TrashIcon() {
  * Standard destructive action: a danger button that opens a confirmation dialog naming what will
  * happen ("Delete card PM-1?"), with Cancel (focused) and a red confirm button. Pass `text` for a
  * labelled button; without it the button is icon-only and `label` is its tooltip/accessible name.
+ * Other consequential actions (merging a pull request) reuse it with `tone="primary"` and their
+ * own `icon` (null for none), so every confirmation in the app looks and behaves the same.
  */
 export function ConfirmDelete({
   label,
@@ -27,6 +29,10 @@ export function ConfirmDelete({
   message,
   confirmLabel = 'Delete',
   onConfirm,
+  tone = 'danger',
+  icon,
+  small,
+  disabled,
 }: {
   label: string;
   text?: string;
@@ -34,6 +40,12 @@ export function ConfirmDelete({
   message: string;
   confirmLabel?: string;
   onConfirm: () => void | Promise<void>;
+  /** primary: an accent button and confirm, for actions that aren't deletions (merge). */
+  tone?: 'danger' | 'primary';
+  /** Replaces the trash icon; null shows none. */
+  icon?: ReactNode;
+  small?: boolean;
+  disabled?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -54,7 +66,8 @@ export function ConfirmDelete({
     <>
       <button
         type="button"
-        className={`btn btn-danger${text ? '' : ' btn-icon'}`}
+        className={`btn ${tone === 'primary' ? 'btn-primary' : 'btn-danger'}${text ? '' : ' btn-icon'}${small ? ' btn-sm' : ''}`}
+        disabled={disabled}
         title={label}
         aria-label={text ? undefined : label}
         onClick={() => {
@@ -62,7 +75,7 @@ export function ConfirmDelete({
           cancelRef.current?.focus();
         }}
       >
-        <TrashIcon />
+        {icon === undefined ? <TrashIcon /> : icon}
         {text}
       </button>
       <dialog
@@ -90,7 +103,7 @@ export function ConfirmDelete({
             </button>
             <button
               type="button"
-              className="btn btn-danger-solid"
+              className={`btn ${tone === 'primary' ? 'btn-primary' : 'btn-danger-solid'}`}
               disabled={busy}
               onClick={confirm}
             >

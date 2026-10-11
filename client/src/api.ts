@@ -23,6 +23,9 @@ import type {
   CardWithProject,
   DirectoryListing,
   ProjectDetail,
+  PullRequestAction,
+  PullRequestActionResult,
+  PullRequestListState,
   PullRequestsResult,
   ProjectSummary,
   WorkspaceLayout,
@@ -93,7 +96,14 @@ export const api = {
       kinds,
     }),
   agentLimits: () => request<ProviderLimits[]>('GET', '/agent-limits'),
-  pullRequests: (id: number) => request<PullRequestsResult>('GET', `/projects/${id}/pull-requests`),
+  pullRequests: (id: number, state: PullRequestListState = 'open') =>
+    request<PullRequestsResult>('GET', `/projects/${id}/pull-requests?state=${state}`),
+  pullRequestAction: (id: number, number: number, action: PullRequestAction) =>
+    request<PullRequestActionResult>(
+      'POST',
+      `/projects/${id}/pull-requests/${number}/actions`,
+      action,
+    ),
   listProjects: () => request<ProjectSummary[]>('GET', '/projects'),
   getProject: (id: number) => request<ProjectDetail>('GET', `/projects/${id}`),
   addProject: (path: string, name?: string) =>

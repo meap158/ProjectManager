@@ -24,7 +24,7 @@ anything.
 | `server/db.ts`            | `node:sqlite` connection + **append-only** migrations (`PRAGMA user_version`)     |
 | `server/boardMcp.ts`      | Scoped agent board tools, process config injection and audit records              |
 | `scripts/board-mcp.mjs`   | MCP stdio bridge to the live local server                                         |
-| `server/pullRequests.ts`  | gh-backed open pull requests for a project                                        |
+| `server/pullRequests.ts`  | gh-backed pull requests for a project: list, mergeability, and PR actions         |
 | `server/scanner.ts`       | Background scans; cards auto-move from commits, branches and PRs (no agent)       |
 | `server/analysis/*`       | Pure-ish analysis: line counter, languages, file listing, disk walk, git, scc     |
 | `server/agents/*`         | AI agent providers, run/session supervisor, agent API routes                      |
@@ -49,7 +49,10 @@ anything.
   code (retired after 5 wrong tries) and then carry their own hashed device token, this machine's
   own LAN addresses only as Host, rate-limited sign-ins, and LAN settings refused from LAN clients. Never weaken that gate or bind the main server wider.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
-  the user explicitly starts may change project files.
+  the user explicitly starts may change project files. The one other exception is a pull request
+  action the user confirms in the Pull requests tab: it may delete the PR's _local_ branch, and only
+  when that branch is not checked out and points exactly at the PR head. Never use gh's own
+  `--delete-branch` (it switches the project's checkout).
 - **DB changes** go in a new migration appended to `MIGRATIONS` in `server/db.ts`. Never edit a
   migration that has shipped: real databases have already run the old text (this happened once, and
   `repairSchema()` exists to clean up after it).

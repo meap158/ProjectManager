@@ -4272,6 +4272,85 @@ span.path-link:hover .path-icon {
   margin: 0;
   font-size: 12.5px;
 }
+/* Merge readiness pill per row: good = ready, warn = waiting/behind, bad = conflicts/failing. */
+.pr-pill-good {
+  --pill: var(--good);
+}
+.pr-pill-merged {
+  --pill: var(--accent);
+}
+.pr-pill-warn {
+  --pill: var(--series-4);
+}
+.pr-pill-bad,
+.pr-pill-closed {
+  --pill: var(--danger);
+}
+.pr-pill-neutral {
+  --pill: var(--status-backlog);
+}
+.pr-text-bad {
+  color: var(--danger);
+}
+.pr-table td .badge {
+  margin-left: 6px;
+}
+/* A row's actions open in a full-width row under it: GitHub's merge box, in rows of controls. */
+.pr-details-row > td {
+  background: var(--surface-2);
+}
+.pr-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+  white-space: normal;
+}
+.pr-merge-status {
+  margin: 0;
+}
+.pr-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.pr-check-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  font-size: 12.5px;
+}
+.pr-check-option input {
+  accent-color: var(--accent);
+}
+.pr-checks summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.pr-checks ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.pr-check-pass {
+  background: color-mix(in srgb, var(--good) 16%, var(--surface));
+  color: var(--text);
+}
+.pr-check-fail {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.pr-check-pending {
+  background: color-mix(in srgb, var(--series-4) 16%, var(--surface));
+  color: var(--text);
+}
 
 /* Settings → Agent CLIs: plan usage meters (PM-17), one line per window under the CLI's name. */
 .usage-limits {

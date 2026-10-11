@@ -237,7 +237,8 @@ adjacent-pair CVD separation in both modes).
 - **Destructive actions:** `ConfirmDelete` (`components/ConfirmDelete.tsx`): a danger button
   (icon-only in dense rows, labelled elsewhere) opens a small confirmation dialog that names the
   action and its consequence ("Stop tracking X? … Files on disk are not touched."), with Cancel
-  focused and a solid red confirm. Esc cancels.
+  focused and a solid red confirm. Esc cancels. Other consequential actions that aren't deletions
+  (merging a pull request) use the same component with `tone="primary"` and `icon={null}`.
 - **Standard web conventions** over platform-flavoured controls: labelled menu buttons instead
   of tiny segmented icon switches, text-labelled confirmations instead of icon-only morphing
   widgets, plain lists/charts instead of decorative pills.
@@ -690,6 +691,14 @@ Sessions are never lost unless you stop or delete them (owner requirement, Resea
 - Pull requests is a remembered project tab. Fetch on first opening, explicit Refresh thereafter;
   preserve loaded rows during refresh. List open PR title/link, author, branches, draft/review state
   and update date. Missing gh/auth/non-GitHub errors appear inside the panel.
+- (Oct 11) The tab acts on PRs like GitHub's page. An Open/Closed segmented switch; each row shows a
+  merge-readiness `status-pill` (Ready to merge, Mergeable, Behind base, Blocked, Conflicts, Draft,
+  Merged, Closed) and a checks summary. "Actions" expands a full-width row: the reason it can or
+  can't merge, the checks list, a merge-method `Dropdown` (methods the repo disallows are disabled),
+  delete-branch and admin-bypass checkboxes, Merge / Enable auto-merge / Update branch, Ready or
+  Convert to draft, Close, and Open on GitHub. Closed rows offer Reopen, Delete branch and Restore
+  branch. Merge, close and delete confirm in a `ConfirmDelete` dialog; gh's stderr shows inline in
+  the row, a success notice above the table, and the list refreshes after every action.
 - Agent board tools are scoped to the owner's assigned card. add_note appends evidence; status
   changes and notes have a persistent audit visible through Agent board history. Native MCP image
   reads avoid relying on browser-terminal clipboard emulation.

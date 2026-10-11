@@ -153,7 +153,8 @@ export function elapsedTimer(logTail: string): { seconds: number; step: number }
  */
 export function animatingInTail(logTail: string): boolean {
   const end = stripTerminal(logTail).slice(-300);
-  const spinnerWords = end.match(/[✻✶✢✽✳·*]\s*\p{L}+…/gu)?.length ?? 0;
+  // Spinner words can be hyphenated or have apostrophes ("Fiddle-faddling…", "Rock'n'rolling…").
+  const spinnerWords = end.match(/[✻✶✢✽✳·*]\s*\p{L}[\p{L}'’-]*…/gu)?.length ?? 0;
   return spinnerWords >= 2 || /(?:\d{1,2}\s*[•◦]+\s*){3,}/.test(end);
 }
 
