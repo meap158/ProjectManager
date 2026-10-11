@@ -5706,3 +5706,87 @@ span.path-link:hover .path-icon {
     gap: 4px;
   }
 }
+
+/* Phone Agents layout (PM-62), last so it settles the earlier phone rules.
+   Filters: status + Filters toggle on one row; when expanded, agent / project / kind side by side,
+   then search with an inline Clear. (The extras sit in .work-filter-extras, so rules aimed at
+   direct children of .work-filters never reached them.)
+   Rows: two lines instead of three: identity, then state word, facts (cut with "…") and the
+   actions at the right, still 40px touch targets. */
+@media (max-width: 768px) {
+  .workspace .work-filters.is-expanded {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .workspace .work-filters.is-expanded .work-filter-toggle {
+    width: auto;
+    justify-self: end;
+  }
+  .workspace .work-filters.is-expanded .work-filter-extras {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+    gap: 6px;
+  }
+  .workspace .work-filters.is-expanded .work-filter-extras > .dropdown {
+    min-width: 0;
+  }
+  .workspace .work-filters.is-expanded .work-filter-extras .dropdown-trigger {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .workspace .work-filters.is-expanded .work-filter-extras > .work-search {
+    grid-column: 1 / -1;
+  }
+  .workspace .work-filters.is-expanded .work-filter-extras:has(> .link-button) > .work-search {
+    grid-column: 1 / 3;
+  }
+  .workspace .work-filters.is-expanded .work-filter-extras > .link-button {
+    grid-column: 3;
+    justify-self: end;
+    padding: 0 4px;
+    white-space: nowrap;
+  }
+
+  .work-list > li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 2px;
+    padding: 6px 0;
+  }
+  .work-list .work-row,
+  .work-list .work-side {
+    display: contents;
+  }
+  .work-list .work-line {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .work-list .work-state {
+    grid-column: 1;
+    grid-row: 2;
+    padding-left: 16px;
+    white-space: nowrap;
+  }
+  .work-list .work-facts {
+    grid-column: 2;
+    grid-row: 2;
+    display: block;
+    min-width: 0;
+    padding-left: 0;
+    clip-path: none;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .work-list .work-facts > span {
+    margin-right: 10px;
+  }
+  .work-list .work-actions {
+    grid-column: 3;
+    grid-row: 2;
+  }
+}

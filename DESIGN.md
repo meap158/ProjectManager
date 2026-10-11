@@ -554,6 +554,10 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   pane headers. A header shows a status dot, the session name, project link and card link, plus
   stop/start, maximise (also by double-clicking the header) and remove-from-layout. Removing a
   pane never kills the session.
+- **Agents on a phone** (PM-62): the filter bar is one row (status picker, Filters toggle);
+  expanded, agent / project / kind sit side by side in three columns, then search with an inline
+  Clear. Each work row is two lines: identity (dot, agent, name, project), then the state word,
+  the facts (one line, cut with "…") and the actions at the right (40px targets).
 - **Closing an empty pane** (`closeEmptyPane`, PM-63): an empty pane's header has
   "Show a session here" on the left and ✕ at the far right. It removes that pane and steps the
   layout down one size (2×2 → three columns → two → one), keeping every session in order. No ✕
