@@ -9,7 +9,7 @@ chronological findings later in this document preserve earlier implementation ev
 | Controls and convenience | Scoped Check now, paged read-only preview, pending-work queue/run actions, card/worker links, Pause/Observe/Autonomous modes, manual chat tools                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                |
 | Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Commit coordinated partial-index migration; measure whole API/tick and index write cost; versioned summary and situation pagination |
 | Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                    |
-| Evaluation               | 62 Orchestrator tests passed before the final additional refund test; 14 chat/intent tests then passed; server types and targeted lint passed                                                               | Current full-suite completion, live runtime/mobile checks, end-to-end latency and completion metrics                                |
+| Evaluation               | 66 Orchestrator tests pass, including process-boundary recovery; server types and targeted lint passed                                                                                                      | Current full-suite completion, live runtime/mobile checks, end-to-end latency and completion metrics                                |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -259,3 +259,17 @@ only the current keyed claim, refunds that attempt and applies no cooldown. Ordi
 preparation failures retain the existing cooldown/budget behavior. Tests verify immediate dispatch
 of edited instructions, one refund only, replacement-owner fencing and no refund after run
 insertion. This does not add automatic retries or classify authentication/provider failures.
+
+## Process-boundary recovery evidence (2026-10-12)
+
+`processRecovery.test.ts` starts a separate Node process against a temporary file-backed
+SQLite database and exits without closing the database at three dispatch boundaries.
+Before claim: no reservation exists and a fresh claim is possible. After claim but before
+insertion: expiry produces the existing bounded cooldown with one attempt consumed.
+After keyed run insertion but before acknowledgement: reopening and repeated reconciliation
+recover that exact run, retain its assignment and refuse a competing claim; run count stays one.
+All three cases pass. No live database, terminal, master setting or worker input is touched.
+
+This verifies persisted reservation/assignment transitions across process exit, not the full
+supervisor/provider lifecycle. Remaining runtime drills need an isolated fake worker executable,
+actual supervisor insertion/spawn, competing process ownership and request replay identity.
