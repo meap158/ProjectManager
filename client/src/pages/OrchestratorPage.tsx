@@ -15,6 +15,8 @@ import type { OrchestratorConfig, OrchestratorState } from '../../../shared/orch
 import { projectAttention } from '../../../shared/projectAttention';
 import './orchestrator.css';
 import { serialPoll } from '../lib/serialPoll';
+import { OrchestratorChat } from '../components/OrchestratorChat';
+import { collapseButtonProps, useCollapsed } from '../useCollapsed';
 
 const defaults: Omit<OrchestratorConfig, 'id'> = {
   name: 'Master orchestrator',
@@ -80,6 +82,8 @@ export function OrchestratorPage() {
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [inFlightCards, setInFlightCards] = useState<CardWithProject[]>([]);
+  // Collapsed masters and panels (PM-90), remembered in this browser.
+  const { isCollapsed, toggle } = useCollapsed('pm.orchestrator.collapsed');
   const [draft, setDraft] = useState<Omit<OrchestratorConfig, 'id'> & { id?: string }>(defaults);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
@@ -251,8 +255,19 @@ export function OrchestratorPage() {
       )}
 
       {state.instances.length > 0 && quickMaster && (
-        <section className="panel orchestrator-quick-actions" aria-labelledby="quick-runs-heading">
-          <h2 id="quick-runs-heading">Quick runs</h2>
+        <section
+          className="panel orchestrator-quick-actions"
+          aria-labelledby="quick-runs-heading"
+          data-collapsed={isCollapsed('quick-runs') || undefined}
+        >
+          <div className="orchestrator-panel-head">
+            <button
+              {...collapseButtonProps('Quick runs', isCollapsed('quick-runs'), () =>
+                toggle('quick-runs'),
+              )}
+            />
+            <h2 id="quick-runs-heading">Quick runs</h2>
+          </div>
           <div className="orchestrator-quick-controls">
             <div className="orchestrator-quick-field">
               <label htmlFor="quick-master">Master</label>
@@ -447,8 +462,21 @@ export function OrchestratorPage() {
                   (r.status === 'running' || r.status === 'queued'),
               );
               const activeSessions = sessions.filter(
-                (s) => scopedProjectIds.has(s.projectId) && s.status === 'running',
+                (s) =>
+                  scopedProjectIds.has(s.projectId) && s.status === 'running' && !s.orchestratorId,
               );
+              const chatSession =
+                sessions
+                  .filter((s) => s.orchestratorId === instance.id)
+                  .sort((a, b) => b.id - a.id)[0] ?? null;
+              const collapsed = isCollapsed(instance.id);
+              const section = (key: string) => ({
+                collapsed: isCollapsed(`${instance.id}:${key}`),
+                toggle: () => toggle(`${instance.id}:${key}`),
+              });
+              const progressSection = section('progress');
+              const attentionSection = section('attention');
+              const workSection = section('work');
               const scopedInFlightCards = inFlightCards.filter((c) =>
                 scopedProjectIds.has(c.projectId),
               );
@@ -476,9 +504,18 @@ export function OrchestratorPage() {
               ).length;
 
               return (
-                <article className="orchestrator-instance" key={instance.id}>
+                <article
+                  className="orchestrator-instance"
+                  key={instance.id}
+                  data-collapsed={collapsed || undefined}
+                >
                   <div className="orchestrator-instance-head">
                     <div className="orchestrator-instance-title">
+                      <button
+                        {...collapseButtonProps(instance.name, collapsed, () =>
+                          toggle(instance.id),
+                        )}
+                      />
                       <span
                         className={`orchestrator-status-dot ${instance.enabled ? 'active' : ''}`}
                         title={instance.enabled ? 'Master is running' : 'Master is paused'}
@@ -602,6 +639,20 @@ export function OrchestratorPage() {
                       </span>
                     )}
                   </div>
+
+                  {collapsed && (
+                    <p className="orchestrator-instance-summary">
+                      {todoCount} to do · {inProgressCount} in progress · {reviewCount} review ·{' '}
+                      {totalAttentionCount} need attention · {liveWorkersCount} live worker
+                      {liveWorkersCount === 1 ? '' : 's'}
+                    </p>
+                  )}
+                  <OrchestratorChat
+                    instance={instance}
+                    session={chatSession}
+                    disabled={busy}
+                    onChanged={() => void perform(async () => undefined)}
+                  />
 
                   {preview?.id === instance.id && (
                     <section className="orchestrator-plan-preview" aria-label="Plan preview">
@@ -751,9 +802,21 @@ export function OrchestratorPage() {
                   )}
 
                   {/* Board progress summary in scope */}
-                  <div className="orchestrator-scope-section">
+                  <div
+                    className="orchestrator-scope-section"
+                    data-collapsed={progressSection.collapsed || undefined}
+                  >
                     <div className="orchestrator-scope-section-head">
-                      <span className="orchestrator-subheading">Scope Board Progress</span>
+                      <div className="orchestrator-section-title-group">
+                        <button
+                          {...collapseButtonProps(
+                            'Scope board progress',
+                            progressSection.collapsed,
+                            progressSection.toggle,
+                          )}
+                        />
+                        <span className="orchestrator-subheading">Scope Board Progress</span>
+                      </div>
                       <Link
                         to={
                           instance.projectIds.length === 1
@@ -825,9 +888,19 @@ export function OrchestratorPage() {
                   </div>
 
                   {/* Needs Attention queue in scope */}
-                  <div className="orchestrator-scope-section orchestrator-attention-section">
+                  <div
+                    className="orchestrator-scope-section orchestrator-attention-section"
+                    data-collapsed={attentionSection.collapsed || undefined}
+                  >
                     <div className="orchestrator-scope-section-head">
                       <div className="orchestrator-section-title-group">
+                        <button
+                          {...collapseButtonProps(
+                            'Needs attention',
+                            attentionSection.collapsed,
+                            attentionSection.toggle,
+                          )}
+                        />
                         <span
                           className={`orchestrator-pulse-dot ${totalAttentionCount > 0 ? 'warning' : 'clean'}`}
                           aria-hidden="true"
@@ -1014,9 +1087,19 @@ export function OrchestratorPage() {
                   </div>
 
                   {/* Being worked on in scope */}
-                  <div className="orchestrator-scope-section">
+                  <div
+                    className="orchestrator-scope-section"
+                    data-collapsed={workSection.collapsed || undefined}
+                  >
                     <div className="orchestrator-scope-section-head">
                       <div className="orchestrator-section-title-group">
+                        <button
+                          {...collapseButtonProps(
+                            'Being worked on',
+                            workSection.collapsed,
+                            workSection.toggle,
+                          )}
+                        />
                         <span
                           className={`orchestrator-pulse-dot ${totalBeingWorkedOnCount > 0 ? 'pulse' : ''}`}
                           aria-hidden="true"
@@ -1409,9 +1492,17 @@ export function OrchestratorPage() {
           </section>
         </OrchestratorFormShell>
       )}
-      <section className="panel orchestrator-history-panel">
+      <section
+        className="panel orchestrator-history-panel"
+        data-collapsed={isCollapsed('history') || undefined}
+      >
         <div className="orchestrator-history-header">
           <div className="orchestrator-history-title">
+            <button
+              {...collapseButtonProps('Decision history', isCollapsed('history'), () =>
+                toggle('history'),
+              )}
+            />
             <h2>Decision history</h2>
             {allCount > 0 && <span className="badge">{allCount}</span>}
           </div>

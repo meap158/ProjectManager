@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { api } from '../api';
@@ -29,6 +29,8 @@ vi.mock('../api', () => ({
     listAllSessions: vi.fn(async () => []),
     listCardsInFlight: vi.fn(async () => []),
     previewOrchestrator: vi.fn(),
+    openOrchestratorChat: vi.fn(async () => ({ id: 41 })),
+    checkOrchestrator: vi.fn(async () => ({ id: 41 })),
   },
 }));
 beforeAll(() => {
@@ -337,14 +339,16 @@ it('renders scope board progress summary and live workers with direct links', as
   // Scope board progress summary
   expect(await screen.findByText('Scope Board Progress')).toBeDefined();
   expect(screen.getByText('View board →')).toBeDefined();
-  expect(screen.getByText('To do')).toBeDefined();
-  expect(screen.getByText('3')).toBeDefined();
-  expect(screen.getByText('In progress')).toBeDefined();
-  expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText('Review')).toBeDefined();
-  expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText('Done')).toBeDefined();
-  expect(screen.getByText('5')).toBeDefined();
+  // The chat's one-time check buttons share these labels: look inside the stats.
+  const stats = within(document.querySelector<HTMLElement>('.orchestrator-scope-stats')!);
+  expect(stats.getByText('To do')).toBeDefined();
+  expect(stats.getByText('3')).toBeDefined();
+  expect(stats.getByText('In progress')).toBeDefined();
+  expect(stats.getAllByText('2').length).toBeGreaterThanOrEqual(1);
+  expect(stats.getByText('Review')).toBeDefined();
+  expect(stats.getAllByText('1').length).toBeGreaterThanOrEqual(1);
+  expect(stats.getByText('Done')).toBeDefined();
+  expect(stats.getByText('5')).toBeDefined();
 
   // Being worked on
   expect(screen.getByText('Being worked on')).toBeDefined();
@@ -724,3 +728,75 @@ it.each([true, false])(
     expect(screen.queryByRole('region', { name: 'Action result' })).toBeNull();
   },
 );
+
+const master = {
+  id: 'm1',
+  name: 'Games',
+  enabled: true,
+  strategy: 'autonomous' as const,
+  projectIds: [1],
+  providers: ['claude'],
+  maxWorkers: 2,
+  maxWorkersPerProject: 1,
+  maxWorkersPerProvider: 2,
+  reservePercent: 10,
+  allowUnknownQuota: false,
+  quotaMaxAgeMs: 3600000,
+};
+
+it('collapses a master to its heading and a summary, and remembers it (PM-90)', async () => {
+  localStorage.clear();
+  vi.mocked(api.orchestrators).mockResolvedValue({ instances: [master], events: [] });
+  const view = render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  const toggle = await screen.findByRole('button', { name: 'Collapse Games' });
+  const article = toggle.closest('article')!;
+  expect(article.hasAttribute('data-collapsed')).toBe(false);
+  fireEvent.click(toggle);
+  expect(article.hasAttribute('data-collapsed')).toBe(true);
+  expect(screen.getByRole('button', { name: 'Expand Games' }).getAttribute('aria-expanded')).toBe(
+    'false',
+  );
+  expect(article.querySelector('.orchestrator-instance-summary')?.textContent).toMatch(
+    /to do · .* in progress · .* review/,
+  );
+  // Sections collapse on their own too.
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse Needs attention' }));
+  expect(
+    screen
+      .getByRole('button', { name: 'Expand Needs attention' })
+      .closest('.orchestrator-scope-section')!
+      .hasAttribute('data-collapsed'),
+  ).toBe(true);
+  view.unmount();
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  expect(await screen.findByRole('button', { name: 'Expand Games' })).toBeDefined();
+  localStorage.clear();
+  vi.mocked(api.orchestrators).mockReset();
+  vi.mocked(api.orchestrators).mockImplementation(async () => ({ instances: [], events: [] }));
+});
+
+it("asks the master's chat for a one-time check and links to it (PM-89)", async () => {
+  vi.mocked(api.orchestrators).mockResolvedValue({ instances: [master], events: [] });
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  expect(await screen.findByText('Chat with this master')).toBeDefined();
+  expect(screen.getByText('Not started yet')).toBeDefined();
+  const checks = within(screen.getByRole('group', { name: 'One-time check' }));
+  fireEvent.click(checks.getByRole('button', { name: 'In progress' }));
+  await waitFor(() => expect(api.checkOrchestrator).toHaveBeenCalledWith('m1', 'in_progress'));
+  const link = await screen.findByRole('link', { name: 'Watch it work →' });
+  expect(link.getAttribute('href')).toBe('/workspace?open=41');
+  vi.mocked(api.orchestrators).mockReset();
+  vi.mocked(api.orchestrators).mockImplementation(async () => ({ instances: [], events: [] }));
+});

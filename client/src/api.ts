@@ -73,6 +73,12 @@ export const api = {
     ),
   clearOrchestratorEvents: () => request<OrchestratorState>('DELETE', '/orchestrators/events'),
   deleteOrchestrator: (id: string) => request<OrchestratorState>('DELETE', `/orchestrators/${id}`),
+  /** The master's own chat CLI (PM-89): opens or reopens it. */
+  openOrchestratorChat: (id: string) =>
+    request<AgentSession>('POST', `/orchestrators/${encodeURIComponent(id)}/chat`, {}),
+  /** Asks the master's chat for a one-time check on pending work (starting it if needed). */
+  checkOrchestrator: (id: string, focus: 'all' | 'todo' | 'in_progress' | 'review') =>
+    request<AgentSession>('POST', `/orchestrators/${encodeURIComponent(id)}/check`, { focus }),
   pruneOrchestratorAttention: (id?: string, projectId?: number) =>
     request<{ ok: boolean; state: OrchestratorState }>(
       'POST',

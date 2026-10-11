@@ -1,0 +1,113 @@
+/* Orchestrator page: a master's chat CLI (PM-89) and collapsible panels (PM-90). */
+
+.orchestrator-chat {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.orchestrator-chat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.orchestrator-chat-head p {
+  margin: 4px 0 0;
+  max-width: 60ch;
+}
+.orchestrator-chat-open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.orchestrator-chat-state {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.orchestrator-chat-state.is-live {
+  color: var(--good);
+}
+.orchestrator-chat-checks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.orchestrator-chat-sent {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Collapse / expand. Collapsed panels keep only their heading row (and a master its summary). */
+.orchestrator-collapse {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.orchestrator-collapse:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.orchestrator-collapse:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.orchestrator-collapse::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.15s ease;
+}
+.orchestrator-collapse[aria-expanded='false']::before {
+  transform: translateX(-2px) rotate(-45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .orchestrator-collapse::before {
+    transition: none;
+  }
+}
+.orchestrator-instance[data-collapsed]
+  > :not(.orchestrator-instance-head):not(.orchestrator-instance-summary),
+.orchestrator-scope-section[data-collapsed] > :not(.orchestrator-scope-section-head),
+.orchestrator-quick-actions[data-collapsed] > :not(.orchestrator-panel-head),
+.orchestrator-history-panel[data-collapsed] > :not(.orchestrator-history-header) {
+  display: none;
+}
+.orchestrator-instance-summary {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.orchestrator-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.orchestrator-panel-head h2 {
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .orchestrator-collapse {
+    width: 32px;
+    height: 32px;
+  }
+  .orchestrator-chat-open {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
