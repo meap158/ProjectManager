@@ -61,7 +61,14 @@ import {
   updateCard,
 } from '../store.js';
 import { diffSince, snapshotTree } from './gitChanges.js';
-import { tailState, workingInTail } from './activity.js';
+import {
+  animatingInTail,
+  elapsedTimer,
+  tailState,
+  timerTicking,
+  type TimerMemo,
+  workingInTail,
+} from './activity.js';
 import { readLimits } from './limits.js';
 import { allowanceReset, emptyCodexPrompt } from './continuation.js';
 import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
@@ -440,6 +447,8 @@ interface RunRow {
 
 /** A working line counts only with output this recent (a busy CLI redraws its timer constantly). */
 const FRESH_OUTPUT_MS = 6_000;
+/** Output this soon after a keystroke is its echo (typing), not the agent working. */
+const ECHO_WINDOW_MS = 1_500;
 /** CLIs with a /rename command whose names we keep in sync with the session's. */
 const RENAMABLE = new Set(['claude', 'codex', 'grok']);
 /** A rename made here, waiting until the CLI is idle to be typed in as /rename. */
@@ -457,6 +466,10 @@ export class AgentSupervisor {
   private lastSpawn = new Map<string, { at: number; resumed: boolean; byUser: boolean }>();
   /** Sessions whose last resume died right away: their next relaunch starts fresh. */
   private resumeFailed = new Set<string>();
+  /** Last busy-line timer seen per session, and when it last changed (PM-67). */
+  private timers: TimerMemo = new Map();
+  /** When each session last got a key typed by a person (not terminal reports). */
+  private lastKeystroke = new Map<number, number>();
   private closed = false;
   private restarting = new Map<
     number,
@@ -893,6 +906,8 @@ export class AgentSupervisor {
     if (Buffer.byteLength(data) > 64 * 1024)
       throw new AgentError(400, 'Input too large (64KB max)');
     if (manual && !isTerminalReport(data)) this.cancelContinuation(id, 'Cancelled by manual input');
+    // Typed keys come back as echo output; remembered so it isn't mistaken for work (PM-67).
+    if (manual && !isTerminalReport(data)) this.lastKeystroke.set(id, Date.now());
     const live = this.live.get(`session:${id}`);
     if (live && live.proc.write(data)) return { queued: false, session: this.getSession(id) };
     // A terminal's automatic replies (focus, device attributes, cursor reports) mean nothing to
@@ -2504,7 +2519,26 @@ export class AgentSupervisor {
     const tail = this.logTail(row.log_path);
     const screen = tail ? tailState(tail) : null;
     if (screen === 'input') return 'input';
+    // The busy line's elapsed timer is the most reliable signal (PM-67): ticking = working,
+    // frozen = the turn stopped, whatever else changes on screen (typing in the input box
+    // produces output too, but never moves the timer).
     const fresh = !!lastOutputAt && Date.now() - Date.parse(lastOutputAt) < FRESH_OUTPUT_MS;
+    // Busy CLIs rewrite only the changing bits (spinner, timer digits): fresh output that is
+    // that animation means working. Checked first, since a full timer line left on screen may
+    // look frozen while its digits tick in place.
+    if (fresh && tail && animatingInTail(tail)) return 'running';
+    const timer = tail ? elapsedTimer(tail) : null;
+    const ticking = timerTicking(this.timers, row.id, timer);
+    if (ticking === true) return 'running';
+    if (ticking === false) return 'idle';
+    // Output that came right after your own keystrokes is their echo in the input box, not work:
+    // never let it read as "running" (the client would otherwise go by output recency).
+    const key = this.lastKeystroke.get(row.id);
+    const out = lastOutputAt ? Date.parse(lastOutputAt) : 0;
+    if (fresh && key && out >= key - 250 && out - key <= ECHO_WINDOW_MS) {
+      return turnState(row.id, lastOutputAt) === 'input' ? 'input' : 'idle';
+    }
+    // First sighting of a timer (nothing to compare yet), or a busy line without one.
     if (fresh && tail && workingInTail(tail)) return 'running';
     return turnState(row.id, lastOutputAt) ?? screen;
   }

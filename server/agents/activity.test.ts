@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { stripTerminal, tailState, workingInTail } from './activity.js';
+import {
+  animatingInTail,
+  elapsedTimer,
+  stripTerminal,
+  tailState,
+  timerTicking,
+  workingInTail,
+  type TimerMemo,
+} from './activity.js';
 
 const ESC = '\x1b';
 
@@ -124,5 +132,61 @@ ${ESC}[0mThinking…`),
       workingInTail('● Reading files\n✱ Tinkering… (3m 22s · ↓ 12.1k tokens · thinking)\n❯ '),
     ).toBe(true);
     expect(workingInTail('✻ Worked for 3m 12s\n❯ ')).toBe(false);
+  });
+});
+
+describe('busy-line timer (PM-67)', () => {
+  it('reads Codex and Claude timers, the last one on screen, with their step', () => {
+    expect(elapsedTimer('• Working (8m 05s • esc to interrupt)')).toEqual({
+      seconds: 485,
+      step: 1,
+    });
+    expect(elapsedTimer('✻ Tinkering… (3m 22s · ↓ 12k tokens)')).toEqual({ seconds: 202, step: 1 });
+    expect(elapsedTimer('Working (2s • esc)\n…\nWorking (9s • esc)')).toEqual({
+      seconds: 9,
+      step: 1,
+    });
+    expect(elapsedTimer('✻ Pondering… (1h 2m · thinking)')).toEqual({ seconds: 3720, step: 60 });
+    expect(elapsedTimer('✻ Worked for 3m 12s\n❯ ')).toBeNull();
+  });
+
+  it('ticking only when the timer moves; typing alone never counts', () => {
+    const memo: TimerMemo = new Map();
+    const at = (s: number) => ({ seconds: s, step: 1 });
+    expect(timerTicking(memo, 1, at(10), 0)).toBeNull(); // First look: nothing to compare.
+    expect(timerTicking(memo, 1, at(14), 4_000)).toBe(true); // Moved: working.
+    expect(timerTicking(memo, 1, at(14), 6_000)).toBe(true); // Same value, within its step.
+    // Frozen (the turn stopped; only the input box changes as you type): not working.
+    expect(timerTicking(memo, 1, at(14), 13_000)).toBe(false);
+    expect(timerTicking(memo, 1, null, 14_000)).toBeNull(); // Timer gone.
+    expect(memo.has(1)).toBe(false);
+  });
+
+  it('a minutes-only timer gets a minute before it counts as frozen', () => {
+    const memo: TimerMemo = new Map();
+    timerTicking(memo, 2, { seconds: 3720, step: 60 }, 0);
+    timerTicking(memo, 2, { seconds: 3780, step: 60 }, 60_000);
+    expect(timerTicking(memo, 2, { seconds: 3780, step: 60 }, 110_000)).toBe(true);
+    expect(timerTicking(memo, 2, { seconds: 3780, step: 60 }, 130_000)).toBe(false);
+  });
+});
+
+describe('busy animation in the newest output (PM-67)', () => {
+  it("spots Claude's spinner frames and Codex's blinking timer (real log tails)", () => {
+    expect(
+      animatingInTail(
+        'Alowed by auto mode classifier✶Crystallizing…4*✢Crystallizing…·Crystallizing…5',
+      ),
+    ).toBe(true);
+    expect(animatingInTail('h•0◦4•◦5•6◦•7◦•8◦9•◦')).toBe(true);
+    expect(animatingInTail('unter Strike | TiemNet•11◦•22◦33•◦44•')).toBe(true);
+  });
+
+  it('typing in the input box, or a finished list, is not animation', () => {
+    expect(animatingInTail('> fix the login page so the button is cent')).toBe(false);
+    expect(animatingInTail('• Committed six isolated changes\n• Stopped editing files\n› ')).toBe(
+      false,
+    );
+    expect(animatingInTail('✻ Worked for 3m 12s\n❯ ')).toBe(false);
   });
 });

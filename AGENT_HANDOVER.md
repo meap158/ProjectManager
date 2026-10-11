@@ -433,6 +433,11 @@ atomic commits). Nothing is pending in the working tree.
   waiting Notifications, Subagent start/stop) into `server/agents/turnState.ts` (in memory; a
   "running" with a screen silent for 60s counts as idle, since Esc skips Stop). Other CLIs use the
   screen patterns in `server/agents/activity.ts`. Sessions started before this need one restart.
+  Order in `supervisor.sessionActivity` (PM-67): a choice on screen → input; fresh output that is a
+  busy animation (`animatingInTail`: Claude's spinner glyph + word, Codex's bullet blinking between
+  timer digits; busy CLIs only rewrite those bits) → running; the busy-line timer (`elapsedTimer`
+  + `timerTicking`) moving → running, frozen → idle; output within 1.5s of a person's keystroke
+  (`sendInput`) is echo → idle; then hooks, then the screen, then client-side recency.
 - **Port sharing:** the server also listens on `[::1]` and the launcher probes both loopbacks, so
   another app on the same port (0.0.0.0/::) can't capture `localhost` (seen with a Next.js app on
   5180). Hook and board bridge scripts call 127.0.0.1.

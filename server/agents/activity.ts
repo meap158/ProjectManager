@@ -120,6 +120,72 @@ export function workingInTail(logTail: string): boolean {
   return WORKING_LINE.test(end) || BUSY_PATTERNS.some((p) => p.test(end));
 }
 
+/**
+ * The busy line's elapsed timer, in seconds: Codex "Working (8m 05s • esc to interrupt)",
+ * Claude Code "Tinkering… (3m 22s · ↓ 12k tokens)". The last one on screen counts. A working
+ * CLI keeps this ticking; it freezes or disappears when the turn stops. Typing in the input box
+ * never moves it, which is what tells real work from keystrokes (PM-67). Null when none is shown.
+ */
+export function elapsedTimer(logTail: string): { seconds: number; step: number } | null {
+  const end = stripTerminal(logTail).slice(-2000);
+  let last: string | null = null;
+  for (const m of end.matchAll(/(?:working|…)\s*\(\s*((?:\d+\s*[hms]\s*)+)/gi)) last = m[1]!;
+  if (last === null) return null;
+  const units = { h: 3600, m: 60, s: 1 } as Record<string, number>;
+  let seconds = 0;
+  let step = 3600;
+  for (const [, n, unit] of last.matchAll(/(\d+)\s*([hms])/gi)) {
+    const size = units[unit!.toLowerCase()]!;
+    seconds += Number(n) * size;
+    step = Math.min(step, size);
+  }
+  // step: how often the shown value can change (1 s, or 60 s once a timer drops its seconds).
+  return { seconds, step };
+}
+
+/**
+ * The newest output is a busy animation: busy CLIs only rewrite the parts of their status line
+ * that change, so their latest bytes look like
+ *   Claude Code  "✶Crystallizing…4*✢Crystallizing…5"   (spinner glyph + its word, again and again)
+ *   Codex        "•0◦4•◦5•6◦•7"                         (blinking bullet between timer digits)
+ * Typing in the input box writes letters, never this, so it doesn't count (PM-67). Only
+ * meaningful when that output is fresh.
+ */
+export function animatingInTail(logTail: string): boolean {
+  const end = stripTerminal(logTail).slice(-300);
+  const spinnerWords = end.match(/[✻✶✢✽✳·*]\s*\p{L}+…/gu)?.length ?? 0;
+  return spinnerWords >= 2 || /(?:\d{1,2}\s*[•◦]+\s*){3,}/.test(end);
+}
+
+/** Last busy-line timer seen per session, and when it last changed. */
+export type TimerMemo = Map<number, { seconds: number; changedAt: number }>;
+
+/** A timer counts as frozen once unchanged this long beyond its step (a 1 s timer: 8 s). */
+export const TIMER_SLACK_MS = 7_000;
+
+/**
+ * Is a session's busy-line timer moving? true: it changed since the last look, or recently
+ * enough for its step (plus slack). false: shown but frozen past that. null: no timer on screen,
+ * or the first look (nothing to compare yet). Updates the memo.
+ */
+export function timerTicking(
+  memo: TimerMemo,
+  id: number,
+  timer: { seconds: number; step: number } | null,
+  now = Date.now(),
+): boolean | null {
+  if (!timer) {
+    memo.delete(id);
+    return null;
+  }
+  const prev = memo.get(id);
+  if (!prev || prev.seconds !== timer.seconds) {
+    memo.set(id, { seconds: timer.seconds, changedAt: now });
+    return prev ? true : null;
+  }
+  return now - prev.changedAt <= timer.step * 1000 + TIMER_SLACK_MS;
+}
+
 /** True when the tail ends at an input prompt with nothing running (kept for callers). */
 export function isAwaitingInput(logTail: string): boolean {
   return tailState(logTail) === 'idle';
