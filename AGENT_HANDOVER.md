@@ -21,13 +21,13 @@ _Current-state snapshot. Update it after every meaningful unit of work._
   stops on formatting in concurrent AgentWorkList.interactions.test.tsx and Dropdown.test.tsx.
   Planning snapshots still load history; no end-to-end latency claim is made.
 
-- Orchestrators Quick runs now offers explicit pending-work inspection in the selected master/
-  project scope. Project alerts can queue or run policy-controlled follow-ups; review, stalled
-  and input-needed items link to their task/session/project. Inspection is on demand, retains
-  its timestamp and prior result on refresh errors, and displays ten items at a time. Changing
-  scope remounts the panel and invalidates old requests. Thirteen panel/page tests pass, plus
-  owned lint/format. Full npm run check passes types/lint, but stops on concurrent formatting
-  in AgentWorkList.interactions.test.tsx and Dropdown.test.tsx. Physical mobile QA remains open.
+- Orchestrators page (PM-89, PM-90, simplified on owner request): "orchestrator" replaces
+  "master" everywhere in the UI and the chat briefing (the settings key stays
+  `master-orchestrators`). Quick runs is gone: its actions live on each orchestrator (Fix / Fix
+  all on Needs you, Preview plan on Board, Codex's on-demand pending list under Needs you). Each
+  orchestrator has a chat CLI (`server/orchestrator/chat.ts`, docs/ORCHESTRATOR.md) with scoped
+  board tools and one-time checks (Everything pending / To do / In progress / Review). Not yet
+  exercised live with a real CLI: Codex and Claude quotas were near their limits.
 
 - Home situation builder indexes workers and attention flags by card once, removing repeated
   per-card scans of history. Existing five identity/scope/context tests pass. Synthetic 1,000
@@ -55,12 +55,9 @@ _Current-state snapshot. Update it after every meaningful unit of work._
   and provider fencing were entirely unimplemented were corrected. Runtime/mobile and full
   indexed history/task generation work remain open. Full npm run check passes: 371 tests.
 
-- Orchestrator quick actions select a master and project scope, queue deduplicated Dashboard
-  follow-ups and invoke its policy-controlled scheduler. Paused/Observe masters stay unchanged.
-  Persistent action results distinguish queued work from dispatched runs and link to board tasks.
-  Existing per-master and per-project Resolve actions use the same feedback. Eleven page tests
-  pass, including selected scope and paused dispatch prevention. The duplicate Agents toolbar
-  Orchestrators link is removed; primary navigation and mobile tools remain available.
+- Orchestrator Fix / Fix all queue deduplicated Dashboard follow-ups and invoke the
+  policy-controlled scheduler; paused / watch-only orchestrators stay unchanged. Persistent
+  action results distinguish queued work from dispatched runs and link to board tasks.
 
 - Plan preview now returns at most 100 decisions by default (validated maximum 200),
   aggregate dispatch/review/wait counts and offset/limit/total metadata. Page controls fetch

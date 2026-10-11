@@ -82,13 +82,13 @@ it('ignores a background state response that predates a completed save', async (
   });
   expect(screen.queryByText('Stale poll result')).toBeNull();
 });
-it('creates a paused master with the chosen scope and quota policy', async () => {
+it('creates a paused orchestrator with the chosen scope and quota policy', async () => {
   render(
     <MemoryRouter>
       <OrchestratorPage />
     </MemoryRouter>,
   );
-  await screen.findByText('Create a master to coordinate board work across your projects.');
+  await screen.findByText("Create an orchestrator to look after your projects' boards.");
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Project master' } });
   fireEvent.click(screen.getByRole('button', { name: 'Project scope' }));
   fireEvent.click(screen.getByRole('button', { name: 'Project one' }));
@@ -160,23 +160,23 @@ it('renders pruned decision history with filters and clear history support', asy
     </MemoryRouter>,
   );
 
-  await screen.findByText('Decision history');
+  await screen.findByText('Activity');
   expect(screen.getByText('PM-10')).toBeDefined();
   expect(screen.getByText('PM-12')).toBeDefined();
   expect(screen.getByText('5×')).toBeDefined();
   expect(screen.getByText('Worker 4 started with codex')).toBeDefined();
 
   // Filter to Dispatched only
-  fireEvent.click(screen.getByRole('button', { name: /Dispatched/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Started work/ }));
   expect(screen.queryByText('Already assigned to a live worker')).toBeNull();
   expect(screen.getByText('Worker 4 started with codex')).toBeDefined();
 
   // Clear history
-  fireEvent.click(screen.getByRole('button', { name: 'Clear history' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear activity' }));
   await waitFor(() => expect(api.clearOrchestratorEvents).toHaveBeenCalled());
 });
 
-it('renders masters dashboard with pills, collapses form, supports edit and delete', async () => {
+it('renders orchestrators with their settings, collapses form, supports edit and delete', async () => {
   const master = {
     id: 'm1',
     name: 'Primary Orchestrator',
@@ -205,19 +205,19 @@ it('renders masters dashboard with pills, collapses form, supports edit and dele
 
   // Masters dashboard rendered
   expect(await screen.findByRole('heading', { name: 'Primary Orchestrator' })).toBeDefined();
-  expect(screen.getByText('Active')).toBeDefined();
+  expect(screen.getByText('Running')).toBeDefined();
   expect(screen.getAllByText(/Project one/)[0]).toBeDefined();
   expect(screen.getByText(/Codex, Claude/)).toBeDefined();
-  expect(screen.getByText(/Up to 6 workers/)).toBeDefined();
-  expect(screen.getByText(/15% reserve/)).toBeDefined();
-  expect(screen.getByText(/Attention follow-up/)).toBeDefined();
+  expect(screen.getByText(/up to 6 workers/)).toBeDefined();
+  expect(screen.getByText(/15% quota in reserve/)).toBeDefined();
+  expect(screen.getByText(/Follows up Dashboard issues/)).toBeDefined();
   expect(screen.getByText(/Unknown quota allowed/)).toBeDefined();
 
   // Form should NOT be visible initially when masters exist
   expect(screen.queryByLabelText('Name')).toBeNull();
 
   // Click "+ New master" opens the form
-  fireEvent.click(screen.getByRole('button', { name: '+ New master' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ New orchestrator' }));
   expect(screen.getByLabelText('Name')).toBeDefined();
   expect(screen.getByText('New orchestrator')).toBeDefined();
 
@@ -235,7 +235,7 @@ it('renders masters dashboard with pills, collapses form, supports edit and dele
 
   // Delete master with ConfirmDelete
   fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Delete master' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete orchestrator' }));
   await waitFor(() => expect(api.deleteOrchestrator).toHaveBeenCalledWith('m1'));
 });
 
@@ -337,7 +337,7 @@ it('renders scope board progress summary and live workers with direct links', as
   );
 
   // Scope board progress summary
-  expect(await screen.findByText('Scope Board Progress')).toBeDefined();
+  expect(await screen.findByText('Board')).toBeDefined();
   expect(screen.getByText('View board →')).toBeDefined();
   // The chat's one-time check buttons share these labels: look inside the stats.
   const stats = within(document.querySelector<HTMLElement>('.orchestrator-scope-stats')!);
@@ -351,7 +351,7 @@ it('renders scope board progress summary and live workers with direct links', as
   expect(stats.getByText('5')).toBeDefined();
 
   // Being worked on
-  expect(screen.getByText('Being worked on')).toBeDefined();
+  expect(screen.getByText('Working now')).toBeDefined();
   expect(screen.getByText('2 active')).toBeDefined();
   expect(screen.getByText('Build feature')).toBeDefined();
   expect(screen.getByText('PM-42')).toBeDefined();
@@ -433,27 +433,27 @@ it('renders Needs Attention queue and allows resolving or pruning attention', as
     </MemoryRouter>,
   );
 
-  expect(await screen.findByText('Needs Attention')).toBeDefined();
+  expect(await screen.findByText('Needs you')).toBeDefined();
   expect(screen.getByText('1 issue')).toBeDefined();
   expect(screen.getByText('Uncommitted')).toBeDefined();
   expect(screen.getByText('3 changed files')).toBeDefined();
 
   // Test Resolve attention button
-  const resolveAllBtn = screen.getByRole('button', { name: 'Resolve attention' });
+  const resolveAllBtn = screen.getByRole('button', { name: 'Fix all' });
   fireEvent.click(resolveAllBtn);
   await waitFor(() => {
     expect(api.resolveOrchestratorAttention).toHaveBeenCalledWith('m1');
   });
 
   // Test individual Resolve button
-  const resolveItemBtn = screen.getByRole('button', { name: 'Resolve' });
+  const resolveItemBtn = screen.getByRole('button', { name: 'Fix' });
   fireEvent.click(resolveItemBtn);
   await waitFor(() => {
     expect(api.resolveOrchestratorAttention).toHaveBeenCalledWith('m1', 1);
   });
 
   // Test Prune / Dismiss header button
-  const pruneAllBtn = screen.getByRole('button', { name: 'Prune / Dismiss' });
+  const pruneAllBtn = screen.getByRole('button', { name: 'Clear resolved' });
   fireEvent.click(pruneAllBtn);
   await waitFor(() => {
     expect(api.pruneOrchestratorAttention).toHaveBeenCalledWith('m1');
@@ -553,9 +553,9 @@ it('displays Being worked on badge for attention items with active workers', asy
     </MemoryRouter>,
   );
 
-  expect(await screen.findByText('Needs Attention')).toBeDefined();
+  expect(await screen.findByText('Needs you')).toBeDefined();
   expect(screen.getByText('1 being worked on')).toBeDefined();
-  expect(screen.getAllByText('Being worked on').length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText('Working now').length).toBeGreaterThanOrEqual(1);
 });
 
 it('renders Plan Preview with typed wait reasons, occupancy metrics, and shows live checking status', async () => {
@@ -661,7 +661,7 @@ it('renders Plan Preview with typed wait reasons, occupancy metrics, and shows l
 });
 
 it.each([true, false])(
-  'quick actions retain results and respect paused state (enabled=%s)',
+  'fixing an issue keeps its result and respects the paused state (enabled=%s)',
   async (enabled) => {
     const master = {
       id: 'quick',
@@ -707,20 +707,14 @@ it.each([true, false])(
         <OrchestratorPage />
       </MemoryRouter>,
     );
-    const button = await screen.findByRole('button', {
-      name: enabled ? 'Run pending issues' : 'Queue follow-ups',
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Quick run project' }));
-    fireEvent.click(
-      screen.getByRole('option', { name: 'Pending project' }).querySelector('button')!,
-    );
-    fireEvent.click(button);
+    // The project's issue ("Folder missing") has its own Fix, scoped to that project.
+    fireEvent.click(await screen.findByRole('button', { name: 'Fix' }));
     await waitFor(() => expect(api.resolveOrchestratorAttention).toHaveBeenCalledWith('quick', 1));
     expect((await screen.findByRole('link', { name: 'Task PM-42' })).getAttribute('href')).toBe(
       '/board?card=42',
     );
     expect(screen.getByRole('status').textContent).toContain(
-      enabled ? '1 run dispatched' : 'master is paused',
+      enabled ? '1 run dispatched' : 'orchestrator is paused',
     );
     expect(api.saveOrchestrator).not.toHaveBeenCalled();
     if (enabled) expect(screen.getByRole('link', { name: 'Run #10' })).toBeDefined();
@@ -744,7 +738,7 @@ const master = {
   quotaMaxAgeMs: 3600000,
 };
 
-it('collapses a master to its heading and a summary, and remembers it (PM-90)', async () => {
+it('collapses an orchestrator to its heading and a summary, and remembers it (PM-90)', async () => {
   localStorage.clear();
   vi.mocked(api.orchestrators).mockResolvedValue({ instances: [master], events: [] });
   const view = render(
@@ -764,10 +758,10 @@ it('collapses a master to its heading and a summary, and remembers it (PM-90)', 
     /to do · .* in progress · .* review/,
   );
   // Sections collapse on their own too.
-  fireEvent.click(screen.getByRole('button', { name: 'Collapse Needs attention' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse Needs you' }));
   expect(
     screen
-      .getByRole('button', { name: 'Expand Needs attention' })
+      .getByRole('button', { name: 'Expand Needs you' })
       .closest('.orchestrator-scope-section')!
       .hasAttribute('data-collapsed'),
   ).toBe(true);
@@ -783,14 +777,14 @@ it('collapses a master to its heading and a summary, and remembers it (PM-90)', 
   vi.mocked(api.orchestrators).mockImplementation(async () => ({ instances: [], events: [] }));
 });
 
-it("asks the master's chat for a one-time check and links to it (PM-89)", async () => {
+it("asks an orchestrator's chat for a one-time check and links to it (PM-89)", async () => {
   vi.mocked(api.orchestrators).mockResolvedValue({ instances: [master], events: [] });
   render(
     <MemoryRouter>
       <OrchestratorPage />
     </MemoryRouter>,
   );
-  expect(await screen.findByText('Chat with this master')).toBeDefined();
+  expect(await screen.findByText('Ask this orchestrator')).toBeDefined();
   expect(screen.getByText('Not started yet')).toBeDefined();
   const checks = within(screen.getByRole('group', { name: 'One-time check' }));
   fireEvent.click(checks.getByRole('button', { name: 'In progress' }));

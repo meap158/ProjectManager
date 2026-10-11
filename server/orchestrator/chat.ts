@@ -19,8 +19,8 @@ import type { OrchestratorToolHost } from '../boardMcp.js';
 import { cardContext } from './situation.js';
 import type { OrchestratorService } from './service.js';
 
-// A master orchestrator's own chat CLI (PM-89). The user talks to it like any agent terminal;
-// it knows the master's projects (a briefing file in its own folder, written at every open) and
+// An orchestrator's own chat CLI (PM-89). The user talks to it like any agent terminal;
+// it knows the orchestrator's projects (a briefing file in its own folder, written at every open) and
 // acts through board tools scoped to those projects: read the board and the workers' screens,
 // move cards, add notes, create cards, start one-time workers and nudge idle ones. It never gets
 // a project folder as its working directory, and its rules say changes go through workers.
@@ -178,7 +178,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     return instance.projectIds.length ? all.filter((p) => instance.projectIds.includes(p.id)) : all;
   }
 
-  /** The newest chat session of a master, live or stopped. */
+  /** The newest chat session of an orchestrator, live or stopped. */
   session(id: string): AgentSession | null {
     const row = this.db
       .prepare('SELECT id FROM agent_sessions WHERE orchestrator_id = ? ORDER BY id DESC LIMIT 1')
@@ -203,7 +203,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     return dir;
   }
 
-  /** Opens the master's chat: reuses its session (restarting it if stopped) or starts one. */
+  /** Opens the orchestrator's chat: reuses its session (restarting it if stopped) or starts one. */
   async open(id: string, providerId?: string, prompt?: string): Promise<AgentSession> {
     const instance = this.instance(id);
     const cwd = this.writeBriefing(instance);
@@ -236,7 +236,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
   }
 
   /**
-   * A one-time check on pending work: sends the master's chat a request to go through To do,
+   * A one-time check on pending work: sends the orchestrator's chat a request to go through To do,
    * In progress and Review (or one of them) and act on it. Starts the chat when needed.
    */
   async check(id: string, focus: CheckFocus = 'all'): Promise<AgentSession> {
@@ -624,7 +624,7 @@ function runBrief(r: AgentRun) {
 }
 
 function openingLine(instance: OrchestratorConfig): string {
-  return `You are the ProjectManager master orchestrator "${instance.name}". Your briefing (scope, tools, rules) is in CLAUDE.md / AGENTS.md in this folder: follow it.`;
+  return `You are the ProjectManager orchestrator "${instance.name}". Your briefing (scope, tools, rules) is in CLAUDE.md / AGENTS.md in this folder: follow it.`;
 }
 
 function openingPrompt(instance: OrchestratorConfig): string {
@@ -652,7 +652,7 @@ function checkPrompt(instance: OrchestratorConfig, focus: CheckFocus): string {
       : [CHECKS[focus]];
   const observe =
     instance.strategy === 'observe'
-      ? '\nThis master is in Observe mode: do not start workers; recommend instead.'
+      ? '\nYou are set to watch only: do not start workers; recommend instead.'
       : '';
   return [
     'Check on pending work in your scope now. Call overview first.',
@@ -670,15 +670,15 @@ export function briefing(instance: OrchestratorConfig, projects: ProjectSummary[
       : 'not a git repo';
     return `- **${p.name}** (project ${p.id}) at \`${p.path}\`${p.missing ? ' (FOLDER MISSING)' : ''}: ${git}. Board: ${c.backlog} backlog, ${c.todo} to do, ${c.in_progress} in progress, ${c.review} review, ${c.done} done.`;
   };
-  return `# Master orchestrator: ${instance.name}
+  return `# Orchestrator: ${instance.name}
 
-You are this ProjectManager master orchestrator. The user chats with you here and you act on
+You are this ProjectManager orchestrator. The user chats with you here and you act on
 their requests across the projects below: following up on tasks, checking progress, moving cards
 and starting agent workers. This folder is only your home; the work happens in the projects.
 
 ## Your settings
 
-- Strategy: ${instance.strategy === 'observe' ? 'Observe (recommend; start workers only when the user explicitly asks)' : 'Autonomous board work'}
+- Mode: ${instance.strategy === 'observe' ? 'Watch only (recommend; start workers only when the user explicitly asks)' : 'Starts workers on its own'}
 - Providers for workers: ${instance.providers.join(', ')}
 - Worker limits: ${instance.maxWorkers} in total, ${instance.maxWorkersPerProject} per project
 

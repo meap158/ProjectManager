@@ -9,7 +9,7 @@ type Focus = 'all' | 'todo' | 'in_progress' | 'review';
 const CHECKS: { focus: Focus; label: string; title: string }[] = [
   {
     focus: 'all',
-    label: 'All pending',
+    label: 'Everything pending',
     title: 'Check progress, review evidence and work through To do, then report back',
   },
   { focus: 'todo', label: 'To do', title: 'Work through the To do tasks within worker limits' },
@@ -30,8 +30,8 @@ function chatState(session: AgentSession | null): string {
 }
 
 /**
- * A master's own chat CLI (PM-89): open it to talk to the orchestrator, or ask it for a one-time
- * check on pending work. It knows the master's projects and acts through scoped board tools.
+ * An orchestrator's own chat CLI (PM-89): open it to talk to the orchestrator, or ask it for a one-time
+ * check on pending work. It knows the orchestrator's projects and acts through scoped board tools.
  */
 export function OrchestratorChat({
   instance,
@@ -40,7 +40,7 @@ export function OrchestratorChat({
   onChanged,
 }: {
   instance: OrchestratorConfig;
-  /** The master's newest chat session, if any. */
+  /** The orchestrator's newest chat session, if any. */
   session: AgentSession | null;
   disabled: boolean;
   onChanged: () => void;
@@ -77,10 +77,10 @@ export function OrchestratorChat({
     <div className="orchestrator-chat" aria-label={`${instance.name} chat`}>
       <div className="orchestrator-chat-head">
         <div>
-          <span className="orchestrator-subheading">Chat with this master</span>
+          <span className="orchestrator-subheading">Ask this orchestrator</span>
           <p className="faint">
-            Its own CLI, briefed on these projects. Ask it to follow up on tasks, check progress or
-            move cards; it can start workers within this master&apos;s limits.
+            Chat with it in its own terminal: it knows these projects and can follow up on tasks,
+            check progress, move cards and start workers within its limits.
           </p>
         </div>
         <div className="orchestrator-chat-open">
@@ -95,7 +95,7 @@ export function OrchestratorChat({
         </div>
       </div>
       <div className="orchestrator-chat-checks" role="group" aria-label="One-time check">
-        <span className="faint">One-time check:</span>
+        <span className="faint">Ask it to check:</span>
         {CHECKS.map((c) => (
           <button
             key={c.focus}
@@ -111,7 +111,8 @@ export function OrchestratorChat({
       </div>
       {sent && (
         <p role="status" className="orchestrator-chat-sent">
-          Asked the chat to check {sent.label === 'All pending' ? 'all pending work' : sent.label}.{' '}
+          Asked it to check{' '}
+          {sent.label === 'Everything pending' ? 'everything pending' : sent.label}.{' '}
           <Link to={`/workspace?open=${sent.sessionId}`}>Watch it work →</Link>
         </p>
       )}

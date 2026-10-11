@@ -84,7 +84,6 @@
 .orchestrator-instance[data-collapsed]
   > :not(.orchestrator-instance-head):not(.orchestrator-instance-summary),
 .orchestrator-scope-section[data-collapsed] > :not(.orchestrator-scope-section-head),
-.orchestrator-quick-actions[data-collapsed] > :not(.orchestrator-panel-head),
 .orchestrator-history-panel[data-collapsed] > :not(.orchestrator-history-header) {
   display: none;
 }
@@ -110,4 +109,25 @@
     width: 100%;
     justify-content: space-between;
   }
+}
+
+/* The page's one-line explanation and each orchestrator's settings in a sentence. */
+.orchestrator-intro {
+  margin: 4px 0 0;
+  max-width: 72ch;
+}
+.orchestrator-instance-about {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.orchestrator-instance-about strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.orchestrator-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }

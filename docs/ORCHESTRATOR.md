@@ -38,44 +38,44 @@ When a master dispatches a card, the worker's prompt gets that card's slice of t
 (`cardContext`): board status, live workers, latest run, what moved it, card-level attention and
 its project's alerts, so it can trace back and coordinate instead of starting blind.
 
-## Chatting with a master (its own CLI)
+## Chatting with an orchestrator (its own CLI)
 
-Each master has a chat: a normal agent session (Claude Code, Codex, OpenCode or Antigravity,
+Each orchestrator has a chat: a normal agent session (Claude Code, Codex, OpenCode or Antigravity,
 the first of its providers that is installed) whose `agent_sessions.orchestrator_id` names the
-master (`server/orchestrator/chat.ts`). It runs in its own folder, `data/orchestrators/<id>/`,
+orchestrator (`server/orchestrator/chat.ts`). It runs in its own folder, `data/orchestrators/<id>/`,
 never a project folder. Every open rewrites `CLAUDE.md`, `AGENTS.md` and `GEMINI.md` there with
-the master's briefing: its settings, each project in scope (path, git state, board counts), its
+the orchestrator's briefing: its settings, each project in scope (path, git state, board counts), its
 tools and its rules (read projects freely, change them only through workers; never push, merge
 or delete branches; every card move gets a note).
 
-Its `projectmanager` MCP server gives it the master's tools instead of the single-card ones (same
+Its `projectmanager` MCP server gives it the orchestrator's tools instead of the single-card ones (same
 transport and capability token, `registerBoardMcp` asks the `OrchestratorToolHost`). All of them
-are limited to the master's projects at call time:
+are limited to the orchestrator's projects at call time:
 
 - `overview`: settings, capacity, projects, To do cards, Needs attention, Being worked on.
 - `list_cards`, `get_card`: the board; a card's live workers, recent runs and agent activity.
 - `update_card`: move a card and/or append an "Orchestrator note" (audited).
 - `create_card`: in a project in scope.
 - `dispatch_worker`: a one-time run on a card, with the card's situation context plus the
-  chat's instructions. Refused at the master's total or per-project worker limit, on a card that
-  already has a live worker, or with a provider the master doesn't use.
+  chat's instructions. Refused at the orchestrator's total or per-project worker limit, on a card that
+  already has a live worker, or with a provider the orchestrator doesn't use.
 - `worker_output`: a worker session's screen or a run's output tail.
 - `message_worker`: a message to a worker session, only while it is idle (never while it works
   or is asking the user something).
 
-Moves, new cards, dispatches and messages appear in Decision history marked "(chat)".
+Moves, new cards, dispatches and messages appear in Activity marked "(chat)".
 
 Routes: `POST /api/orchestrators/:id/chat` opens it (reusing its session, restarting it if
 stopped) and `POST /api/orchestrators/:id/check` with `{ focus: all | todo | in_progress |
 review }` asks it for a one-time check on pending work: In progress (check progress, move
 finished work to Review with evidence, nudge idle workers, note what blocks stalled cards),
 Review (what is ready to accept), To do (start workers for ready tasks within the limits, split
-large ones, note questions) and Needs attention. Observe-mode masters recommend instead of
+large ones, note questions) and Needs attention. Watch-only orchestrators recommend instead of
 starting workers. The check is refused (409) while the chat is working or asking you something.
 
-On the Orchestrators page each master has a "Chat with this master" panel (Start/Open chat
-opens it in Agents; One-time check buttons), and masters, their sections, Quick runs and Decision
-history collapse with a chevron (remembered in the browser, `pm.orchestrator.collapsed`).
+On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open
+chat opens it in Agents; "Ask it to check" buttons), and orchestrators, their sections and
+Activity collapse with a chevron (remembered in the browser, `pm.orchestrator.collapsed`).
 
 ## Next integration work
 

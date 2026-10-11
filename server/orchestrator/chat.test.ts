@@ -176,7 +176,7 @@ describe('orchestrator chat tools (PM-89)', () => {
     expect(readFileSync(path.join(home, 'CLAUDE.md'), 'utf8')).toBe(text);
     expect(text).toContain('**Alpha**');
     expect(text).not.toContain('**Beta**');
-    expect(text).toContain('Observe');
+    expect(text).toContain('Watch only');
     expect(text).toMatch(/never change files there yourself/);
     // Its own folder, its master, and a provider that can load the board tools.
     expect(createSession).toHaveBeenCalledWith(

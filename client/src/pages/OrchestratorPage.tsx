@@ -19,7 +19,7 @@ import { OrchestratorChat } from '../components/OrchestratorChat';
 import { collapseButtonProps, useCollapsed } from '../useCollapsed';
 
 const defaults: Omit<OrchestratorConfig, 'id'> = {
-  name: 'Master orchestrator',
+  name: 'Orchestrator',
   enabled: false,
   projectIds: [],
   providers: ['codex', 'claude'],
@@ -82,13 +82,11 @@ export function OrchestratorPage() {
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [inFlightCards, setInFlightCards] = useState<CardWithProject[]>([]);
-  // Collapsed masters and panels (PM-90), remembered in this browser.
+  // Collapsed orchestrators and panels (PM-90), remembered in this browser.
   const { isCollapsed, toggle } = useCollapsed('pm.orchestrator.collapsed');
   const [draft, setDraft] = useState<Omit<OrchestratorConfig, 'id'> & { id?: string }>(defaults);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
-  const [quickMasterId, setQuickMasterId] = useState('');
-  const [quickProjectId, setQuickProjectId] = useState('');
   const [actionResult, setActionResult] = useState<{
     message: string;
     cards: number[];
@@ -202,23 +200,14 @@ export function OrchestratorPage() {
           : !result.resolvedCards.length
             ? 'No pending Dashboard issues found in this scope.'
             : !instance.enabled
-              ? 'Follow-ups queued. This master is paused; start it when ready to dispatch.'
+              ? 'Follow-ups queued. This orchestrator is paused; start it to let it run them.'
               : instance.strategy === 'observe'
-                ? 'Follow-ups queued. Observe mode does not dispatch; switch to Autonomous board work to run them.'
-                : 'Follow-ups queued; no new run started. Preview plan shows worker, quota and review blockers.',
+                ? 'Follow-ups queued. It is set to watch only; switch it to start workers to run them.'
+                : 'Follow-ups queued; no worker started yet. Preview plan shows what is holding them.',
       });
     });
-  const quickMaster = state.instances.find((i) => i.id === quickMasterId) ?? state.instances[0];
-  const quickProjects = projects.filter(
-    (p) => !quickMaster?.projectIds.length || quickMaster.projectIds.includes(p.id),
-  );
-  const selectedQuickProject = quickProjects.find((p) => String(p.id) === quickProjectId);
-  const quickScope = selectedQuickProject ? [selectedQuickProject] : quickProjects;
-  const quickIssueCount = quickScope.reduce((sum, p) => sum + projectAttention(p).length, 0);
-  const quickCanRun = Boolean(quickMaster?.enabled && quickMaster.strategy !== 'observe');
-
   const isFormVisible = showForm || Boolean(draft.id) || state.instances.length === 0;
-  const hasActiveMasters = state.instances.some((i) => i.enabled);
+  const hasRunning = state.instances.some((i) => i.enabled);
 
   const allCount = state.events.length;
   const dispatchedCount = state.events.filter(
@@ -243,7 +232,14 @@ export function OrchestratorPage() {
   return (
     <main className="page orchestrator-page">
       <div className="page-head">
-        <h1>Orchestrators</h1>
+        <div>
+          <h1>Orchestrators</h1>
+          <p className="faint orchestrator-intro">
+            An orchestrator looks after a set of projects: it keeps their boards moving, starts
+            agent workers on ready tasks within your limits, and shows what needs you. Chat with one
+            to ask for anything.
+          </p>
+        </div>
         <Link className="btn btn-sm" to="/workspace">
           Agent terminals
         </Link>
@@ -254,90 +250,6 @@ export function OrchestratorPage() {
         </div>
       )}
 
-      {state.instances.length > 0 && quickMaster && (
-        <section
-          className="panel orchestrator-quick-actions"
-          aria-labelledby="quick-runs-heading"
-          data-collapsed={isCollapsed('quick-runs') || undefined}
-        >
-          <div className="orchestrator-panel-head">
-            <button
-              {...collapseButtonProps('Quick runs', isCollapsed('quick-runs'), () =>
-                toggle('quick-runs'),
-              )}
-            />
-            <h2 id="quick-runs-heading">Quick runs</h2>
-          </div>
-          <div className="orchestrator-quick-controls">
-            <div className="orchestrator-quick-field">
-              <label htmlFor="quick-master">Master</label>
-              <Dropdown
-                id="quick-master"
-                label="Quick run master"
-                disabled={busy}
-                value={quickMaster.id}
-                options={state.instances.map((i) => ({ value: i.id, label: i.name }))}
-                onChange={(id) => {
-                  setQuickMasterId(id);
-                  setQuickProjectId('');
-                }}
-              />
-            </div>
-            <div className="orchestrator-quick-field">
-              <label htmlFor="quick-project">Project</label>
-              <Dropdown
-                id="quick-project"
-                label="Quick run project"
-                disabled={busy}
-                value={selectedQuickProject ? String(selectedQuickProject.id) : ''}
-                options={[
-                  { value: '', label: 'All projects in scope' },
-                  ...quickProjects.map((p) => ({ value: String(p.id), label: p.name })),
-                ]}
-                onChange={setQuickProjectId}
-              />
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy || quickIssueCount === 0}
-              onClick={() => void resolvePending(quickMaster, selectedQuickProject?.id)}
-            >
-              {busy ? 'Working...' : quickCanRun ? 'Run pending issues' : 'Queue follow-ups'}
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() =>
-                void perform(async () => {
-                  setPreview({
-                    id: quickMaster.id,
-                    data: await api.previewOrchestrator(quickMaster.id),
-                  });
-                })
-              }
-            >
-              Inspect queue
-            </button>
-          </div>
-          <p className="faint">
-            {quickIssueCount} Dashboard issue{quickIssueCount === 1 ? '' : 's'} in scope. Creates or
-            reuses follow-up tasks and checks this master's board queue.{' '}
-            {quickCanRun
-              ? 'Provider, quota and worker limits apply; completed runs await review.'
-              : 'Queued tasks stay pending while this master is paused or observing.'}
-          </p>
-          <OrchestratorPending
-            key={`${quickMaster.id}-${selectedQuickProject?.id ?? 'all'}`}
-            masterId={quickMaster.id}
-            projectId={selectedQuickProject?.id}
-            busy={busy}
-            canRun={quickCanRun}
-            onFollowUp={(id) => void resolvePending(quickMaster, id)}
-          />
-        </section>
-      )}
       {actionResult && (
         <section className="panel orchestrator-action-result" aria-label="Action result">
           <p role="status">{actionResult.message}</p>
@@ -367,11 +279,11 @@ export function OrchestratorPage() {
         </section>
       )}
 
-      {/* Primary Masters dashboard panel */}
+      {/* The orchestrators */}
       <section className="panel orchestrator-masters-panel">
         <div className="panel-header">
           <div className="panel-title-group">
-            <h2>Masters</h2>
+            <h2>Your orchestrators</h2>
             {state.instances.length > 0 && <span className="badge">{state.instances.length}</span>}
             {state.status?.executing && (
               <span className="badge badge-in-progress" title="Orchestrator check in progress">
@@ -398,20 +310,20 @@ export function OrchestratorPage() {
                   setShowForm(true);
                 }}
               >
-                + New master
+                + New orchestrator
               </button>
             )}
             <button
               className="btn btn-sm"
-              disabled={busy || Boolean(state.status?.executing) || !hasActiveMasters}
+              disabled={busy || Boolean(state.status?.executing) || !hasRunning}
               title={
-                !hasActiveMasters
-                  ? 'Enable a master to check for tasks'
-                  : 'Run check across all active masters'
+                !hasRunning
+                  ? 'Start an orchestrator to check for tasks'
+                  : 'Check every running orchestrator now'
               }
               onClick={() => void perform(() => api.tickOrchestrators())}
             >
-              {busy || state.status?.executing ? 'Checking…' : 'Check all'}
+              {busy || state.status?.executing ? 'Checking…' : 'Check all now'}
             </button>
           </div>
         </div>
@@ -419,7 +331,7 @@ export function OrchestratorPage() {
         {!loaded ? (
           <p className="faint">Loading…</p>
         ) : !state.instances.length ? (
-          <p className="faint">Create a master to coordinate board work across your projects.</p>
+          <p className="faint">Create an orchestrator to look after your projects' boards.</p>
         ) : (
           <div className="orchestrator-instances-list">
             {state.instances.map((instance) => {
@@ -518,29 +430,18 @@ export function OrchestratorPage() {
                       />
                       <span
                         className={`orchestrator-status-dot ${instance.enabled ? 'active' : ''}`}
-                        title={instance.enabled ? 'Master is running' : 'Master is paused'}
+                        title={instance.enabled ? 'Running' : 'Paused'}
                       />
                       <h3>{instance.name}</h3>
                       <span className={instance.enabled ? 'badge badge-done' : 'badge'}>
-                        {instance.enabled ? 'Active' : 'Paused'}
+                        {!instance.enabled
+                          ? 'Paused'
+                          : instance.strategy === 'observe'
+                            ? 'Watching'
+                            : 'Running'}
                       </span>
                     </div>
                     <div className="orchestrator-actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={busy}
-                        onClick={() =>
-                          void perform(async () =>
-                            setPreview({
-                              id: instance.id,
-                              data: await api.previewOrchestrator(instance.id),
-                            }),
-                          )
-                        }
-                      >
-                        Preview plan
-                      </button>
                       <button
                         type="button"
                         className="btn btn-sm"
@@ -559,8 +460,8 @@ export function OrchestratorPage() {
                         disabled={busy || Boolean(state.status?.executing) || !instance.enabled}
                         title={
                           instance.enabled
-                            ? 'Run check now for this master'
-                            : 'Start master to check'
+                            ? "Check this orchestrator's boards now"
+                            : 'Start it to check'
                         }
                         onClick={() => void perform(() => api.tickOrchestrators(instance.id))}
                       >
@@ -580,9 +481,9 @@ export function OrchestratorPage() {
                       <ConfirmDelete
                         label={`Delete ${instance.name}`}
                         text="Delete"
-                        heading={`Delete master "${instance.name}"?`}
-                        message="This removes the master orchestrator. Any running agent workers will complete normally."
-                        confirmLabel="Delete master"
+                        heading={`Delete orchestrator "${instance.name}"?`}
+                        message="This removes the orchestrator and its settings. Workers it started keep running until they finish."
+                        confirmLabel="Delete orchestrator"
                         onConfirm={() =>
                           perform(async () => {
                             await api.deleteOrchestrator(instance.id);
@@ -595,45 +496,38 @@ export function OrchestratorPage() {
                       />
                     </div>
                   </div>
+                  <p className="orchestrator-instance-about">
+                    Looks after <strong>{scopeNames}</strong> · works with {providerNames} · up to{' '}
+                    {instance.maxWorkers} workers ({instance.maxWorkersPerProject} per project,{' '}
+                    {instance.maxWorkersPerProvider} per provider) · keeps {instance.reservePercent}
+                    % quota in reserve
+                  </p>
                   <div className="orchestrator-pills">
                     <span className="orchestrator-pill">
                       {instance.strategy === 'observe'
-                        ? 'Observe · no worker dispatch'
-                        : 'Autonomous board work'}
-                    </span>
-                    <span className="orchestrator-pill" title="Project scope">
-                      📁 {scopeNames}
-                    </span>
-                    <span className="orchestrator-pill" title="Enabled providers">
-                      🤖 {providerNames}
-                    </span>
-                    <span className="orchestrator-pill" title="Worker concurrency">
-                      ⚙ Up to {instance.maxWorkers} workers ({instance.maxWorkersPerProject}/proj ·{' '}
-                      {instance.maxWorkersPerProvider}/provider)
-                    </span>
-                    <span className="orchestrator-pill" title="Quota reserve margin">
-                      🛡 {instance.reservePercent}% reserve
+                        ? 'Watch only: suggests, never starts workers'
+                        : 'Starts workers on its own'}
                     </span>
                     {instance.followDashboardAttention && (
                       <span
                         className="orchestrator-pill orchestrator-pill-accent"
-                        title="Follows Dashboard attention items"
+                        title="Turns Dashboard issues (uncommitted, unpushed, stale…) into follow-up tasks"
                       >
-                        ⚡ Attention follow-up
+                        Follows up Dashboard issues
                       </span>
                     )}
                     {instance.pruneDashboardAttention && (
                       <span
                         className="orchestrator-pill"
-                        title="Auto-prunes resolved Dashboard attention tasks"
+                        title="Removes follow-up tasks once their issue is resolved"
                       >
-                        🧹 Auto-prune attention
+                        Cleans up resolved issues
                       </span>
                     )}
                     {instance.allowUnknownQuota && (
                       <span
                         className="orchestrator-pill orchestrator-pill-warning"
-                        title="Allows dispatching even when provider quota is unknown"
+                        title="Starts workers even when a provider's remaining quota is unknown"
                       >
                         ⚠ Unknown quota allowed
                       </span>
@@ -643,7 +537,7 @@ export function OrchestratorPage() {
                   {collapsed && (
                     <p className="orchestrator-instance-summary">
                       {todoCount} to do · {inProgressCount} in progress · {reviewCount} review ·{' '}
-                      {totalAttentionCount} need attention · {liveWorkersCount} live worker
+                      {totalAttentionCount} need you · {liveWorkersCount} live worker
                       {liveWorkersCount === 1 ? '' : 's'}
                     </p>
                   )}
@@ -653,6 +547,314 @@ export function OrchestratorPage() {
                     disabled={busy}
                     onChanged={() => void perform(async () => undefined)}
                   />
+
+                  {/* Needs you: issues and failures in scope */}
+                  <div
+                    className="orchestrator-scope-section orchestrator-attention-section"
+                    data-collapsed={attentionSection.collapsed || undefined}
+                  >
+                    <div className="orchestrator-scope-section-head">
+                      <div className="orchestrator-section-title-group">
+                        <button
+                          {...collapseButtonProps(
+                            'Needs you',
+                            attentionSection.collapsed,
+                            attentionSection.toggle,
+                          )}
+                        />
+                        <span
+                          className={`orchestrator-pulse-dot ${totalAttentionCount > 0 ? 'warning' : 'clean'}`}
+                          aria-hidden="true"
+                        />
+                        <span className="orchestrator-subheading">Needs you</span>
+                        <span
+                          className={
+                            totalAttentionCount > 0 ? 'badge badge-danger' : 'badge badge-done'
+                          }
+                        >
+                          {totalAttentionCount > 0
+                            ? `${totalAttentionCount} issue${totalAttentionCount === 1 ? '' : 's'}`
+                            : 'Clean'}
+                        </span>
+                        {beingWorkedOnAttentionCount > 0 && (
+                          <span
+                            className="badge badge-in-progress"
+                            title="Items with active workers resolving them"
+                          >
+                            {`${beingWorkedOnAttentionCount} being worked on`}
+                          </span>
+                        )}
+                      </div>
+                      <div className="orchestrator-section-actions">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          disabled={busy || totalAttentionCount === 0}
+                          title="Create follow-up tasks for these issues and let this orchestrator start workers on them (within its limits)"
+                          onClick={() => void resolvePending(instance)}
+                        >
+                          Fix all
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          disabled={busy || totalAttentionCount === 0}
+                          title="Remove follow-up tasks whose issue is already resolved"
+                          onClick={() =>
+                            void perform(() => api.pruneOrchestratorAttention(instance.id))
+                          }
+                        >
+                          Clear resolved
+                        </button>
+                      </div>
+                    </div>
+                    {totalAttentionCount === 0 ? (
+                      <p className="faint orchestrator-attention-clean">
+                        ✓ Nothing needs you right now.
+                      </p>
+                    ) : (
+                      <div className="orchestrator-attention-grid">
+                        {scopedProjectAttention.map(({ project: p, kind, detail }) => {
+                          const runningRun = activeRuns.find((r) => r.projectId === p.id);
+                          const runningSession = activeSessions.find((s) => s.projectId === p.id);
+                          const inFlightAttentionCard = scopedInFlightCards.find(
+                            (c) =>
+                              c.projectId === p.id && c.title.toLowerCase().includes('attention'),
+                          );
+                          const isWorkedOn = Boolean(
+                            runningRun || runningSession || inFlightAttentionCard,
+                          );
+
+                          return (
+                            <div
+                              key={`att-${p.id}-${kind}`}
+                              className="orchestrator-attention-item"
+                            >
+                              <span
+                                className={`badge${kind === 'Folder missing' || kind === 'Scan failed' ? ' badge-danger' : ' badge-attention'}`}
+                              >
+                                {kind}
+                              </span>
+                              <div className="attention-item-info">
+                                <Link to={`/projects/${p.id}`} className="attention-proj truncate">
+                                  {p.name}
+                                </Link>
+                                <span className="attention-detail faint truncate" title={detail}>
+                                  {detail}
+                                </span>
+                              </div>
+                              <div className="attention-item-actions">
+                                {isWorkedOn ? (
+                                  <>
+                                    <span
+                                      className="badge badge-in-progress"
+                                      title="Currently being worked on"
+                                    >
+                                      <span
+                                        className="orchestrator-pulse-dot pulse in-progress-dot"
+                                        aria-hidden="true"
+                                      />
+                                      Being worked on
+                                    </span>
+                                    {runningRun && (
+                                      <Link
+                                        to="/workspace"
+                                        className="worker-action-link"
+                                        title="Open terminal"
+                                      >
+                                        Terminal →
+                                      </Link>
+                                    )}
+                                    {runningSession && !runningRun && (
+                                      <Link
+                                        to={`/workspace?open=${runningSession.id}`}
+                                        className="worker-action-link"
+                                        title="Open session"
+                                      >
+                                        Session →
+                                      </Link>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="btn btn-xs btn-primary attention-resolve-btn"
+                                      disabled={busy}
+                                      title="Create a follow-up task and let this orchestrator start a worker on it (within its limits)"
+                                      onClick={() => void resolvePending(instance, p.id)}
+                                    >
+                                      Fix
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-xs link-button faint"
+                                      disabled={busy}
+                                      title="Hide this issue without running an agent"
+                                      onClick={() =>
+                                        void perform(async () => {
+                                          await api.dismissOrchestratorAttention(p.id, [kind]);
+                                          await api.pruneOrchestratorAttention(instance.id, p.id);
+                                        })
+                                      }
+                                    >
+                                      Dismiss
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {failedRunsInScope.map((run) => {
+                          const proj = projects.find((p) => p.id === run.projectId);
+                          return (
+                            <div key={`fail-${run.id}`} className="orchestrator-attention-item">
+                              <span className="badge badge-danger">Failed run</span>
+                              <div className="attention-item-info">
+                                <span className="attention-proj truncate">
+                                  {proj?.name ?? `Project ${run.projectId}`}
+                                </span>
+                                <span
+                                  className="attention-detail faint truncate"
+                                  title={run.error ?? run.name}
+                                >
+                                  {run.name}: {run.error ?? 'Execution failed'}
+                                </span>
+                              </div>
+                              <div className="attention-item-actions">
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-primary attention-resolve-btn"
+                                  disabled={busy}
+                                  title="Retry failed run"
+                                  onClick={() => void perform(() => api.retryRun(run.id))}
+                                >
+                                  Retry
+                                </button>
+                                <Link
+                                  to="/workspace"
+                                  className="worker-action-link"
+                                  title="Open terminal"
+                                >
+                                  Terminal →
+                                </Link>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <OrchestratorPending
+                      masterId={instance.id}
+                      busy={busy}
+                      canRun={instance.enabled && instance.strategy !== 'observe'}
+                      onFollowUp={(id) => void resolvePending(instance, id)}
+                    />
+                  </div>
+
+                  {/* Board progress in scope */}
+                  <div
+                    className="orchestrator-scope-section"
+                    data-collapsed={progressSection.collapsed || undefined}
+                  >
+                    <div className="orchestrator-scope-section-head">
+                      <div className="orchestrator-section-title-group">
+                        <button
+                          {...collapseButtonProps(
+                            'Board',
+                            progressSection.collapsed,
+                            progressSection.toggle,
+                          )}
+                        />
+                        <span className="orchestrator-subheading">Board</span>
+                      </div>
+                      <div className="orchestrator-section-actions">
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          disabled={busy}
+                          onClick={() =>
+                            void perform(async () =>
+                              setPreview({
+                                id: instance.id,
+                                data: await api.previewOrchestrator(instance.id),
+                              }),
+                            )
+                          }
+                        >
+                          Preview plan
+                        </button>
+                        <Link
+                          to={
+                            instance.projectIds.length === 1
+                              ? `/board?project=${instance.projectIds[0]}`
+                              : '/board'
+                          }
+                          className="orchestrator-section-link"
+                        >
+                          View board →
+                        </Link>
+                      </div>
+                    </div>
+                    <div className="orchestrator-scope-stats">
+                      <div className="orchestrator-scope-stat">
+                        <span className="stat-label">To do</span>
+                        <span className="stat-num num">{todoCount}</span>
+                      </div>
+                      <div className="orchestrator-scope-stat">
+                        <span className="stat-label">In progress</span>
+                        <span className="stat-num num">{inProgressCount}</span>
+                      </div>
+                      <div className="orchestrator-scope-stat">
+                        <span className="stat-label">Review</span>
+                        <span className="stat-num num">{reviewCount}</span>
+                      </div>
+                      <div className="orchestrator-scope-stat">
+                        <span className="stat-label">Done</span>
+                        <span className="stat-num num">{doneCount}</span>
+                      </div>
+                    </div>
+                    {totalCards > 0 && (
+                      <div
+                        className="orchestrator-progress-bar"
+                        role="progressbar"
+                        aria-valuenow={donePercent}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        title={`${donePercent}% completed (${doneCount}/${totalCards} cards)`}
+                      >
+                        {doneCount > 0 && (
+                          <div
+                            className="orchestrator-progress-seg seg-done"
+                            style={{ width: `${(doneCount / totalCards) * 100}%` }}
+                            title={`Done: ${doneCount}`}
+                          />
+                        )}
+                        {reviewCount > 0 && (
+                          <div
+                            className="orchestrator-progress-seg seg-review"
+                            style={{ width: `${(reviewCount / totalCards) * 100}%` }}
+                            title={`Review: ${reviewCount}`}
+                          />
+                        )}
+                        {inProgressCount > 0 && (
+                          <div
+                            className="orchestrator-progress-seg seg-in-progress"
+                            style={{ width: `${(inProgressCount / totalCards) * 100}%` }}
+                            title={`In progress: ${inProgressCount}`}
+                          />
+                        )}
+                        {todoCount > 0 && (
+                          <div
+                            className="orchestrator-progress-seg seg-todo"
+                            style={{ width: `${(todoCount / totalCards) * 100}%` }}
+                            title={`To do: ${todoCount}`}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {preview?.id === instance.id && (
                     <section className="orchestrator-plan-preview" aria-label="Plan preview">
@@ -801,291 +1003,6 @@ export function OrchestratorPage() {
                     </section>
                   )}
 
-                  {/* Board progress summary in scope */}
-                  <div
-                    className="orchestrator-scope-section"
-                    data-collapsed={progressSection.collapsed || undefined}
-                  >
-                    <div className="orchestrator-scope-section-head">
-                      <div className="orchestrator-section-title-group">
-                        <button
-                          {...collapseButtonProps(
-                            'Scope board progress',
-                            progressSection.collapsed,
-                            progressSection.toggle,
-                          )}
-                        />
-                        <span className="orchestrator-subheading">Scope Board Progress</span>
-                      </div>
-                      <Link
-                        to={
-                          instance.projectIds.length === 1
-                            ? `/board?project=${instance.projectIds[0]}`
-                            : '/board'
-                        }
-                        className="orchestrator-section-link"
-                      >
-                        View board →
-                      </Link>
-                    </div>
-                    <div className="orchestrator-scope-stats">
-                      <div className="orchestrator-scope-stat">
-                        <span className="stat-label">To do</span>
-                        <span className="stat-num num">{todoCount}</span>
-                      </div>
-                      <div className="orchestrator-scope-stat">
-                        <span className="stat-label">In progress</span>
-                        <span className="stat-num num">{inProgressCount}</span>
-                      </div>
-                      <div className="orchestrator-scope-stat">
-                        <span className="stat-label">Review</span>
-                        <span className="stat-num num">{reviewCount}</span>
-                      </div>
-                      <div className="orchestrator-scope-stat">
-                        <span className="stat-label">Done</span>
-                        <span className="stat-num num">{doneCount}</span>
-                      </div>
-                    </div>
-                    {totalCards > 0 && (
-                      <div
-                        className="orchestrator-progress-bar"
-                        role="progressbar"
-                        aria-valuenow={donePercent}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        title={`${donePercent}% completed (${doneCount}/${totalCards} cards)`}
-                      >
-                        {doneCount > 0 && (
-                          <div
-                            className="orchestrator-progress-seg seg-done"
-                            style={{ width: `${(doneCount / totalCards) * 100}%` }}
-                            title={`Done: ${doneCount}`}
-                          />
-                        )}
-                        {reviewCount > 0 && (
-                          <div
-                            className="orchestrator-progress-seg seg-review"
-                            style={{ width: `${(reviewCount / totalCards) * 100}%` }}
-                            title={`Review: ${reviewCount}`}
-                          />
-                        )}
-                        {inProgressCount > 0 && (
-                          <div
-                            className="orchestrator-progress-seg seg-in-progress"
-                            style={{ width: `${(inProgressCount / totalCards) * 100}%` }}
-                            title={`In progress: ${inProgressCount}`}
-                          />
-                        )}
-                        {todoCount > 0 && (
-                          <div
-                            className="orchestrator-progress-seg seg-todo"
-                            style={{ width: `${(todoCount / totalCards) * 100}%` }}
-                            title={`To do: ${todoCount}`}
-                          />
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Needs Attention queue in scope */}
-                  <div
-                    className="orchestrator-scope-section orchestrator-attention-section"
-                    data-collapsed={attentionSection.collapsed || undefined}
-                  >
-                    <div className="orchestrator-scope-section-head">
-                      <div className="orchestrator-section-title-group">
-                        <button
-                          {...collapseButtonProps(
-                            'Needs attention',
-                            attentionSection.collapsed,
-                            attentionSection.toggle,
-                          )}
-                        />
-                        <span
-                          className={`orchestrator-pulse-dot ${totalAttentionCount > 0 ? 'warning' : 'clean'}`}
-                          aria-hidden="true"
-                        />
-                        <span className="orchestrator-subheading">Needs Attention</span>
-                        <span
-                          className={
-                            totalAttentionCount > 0 ? 'badge badge-danger' : 'badge badge-done'
-                          }
-                        >
-                          {totalAttentionCount > 0
-                            ? `${totalAttentionCount} issue${totalAttentionCount === 1 ? '' : 's'}`
-                            : 'Clean'}
-                        </span>
-                        {beingWorkedOnAttentionCount > 0 && (
-                          <span
-                            className="badge badge-in-progress"
-                            title="Items with active workers resolving them"
-                          >
-                            {`${beingWorkedOnAttentionCount} being worked on`}
-                          </span>
-                        )}
-                      </div>
-                      <div className="orchestrator-section-actions">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary"
-                          disabled={busy || totalAttentionCount === 0}
-                          title="Queue attention tasks and check this master under its current strategy, quota and worker limits"
-                          onClick={() => void resolvePending(instance)}
-                        >
-                          Resolve attention
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          disabled={busy || totalAttentionCount === 0}
-                          title="Prune resolved attention cards and dismiss cleared signals in scope"
-                          onClick={() =>
-                            void perform(() => api.pruneOrchestratorAttention(instance.id))
-                          }
-                        >
-                          Prune / Dismiss
-                        </button>
-                      </div>
-                    </div>
-                    {totalAttentionCount === 0 ? (
-                      <p className="faint orchestrator-attention-clean">
-                        ✓ No attention items in scope. All projects clean and up to date.
-                      </p>
-                    ) : (
-                      <div className="orchestrator-attention-grid">
-                        {scopedProjectAttention.map(({ project: p, kind, detail }) => {
-                          const runningRun = activeRuns.find((r) => r.projectId === p.id);
-                          const runningSession = activeSessions.find((s) => s.projectId === p.id);
-                          const inFlightAttentionCard = scopedInFlightCards.find(
-                            (c) =>
-                              c.projectId === p.id && c.title.toLowerCase().includes('attention'),
-                          );
-                          const isWorkedOn = Boolean(
-                            runningRun || runningSession || inFlightAttentionCard,
-                          );
-
-                          return (
-                            <div
-                              key={`att-${p.id}-${kind}`}
-                              className="orchestrator-attention-item"
-                            >
-                              <span
-                                className={`badge${kind === 'Folder missing' || kind === 'Scan failed' ? ' badge-danger' : ' badge-attention'}`}
-                              >
-                                {kind}
-                              </span>
-                              <div className="attention-item-info">
-                                <Link to={`/projects/${p.id}`} className="attention-proj truncate">
-                                  {p.name}
-                                </Link>
-                                <span className="attention-detail faint truncate" title={detail}>
-                                  {detail}
-                                </span>
-                              </div>
-                              <div className="attention-item-actions">
-                                {isWorkedOn ? (
-                                  <>
-                                    <span
-                                      className="badge badge-in-progress"
-                                      title="Currently being worked on"
-                                    >
-                                      <span
-                                        className="orchestrator-pulse-dot pulse in-progress-dot"
-                                        aria-hidden="true"
-                                      />
-                                      Being worked on
-                                    </span>
-                                    {runningRun && (
-                                      <Link
-                                        to="/workspace"
-                                        className="worker-action-link"
-                                        title="Open terminal"
-                                      >
-                                        Terminal →
-                                      </Link>
-                                    )}
-                                    {runningSession && !runningRun && (
-                                      <Link
-                                        to={`/workspace?open=${runningSession.id}`}
-                                        className="worker-action-link"
-                                        title="Open session"
-                                      >
-                                        Session →
-                                      </Link>
-                                    )}
-                                  </>
-                                ) : (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="btn btn-xs btn-primary attention-resolve-btn"
-                                      disabled={busy}
-                                      title="Queue this attention task; dispatch respects pause, strategy, quota and worker limits"
-                                      onClick={() => void resolvePending(instance, p.id)}
-                                    >
-                                      Resolve
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn btn-xs link-button faint"
-                                      disabled={busy}
-                                      title="Dismiss this attention item without running an agent"
-                                      onClick={() =>
-                                        void perform(async () => {
-                                          await api.dismissOrchestratorAttention(p.id, [kind]);
-                                          await api.pruneOrchestratorAttention(instance.id, p.id);
-                                        })
-                                      }
-                                    >
-                                      Dismiss
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {failedRunsInScope.map((run) => {
-                          const proj = projects.find((p) => p.id === run.projectId);
-                          return (
-                            <div key={`fail-${run.id}`} className="orchestrator-attention-item">
-                              <span className="badge badge-danger">Failed run</span>
-                              <div className="attention-item-info">
-                                <span className="attention-proj truncate">
-                                  {proj?.name ?? `Project ${run.projectId}`}
-                                </span>
-                                <span
-                                  className="attention-detail faint truncate"
-                                  title={run.error ?? run.name}
-                                >
-                                  {run.name}: {run.error ?? 'Execution failed'}
-                                </span>
-                              </div>
-                              <div className="attention-item-actions">
-                                <button
-                                  type="button"
-                                  className="btn btn-xs btn-primary attention-resolve-btn"
-                                  disabled={busy}
-                                  title="Retry failed run"
-                                  onClick={() => void perform(() => api.retryRun(run.id))}
-                                >
-                                  Retry
-                                </button>
-                                <Link
-                                  to="/workspace"
-                                  className="worker-action-link"
-                                  title="Open terminal"
-                                >
-                                  Terminal →
-                                </Link>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
                   {/* Being worked on in scope */}
                   <div
                     className="orchestrator-scope-section"
@@ -1095,7 +1012,7 @@ export function OrchestratorPage() {
                       <div className="orchestrator-section-title-group">
                         <button
                           {...collapseButtonProps(
-                            'Being worked on',
+                            'Working now',
                             workSection.collapsed,
                             workSection.toggle,
                           )}
@@ -1104,7 +1021,7 @@ export function OrchestratorPage() {
                           className={`orchestrator-pulse-dot ${totalBeingWorkedOnCount > 0 ? 'pulse' : ''}`}
                           aria-hidden="true"
                         />
-                        <span className="orchestrator-subheading">Being worked on</span>
+                        <span className="orchestrator-subheading">Working now</span>
                         <span
                           className={totalBeingWorkedOnCount > 0 ? 'badge badge-done' : 'badge'}
                         >
@@ -1117,7 +1034,7 @@ export function OrchestratorPage() {
                     </div>
                     {totalBeingWorkedOnCount === 0 ? (
                       <p className="faint orchestrator-workers-empty">
-                        No active workers or tasks being worked on in scope.
+                        Nothing is being worked on right now.
                       </p>
                     ) : (
                       <div className="orchestrator-workers-grid">
@@ -1249,7 +1166,7 @@ export function OrchestratorPage() {
         )}
       </section>
 
-      {/* Configuration: a modal dialog over the dashboard when masters exist (PM-73); inline as
+      {/* Configuration: a modal dialog over the page when orchestrators exist (PM-73); inline as
           the page's first-run content when there are none yet. */}
       {isFormVisible && (
         <OrchestratorFormShell
@@ -1267,7 +1184,7 @@ export function OrchestratorPage() {
                 <p className="faint" style={{ margin: '4px 0 0' }}>
                   {draft.id
                     ? `Updating configuration for "${draft.name}"`
-                    : 'Define project scope, provider preference, and concurrency rules.'}
+                    : 'Choose the projects it looks after, which agents it may start and how many at once.'}
                 </p>
               </div>
               {state.instances.length > 0 && (
@@ -1295,7 +1212,7 @@ export function OrchestratorPage() {
               }}
             >
               <div className="orchestrator-form-section">
-                <h3 className="orchestrator-form-section-title">Scope & Identity</h3>
+                <h3 className="orchestrator-form-section-title">What it looks after</h3>
                 <div className="orchestrator-form-grid">
                   <label>
                     Name
@@ -1328,7 +1245,7 @@ export function OrchestratorPage() {
               </div>
 
               <div className="orchestrator-form-section">
-                <h3 className="orchestrator-form-section-title">Worker Providers & Concurrency</h3>
+                <h3 className="orchestrator-form-section-title">Workers it may start</h3>
                 <div className="orchestrator-form-grid">
                   <label>
                     Worker providers
@@ -1398,7 +1315,7 @@ export function OrchestratorPage() {
               </div>
 
               <div className="orchestrator-form-section">
-                <h3 className="orchestrator-form-section-title">Policies & Quota</h3>
+                <h3 className="orchestrator-form-section-title">How it works</h3>
                 <label>
                   Strategy
                   <Dropdown
@@ -1407,13 +1324,13 @@ export function OrchestratorPage() {
                     options={[
                       {
                         value: 'observe' as const,
-                        label: 'Observe',
-                        sub: 'Report board readiness; do not dispatch workers or change attention cards',
+                        label: 'Watch only',
+                        sub: 'Shows what is ready and suggests next steps; never starts workers',
                       },
                       {
                         value: 'autonomous' as const,
-                        label: 'Autonomous board work',
-                        sub: 'Dispatch ready tasks within scope, quota and worker limits; retain review',
+                        label: 'Start workers on its own',
+                        sub: 'Starts ready tasks within your limits and quota; finished work waits for your review',
                       },
                     ]}
                     onChange={(strategy) => setDraft({ ...draft, strategy })}
@@ -1452,7 +1369,7 @@ export function OrchestratorPage() {
                         setDraft({ ...draft, followDashboardAttention: e.target.checked })
                       }
                     />
-                    Follow up Dashboard attention and uncommitted work
+                    Follow up Dashboard issues (uncommitted, unpushed, stale…)
                   </label>
                   <label className="orchestrator-checkbox">
                     <input
@@ -1462,7 +1379,7 @@ export function OrchestratorPage() {
                         setDraft({ ...draft, pruneDashboardAttention: e.target.checked })
                       }
                     />
-                    Auto-prune resolved Dashboard attention tasks
+                    Remove follow-up tasks once their issue is resolved
                   </label>
                 </div>
               </div>
@@ -1499,11 +1416,9 @@ export function OrchestratorPage() {
         <div className="orchestrator-history-header">
           <div className="orchestrator-history-title">
             <button
-              {...collapseButtonProps('Decision history', isCollapsed('history'), () =>
-                toggle('history'),
-              )}
+              {...collapseButtonProps('Activity', isCollapsed('history'), () => toggle('history'))}
             />
-            <h2>Decision history</h2>
+            <h2>Activity</h2>
             {allCount > 0 && <span className="badge">{allCount}</span>}
           </div>
           {allCount > 0 && (
@@ -1513,20 +1428,16 @@ export function OrchestratorPage() {
               disabled={busy}
               onClick={() => void perform(() => api.clearOrchestratorEvents())}
             >
-              Clear history
+              Clear activity
             </button>
           )}
         </div>
 
         {!allCount ? (
-          <p className="faint">Decisions appear after the first check.</p>
+          <p className="faint">What your orchestrators do shows up here.</p>
         ) : (
           <>
-            <div
-              className="orchestrator-history-filters"
-              role="group"
-              aria-label="Filter decisions"
-            >
+            <div className="orchestrator-history-filters" role="group" aria-label="Filter activity">
               <button
                 type="button"
                 className={`work-chip${historyFilter === 'all' ? ' active' : ''}`}
@@ -1539,7 +1450,7 @@ export function OrchestratorPage() {
                 className={`work-chip${historyFilter === 'dispatched' ? ' active' : ''}`}
                 onClick={() => setHistoryFilter('dispatched')}
               >
-                Dispatched <span className="work-chip-count num">{dispatchedCount}</span>
+                Started work <span className="work-chip-count num">{dispatchedCount}</span>
               </button>
               <button
                 type="button"
@@ -1554,7 +1465,7 @@ export function OrchestratorPage() {
                   className={`work-chip${historyFilter === 'pruned' ? ' active' : ''}`}
                   onClick={() => setHistoryFilter('pruned')}
                 >
-                  Pruned <span className="work-chip-count num">{prunedCount}</span>
+                  Cleaned up <span className="work-chip-count num">{prunedCount}</span>
                 </button>
               )}
               {errorCount > 0 && (
@@ -1569,11 +1480,11 @@ export function OrchestratorPage() {
             </div>
 
             {!visibleEvents.length ? (
-              <p className="faint">No decisions match the selected filter.</p>
+              <p className="faint">Nothing matches this filter.</p>
             ) : (
               <ul className="orchestrator-events">
                 {visibleEvents.map((event, index) => {
-                  const master = state.instances.find((i) => i.id === event.orchestratorId);
+                  const owner = state.instances.find((i) => i.id === event.orchestratorId);
                   return (
                     <li key={`${event.at}-${index}`}>
                       <div className="event-meta">
@@ -1601,8 +1512,8 @@ export function OrchestratorPage() {
                       </div>
                       <div className="event-body">
                         <span className="event-msg">{event.message}</span>
-                        {state.instances.length > 1 && master && (
-                          <span className="event-orchestrator-name faint">({master.name})</span>
+                        {state.instances.length > 1 && owner && (
+                          <span className="event-orchestrator-name faint">({owner.name})</span>
                         )}
                       </div>
                     </li>
@@ -1618,7 +1529,7 @@ export function OrchestratorPage() {
                   className="link-button"
                   onClick={() => setHistoryLimit((prev) => prev + 25)}
                 >
-                  Show older decisions ({reversedEvents.length - historyLimit} remaining)
+                  Show older ({reversedEvents.length - historyLimit} more)
                 </button>
               </div>
             )}
@@ -1631,7 +1542,7 @@ export function OrchestratorPage() {
 
 /**
  * Hosts the orchestrator form: a modal dialog (Esc / Cancel close it, focus stays inside) when
- * there are masters to return to, the plain inline panel otherwise.
+ * there are orchestrators to return to, the plain inline panel otherwise.
  */
 function OrchestratorFormShell({
   modal,

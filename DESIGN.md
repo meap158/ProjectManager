@@ -6,8 +6,10 @@ or chat history.
 
 ## 1. Principles
 
-Orchestrators quick actions use master/project selectors and explicit Run pending issues or
-Queue follow-ups actions. Results remain visible with task/run links and queue explanations.
+Orchestrators speak plainly: each one is "an orchestrator" (never "master") and every card reads
+top to bottom as what it looks after (one sentence), Ask this orchestrator (chat and one-time
+checks), Needs you (issues with Fix / Dismiss, Fix all, on-demand pending list), Board (counts,
+Preview plan) and Working now. Results remain visible with task/run links and queue explanations.
 Actions preserve paused/Observe configuration and existing quota, capacity and review policy.
 Plan preview shows aggregate readiness counts with 100-task pages and explicit Previous/Next
 controls. Each page is a fresh inspection; it never starts work.
@@ -45,8 +47,9 @@ computer and an explicit Open sign-in page action. No photo is sent to a server.
 
 Orchestrators have a separate `/orchestrators` page, reached from desktop navigation or
 mobile Agents tools. Configuration uses project/provider multi-selects, compact worker
-and quota fields, and explicit Start/Pause controls. New masters save paused. Decision
-history keeps waiting, dispatch, review and error outcomes visible.
+and quota fields, and explicit Start/Pause controls. New orchestrators save paused. Activity
+keeps waiting, started-work, review and error outcomes visible. Orchestrators, their sections
+and Activity collapse with a chevron (remembered per browser).
 Optional Dashboard follow-up creates scoped, deduplicated board tasks for attention
 signals and pending Git work. Missing-folder tasks remain in review; projects with active
 workers defer follow-up. Existing capacity and quota rules govern automatic dispatch.
