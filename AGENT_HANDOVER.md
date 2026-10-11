@@ -2,6 +2,20 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- PM-64: Explicit card issueUrl persists through board moves and is editable in CardDialog.
+  Commit/PR scanners translate only linked issue identities; short references require matching
+  origin repository. Native GitHub closing references fence merged-PR completion. Default
+  agent prompts include both PM key and issue URL. Focused API/card/PR/store tests pass.
+  Remote board-to-GitHub Projects status/reviewer writes remain a separate pending feature.
+- PM-64: Orchestrators use one selected workspace and isolated Activity counts. Dispatched
+  run ownership is persisted and retained on retries; recoverable existing claims are backfilled.
+  Owned runs are accessible for output/lifecycle/review directly in their Orchestrator workspace.
+- PM-64: Shift-click status chips toggle additive selection; mobile Status menu has multiselect.
+  Mobile terminal viewport scrolling now uses exact visual-viewport displacement and avoids
+  scroll-event feedback. Twenty-two terminal regressions pass. Physical phone QA remains open.
+  Project dock layout work is mixed with another agent's uncommitted AgentsPanel redesign;
+  preserve those changes, and stage only owned work when consolidating it.
+
 - Durable chat intents are now integrated: reservation before supervisor preparation,
   30-second heartbeat cleared in finally, keyed supervisor insertion, acknowledgement and
   guarded failure transition. Planner excludes only the still-current owned reservation.
