@@ -2,6 +2,12 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Reproducible database benchmark added in scripts/benchmark-orchestrator-db.mjs. Isolated
+  100,000-run fixture verifies identical projection outputs with candidate partial indexes.
+  Planning median 9.49ms to 0.53ms; occupancy 41.43ms to 0.02ms. Candidate indexes are not
+  production migrations yet (server/db.ts has concurrent edits). See benchmark report for
+  scope, decoder approximation and unmeasured write/storage/LAN limits.
+
 - Resolve attention now compares indexed run IDs for the deduplicated follow-up card set
   before/after the scheduler check, preserving newest-first results without decoding history.
   Exact sets preserve ID reuse after newest-run deletion; a global high-water mark would not.

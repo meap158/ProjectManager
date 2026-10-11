@@ -44,3 +44,28 @@ and deduplicated flag ordering are preserved. Existing situation identity/scope 
 This is an isolated synthetic builder benchmark, not an end-to-end latency guarantee; it
 excludes SQL, provider/quota reads, session screen collection and network transfer. Temporary
 baseline module was removed after measurement; no live tasks or terminals were changed.
+
+## Database projections and candidate indexes (2026-10-12)
+
+Reproduce with `node --import tsx scripts/benchmark-orchestrator-db.mjs`.
+In-memory SQLite fixture: 100,000 runs, 1,000 review cards, 20 projects, master scope
+project 1; 20 old live runs and remaining runs accepted. Two warm-ups, ten samples.
+Candidate partial indexes are created only in the fixture; complete query outputs are
+asserted identical before/after. No live workers or application database are changed.
+
+| Operation                                        | Current median ms | Candidate indexed median ms | Result rows |
+| ------------------------------------------------ | ----------------: | --------------------------: | ----------: |
+| Full history rows + command/change JSON decoding |          1,329.64 |                Not measured |     100,000 |
+| Planning projection                              |              9.49 |                        0.53 |          71 |
+| Situation identity projection                    |              5.25 |                        0.10 |          51 |
+| Distinct live project occupancy                  |             41.43 |                        0.02 |          20 |
+
+Candidate indexes: `(project_id,id)` restricted to live statuses; same columns restricted
+to succeeded/failed unvalidated runs; same columns restricted to card-linked runs.
+EXPLAIN confirms live-index scan and project-index searches for review and last-served
+queries. These indexes are not yet production migrations. Coordinate the append-only
+migration with concurrent database changes and verify upgrade/index plans before adoption.
+The baseline decoder is a benchmark approximation of supervisor conversion, not an exact
+end-to-end old API comparison. Timing excludes provider/quota IO, network, rendering and
+writes; small samples and host load limit tail-latency conclusions. Index write/storage
+costs, unscoped masters and large pending-review populations still need measurement.
