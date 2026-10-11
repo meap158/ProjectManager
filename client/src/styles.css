@@ -2106,6 +2106,16 @@ dialog::backdrop {
   overflow-y: auto;
   border-style: dashed;
 }
+/* Title on the left, close at the far right (the usual spot for dismissing a panel). */
+.pane-empty-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pane-empty-head h3 {
+  margin: 0;
+}
 .session-pick {
   display: flex;
   align-items: center;

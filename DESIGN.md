@@ -554,6 +554,10 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   pane headers. A header shows a status dot, the session name, project link and card link, plus
   stop/start, maximise (also by double-clicking the header) and remove-from-layout. Removing a
   pane never kills the session.
+- **Closing an empty pane** (`closeEmptyPane`, PM-63): an empty pane's header has
+  "Show a session here" on the left and ✕ at the far right. It removes that pane and steps the
+  layout down one size (2×2 → three columns → two → one), keeping every session in order. No ✕
+  when it's the only pane.
 - **Opening sessions** (`placeSession`): a session already shown stays put. Otherwise it goes in
   the first empty pane. If every pane is full, the layout grows (1 → 2 → 2×2), and at 2×2 it
   replaces the last pane. Entry points:

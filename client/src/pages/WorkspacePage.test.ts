@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceLayout } from '../../../shared/types';
-import { placeSession } from './WorkspacePage';
+import { closeEmptyPane, placeSession } from './WorkspacePage';
 
 const layout = (preset: WorkspaceLayout['preset'], panes: (number | null)[]): WorkspaceLayout => ({
   preset,
@@ -29,5 +29,20 @@ describe('placeSession (opening a session in the workspace)', () => {
   it('replaces the last pane once the largest layout is full, and clears maximise', () => {
     const full: WorkspaceLayout = { preset: '2x2', panes: [1, 2, 3, 4], maximized: 0 };
     expect(placeSession(full, 9)).toEqual({ preset: '2x2', panes: [1, 2, 3, 9], maximized: null });
+  });
+});
+
+describe('closeEmptyPane (PM-63)', () => {
+  it('shrinks the grid by one and keeps every session in order', () => {
+    expect(closeEmptyPane(layout('2x2', [1, null, 2, 3]), 1)).toEqual(layout('3v', [1, 2, 3]));
+    expect(closeEmptyPane(layout('3v', [1, null, null]), 2)).toEqual(layout('2v', [1, null]));
+    expect(closeEmptyPane(layout('2h', [null, 4]), 0)).toEqual(layout('1', [4]));
+  });
+
+  it('leaves a single pane, or a pane holding a session, as it is', () => {
+    const single = layout('1', [null]);
+    expect(closeEmptyPane(single, 0)).toBe(single);
+    const busy = layout('2v', [1, 2]);
+    expect(closeEmptyPane(busy, 1)).toBe(busy);
   });
 });

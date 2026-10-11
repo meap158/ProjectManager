@@ -82,11 +82,34 @@ const GROW: Partial<Record<WorkspacePreset, WorkspacePreset>> = {
   '3v': '2x2',
 };
 
+/** Shrink order when an empty pane is closed (PM-63): one pane fewer, same family of layouts. */
+const SHRINK: Partial<Record<WorkspacePreset, WorkspacePreset>> = {
+  '2x2': '3v',
+  '3v': '2v',
+  '2v': '1',
+  '2h': '1',
+};
+
 /** Re-fit a pane list to a preset: keep sessions in order, drop empties first, pad with null. */
 function fitPanes(panes: (number | null)[], preset: WorkspacePreset): (number | null)[] {
   const count = WORKSPACE_PRESET_INFO[preset].panes;
   const kept = panes.filter((p): p is number => p !== null).slice(0, count);
   return [...kept, ...Array<null>(count - kept.length).fill(null)];
+}
+
+/**
+ * Close an empty pane: the grid gets one pane smaller (2×2 → three columns → two → one) and every
+ * session stays, in order. The layout is unchanged when the pane holds a session or there is no
+ * smaller layout.
+ */
+export function closeEmptyPane(layout: WorkspaceLayout, index: number): WorkspaceLayout {
+  const preset = SHRINK[layout.preset];
+  if (!preset || layout.panes[index] !== null) return layout;
+  const panes = fitPanes(
+    layout.panes.filter((_, i) => i !== index),
+    preset,
+  );
+  return { preset, panes, maximized: null };
 }
 
 /** Place a session in the layout: already shown → keep; else first empty pane; else grow the
@@ -573,6 +596,9 @@ export function WorkspacePage() {
                 loading={sessions === null}
                 projectName={projectName}
                 onPick={(id) => setPane(id)}
+                onClose={
+                  SHRINK[layout.preset] ? () => update(closeEmptyPane(layout, index)) : undefined
+                }
               />
             );
           })}
@@ -942,12 +968,15 @@ function EmptyPane({
   loading,
   projectName,
   onPick,
+  onClose,
 }: DropTargetProps & {
   index: number;
   sessions: AgentSession[];
   loading: boolean;
   projectName: Map<number, string>;
   onPick: (sessionId: number) => void;
+  /** Removes this pane (the grid shrinks by one); absent when it's the only pane. */
+  onClose?: () => void;
 }) {
   // Running sessions first, newest first.
   const sorted = [...sessions].sort(
@@ -961,6 +990,20 @@ function EmptyPane({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      <div className="pane-empty-head">
+        <h3>Show a session here</h3>
+        {onClose && (
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={`Close empty pane ${index + 1}`}
+            title="Close this pane (one pane fewer)"
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        )}
+      </div>
       {loading ? (
         <div className="skeleton" style={{ flex: 1 }} />
       ) : sorted.length === 0 ? (
@@ -970,7 +1013,6 @@ function EmptyPane({
         </p>
       ) : (
         <>
-          <h3>Show a session here</h3>
           <ul className="list">
             {sorted.map((s) => (
               <li key={s.id}>
