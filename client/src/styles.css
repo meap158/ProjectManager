@@ -5895,3 +5895,11 @@ span.path-link:hover .path-icon {
     grid-row: 2;
   }
 }
+
+/* Phone typing (PM-79): while a terminal has the keyboard, the tab bar steps aside so the
+   terminal and its input line get the room above the keyboard and key bar. */
+@media (max-width: 768px) {
+  html[data-terminal-typing] .tabbar {
+    display: none;
+  }
+}

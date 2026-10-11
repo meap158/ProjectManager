@@ -72,6 +72,8 @@ export function TerminalView({
 
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const keysRef = useRef<HTMLDivElement>(null);
+  /** Keeps the CLI's input line (the terminal's bottom) just above the keyboard and key bar. */
+  const revealInputRef = useRef<() => void>(() => undefined);
   useEffect(() => {
     const strip = keysRef.current?.querySelector<HTMLElement>('.terminal-key-scroll');
     const firstFunction = strip?.querySelector<HTMLElement>('[aria-label="Function 1"]');
@@ -84,21 +86,46 @@ export function TerminalView({
     if (!viewport) return;
     let restingHeight = Math.max(viewport.height, window.innerHeight);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let frame = 0;
+    let open = false;
+    // Phone typing (PM-79): while the keyboard is up, the terminal's bottom edge, where CLIs
+    // draw their input line, must sit just above our key bar. iOS doesn't shrink the page for
+    // the keyboard, so scroll the terminal into the visible area (scroll-margin leaves room for
+    // the key bar). Only when it's out of view, so reading back through the page isn't fought.
+    const revealInput = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const host = hostRef.current;
+        if (!open || !host) return;
+        const bar = keysRef.current?.offsetHeight ?? 0;
+        const visibleTop = viewport.offsetTop;
+        const visibleBottom = viewport.offsetTop + viewport.height - bar;
+        const rect = host.getBoundingClientRect();
+        if (rect.bottom > visibleBottom + 1 || rect.bottom < visibleTop + 48) {
+          host.style.scrollMarginBottom = `${bar + 4}px`;
+          host.scrollIntoView({ block: 'end', inline: 'nearest' });
+        }
+      });
+    };
+    revealInputRef.current = revealInput;
     const update = () => {
       const focused = hostRef.current?.contains(document.activeElement) ?? false;
       // Browser chrome can resize the viewport too; a keyboard takes substantially more space.
       restingHeight = Math.max(restingHeight, viewport.height, window.innerHeight);
-      const open = focused && restingHeight - viewport.height > 80;
+      open = focused && restingHeight - viewport.height > 80;
       if (keysRef.current) {
         keysRef.current.style.top = `${viewport.offsetTop + viewport.height}px`;
         keysRef.current.style.left = `${viewport.offsetLeft}px`;
         keysRef.current.style.width = `${viewport.width}px`;
       }
       setKeyboardOpen(open);
+      // While typing, the page hides chrome that only takes space (the phone tab bar).
+      document.documentElement.toggleAttribute('data-terminal-typing', open);
       if (!open) setExtraKeys(false);
       if (open && hostRef.current) {
         const vp = hostRef.current.querySelector<HTMLElement>('.xterm-viewport');
         if (vp) vp.scrollTop = vp.scrollHeight;
+        revealInput();
       }
     };
     const focusChanged = () => {
@@ -113,6 +140,9 @@ export function TerminalView({
     update();
     return () => {
       clearTimeout(timer);
+      cancelAnimationFrame(frame);
+      revealInputRef.current = () => undefined;
+      document.documentElement.removeAttribute('data-terminal-typing');
       viewport.removeEventListener('resize', update);
       viewport.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
@@ -296,6 +326,7 @@ export function TerminalView({
       ? term.onData((data) => {
           lastInputTime = Date.now();
           scrollToBottomAndSync();
+          revealInputRef.current(); // Typing brings the input line back above the keyboard.
           if (replaying.current === 0) callbacks.current.onInput?.(data);
         })
       : null;

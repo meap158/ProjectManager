@@ -242,6 +242,53 @@ describe('TerminalView', () => {
     expect(screen.queryByText('CLI focused')).toBeNull();
   });
 
+  it('keeps the input line above the phone keyboard and key bar while typing (PM-79)', async () => {
+    // A phone: the visual viewport shrinks from 800 to 450 px when the keyboard opens.
+    const viewport = Object.assign(new EventTarget(), {
+      height: 800,
+      width: 390,
+      offsetTop: 0,
+      offsetLeft: 0,
+    });
+    const saved = {
+      visualViewport: Object.getOwnPropertyDescriptor(window, 'visualViewport'),
+      requestAnimationFrame: window.requestAnimationFrame,
+    };
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
+    window.requestAnimationFrame = (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    };
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    render(<TerminalView fetchOutput={noFetch} streamUrl={() => '/stream'} onInput={() => {}} />);
+    await waitFor(() => expect(terms[0]?.element).toBeTruthy());
+    const host = screen.getByRole('application');
+    // The terminal's bottom (its input line) ends at 700 px: behind the keyboard once it opens.
+    host.getBoundingClientRect = () => ({ top: 100, bottom: 700 }) as DOMRect;
+    await waitFor(() => expect(host.contains(document.activeElement)).toBe(true));
+    viewport.height = 450;
+    viewport.dispatchEvent(new Event('resize'));
+    await waitFor(() =>
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'end', inline: 'nearest' }),
+    );
+    expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(true);
+    // Keyboard closed: the tab bar comes back.
+    viewport.height = 800;
+    viewport.dispatchEvent(new Event('resize'));
+    await waitFor(() =>
+      expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(false),
+    );
+    // Put back only what this test changed (the file's shared stubs stay).
+    if (saved.visualViewport) Object.defineProperty(window, 'visualViewport', saved.visualViewport);
+    else delete (window as { visualViewport?: unknown }).visualViewport;
+    window.requestAnimationFrame = saved.requestAnimationFrame;
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
   it('restores keyboard focus when a preserved project terminal becomes visible again', async () => {
     const props = { fetchOutput: noFetch, streamUrl: () => '/stream', onInput: () => {} };
     const { rerender } = render(<TerminalView {...props} paused />);
