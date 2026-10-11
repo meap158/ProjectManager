@@ -209,43 +209,24 @@ after the tick. Exact ID sets handle deletion/reuse correctly. OrchestratorServi
 full-history supervisor list calls; underlying query/index and runtime latency verification
 are still required, as are broader recovery and mobile acceptance gates.
 
-## Master chat dispatch policy gap (revalidated 2026-10-12)
+## Master chat dispatch safeguards (revalidated 2026-10-12)
 
-`server/orchestrator/chat.ts` now implements manual `dispatch_worker`. It validates initial
-project scope, configured provider membership/availability, scoped total/project occupancy,
-and existing live card workers. It then awaits provider discovery and calls supervisor
-`dispatchCard` without `dispatchKey`, `canCommit`, or the scheduler's one-attempt limit.
-It does not check provider occupancy, the global safety cap, quota freshness/reserve,
-unreviewed run reservation or persisted assignment claims. Concurrent calls can both pass
-initial occupancy and launch after policy/card changes. This is a distinct execution path
-and is not covered by the scheduler's commit-fence tests. Existing scheduler audit evidence
-must not be used to claim these guarantees for master chat.
+Manual `dispatch_worker` now checks the shared planner before preparation and inside the
+supervisor's synchronous insertion fence. Scope, provider membership, quota freshness/reserve,
+provider/global/project worker caps, pending review, task revision and reservations are checked.
+Explicit manual dispatch is permitted for paused/Observe masters without changing their mode.
+The supervisor gets one attempt, a durable dispatch key and the current task's project context.
 
-Priority P0: extract a shared guarded card-dispatch operation for scheduled and explicit chat
-requests. Keep manual intent distinct from scheduled enablement: an explicit user-directed
-chat action should have a documented policy for paused/Observe masters, while retaining
-scope, quota, capacity, review and permission controls. Do not silently toggle master mode.
-Persist a claim/idempotency identity before awaits and revalidate current task revision,
-project/provider policy, quota and live capacity immediately before insertion. Use one
-supervisor attempt so persisted retry policy governs recovery. Preserve custom instructions
-and record whether work was queued, launched or blocked with actionable reasons.
+Chat intents use the scheduler's persisted reservation and retry budget. A competing same-card
+request is refused before preparation. Inserted keyed runs cannot be reclassified as failed by
+an acknowledgement error; scheduler reconciliation recovers their assignment. Tests cover
+concurrent preparation, task edits, competing global workers, policy/quota/review changes and
+winning-run assignment. Simulated three-minute provider preparation verifies that the chat
+heartbeat prevents orphan expiry and stops on both successful insertion and preparation failure.
+Advancing timers after database closure verifies no callback remains scheduled.
 
-Acceptance tests: two concurrent requests for the same card insert one run; a provider wait
-followed by scope/provider change, task edit, quota exhaustion or new competing workers
-inserts none; pending review and reserved claims block launch; global/provider caps include
-external workers; explicit manual-mode semantics do not alter master settings; repeated
-request identity reconciles its existing run; context includes the Todo task's project alerts.
-Provider/auth waits must not blindly retry or send input. Full suite and runtime verification
-remain required after implementing this shared path. This finding is an implementation
-review, not evidence that a duplicate worker has occurred in a live project.
-
-Chat policy gap partially closed: dispatch_worker now uses shared planner checks before
-launch and inside supervisor canCommit, captures task revision, passes one supervisor attempt
-and explicit task project context. Tests cover task edits and competing global workers.
-Durable claim/idempotency and complete concurrent/scope/quota acceptance coverage remain open.
-
-Durable chat intents are integrated with keyed reservation/heartbeat/insertion/acknowledgement.
-Failure transitions cannot reclassify an inserted keyed run; scheduler reconciliation recovers
-it. Only the current owned reservation is excluded from planner blockers. Integration tests
-verify single preparation for concurrent same-card calls and durable winning-run assignment.
-Request-level replay, long-await integration timer cleanup and runtime crash drills remain open.
+Remaining acceptance work: request-level replay identity, durable task generations, classified
+provider/auth waits, runtime crash drills and end-to-end latency/mobile checks. Chat and scheduler
+share policy and reservation primitives but still have separate execution flows; a unified guarded
+operation remains a maintainability upgrade. These test results do not prove live crash recovery
+or measured LAN latency.

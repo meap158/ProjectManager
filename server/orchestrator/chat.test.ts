@@ -10,6 +10,7 @@ import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { OrchestratorService } from './service.js';
 import { OrchestratorChat, briefing } from './chat.js';
 import { readLimits } from '../agents/limits.js';
+import { OrchestratorAssignments } from './assignments.js';
 
 vi.mock('../agents/providers.js', () => ({
   providerStatuses: vi.fn(async () => [
@@ -224,6 +225,67 @@ describe('orchestrator chat tools (PM-89)', () => {
     ).toMatchObject({ state: 'assigned', run_id: 77 });
     db.close();
   });
+
+  it.each(['success', 'failure'] as const)(
+    'keeps slow chat preparation reserved and clears its heartbeat after %s',
+    async (outcome) => {
+      vi.useFakeTimers();
+      const { call, mine, supervisor, db } = setup();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      supervisor.dispatchCard.mockImplementation(async (projectId, cardId, input) => {
+        await gate;
+        if (outcome === 'failure') throw new Error('Provider preparation failed');
+        const options = input as { canCommit: () => boolean; dispatchKey: string };
+        expect(options.canCommit()).toBe(true);
+        db.prepare(
+          "INSERT INTO agent_runs(id,project_id,card_id,name,provider_id,command_json,status,created_at,log_path,dispatch_key) VALUES (77,?,?, 'Worker','codex','[]','queued','2026-10-12','',?)",
+        ).run(projectId, cardId, options.dispatchKey);
+        return {
+          id: 77,
+          projectId,
+          cardId,
+          name: 'run',
+          providerId: 'codex',
+          status: 'queued',
+          error: null,
+          validation: null,
+          changes: null,
+          startedAt: null,
+          endedAt: null,
+        };
+      });
+      try {
+        const result = Promise.allSettled([call('dispatch_worker', { card: mine.key })]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(supervisor.dispatchCard).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(1);
+        const initial = Date.now();
+        await vi.advanceTimersByTimeAsync(180000);
+        new OrchestratorAssignments(db).reconcile(undefined, Date.now());
+        expect(
+          db
+            .prepare('SELECT state,updated_at FROM orchestrator_assignments WHERE card_id=?')
+            .get(mine.id),
+        ).toMatchObject({ state: 'dispatching', updated_at: initial + 180000 });
+        release();
+        const [finished] = await result;
+        expect(finished!.status).toBe(outcome === 'success' ? 'fulfilled' : 'rejected');
+        expect(
+          db.prepare('SELECT state FROM orchestrator_assignments WHERE card_id=?').get(mine.id),
+        ).toMatchObject({ state: outcome === 'success' ? 'assigned' : 'error' });
+        expect(vi.getTimerCount()).toBe(0);
+        db.close();
+        // Any leaked callback would now touch a closed database.
+        await vi.advanceTimersByTimeAsync(60000);
+      } finally {
+        release();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('rechecks quota, scope, provider policy and review before insertion without toggling manual mode', async () => {
     const { call, mine, supervisor, db, instance, b } = setup({
