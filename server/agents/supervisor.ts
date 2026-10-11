@@ -760,7 +760,8 @@ export class AgentSupervisor {
     const prompt = (
       card
         ? this.withImages(
-            input.prompt ?? defaultPrompt(card.key, card.title, card.description),
+            input.prompt ??
+              defaultPrompt(card.key, card.title, card.description, undefined, card.issueUrl),
             card.id,
             providerId,
           )
@@ -900,7 +901,8 @@ export class AgentSupervisor {
       return { session: this.getSession(id)!, queued: false, sent: false };
     }
     const prompt = this.withImages(
-      options.prompt ?? defaultPrompt(card.key, card.title, card.description),
+      options.prompt ??
+        defaultPrompt(card.key, card.title, card.description, undefined, card.issueUrl),
       card.id,
       row.provider_id,
     )
@@ -1376,7 +1378,8 @@ export class AgentSupervisor {
       throw new AgentError(400, `${provider.name} needs an explicit command for a one-shot run`);
     }
     const prompt = this.withImages(
-      input.prompt ?? defaultPrompt(card.key, card.title, card.description, input.context),
+      input.prompt ??
+        defaultPrompt(card.key, card.title, card.description, input.context, card.issueUrl),
       card.id,
       providerId,
     ).slice(0, 20_000);
@@ -2652,10 +2655,19 @@ function resolveCwd(cwd: string): string {
   }
 }
 
-function defaultPrompt(key: string, title: string, description: string, context?: string): string {
+function defaultPrompt(
+  key: string,
+  title: string,
+  description: string,
+  context?: string,
+  issueUrl?: string | null,
+): string {
   const parts = [
     `Task ${key}: ${title}`,
     description.trim(),
+    issueUrl
+      ? `Linked GitHub issue: ${issueUrl}. Reference ${key} in commits and PRs. When a PR fully resolves the issue, include Closes ${issueUrl} in its body; otherwise use a non-closing reference.`
+      : '',
     context?.trim() ?? '',
     '---',
     'Work in the project root directory (your current working directory).',

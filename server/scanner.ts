@@ -3,6 +3,7 @@
 
 import { existsSync } from 'node:fs';
 import { CARD_KEY_PREFIX, type CardMove, type ScanState } from '../shared/types.js';
+import { issueReferenceEvents } from './analysis/issueRefs.js';
 import { commitEvents, computeMoves, type RefEvent } from './analysis/cardRefs.js';
 import { scanCode } from './analysis/codeScan.js';
 import { scanDisk } from './analysis/diskScan.js';
@@ -128,7 +129,10 @@ export class Scanner {
           source: b.name,
         })),
     ];
-    return this.applyEvents(projectId, events);
+    return this.applyEvents(projectId, [
+      ...events,
+      ...issueReferenceEvents(listCards(this.db, projectId), events, await originUrl(project.path)),
+    ]);
   }
 
   /** Moves cards from the project's pull requests on GitHub (open → Review, merged → Done). */
@@ -136,7 +140,16 @@ export class Scanner {
     const project = getProjectRow(this.db, projectId);
     if (!project || !this.lookback(projectId)) return [];
     const events = await pullRequestEvents(project.path);
-    return events ? this.applyEvents(projectId, events) : null;
+    return events
+      ? this.applyEvents(projectId, [
+          ...events,
+          ...issueReferenceEvents(
+            listCards(this.db, projectId),
+            events,
+            await originUrl(project.path),
+          ),
+        ])
+      : null;
   }
 
   /** Lower bound for history worth reading: the oldest open card (within 90 days). */

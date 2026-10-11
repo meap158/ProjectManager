@@ -403,3 +403,25 @@ stand).
 <br>
 <sub>Made for people running several coding agents across several projects. ⭐ Star it if it helps you keep your work together.</sub>
 </div>
+
+### Linking board cards to GitHub issues
+
+In a card editor, set **GitHub issue** to its full `https://github.com/owner/repo/issues/123`
+URL. The link is saved separately from the PM card key; issue #123 is never assumed to be PM-123.
+New default agent prompts include both identities and instructions for referencing them.
+
+On a project refresh, linked issue references in commits move cards to In progress.
+Closing commits on feature branches move them to Review; closing commits on the default
+branch move them to Done. An open pull request moves linked work to Review. A merged PR
+completes linked issue work only when GitHub reports that issue as a closing reference.
+A non-closing mention stays in Review. Closed, unmerged PRs do not complete cards.
+Short `#123` references resolve only against the project's origin repository; full issue
+URLs and `owner/repo#123` references are explicit. Existing PM references continue working.
+
+Use `Closes https://github.com/owner/repo/issues/123` in a PR body when it fully resolves the
+issue. GitHub closes linked issues when the PR merges into the default branch:
+[GitHub linking documentation](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue).
+GitHub issue state is Open/Closed, whereas a Project's status field holds workflow columns.
+This integration reads commit/PR evidence into the local board; dragging local cards does
+not yet write GitHub Project status or request reviewers. Those remote actions need a
+separate opt-in synchronization policy with durable retries and visible failures.

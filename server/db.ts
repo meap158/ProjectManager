@@ -186,6 +186,8 @@ export const MIGRATIONS: string[] = [
     LIMIT 1
   );
   CREATE INDEX agent_runs_orchestrator ON agent_runs(orchestrator_id, id);`,
+  // Explicit GitHub issue identity for board lifecycle references (PM-64).
+  `ALTER TABLE cards ADD COLUMN issue_url TEXT;`,
 ];
 
 export function openDb(dataDir: string): Db {

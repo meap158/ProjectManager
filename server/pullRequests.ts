@@ -612,6 +612,7 @@ const refRows = z.array(
     state: z.string(),
     createdAt: z.string(),
     mergedAt: z.string().nullable().optional(),
+    closingIssuesReferences: z.array(z.object({ url: z.string() })).optional(),
   }),
 );
 
@@ -632,12 +633,12 @@ export async function pullRequestEvents(cwd: string): Promise<RefEvent[] | null>
         '--limit',
         '50',
         '--json',
-        'number,title,body,headRefName,state,createdAt,mergedAt',
+        'number,title,body,headRefName,state,createdAt,mergedAt,closingIssuesReferences',
       ],
       { cwd, timeoutMs: 20_000 },
     );
     return refRows.parse(JSON.parse(stdout)).flatMap((pr): RefEvent[] => {
-      const text = `${pr.title}\n${pr.body ?? ''}\n${pr.headRefName}`;
+      const text = `${pr.title}\n${pr.body ?? ''}\n${pr.headRefName}\n${(pr.closingIssuesReferences ?? []).map((issue) => `Closes ${issue.url}`).join('\n')}`;
       const source = `PR #${pr.number}`;
       const opened: RefEvent = {
         id: `pr:${pr.number}:open`,
@@ -651,6 +652,7 @@ export async function pullRequestEvents(cwd: string): Promise<RefEvent[] | null>
           id: `pr:${pr.number}:merged`,
           kind: 'pr-merged',
           at: pr.mergedAt,
+          issueClosures: (pr.closingIssuesReferences ?? []).map((issue) => issue.url),
           text,
           source,
         };

@@ -172,6 +172,8 @@ export interface Card {
   closedAt: string | null;
   /** Commit hash that moved this card automatically, if any. */
   linkedCommit: string | null;
+  /** Explicit issue identity; GitHub issue numbers are separate from PM card keys. */
+  issueUrl?: string | null;
 }
 
 /** A card plus its project's name, for cross-project lists (dashboard "In flight"). */

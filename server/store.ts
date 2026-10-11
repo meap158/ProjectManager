@@ -43,6 +43,7 @@ interface CardRow {
   updated_at: string;
   closed_at: string | null;
   linked_commit: string | null;
+  issue_url: string | null;
 }
 
 const now = () => new Date().toISOString();
@@ -290,14 +291,14 @@ export function getCard(db: Db, id: number): Card | null {
 export function insertCard(
   db: Db,
   projectId: number,
-  input: { title: string; description: string; status: CardStatus },
+  input: { title: string; description: string; status: CardStatus; issueUrl?: string | null },
 ): Card {
   const position = topPosition(db, projectId, input.status); // New cards go on top.
   const ts = now();
   const id = nextCardId(db);
   db.prepare(
-    `INSERT INTO cards (id, project_id, title, description, status, position, created_at, updated_at, closed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO cards (id, project_id, title, description, status, position, created_at, updated_at, closed_at, issue_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     projectId,
@@ -308,6 +309,7 @@ export function insertCard(
     ts,
     ts,
     input.status === 'done' ? ts : null,
+    input.issueUrl ?? null,
   );
   return getCard(db, id)!;
 }
@@ -327,7 +329,9 @@ function nextCardId(db: Db): number {
 export function updateCard(
   db: Db,
   id: number,
-  patch: Partial<Pick<Card, 'title' | 'description' | 'status' | 'position' | 'linkedCommit'>>,
+  patch: Partial<
+    Pick<Card, 'title' | 'description' | 'status' | 'position' | 'linkedCommit' | 'issueUrl'>
+  >,
 ): Card | null {
   const existing = getCard(db, id);
   if (!existing) return null;
@@ -340,7 +344,7 @@ export function updateCard(
   if (next.status !== 'done') closedAt = null;
   db.prepare(
     `UPDATE cards SET title = ?, description = ?, status = ?, position = ?, linked_commit = ?,
-       closed_at = ?, updated_at = ? WHERE id = ?`,
+       closed_at = ?, updated_at = ?, issue_url = ? WHERE id = ?`,
   ).run(
     next.title,
     next.description,
@@ -349,6 +353,7 @@ export function updateCard(
     next.linkedCommit,
     closedAt,
     now(),
+    next.issueUrl ?? null,
     id,
   );
   return getCard(db, id);
@@ -383,5 +388,6 @@ function toCard(row: CardRow): Card {
     updatedAt: row.updated_at,
     closedAt: row.closed_at,
     linkedCommit: row.linked_commit,
+    issueUrl: row.issue_url ?? null,
   };
 }

@@ -137,11 +137,11 @@ export const api = {
   listCards: (projectId: number) => request<Card[]>('GET', `/projects/${projectId}/cards`),
   addCard: (
     projectId: number,
-    input: { title: string; description?: string; status: CardStatus },
+    input: { title: string; description?: string; status: CardStatus; issueUrl?: string | null },
   ) => request<Card>('POST', `/projects/${projectId}/cards`, input),
   updateCard: (
     id: number,
-    patch: Partial<Pick<Card, 'title' | 'description' | 'status' | 'position'>>,
+    patch: Partial<Pick<Card, 'title' | 'description' | 'status' | 'position' | 'issueUrl'>>,
   ) => request<Card>('PATCH', `/cards/${id}`, patch),
   deleteCard: (id: number) => request<void>('DELETE', `/cards/${id}`),
 

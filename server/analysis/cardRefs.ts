@@ -41,6 +41,8 @@ export interface RefEvent {
   text: string;
   /** Recorded on the moved card: a commit hash, or "PR #12". */
   source: string;
+  /** GitHub confirms these closing links; branch-targeted text alone is insufficient. */
+  issueClosures?: string[];
 }
 
 const RANK: Record<CardStatus, number> = {

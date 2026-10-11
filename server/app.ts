@@ -50,6 +50,14 @@ const createCardBody = z.object({
   title: z.string().trim().min(1, 'Title is required').max(200),
   description: z.string().max(20_000).default(''),
   status: z.enum(CARD_STATUSES).default('backlog'),
+  issueUrl: z
+    .string()
+    .regex(
+      /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/[1-9]\d*$/,
+      'Use a GitHub issue URL',
+    )
+    .nullable()
+    .optional(),
 });
 const themeBody = z.object({ theme: z.enum(['system', 'light', 'dark']) });
 type ThemePreference = z.infer<typeof themeBody>['theme'];
@@ -61,6 +69,13 @@ const updateCardBody = z
     description: z.string().max(20_000),
     status: z.enum(CARD_STATUSES),
     position: z.number().finite(),
+    issueUrl: z
+      .string()
+      .regex(
+        /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/[1-9]\d*$/,
+        'Use a GitHub issue URL',
+      )
+      .nullable(),
   })
   .partial();
 

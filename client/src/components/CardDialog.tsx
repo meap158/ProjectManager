@@ -103,6 +103,7 @@ export function CardDialog({
   const pendingImages = useRef<{ name: string; type: string; data: string }[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [issueUrl, setIssueUrl] = useState('');
   const [status, setStatus] = useState<CardStatus>('backlog');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -154,6 +155,7 @@ export function CardDialog({
     if (card) {
       setTitle(card.title);
       setDescription(card.description);
+      setIssueUrl(card.issueUrl ?? '');
       setStatus(card.status);
       setError(null);
       setPrompt('');
@@ -239,9 +241,17 @@ export function CardDialog({
       ? await api.updateCard(existing.id, {
           title: title.trim(),
           description,
+          ...(issueUrl.trim() !== (existing.issueUrl ?? '')
+            ? { issueUrl: issueUrl.trim() || null }
+            : {}),
           ...(status !== existing.status ? { status } : {}),
         })
-      : await api.addCard(effectiveProjectId, { title: title.trim(), description, status });
+      : await api.addCard(effectiveProjectId, {
+          title: title.trim(),
+          description,
+          status,
+          ...(issueUrl.trim() ? { issueUrl: issueUrl.trim() } : {}),
+        });
     if (creating) {
       createdRef.current = saved;
       setHasCreated(true);
@@ -411,6 +421,26 @@ export function CardDialog({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="What should this feature do? Acceptance criteria, links, ideas…"
               />
+            </div>
+            <div className="field">
+              <label htmlFor="card-issue">GitHub issue</label>
+              <input
+                id="card-issue"
+                className="input"
+                type="url"
+                value={issueUrl}
+                onChange={(event) => setIssueUrl(event.target.value)}
+                placeholder="https://github.com/owner/repo/issues/123"
+              />
+              <p className="faint">
+                Link the issue once. Commits and pull requests referencing it can move this card
+                through implementation and review.
+              </p>
+              {card.issueUrl && (
+                <a href={card.issueUrl} target="_blank" rel="noreferrer">
+                  Open linked issue
+                </a>
+              )}
             </div>
             <div className="field">
               <label>Images</label>
