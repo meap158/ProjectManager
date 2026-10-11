@@ -19,6 +19,7 @@ import { SessionToggle } from './SessionToggle';
 import { LimitsStrip } from './LimitsStrip';
 import { sendImageToSession } from '../sessionImages';
 import { SessionImageButton } from './SessionImageButton';
+import { TerminalInputQueue } from '../lib/terminalInputQueue';
 
 // xterm is heavy: it loads only when a terminal actually renders.
 const TerminalView = lazy(() =>
@@ -173,27 +174,21 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   // so fast typing or pastes arrive intact.
   // Pastes into the shown terminal like the keyboard would (image paths, PM-54).
   const pasteRef = useRef<((text: string) => void) | null>(null);
-  const keyBuffer = useRef('');
-  const keyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const keyChain = useRef<Promise<void>>(Promise.resolve());
+  const keyQueues = useRef(new Map<number, TerminalInputQueue>());
   function sendKeys(sessionId: number, data: string) {
-    keyBuffer.current += data;
-    if (keyTimer.current) return;
-    keyTimer.current = setTimeout(() => {
-      const chunk = keyBuffer.current;
-      keyBuffer.current = '';
-      keyTimer.current = null;
-      keyChain.current = keyChain.current
-        .then(() => api.sendSessionInput(sessionId, chunk))
-        .then(
-          ({ queued }) => {
-            if (queued) setQueuedNote(true);
-          },
-          (e: Error) => setError(e.message),
-        );
-    }, 12);
+    let queue = keyQueues.current.get(sessionId);
+    if (!queue) {
+      queue = new TerminalInputQueue(
+        async (chunk) => {
+          const { queued } = await api.sendSessionInput(sessionId, chunk);
+          if (queued) setQueuedNote(true);
+        },
+        (error) => setError(error.message),
+      );
+      keyQueues.current.set(sessionId, queue);
+    }
+    queue.push(data);
   }
-
   function upsertRun(next: AgentRun) {
     setRuns((prev) => {
       if (!prev) return [next];

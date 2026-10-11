@@ -35,7 +35,7 @@ import {
 } from '../components/WorkFilters';
 import { readLastAgent, saveLastAgent } from '../lastAgent';
 import { isTerminalReport } from '../../../shared/terminalReports';
-import { splitSessionInput } from '../lib/sessionInput';
+import { TerminalInputQueue } from '../lib/terminalInputQueue';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
@@ -558,24 +558,14 @@ function Pane({
 }) {
   const running = s.status === 'running';
   // Keystrokes batched per ~frame and sent strictly in order (fast typing and pastes stay intact).
-  const buffer = useRef('');
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const chain = useRef<Promise<unknown>>(Promise.resolve());
+  const inputQueue = useRef<TerminalInputQueue | null>(null);
+  if (inputQueue.current === null)
+    inputQueue.current = new TerminalInputQueue(
+      (data) => api.sendSessionInput(s.id, data),
+      (error) => onError(error.message),
+    );
   const sendKeys = (data: string) => {
-    buffer.current += data;
-    if (timer.current) return;
-    timer.current = setTimeout(() => {
-      const chunk = buffer.current;
-      buffer.current = '';
-      timer.current = null;
-      if (!chunk) return;
-      // One batch can hold a whole paste: split it so no write exceeds the server's input cap.
-      chain.current = chain.current
-        .then(async () => {
-          for (const part of splitSessionInput(chunk)) await api.sendSessionInput(s.id, part);
-        })
-        .catch((e: Error) => onError(e.message));
-    }, 12);
+    inputQueue.current!.push(data);
   };
   const [line, setLine] = useState('');
   const [renaming, setRenaming] = useState(false);
