@@ -242,8 +242,11 @@ describe('TerminalView', () => {
     expect(screen.queryByText('CLI focused')).toBeNull();
   });
 
-  it('keeps the input line above the phone keyboard and key bar while typing (PM-79)', async () => {
-    // A phone: the visual viewport shrinks from 800 to 450 px when the keyboard opens.
+  // A phone or a desktop window: the visual viewport shrinks from 800 to 450 px.
+  const withViewport = async (
+    coarse: boolean,
+    body: (v: { height: number } & EventTarget) => Promise<void>,
+  ) => {
     const viewport = Object.assign(new EventTarget(), {
       height: 800,
       width: 390,
@@ -253,12 +256,29 @@ describe('TerminalView', () => {
     const saved = {
       visualViewport: Object.getOwnPropertyDescriptor(window, 'visualViewport'),
       requestAnimationFrame: window.requestAnimationFrame,
+      matchMedia: window.matchMedia,
     };
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
     window.requestAnimationFrame = (cb: FrameRequestCallback) => {
       cb(0);
       return 1;
     };
+    window.matchMedia = ((query: string) => ({
+      matches: coarse && query === '(pointer: coarse)',
+    })) as unknown as typeof window.matchMedia;
+    try {
+      await body(viewport);
+    } finally {
+      // Put back only what this test changed (the file's shared stubs stay), even on failure.
+      if (saved.visualViewport)
+        Object.defineProperty(window, 'visualViewport', saved.visualViewport);
+      else delete (window as { visualViewport?: unknown }).visualViewport;
+      window.requestAnimationFrame = saved.requestAnimationFrame;
+      window.matchMedia = saved.matchMedia;
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  };
+  const mountFocused = async () => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
@@ -270,24 +290,35 @@ describe('TerminalView', () => {
     // The terminal's bottom (its input line) ends at 700 px: behind the keyboard once it opens.
     host.getBoundingClientRect = () => ({ top: 100, bottom: 700 }) as DOMRect;
     await waitFor(() => expect(host.contains(document.activeElement)).toBe(true));
-    viewport.height = 450;
-    viewport.dispatchEvent(new Event('resize'));
-    await waitFor(() =>
-      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'end', inline: 'nearest' }),
-    );
-    expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(true);
-    // Keyboard closed: the tab bar comes back.
-    viewport.height = 800;
-    viewport.dispatchEvent(new Event('resize'));
-    await waitFor(() =>
-      expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(false),
-    );
-    // Put back only what this test changed (the file's shared stubs stay).
-    if (saved.visualViewport) Object.defineProperty(window, 'visualViewport', saved.visualViewport);
-    else delete (window as { visualViewport?: unknown }).visualViewport;
-    window.requestAnimationFrame = saved.requestAnimationFrame;
-    delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
-  });
+    return scrollIntoView;
+  };
+
+  it('keeps the input line above the phone keyboard and key bar while typing (PM-79)', () =>
+    withViewport(true, async (viewport) => {
+      const scrollIntoView = await mountFocused();
+      viewport.height = 450;
+      viewport.dispatchEvent(new Event('resize'));
+      await waitFor(() =>
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'end', inline: 'nearest' }),
+      );
+      expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(true);
+      // Keyboard closed: the tab bar comes back.
+      viewport.height = 800;
+      viewport.dispatchEvent(new Event('resize'));
+      await waitFor(() =>
+        expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(false),
+      );
+    }));
+
+  it('never takes a shorter desktop window for an on-screen keyboard (PM-96)', () =>
+    withViewport(false, async (viewport) => {
+      const scrollIntoView = await mountFocused();
+      viewport.height = 450; // Un-maximized, or DevTools opened.
+      viewport.dispatchEvent(new Event('resize'));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(false);
+    }));
 
   it('restores keyboard focus when a preserved project terminal becomes visible again', async () => {
     const props = { fetchOutput: noFetch, streamUrl: () => '/stream', onInput: () => {} };
@@ -349,6 +380,42 @@ describe('TerminalView', () => {
     term.geometryHandler!('pm-size;180;42');
     expect([term.cols, term.rows]).toEqual([80, 24]);
   });
+  it('stays where you scrolled while output streams in, and follows again at the bottom (PM-96)', async () => {
+    const { container } = render(
+      <TerminalView fetchOutput={noFetch} streamUrl={() => '/s'} onInput={() => {}} />,
+    );
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const term = terms.at(-1)!;
+    const host = container.querySelector('.terminal')!;
+    const viewport = document.createElement('div');
+    viewport.className = 'xterm-viewport';
+    Object.defineProperties(viewport, {
+      scrollHeight: { value: 1000 },
+      clientHeight: { value: 200 },
+    });
+    term.element!.appendChild(viewport);
+    let offset = 0;
+    const output = () => {
+      offset += 4;
+      FakeEventSource.last!.emit('output', { data: 'busy', nextOffset: offset });
+      term.pendingWrites.shift()?.();
+    };
+    // Focused (as on desktop nearly always) and reading back with the wheel.
+    expect(host.contains(document.activeElement)).toBe(true);
+    viewport.scrollTop = 300;
+    host.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, bubbles: true }));
+    viewport.dispatchEvent(new Event('scroll'));
+    const before = term.bottomScrolls;
+    output();
+    output();
+    expect(term.bottomScrolls).toBe(before); // Not yanked back down.
+    // Back at the bottom: following the output again.
+    viewport.scrollTop = 800;
+    viewport.dispatchEvent(new Event('scroll'));
+    output();
+    expect(term.bottomScrolls).toBe(before + 1);
+  });
+
   it('streams live output, ignores replays after a reconnect, and forwards keystrokes', async () => {
     const onInput = vi.fn();
     render(

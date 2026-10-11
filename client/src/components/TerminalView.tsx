@@ -108,11 +108,14 @@ export function TerminalView({
       });
     };
     revealInputRef.current = revealInput;
+    // Only touch devices have an on-screen keyboard. On desktop a window that got shorter (an
+    // un-maximize, DevTools) read as one and scrolled the page and terminal on every resize.
+    const touch = window.matchMedia?.('(pointer: coarse)').matches ?? false;
     const update = () => {
       const focused = hostRef.current?.contains(document.activeElement) ?? false;
       // Browser chrome can resize the viewport too; a keyboard takes substantially more space.
       restingHeight = Math.max(restingHeight, viewport.height, window.innerHeight);
-      open = focused && restingHeight - viewport.height > 80;
+      open = touch && focused && restingHeight - viewport.height > 80;
       if (keysRef.current) {
         keysRef.current.style.top = `${viewport.offsetTop + viewport.height}px`;
         keysRef.current.style.left = `${viewport.offsetLeft}px`;
@@ -289,8 +292,17 @@ export function TerminalView({
     let lastInputTime = 0;
     let lastTouchScrollTime = 0;
     const viewport = () => host.querySelector<HTMLElement>('.xterm-viewport');
+    // Follow new output only while the reader is at the bottom (PM-96). Scrolling up (wheel,
+    // swipe, scrollbar, keys) stops following; scrolling back to the bottom or typing resumes it.
+    // Focus alone never moves the view: on desktop the terminal is focused nearly all the time,
+    // and busy CLIs redraw constantly, so following focus made scrolling back impossible.
+    let following = true;
+    let lastGesture = 0;
+    const atBottom = (element: HTMLElement) =>
+      element.scrollTop >= element.scrollHeight - element.clientHeight - 4;
 
     const scrollToBottomAndSync = () => {
+      following = true;
       term.scrollToBottom();
       const element = viewport();
       if (element) {
@@ -301,12 +313,7 @@ export function TerminalView({
     const refit = () => {
       if (cancelled || !opened) return;
       if (stopped) return;
-      const element = viewport();
-      const wasAtBottom =
-        !element ||
-        element.scrollTop >= element.scrollHeight - element.clientHeight - 40 ||
-        host.contains(document.activeElement) ||
-        Date.now() - lastInputTime < 5000;
+      const wasAtBottom = following || Date.now() - lastInputTime < 5000;
       try {
         fit.fit();
       } catch {
@@ -506,9 +513,32 @@ export function TerminalView({
       momentumFrame = requestAnimationFrame(coast);
     };
     const onFocusIn = () => {
-      if (interactive) scrollToBottomAndSync();
+      if (interactive && following) scrollToBottomAndSync();
+    };
+    // A scroll the reader made decides whether to keep following; any scroll that lands at the
+    // bottom resumes it (scroll events don't bubble, so listen in the capture phase).
+    const onGesture = (event: Event) => {
+      lastGesture = Date.now();
+      if (
+        event instanceof WheelEvent &&
+        event.deltaY < 0 &&
+        term.buffer.active.type === 'normal' &&
+        (viewport()?.scrollTop ?? 0) > 0
+      )
+        following = false;
+    };
+    const onScroll = (event: Event) => {
+      const element = viewport();
+      if (!element || event.target !== element) return;
+      if (atBottom(element)) following = true;
+      else if (Date.now() - lastGesture < 600 || Date.now() - lastTouchScrollTime < 600)
+        following = false;
     };
     host.addEventListener('focusin', onFocusIn);
+    host.addEventListener('wheel', onGesture, { passive: true, capture: true });
+    host.addEventListener('pointerdown', onGesture, { passive: true, capture: true });
+    host.addEventListener('keydown', onGesture, { passive: true, capture: true });
+    host.addEventListener('scroll', onScroll, { passive: true, capture: true });
     host.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
     host.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
     host.addEventListener('touchend', onTouchEnd);
@@ -553,15 +583,8 @@ export function TerminalView({
           if (nextOffset >= restoreBytes) reveal();
         });
       } else {
-        const element = viewport();
         const userScrolling = Date.now() - lastTouchScrollTime < 1500;
-        const shouldStick =
-          interactive &&
-          !userScrolling &&
-          (!element ||
-            element.scrollTop >= element.scrollHeight - element.clientHeight - 40 ||
-            Date.now() - lastInputTime < 5000 ||
-            host.contains(document.activeElement));
+        const shouldStick = interactive && !userScrolling && following;
         term.write(cleanData, () => {
           if (cancelled) return;
           setConnection('ready');
@@ -706,6 +729,10 @@ export function TerminalView({
       host.removeEventListener('paste', onPaste, true);
       host.removeEventListener('dragover', onDragOver);
       host.removeEventListener('drop', onDrop);
+      host.removeEventListener('wheel', onGesture, true);
+      host.removeEventListener('pointerdown', onGesture, true);
+      host.removeEventListener('keydown', onGesture, true);
+      host.removeEventListener('scroll', onScroll, true);
       host.removeEventListener('touchstart', onTouchStart, true);
       host.removeEventListener('touchmove', onTouchMove, true);
       host.removeEventListener('touchend', onTouchEnd);
