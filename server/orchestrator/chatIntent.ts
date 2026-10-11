@@ -41,6 +41,16 @@ export class ChatDispatchIntent {
         .run(runId, now, this.cardId, this.key, runId, this.cardId, this.key).changes > 0
     );
   }
+  /** A denied insertion did no work: release only this current key, without charging a retry. */
+  superseded(now = Date.now()): boolean {
+    return (
+      this.db
+        .prepare(
+          "UPDATE orchestrator_assignments SET state = 'error', attempts = MAX(0, attempts - 1), retry_after = 0, updated_at = ? WHERE card_id = ? AND dispatch_key = ? AND state = 'dispatching' AND NOT EXISTS (SELECT 1 FROM agent_runs WHERE dispatch_key = ?)",
+        )
+        .run(now, this.cardId, this.key, this.key).changes > 0
+    );
+  }
   failed(now = Date.now()): boolean {
     // Inserted work must be reconciled, even if acknowledgement failed.
     return (

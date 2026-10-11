@@ -226,6 +226,24 @@ describe('orchestrator chat tools (PM-89)', () => {
     db.close();
   });
 
+  it('refunds a denied insertion so edited work can be dispatched immediately', async () => {
+    const { call, mine, supervisor, db } = setup();
+    supervisor.dispatchCard.mockImplementationOnce(async (_projectId, cardId, input) => {
+      db.prepare("UPDATE cards SET description = 'Updated task' WHERE id = ?").run(cardId);
+      expect((input as { canCommit: () => boolean }).canCommit()).toBe(false);
+      throw new Error('Insertion denied');
+    });
+    await expect(call('dispatch_worker', { card: mine.key })).rejects.toThrow('Insertion denied');
+    expect(
+      db
+        .prepare('SELECT state,attempts,retry_after FROM orchestrator_assignments WHERE card_id=?')
+        .get(mine.id),
+    ).toMatchObject({ state: 'error', attempts: 0, retry_after: 0 });
+    await call('dispatch_worker', { card: mine.key });
+    expect(supervisor.dispatchCard).toHaveBeenCalledTimes(2);
+    db.close();
+  });
+
   it.each(['success', 'failure'] as const)(
     'keeps slow chat preparation reserved and clears its heartbeat after %s',
     async (outcome) => {

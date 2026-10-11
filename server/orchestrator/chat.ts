@@ -550,6 +550,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       reservation.intent = intent;
       const heartbeat = setInterval(() => intent?.heartbeat(), 30000);
       heartbeat.unref();
+      let insertionDenied = false;
       try {
         const context = [
           cardContext(this.service.situation(orchestratorId)!, c.id, c.projectId),
@@ -562,7 +563,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
           ...(context ? { context } : {}),
           dispatchKey: intent.key,
           maxAttempts: 1,
-          canCommit: () => check().allowed,
+          canCommit: () => {
+            const allowed = check().allowed;
+            if (!allowed) insertionDenied = true;
+            return allowed;
+          },
         });
         intent.assigned(run.id);
         this.record(
@@ -573,7 +578,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
         );
         return { dispatched: runBrief(run), card: brief(getCard(this.db, c.id) ?? c) };
       } catch (error) {
-        intent.failed();
+        if (insertionDenied) intent.superseded();
+        else intent.failed();
         throw error;
       } finally {
         clearInterval(heartbeat);

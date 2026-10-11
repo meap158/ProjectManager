@@ -230,3 +230,9 @@ provider/auth waits, runtime crash drills and end-to-end latency/mobile checks. 
 share policy and reservation primitives but still have separate execution flows; a unified guarded
 operation remains a maintainability upgrade. These test results do not prove live crash recovery
 or measured LAN latency.
+
+Chat superseded-intent accounting now matches scheduled dispatch: a denied insertion releases
+only the current keyed claim, refunds that attempt and applies no cooldown. Ordinary provider
+preparation failures retain the existing cooldown/budget behavior. Tests verify immediate dispatch
+of edited instructions, one refund only, replacement-owner fencing and no refund after run
+insertion. This does not add automatic retries or classify authentication/provider failures.
