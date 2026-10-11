@@ -484,6 +484,8 @@ export class OrchestratorService {
           action: 'dispatching',
           message: `Assigning to ${fresh.providerId}`,
         });
+        const dispatchKey = assignments.dispatchKey(fresh.cardId);
+        let superseded = false;
         try {
           // The worker starts from what Home shows about this card and its project.
           const situation = this.situation(initial.id);
@@ -491,8 +493,9 @@ export class OrchestratorService {
             providerId: fresh.providerId,
             context: situation ? cardContext(situation, fresh.cardId) : undefined,
             maxAttempts: 1,
-            dispatchKey: assignments.dispatchKey(fresh.cardId),
+            dispatchKey,
             canCommit: () => {
+              superseded = false;
               const policy = this.state().instances.find((instance) => instance.id === initial.id);
               if (
                 !assignments.isLeaseValid(this.owner, epoch) ||
@@ -509,8 +512,10 @@ export class OrchestratorService {
                 latestTask.description !== taskRevision.description ||
                 latestTask.status !== taskRevision.status ||
                 latestTask.updatedAt !== taskRevision.updatedAt
-              )
+              ) {
+                superseded = true;
                 return false;
+              }
               // The current dispatch owns this reservation; all other claims stay blocked.
               latest.blockedCardIds.delete(fresh.cardId);
               const checked = planOrchestration(
@@ -534,6 +539,20 @@ export class OrchestratorService {
             message: `Worker ${run.id} started with ${fresh.providerId}`,
           });
         } catch (e) {
+          if (
+            superseded &&
+            dispatchKey &&
+            assignments.superseded(fresh.cardId, dispatchKey, this.owner, epoch)
+          ) {
+            this.event({
+              orchestratorId: initial.id,
+              cardId: fresh.cardId,
+              action: 'wait',
+              message:
+                'Task changed before launch; the updated instructions will be reconsidered on the next check',
+            });
+            continue;
+          }
           if (!assignments.failed(fresh.cardId, Date.now(), this.owner, epoch)) return;
           this.event({
             orchestratorId: initial.id,

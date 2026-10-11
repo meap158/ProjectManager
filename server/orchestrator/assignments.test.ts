@@ -200,3 +200,46 @@ it('limits retry metadata to requested preview cards and skips empty pages', () 
   expect(assignments.retryPlans(Date.now(), []).size).toBe(0);
   expect(assignments.retryPlans().size).toBe(1);
 });
+
+it('refunds superseded pre-launch intents once, with lease and dispatch identity fencing', () => {
+  const a = new OrchestratorAssignments(db);
+  expect(a.lease('owner', 1000)).toBe(true);
+  expect(a.claim(1, 'master', 1001, 'owner', 1)).toBe(true);
+  const key = a.dispatchKey(1)!;
+  expect(a.superseded(1, 'wrong', 'owner', 1, 1002)).toBe(false);
+  expect(a.superseded(1, key, 'other', 1, 1002)).toBe(false);
+  expect(a.superseded(1, key, 'owner', 1, 1002)).toBe(true);
+  expect(a.superseded(1, key, 'owner', 1, 1003)).toBe(false);
+  expect(a.retryPlans(1003).get(1)).toMatchObject({
+    attemptsUsed: 0,
+    attemptsRemaining: 3,
+    retryAt: null,
+  });
+  expect(a.claim(1, 'master', 1004, 'owner', 1)).toBe(true);
+  expect(a.dispatchKey(1)).not.toBe(key);
+  expect(a.superseded(1, key, 'owner', 1, 1005)).toBe(false);
+  expect(a.retryPlans(1005).get(1)?.attemptsUsed).toBe(1);
+});
+
+it('never refunds a superseded intent after its keyed run was inserted', () => {
+  const a = new OrchestratorAssignments(db);
+  expect(a.lease('owner', 1000)).toBe(true);
+  expect(a.claim(1, 'master', 1001, 'owner', 1)).toBe(true);
+  const key = a.dispatchKey(1)!;
+  const run = db
+    .prepare(
+      `INSERT INTO agent_runs (project_id, card_id, name, command_json, created_at, log_path, dispatch_key)
+    VALUES (1, 1, 'Started', '[]', '2026-10-10', '/tmp/fixture.log', ?)`,
+    )
+    .run(key);
+  try {
+    expect(a.superseded(1, key, 'owner', 1, 1002)).toBe(false);
+    expect(a.retryPlans(1002).get(1)?.attemptsUsed).toBe(1);
+    a.reconcile([], 1003);
+    expect(
+      db.prepare('SELECT state FROM orchestrator_assignments WHERE card_id = 1').get()?.state,
+    ).toBe('assigned');
+  } finally {
+    db.prepare('DELETE FROM agent_runs WHERE id = ?').run(run.lastInsertRowid);
+  }
+});

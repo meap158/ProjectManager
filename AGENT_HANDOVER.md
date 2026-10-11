@@ -2,6 +2,12 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Superseded pre-launch tasks now replan on the next tick without a five-minute cooldown or
+  consuming an execution attempt. Refund requires current lease epoch, matching dispatch key,
+  dispatching state and no inserted run for that key; repeated refunds are rejected. Real runs
+  remain counted/reserved. Twenty-one assignment/service tests pass, including next-tick launch,
+  stale owner/key and inserted-run protection. Provider/auth classification remains open.
+
 - Orchestrator commit fence captures task title/description/status/update timestamp before
   async provider preparation and rejects changed instructions immediately before insertion.
   Content checks catch same-timestamp edits; timestamp catches revision-only changes. Uses a

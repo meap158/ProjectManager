@@ -460,3 +460,70 @@ describe('orchestrator service', () => {
     db.close();
   });
 });
+
+it('replans an edited pre-launch task without consuming worker retry budget', async () => {
+  const db = openDb(':memory:');
+  const at = new Date().toISOString();
+  db.prepare("INSERT INTO projects (id, name, path, created_at) VALUES (1, 'Test', ?, ?)").run(
+    tmp,
+    at,
+  );
+  db.prepare(
+    "INSERT INTO cards (id, project_id, title, description, status, position, created_at, updated_at) VALUES (1, 1, 'Task', '', 'todo', 0, ?, ?)",
+  ).run(at, at);
+  let edit = true;
+  const dispatch = vi.fn(
+    async (_project: number, _card: number, input: { canCommit?: () => boolean }) => {
+      if (edit) {
+        edit = false;
+        db.prepare("UPDATE cards SET description = 'Updated task' WHERE id = 1").run();
+        expect(input.canCommit?.()).toBe(false);
+        throw new Error('Dispatch rejected');
+      }
+      expect(input.canCommit?.()).toBe(true);
+      return { id: 1 };
+    },
+  );
+  const service = new OrchestratorService(
+    db,
+    {
+      listAllRuns: () => [],
+      listAllSessions: () => [],
+      dispatchCard: dispatch,
+    } as unknown as AgentSupervisor,
+    null,
+  );
+  try {
+    const master = service.save({
+      name: 'Master',
+      enabled: true,
+      projectIds: [1],
+      providers: ['codex'],
+      maxWorkers: 1,
+      maxWorkersPerProject: 1,
+      maxWorkersPerProvider: 1,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
+    });
+    await service.tick(master.id);
+    expect(
+      db
+        .prepare(
+          'SELECT attempts, retry_after, state FROM orchestrator_assignments WHERE card_id = 1',
+        )
+        .get(),
+    ).toMatchObject({ attempts: 0, retry_after: 0, state: 'error' });
+    expect(
+      service.state().events.some((e) => e.action === 'wait' && e.message.includes('Task changed')),
+    ).toBe(true);
+    await service.tick(master.id);
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(
+      db.prepare('SELECT attempts, state FROM orchestrator_assignments WHERE card_id = 1').get(),
+    ).toMatchObject({ attempts: 1, state: 'assigned' });
+  } finally {
+    await service.stop();
+    db.close();
+  }
+});

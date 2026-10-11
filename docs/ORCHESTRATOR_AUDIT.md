@@ -163,5 +163,10 @@ status or timestamp, preventing a stale prompt from launching after an edit. Tes
 same-timestamp content changes and revision-only changes alongside capacity races.
 This is in-flight protection, not a durable generation counter: edits reverted to identical
 content/timestamp and crash-spanning task revisions still require the planned generation work.
-A rejected stale dispatch currently consumes the existing attempt/cooldown budget; distinguishing
-superseded intents from provider failures is part of that remaining recovery design.
+Superseded pre-launch intents now release their reservation with zero cooldown and refund
+that intent's attempt. The transition is fenced by current lease epoch, dispatch key and
+absence of any inserted run carrying that key. A second refund or a stale owner/key cannot
+change accounting; an inserted run stays reserved and counted. Replanning occurs on the
+next tick, not an immediate retry loop. Tests cover edited-task redispatch, duplicate refund,
+wrong owner/key and crash-after-insertion protection. Durable revision identities and
+classified provider/auth failures remain separate recovery work.

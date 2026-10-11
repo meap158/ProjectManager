@@ -173,6 +173,21 @@ export class OrchestratorAssignments {
     );
   }
 
+  /** Refund only an intent proven not to have inserted a run. Never refund real execution. */
+  superseded(cardId: number, dispatchKey: string, owner: string, epoch: number, now = Date.now()) {
+    if (!this.isLeaseValid(owner, epoch, now)) return false;
+    return (
+      this.db
+        .prepare(
+          `UPDATE orchestrator_assignments
+      SET state = 'error', attempts = MAX(0, attempts - 1), retry_after = 0, updated_at = ?
+      WHERE card_id = ? AND state = 'dispatching' AND dispatch_key = ?
+      AND NOT EXISTS (SELECT 1 FROM agent_runs WHERE dispatch_key = ?)`,
+        )
+        .run(now, cardId, dispatchKey, dispatchKey).changes > 0
+    );
+  }
+
   failed(cardId: number, now = Date.now(), owner?: string, epoch?: number) {
     if (owner !== undefined && !this.isLeaseValid(owner, epoch, now)) return false;
     this.db
