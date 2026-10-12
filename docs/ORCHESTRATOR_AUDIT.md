@@ -332,3 +332,12 @@ Regression validation for manual replay: the full suite passed 467 tests across 
 (335.28 seconds). A subsequently added completed-card replay test passed in the 14-test chat
 suite. The four process-exit tests passed independently after extension. Typechecking and
 lint passed; npm run check stops at formatting in five concurrently edited UI/design files.
+
+## Persisted retry explanations, 2026-10-12
+
+Preview now uses typed retry blocker metadata to distinguish cooldown, exhausted budget,
+and an active dispatch/assignment reservation. Previously all three displayed the generic
+reservation label and next action even though the stored retry details differed. Live-worker
+and review decisions retain precedence, and preview does not modify assignments or dispatch.
+The queue can now show the existing cooldown/task and exhausted-budget/run-inspection advice.
+Provider authentication classification and explicit bounded recovery remain separate gaps.

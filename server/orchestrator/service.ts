@@ -110,16 +110,24 @@ export class OrchestratorService {
         review: decisions.filter((d) => d.action === 'review').length,
         wait: decisions.filter((d) => d.action === 'wait').length,
       },
-      decisions: page.map((decision) => ({
-        ...decision,
-        retry: retryPlans.get(decision.cardId) ?? {
+      decisions: page.map((decision) => {
+        const { waitReason, ...retry } = retryPlans.get(decision.cardId) ?? {
+          waitReason: null,
           attemptsUsed: 0,
           attemptsRemaining: 3,
           retryAt: null,
           blocker: null,
-        },
-        execution: { autonomy: 'edit' as const, supervisorAttempts: 1, requiresReview: true },
-      })),
+        };
+        // The planner preserves reservations; preview explains the exact persisted blocker.
+        // Live workers and pending reviews keep precedence over retry metadata.
+        const explainRetry = decision.waitReason === 'assignment_reserved' && waitReason;
+        return {
+          ...decision,
+          ...(explainRetry ? { waitReason, reason: retry.blocker ?? decision.reason } : {}),
+          retry,
+          execution: { autonomy: 'edit' as const, supervisorAttempts: 1, requiresReview: true },
+        };
+      }),
     };
   }
   save(input: Omit<OrchestratorConfig, 'id'> & { id?: string }): OrchestratorConfig {

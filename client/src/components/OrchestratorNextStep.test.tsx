@@ -36,3 +36,18 @@ it('keeps ready decisions compact', () => {
   show(undefined, 'dispatch');
   expect(screen.queryByRole('link')).toBeNull();
 });
+
+it('directs cooldown recovery to the task without bypassing its waiting period', () => {
+  show('retry_cooldown');
+  expect(screen.getByText(/Wait until the cooldown ends/)).toBeDefined();
+  expect(screen.getByRole('link', { name: 'Open task' }).getAttribute('href')).toBe(
+    '/board?project=7&card=4',
+  );
+});
+it('directs exhausted budgets to failed-run inspection', () => {
+  show('retry_budget_exhausted');
+  expect(screen.getByText(/correct the cause before requesting more work/)).toBeDefined();
+  expect(screen.getByRole('link', { name: 'Inspect runs' }).getAttribute('href')).toBe(
+    '/projects/7?tab=agents',
+  );
+});

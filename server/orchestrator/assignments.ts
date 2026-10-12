@@ -93,6 +93,14 @@ export class OrchestratorAssignments {
       rows.map((row) => [
         row.card_id,
         {
+          waitReason:
+            row.state !== 'error'
+              ? ('assignment_reserved' as const)
+              : row.attempts >= 3
+                ? ('retry_budget_exhausted' as const)
+                : row.retry_after > now
+                  ? ('retry_cooldown' as const)
+                  : null,
           attemptsUsed: row.attempts,
           attemptsRemaining: Math.max(0, 3 - row.attempts),
           retryAt: row.retry_after > now ? new Date(row.retry_after).toISOString() : null,

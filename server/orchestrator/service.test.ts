@@ -540,3 +540,63 @@ it('replans an edited pre-launch task without consuming worker retry budget', as
     db.close();
   }
 });
+
+it('explains persisted cooldown and exhausted budgets without mislabelling live reservations', async () => {
+  const db = openDb(':memory:');
+  try {
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture',?,?)").run(
+      tmp,
+      now,
+    );
+    const states = [
+      { state: 'error', attempts: 1, retryAt: Date.now() + 300000, expected: 'retry_cooldown' },
+      {
+        state: 'error',
+        attempts: 3,
+        retryAt: Date.now() + 300000,
+        expected: 'retry_budget_exhausted',
+      },
+      { state: 'dispatching', attempts: 3, retryAt: 0, expected: 'assignment_reserved' },
+      { state: 'assigned', attempts: 3, retryAt: 0, expected: 'assignment_reserved' },
+    ];
+    for (const [index, entry] of states.entries()) {
+      db.prepare(
+        "INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(?,1,'Task','todo',?,?,?)",
+      ).run(index + 1, index, now, now);
+      db.prepare(
+        "INSERT INTO orchestrator_assignments(card_id,orchestrator_id,state,attempts,retry_after,updated_at) VALUES(?,'master',?,?,?,?)",
+      ).run(index + 1, entry.state, entry.attempts, entry.retryAt, Date.now());
+    }
+    const dispatchCard = vi.fn();
+    const service = new OrchestratorService(
+      db,
+      { listAllSessions: () => [], dispatchCard } as unknown as AgentSupervisor,
+      null,
+    );
+    const master = service.save({
+      name: 'Fixture',
+      enabled: true,
+      strategy: 'observe',
+      projectIds: [1],
+      providers: ['codex'],
+      maxWorkers: 2,
+      maxWorkersPerProject: 2,
+      maxWorkersPerProvider: 2,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
+    });
+    const before = db.prepare('SELECT * FROM orchestrator_assignments').all();
+    const preview = await service.preview(master.id);
+    expect(preview?.decisions.map((d) => d.waitReason)).toEqual(states.map((s) => s.expected));
+    expect(preview?.decisions[0]?.reason).toBe('Retry cooldown');
+    expect(preview?.decisions[1]?.reason).toBe('Retry budget exhausted');
+    expect(preview?.decisions.every((d) => d.action === 'wait')).toBe(true);
+    expect(preview?.decisions[0]?.retry.retryAt).not.toBeNull();
+    expect(db.prepare('SELECT * FROM orchestrator_assignments').all()).toEqual(before);
+    expect(dispatchCard).not.toHaveBeenCalled();
+  } finally {
+    db.close();
+  }
+});
