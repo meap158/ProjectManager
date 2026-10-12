@@ -348,10 +348,6 @@
   /* Readable columns: a wide table scrolls sideways instead of a word per line. */
   min-width: 9em;
 }
-.chat-table th:first-child,
-.chat-table td:first-child {
-  min-width: 2.5em;
-}
 .chat-table th {
   background: var(--surface);
   font-weight: 600;
@@ -620,4 +616,57 @@
   .chat-background li::before {
     animation: none;
   }
+}
+
+/* Rendering (PM-120). Bubbles may break long words anywhere so nothing overflows, but tables
+   must not inherit that: the browser would size columns by single letters ("C a m p…"). Cells
+   wrap only between words, keep a readable width, and a wide table scrolls sideways in a
+   bubble that takes the full width. */
+.chat-bubble:has(.chat-table-wrap) {
+  max-width: 100%;
+}
+.chat-table-wrap {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+}
+.chat-table {
+  /* Columns as wide as their content up to a comfortable measure; wider tables scroll. */
+  width: max-content;
+  min-width: 100%;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: normal;
+}
+.chat-table th,
+.chat-table td {
+  min-width: 4em;
+  max-width: 16em;
+}
+.chat-table code {
+  white-space: nowrap;
+}
+.chat-list-block {
+  margin: 4px 0;
+  padding-left: 1.3em;
+  white-space: normal;
+}
+.chat-list-block li {
+  margin: 2px 0;
+  white-space: pre-wrap;
+}
+.chat-quote {
+  margin: 6px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-2);
+}
+.chat-rule {
+  margin: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.chat-bubble a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

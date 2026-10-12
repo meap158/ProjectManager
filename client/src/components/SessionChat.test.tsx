@@ -388,3 +388,40 @@ describe('quick key order (PM-121)', () => {
     expect(keys().slice(0, 2)).toEqual(['Enter', 'Escape']);
   });
 });
+
+describe('reply rendering (PM-120)', () => {
+  it('renders lists, links, quotes and dividers; only http(s) links are links', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(
+      transcript({
+        items: [
+          {
+            id: 'a',
+            kind: 'assistant',
+            text: [
+              'Done:',
+              '- Fixed the **table**',
+              '- See [the PR](https://github.com/x/y/pull/1).',
+              '1. first',
+              '2. second',
+              '> quoted note',
+              '---',
+              'Docs at https://example.com/guide, and javascript:alert(1) stays text.',
+            ].join('\n'),
+            at: null,
+          },
+        ],
+      }),
+    );
+    render(<SessionChat session={session()} onError={() => {}} />);
+    const pr = await screen.findByRole('link', { name: 'the PR' });
+    expect(pr.getAttribute('href')).toBe('https://github.com/x/y/pull/1');
+    expect(pr.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(screen.getByRole('link', { name: 'https://example.com/guide' })).toBeDefined();
+    expect(screen.getAllByRole('link')).toHaveLength(2); // javascript: is never a link.
+    const lists = screen.getAllByRole('list');
+    expect(lists.map((l) => l.tagName)).toEqual(['UL', 'OL']);
+    expect(lists[0]!.querySelectorAll('li')).toHaveLength(2);
+    expect(document.querySelector('blockquote')!.textContent).toBe('quoted note');
+    expect(document.querySelector('hr.chat-rule')).not.toBeNull();
+  });
+});

@@ -66,19 +66,41 @@ function merge(items: ChatItem[]): Entry[] {
 }
 
 /** Inline Markdown: `code` and **bold**. */
+/** A safe external link: http(s) only, opened in a new tab without access to this page. */
+const link = (href: string, label: ReactNode, key: string | number) =>
+  /^https?:\/\//i.test(href) ? (
+    <a key={key} href={href} target="_blank" rel="noopener noreferrer">
+      {label}
+    </a>
+  ) : (
+    label
+  );
+
 function inline(text: string, key: string): ReactNode {
-  const parts = text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/);
+  // `code`, **bold**, [label](url) and bare http(s) URLs; everything else stays text.
+  const parts = text.split(
+    /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^)\s]+\)|https?:\/\/[^\s<>)]+)/,
+  );
   return (
     <span key={key}>
-      {parts.map((part, j) =>
-        part.startsWith('`') && part.endsWith('`') && part.length > 1 ? (
-          <code key={j}>{part.slice(1, -1)}</code>
-        ) : part.startsWith('**') && part.endsWith('**') && part.length > 3 ? (
-          <strong key={j}>{part.slice(2, -2)}</strong>
-        ) : (
-          part
-        ),
-      )}
+      {parts.map((part, j) => {
+        if (part.startsWith('`') && part.endsWith('`') && part.length > 1)
+          return <code key={j}>{part.slice(1, -1)}</code>;
+        if (part.startsWith('**') && part.endsWith('**') && part.length > 3)
+          return <strong key={j}>{part.slice(2, -2)}</strong>;
+        const md = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part);
+        if (md) return link(md[2]!, md[1], j);
+        if (/^https?:\/\//i.test(part)) {
+          const url = part.replace(/[.,;:!?]+$/, ''); // Sentence punctuation isn't part of it.
+          return (
+            <span key={j}>
+              {link(url, url, 'a')}
+              {part.slice(url.length)}
+            </span>
+          );
+        }
+        return part;
+      })}
     </span>
   );
 }
@@ -140,6 +162,54 @@ function prose(text: string, key: string): ReactNode[] {
         <div key={`${key}-h${i}`} className="chat-heading">
           {inline(heading[2]!, 'h')}
         </div>,
+      );
+      continue;
+    }
+    // A divider: ---, *** or ___ alone on a line.
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+      flush();
+      out.push(<hr key={`${key}-r${i}`} className="chat-rule" />);
+      continue;
+    }
+    // A list: consecutive "- item" / "* item" / "1. item" lines (indented ones nest visually).
+    const item = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+    if (item.test(line)) {
+      flush();
+      const ordered = /\d/.test(item.exec(line)![2]!);
+      const entries: { depth: number; text: string }[] = [];
+      // One list per marker kind: bullets and numbers that follow each other are two lists.
+      const sameKind = (l: string) => {
+        const m = item.exec(l);
+        return !!m && /\d/.test(m[2]!) === ordered;
+      };
+      while (i < lines.length && sameKind(lines[i]!)) {
+        const m = item.exec(lines[i++]!)!;
+        entries.push({ depth: Math.min(3, Math.floor(m[1]!.length / 2)), text: m[3]! });
+      }
+      i--;
+      const List = ordered ? 'ol' : 'ul';
+      out.push(
+        <List key={`${key}-l${i}`} className="chat-list-block">
+          {entries.map((e, n) => (
+            <li key={n} style={e.depth ? { marginLeft: `${e.depth * 1.1}em` } : undefined}>
+              {inline(e.text, `li${n}`)}
+            </li>
+          ))}
+        </List>,
+      );
+      continue;
+    }
+    // A quote: consecutive "> " lines.
+    if (/^\s*>\s?/.test(line)) {
+      flush();
+      const quoted: string[] = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i]!))
+        quoted.push(lines[i++]!.replace(/^\s*>\s?/, ''));
+      i--;
+      out.push(
+        <blockquote key={`${key}-q${i}`} className="chat-quote">
+          {inline(quoted.join('\n'), 'q')}
+        </blockquote>,
       );
       continue;
     }
