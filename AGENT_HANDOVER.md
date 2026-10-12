@@ -608,6 +608,12 @@ atomic commits). Nothing is pending in the working tree.
 - **Sidebar custom order:** "Custom order" sort with grip handles (drag or ↑/↓), order saved in
   settings `project_order` (`client/src/projectOrder.ts`, after KDP's Library custom sort).
 - **Auto refresh:** the stalest project is rescanned once 15+ minutes old (one scan at a time).
+- **Load limits (host CPU/heat):** at most 2 project scans work at once (`MAX_PARALLEL_SCANS`,
+  `Scanner.inTurn`; others wait, still shown as scanning). Card runs (manual and Orchestrator)
+  execute at most `MAX_PARALLEL_RUNS` at once across all projects (threads/4, 1–4); the rest stay
+  `queued` in `agent_runs` and `startQueuedRuns` starts the oldest when a run finishes, fails to
+  start or is deleted, so the queue survives restarts. Run timeouts count from the actual start.
+  Interactive sessions are not capped machine-wide (a person is typing in them).
 - **Agent permissions** (Settings): global level + per-CLI inherit/own, translated into each CLI's
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.
 - **LAN access** (Settings, opt-in): separate listener, devices sign in with a 4-character

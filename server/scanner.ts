@@ -35,10 +35,18 @@ const MENTIONS_CARD = new RegExp(String.raw`\b${CARD_KEY_PREFIX}-\d+\b`, 'i');
 const MAX_SEEN = 5000;
 const seenKey = (projectId: number) => `ref_events_seen:${projectId}`;
 
+/**
+ * Scans doing work at once. Each one walks the folder, reads every source file and runs scc and
+ * git, so adding many projects at once would otherwise start them all together.
+ */
+const MAX_PARALLEL_SCANS = 2;
+
 const IDLE: ScanState = { status: 'idle', error: null, startedAt: null, moves: [] };
 
 export class Scanner {
   private states = new Map<number, ScanState>();
+  private runningScans = 0;
+  private waitingScans: (() => void)[] = [];
 
   constructor(private db: Db) {}
 
@@ -59,13 +67,27 @@ export class Scanner {
       startedAt: new Date().toISOString(),
       moves: [],
     });
-    this.run(projectId).then(
+    this.inTurn(() => this.run(projectId)).then(
       (moves) => this.states.set(projectId, { ...IDLE, moves }),
       (error: Error) => {
         console.error(`[scan] project ${projectId} failed:`, error);
         this.states.set(projectId, { ...IDLE, status: 'error', error: error.message });
       },
     );
+  }
+
+  /** Runs `task` once fewer than MAX_PARALLEL_SCANS scans are working (first come, first served). */
+  private async inTurn<T>(task: () => Promise<T>): Promise<T> {
+    if (this.runningScans < MAX_PARALLEL_SCANS) this.runningScans++;
+    else await new Promise<void>((resolve) => this.waitingScans.push(resolve));
+    try {
+      return await task();
+    } finally {
+      // Hand the slot straight to the next waiting scan, or give it back.
+      const next = this.waitingScans.shift();
+      if (next) next();
+      else this.runningScans--;
+    }
   }
 
   private async run(projectId: number): Promise<CardMove[]> {

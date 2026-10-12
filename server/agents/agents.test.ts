@@ -10,7 +10,7 @@ import type { AgentRun, AgentSession } from '../../shared/types.js';
 import { createApp } from '../app.js';
 import { openDb, type Db } from '../db.js';
 import { AgentSupervisor } from './supervisor.js';
-import { setSetting, getSetting } from '../store.js';
+import { setSetting, getSetting, insertCard, insertProject } from '../store.js';
 
 const HOST = { host: 'localhost:5180' };
 const NODE = process.execPath;
@@ -666,5 +666,39 @@ describe('reboot persistence', () => {
     expect(sup2.getSession(session.id)!.restarts).toBe(back.restarts);
     expect(back.restarts).toBe(1);
     await sup2.removeSession(session.id);
+  }, 30_000);
+});
+
+describe('parallel run limit', () => {
+  it('queues runs beyond the host-wide limit and starts them as slots free up', async () => {
+    const db = openDb(':memory:');
+    const sup = new AgentSupervisor(db, path.join(tmp, 'limit-logs'), { maxParallelRuns: 1 });
+    try {
+      const pid = insertProject(db, 'limited', projectDir);
+      const dispatch = (title: string) =>
+        sup.dispatchCard(pid, insertCard(db, pid, { title, description: '', status: 'todo' }).id, {
+          command: [NODE, '-e', LONG],
+        });
+      const first = await dispatch('First');
+      const second = await dispatch('Second');
+      await waitFor(
+        async () => sup.getRun(first.id)!,
+        (r) => r.status === 'running',
+        'first run start',
+      );
+      expect(sup.getRun(second.id)!.status).toBe('queued');
+      expect(sup.readRunOutput(second.id, 0)!.data).toContain('1 of 1 parallel runs are busy');
+
+      await sup.stopRun(first.id);
+      await waitFor(
+        async () => sup.getRun(second.id)!,
+        (r) => r.status === 'running',
+        'queued run start',
+      );
+      await sup.stopRun(second.id);
+    } finally {
+      await sup.shutdown();
+      db.close();
+    }
   }, 30_000);
 });

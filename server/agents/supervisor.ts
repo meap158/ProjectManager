@@ -109,6 +109,15 @@ const now = () => new Date().toISOString();
 
 export const MAX_SESSIONS_PER_PROJECT = 8;
 export const MAX_RUNNING_RUNS_PER_PROJECT = 3;
+/**
+ * Card runs executing at once across all projects. Each run is an agent CLI that builds, tests
+ * and lints on its own, so several at once can hold every core for hours (heat, throttling).
+ * Further runs wait as 'queued' in the database and start, oldest first, as slots free up.
+ */
+export const MAX_PARALLEL_RUNS = Math.max(
+  1,
+  Math.min(4, Math.floor(os.availableParallelism() / 4)),
+);
 export const MAX_LOG_BYTES = 32 * 1024 * 1024;
 const MEM_CAP_BYTES = 256 * 1024;
 const MAX_READ_BYTES = 128 * 1024;
@@ -468,6 +477,7 @@ export class AgentSupervisor {
   private logs = new Map<string, OutputLog>();
   /** Keys whose spawn is in flight (argv resolution is async): guards double starts. */
   private starting = new Set<string>();
+  private readonly maxParallelRuns: number;
   /** When each session last spawned and whether that spawn resumed a conversation. */
   private lastSpawn = new Map<string, { at: number; resumed: boolean; byUser: boolean }>();
   /** Sessions whose last resume died right away: their next relaunch starts fresh. */
@@ -526,10 +536,12 @@ export class AgentSupervisor {
       host?: boolean;
       dataDir?: string;
       installRecipes?: Partial<Record<string, InstallRecipe>>;
+      maxParallelRuns?: number;
     } = {},
   ) {
     mkdirSync(logDir, { recursive: true });
     this.dataDir = options.dataDir ?? null;
+    this.maxParallelRuns = options.maxParallelRuns ?? MAX_PARALLEL_RUNS;
     this.installRecipes = options.installRecipes ?? {};
     this.useHost = !!options.host && !!this.dataDir && ptyAvailable();
     this.ready = this.reconcile().catch((e: Error) => {
@@ -1562,11 +1574,19 @@ export class AgentSupervisor {
     } catch {
       // Best-effort.
     }
+    // A deleted run never reaches finishRun, so its slot is handed on here.
+    this.startQueuedRuns();
     return true;
   }
 
   /** Stop everything for a deleted project and drop its logs. */
   async onProjectDeleted(projectId: number): Promise<void> {
+    // Queued runs must not take a slot freed by killing this project's live ones.
+    this.db
+      .prepare(
+        `UPDATE agent_runs SET status = 'killed', ended_at = ? WHERE project_id = ? AND status = 'queued'`,
+      )
+      .run(now(), projectId);
     for (const live of [...this.live.values()]) {
       const rowId = live.id;
       const table = live.kind === 'session' ? 'agent_sessions' : 'agent_runs';
@@ -2081,9 +2101,41 @@ export class AgentSupervisor {
       .run(now(), id);
   }
 
+  /** Runs holding a slot: live, or between the spawn decision and the process start. */
+  private activeRuns(): number {
+    let n = 0;
+    for (const live of this.live.values()) if (live.kind === 'run') n++;
+    for (const key of this.starting) if (key.startsWith('run:')) n++;
+    return n;
+  }
+
+  /** Starts queued runs, oldest first, while slots are free. */
+  private startQueuedRuns(): void {
+    if (this.closed) return;
+    const queued = this.db
+      .prepare(`SELECT * FROM agent_runs WHERE status = 'queued' ORDER BY id`)
+      .all() as unknown as RunRow[];
+    for (const row of queued) {
+      if (this.activeRuns() >= this.maxParallelRuns) return;
+      void this.spawnRun(row, row.attempts > 0);
+    }
+  }
+
   private async spawnRun(row: RunRow, isRelaunch: boolean): Promise<void> {
     const key = this.logPathFor('run', row.id);
     if (this.live.has(key) || this.starting.has(key)) return;
+    // Everything up to `starting.add` is synchronous, so concurrent callers count each other.
+    const busy = this.activeRuns();
+    if (busy >= this.maxParallelRuns) {
+      // A run relaunched after a restart is 'running' in the database until it gets a slot.
+      this.db
+        .prepare(`UPDATE agent_runs SET status = 'queued' WHERE id = ? AND status = 'running'`)
+        .run(row.id);
+      this.outputFor(key, row.log_path).append(
+        `[supervisor] queued: ${busy} of ${this.maxParallelRuns} parallel runs are busy; starts when one finishes\n`,
+      );
+      return;
+    }
     this.starting.add(key);
     try {
       const { command, timeoutMs } = JSON.parse(row.command_json) as {
@@ -2173,6 +2225,8 @@ export class AgentSupervisor {
       });
     } finally {
       this.starting.delete(key);
+      // A start that failed or was abandoned gives its slot to the next queued run.
+      if (!this.live.has(key)) this.startQueuedRuns();
     }
   }
 
@@ -2202,6 +2256,7 @@ export class AgentSupervisor {
     const key = `run:${row.id}`;
     const log = this.logs.get(key);
     if (!this.live.has(key) && log?.file === row.log_path) log.releaseCache();
+    this.startQueuedRuns();
   }
 
   // ---- Installs (Settings: one-click agent CLI installs) ---------------------------------------

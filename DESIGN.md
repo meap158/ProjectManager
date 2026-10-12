@@ -520,7 +520,9 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   percent; reset time and source in tooltips. No row repeats them; no CLI without data shows.
 - **Trust model:** same-machine only (existing Host allowlist + JSON-write guard). Sessions
   run as your user with your environment; logs live under `data/agent-logs/` (gitignored).
-  Caps: 8 sessions/project, 3 concurrent runs/project, 8MB logs, 20min default run timeout.
+  Caps: 8 sessions/project, 3 active runs/project, at most `MAX_PARALLEL_RUNS` runs executing
+  machine-wide (CPU threads / 4, between 1 and 4; the rest wait as `queued`), 8MB logs, 20min
+  default run timeout.
 
 ### 12.1 How the CLI integration works (verified 2026-10-05 on Windows)
 

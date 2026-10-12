@@ -347,6 +347,15 @@ installed CLIs and their existing provider authentication.
 </details>
 
 <details>
+<summary><b>Will many agents at once overload my computer?</b></summary>
+<br>
+Card runs share a machine-wide limit: up to a quarter of your CPU threads (at most 4) run at
+once, and the rest wait as queued and start on their own when one finishes. Project scans run
+two at a time. Interactive sessions you open yourself are not limited, so close the ones you no
+longer need.
+</details>
+
+<details>
 <summary><b>What happens if I close the browser or restart my computer?</b></summary>
 <br>
 Closing the browser leaves sessions running. The separate session host also keeps CLI processes
