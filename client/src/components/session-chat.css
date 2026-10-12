@@ -366,3 +366,87 @@
     min-width: 72px;
   }
 }
+
+/* A message you sent that the transcript doesn't show yet: faded, with its status beneath. */
+.chat-msg.is-pending {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.chat-msg.is-pending .chat-bubble {
+  opacity: 0.7;
+}
+.chat-pending-note {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.chat-status-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Images waiting to be sent, above the composer; and the composer's image button. */
+.chat-attachments {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px 0;
+  overflow-x: auto;
+}
+.chat-attachment {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 56px;
+  max-width: 160px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  overflow: hidden;
+}
+.chat-attachment img {
+  height: 48px;
+  width: auto;
+  max-width: 96px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.chat-attachment > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-attachment button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  color: var(--text);
+  font: inherit;
+  line-height: 22px;
+  cursor: pointer;
+}
+.chat-attach {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+}

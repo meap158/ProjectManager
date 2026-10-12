@@ -5,11 +5,13 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
 } from 'react';
 import type { AgentSession, ChatItem } from '../../../shared/types';
 import { api } from '../api';
 import { serialPoll } from '../lib/serialPoll';
+import { prepareImage } from '../sessionImages';
 import './session-chat.css';
 
 // Chat view of an agent session (mobile). A terminal UI is heavy on a phone: xterm redraws a
@@ -234,18 +236,83 @@ const Steps = memo(function Steps({ steps }: { steps: Entry[] }) {
   );
 });
 
+/**
+ * The CLI's live status line from its screen: Claude Code "✻ Finagling… (7m 49s · ↓ 7.8k
+ * tokens · thinking)", Codex "Working (8m 05s • esc to interrupt)". Null when none shows.
+ */
+export function statusLine(screen: string): string | null {
+  const lines = screen.split('\n').map((l) => l.trim());
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!;
+    if (/…\s*\(\s*\d+[smh]/.test(line) || /^[•◦]?\s*working\s*\(\s*\d+[smh]/i.test(line))
+      return line
+        .replace(/^[^\p{L}]+/u, '') // Spinner glyph.
+        .replace(/\s*[·•]\s*esc\s*to\s*interrupt/i, '')
+        .replace(/\s+/g, ' ');
+  }
+  return null;
+}
+
+const draftKey = (id: number) => `pm.chatDraft.${id}`;
+function readDraft(id: number): string {
+  try {
+    return sessionStorage.getItem(draftKey(id)) ?? '';
+  } catch {
+    return '';
+  }
+}
+function saveDraft(id: number, text: string) {
+  try {
+    if (text) sessionStorage.setItem(draftKey(id), text);
+    else sessionStorage.removeItem(draftKey(id));
+  } catch {
+    // Keeping the draft is a convenience only.
+  }
+}
+
+/**
+ * Switching from the chat to the terminal: the unsent message is typed into the CLI's input
+ * line (no Enter), so the terminal shows the same draft; the chat keeps it too, and sending
+ * clears that line first, so it never goes out twice. Done on the switch itself (not on
+ * unmount, which development mode runs at every mount).
+ */
+export function handOffDraft(sessionId: number): void {
+  const text = readDraft(sessionId).trim();
+  if (!text) return;
+  void api
+    .sendSessionInput(sessionId, '\x05\x15')
+    .then(() => api.sendSessionInput(sessionId, `\x1b[200~${text}\x1b[201~`))
+    .catch(() => undefined);
+}
+
+/** An image waiting in the composer: uploaded, its path pasted into the CLI when sent. */
+interface Attachment {
+  path: string;
+  name: string;
+  /** A local preview (object URL), when the image came from this browser. */
+  preview: string | null;
+}
+
 export function SessionChat({
   session,
   onError,
+  pasteRef,
 }: {
   session: AgentSession;
   onError: (message: string) => void;
+  /**
+   * The pane's paste target (its image button pastes uploaded paths through it): while the
+   * chat shows, those images join the message instead of going to the hidden terminal.
+   */
+  pasteRef?: MutableRefObject<((text: string) => void) | null>;
 }) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [supported, setSupported] = useState(true);
   const [screen, setScreen] = useState('');
-  const [draft, setDraft] = useState('');
+  // The unsent message survives switching to the terminal and back (kept per session for this
+  // browser tab); see the unmount effect below for what the terminal shows meanwhile.
+  const [draft, setDraft] = useState(() => readDraft(session.id));
   const [sending, setSending] = useState(false);
   const [unseen, setUnseen] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -291,9 +358,10 @@ export function SessionChat({
     };
   }, [id]);
 
-  // The CLI's screen while it asks you something (a choice, a permission): answer from here.
+  // The CLI's screen while it asks you something (a choice, a permission: answer from here), or
+  // while it works (its status line: what it's doing, time, tokens).
   useEffect(() => {
-    if (!asking) return;
+    if (!asking && !working) return;
     let active = true;
     const stop = serialPoll(
       () =>
@@ -306,7 +374,8 @@ export function SessionChat({
       active = false;
       stop();
     };
-  }, [id, asking]);
+  }, [id, asking, working]);
+  const status = working ? statusLine(screen) : null;
 
   // Follow new messages while at the bottom; otherwise count them on a "new messages" pill.
   useLayoutEffect(() => {
@@ -335,21 +404,146 @@ export function SessionChat({
       }),
     [id, onError],
   );
+  // Keep the draft as you type; switching to the terminal hands it over (handOffDraft).
+  useEffect(() => saveDraft(id, draft), [id, draft]);
+  const composer = useRef<HTMLTextAreaElement>(null);
+
+  // Images (PM-116): pasted, dropped or picked into the composer, uploaded at once, and sent
+  // with the message as their paths, which Claude Code and Codex attach as images.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const picker = useRef<HTMLInputElement>(null);
+  const addImages = async (files: File[]) => {
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    setUploading((n) => n + images.length);
+    for (const file of images) {
+      try {
+        const { path } = await api.uploadSessionImage(id, await prepareImage(file));
+        const name = file.name || 'image';
+        setAttachments((prev) => [...prev, { path, name, preview: URL.createObjectURL(file) }]);
+      } catch (e) {
+        onError((e as Error).message);
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  };
+  // The pane's image button uploads and pastes a path: while the chat shows, it joins here.
+  useEffect(() => {
+    if (!pasteRef) return;
+    pasteRef.current = (path) =>
+      setAttachments((prev) => [
+        ...prev,
+        { path, name: path.split(/[\\/]/).pop() ?? 'image', preview: null },
+      ]);
+    return () => {
+      pasteRef.current = null;
+    };
+  }, [pasteRef]);
+  const removeAttachment = (path: string) =>
+    setAttachments((prev) => {
+      const gone = prev.find((a) => a.path === path);
+      if (gone?.preview) URL.revokeObjectURL(gone.preview);
+      return prev.filter((a) => a.path !== path);
+    });
+
   const submit = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    const images = attachments;
+    if ((!text && !images.length) || sending || uploading) return;
     setSending(true);
+    // Shown in the chat at once (PM-116), until the CLI's transcript records it.
+    const pendingId = ++pendingSeq.current;
+    const shown = [...images.map((a) => `[image: ${a.name}]`), text].filter(Boolean).join('\n');
+    setPending((prev) => [
+      ...prev,
+      { id: pendingId, text: text || shown, label: shown, due: false },
+    ]);
+    setDraft('');
+    setAttachments([]);
+    setRecall(null);
+    atBottom.current = true;
     try {
-      // Bracketed paste keeps multi-line messages in one prompt; Enter submits it.
-      await send(`\x1b[200~${text}\x1b[201~`);
+      // Only what you typed: first clear anything already in the CLI's input line (Ctrl+E to
+      // its end, Ctrl+U to delete it; e.g. text typed in the terminal view). Each image path
+      // goes in as its own paste (that's how the CLIs recognise an image), then the text as
+      // one bracketed paste (multi-line stays one prompt), and Enter submits it.
+      await send('\x05\x15');
+      for (const image of images) await send(`\x1b[200~${image.path}\x1b[201~`);
+      if (text) await send(`\x1b[200~${text}\x1b[201~`);
       await send('\r');
-      setDraft('');
-      atBottom.current = true;
+      for (const image of images) if (image.preview) URL.revokeObjectURL(image.preview);
+      if (text) setSent((prev) => [...prev, text]);
+      // An idle CLI records a message within a second or two; still missing after a few, it is
+      // being held (e.g. a long paste waiting for another Enter): offer to send it.
+      setTimeout(
+        () => setPending((prev) => prev.map((p) => (p.id === pendingId ? { ...p, due: true } : p))),
+        4_000,
+      );
     } catch {
-      // Shown by onError; the draft stays so nothing typed is lost.
+      // Shown by onError. Nothing typed is lost: the message goes back into the box.
+      setPending((prev) => prev.filter((p) => p.id !== pendingId));
+      setDraft(text);
+      setAttachments(images);
     } finally {
       setSending(false);
     }
+  };
+
+  // The keys act as they do in the terminal (PM-116). With the CLI asking something, they go
+  // to it (moving through its menu, confirming). Otherwise ↑ / ↓ step through your earlier
+  // messages into the box, like a CLI's input history, and ⏎ sends the box (or presses Enter
+  // in the CLI when the box is empty).
+  const [sent, setSent] = useState<string[]>([]);
+  /** Messages you sent that the transcript doesn't show yet (the CLI may still be busy). */
+  const [pending, setPending] = useState<
+    { id: number; text: string; label: string; due: boolean }[]
+  >([]);
+  const pendingSeq = useRef(0);
+  // A pending message is done once the transcript has it as a user message.
+  const recorded = new Set(
+    items.filter((i) => i.kind === 'user' && i.text).map((i) => i.text!.trim()),
+  );
+  const unrecorded = pending.filter((p) => !recorded.has(p.text));
+  /** Which earlier message ↑ / ↓ is showing (from the newest back), and the draft it replaced. */
+  const [recall, setRecall] = useState<{ index: number; draft: string } | null>(null);
+  const history = () => {
+    const fromTranscript = items
+      .filter((i) => i.kind === 'user' && i.text)
+      .map((i) => i.text!.trim());
+    const all = [...fromTranscript, ...sent.filter((t) => !fromTranscript.includes(t))];
+    // Newest first, without repeats of the same message in a row.
+    return all.reverse().filter((t, i, list) => t && t !== list[i - 1]);
+  };
+  const fill = (text: string) => {
+    setDraft(text);
+    requestAnimationFrame(() => {
+      const box = composer.current;
+      if (!box) return;
+      box.style.height = 'auto';
+      box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
+      box.setSelectionRange(text.length, text.length);
+    });
+  };
+  const recallMessage = (step: 1 | -1) => {
+    const list = history();
+    const current = recall?.index ?? -1;
+    const index = Math.min(list.length - 1, current + step);
+    if (index < 0) {
+      if (recall) fill(recall.draft); // Back past the newest: what you were typing.
+      setRecall(null);
+      return;
+    }
+    if (index === current) return;
+    setRecall({ index, draft: recall?.draft ?? draft });
+    fill(list[index]!);
+  };
+  const pressKey = (key: (typeof KEYS)[number]) => {
+    if (!asking && (key.aria === 'Arrow up' || key.aria === 'Arrow down'))
+      return recallMessage(key.aria === 'Arrow up' ? 1 : -1);
+    if (!asking && key.aria === 'Enter' && (draft.trim() || attachments.length))
+      return void submit();
+    void send(key.data).catch(() => undefined);
   };
 
   const entries = merge(items);
@@ -371,6 +565,30 @@ export function SessionChat({
             ),
           )
         )}
+        {unrecorded.map((p) => (
+          <div key={p.id} className="chat-msg is-user is-pending">
+            <div className="chat-bubble">{renderText(p.label)}</div>
+            {working || asking ? (
+              // The CLI holds messages while it works (or asks something) and sends them after.
+              <span className="chat-pending-note">
+                {asking ? 'Waiting: answer the CLI first' : 'Queued, sends when the CLI is done'}
+              </span>
+            ) : p.due ? (
+              <span className="chat-pending-note">
+                Not sent yet{' '}
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => void send('\r').catch(() => undefined)}
+                >
+                  Send
+                </button>
+              </span>
+            ) : (
+              <span className="chat-pending-note">Sending…</span>
+            )}
+          </div>
+        ))}
         {working && (
           <div className="chat-working" role="status">
             <span className="chat-dots" aria-hidden="true">
@@ -378,7 +596,7 @@ export function SessionChat({
               <i />
               <i />
             </span>
-            Working…
+            <span className="chat-status-line">{status ?? 'Working…'}</span>
           </div>
         )}
         {asking && (
@@ -400,48 +618,132 @@ export function SessionChat({
             type="button"
             className="chat-key"
             aria-label={k.aria}
-            onClick={() => void send(k.data).catch(() => undefined)}
+            onClick={() => pressKey(k)}
           >
             {k.label}
           </button>
         ))}
       </div>
+      {(attachments.length > 0 || uploading > 0) && (
+        <div className="chat-attachments" aria-label="Images to send">
+          {attachments.map((a) => (
+            <span key={a.path} className="chat-attachment" title={a.name}>
+              {a.preview ? <img src={a.preview} alt={a.name} /> : <span>{a.name}</span>}
+              <button
+                type="button"
+                aria-label={`Remove ${a.name}`}
+                onClick={() => removeAttachment(a.path)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {uploading > 0 && (
+            <span className="chat-attachment is-uploading" role="status">
+              <span className="spinner" aria-hidden="true" /> Adding…
+            </span>
+          )}
+        </div>
+      )}
       <form
         className="chat-composer"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
+        onDragOver={(e) => {
+          if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/')))
+            e.preventDefault();
+        }}
+        onDrop={(e) => {
+          const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'));
+          if (!files.length) return;
+          e.preventDefault();
+          void addImages(files);
+        }}
       >
+        <button
+          type="button"
+          className="chat-attach"
+          aria-label="Add images"
+          title="Add images (or paste / drop them into the message)"
+          onClick={() => picker.current?.click()}
+        >
+          <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true">
+            <rect
+              x="2"
+              y="3"
+              width="12"
+              height="10"
+              rx="1.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+            />
+            <circle cx="6" cy="6.5" r="1.2" fill="currentColor" />
+            <path
+              d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5L14 12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+            />
+          </svg>
+        </button>
+        <input
+          ref={picker}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            void addImages([...(e.target.files ?? [])]);
+            e.target.value = '';
+          }}
+        />
         <textarea
+          ref={composer}
           className="input chat-input"
           value={draft}
           rows={1}
+          enterKeyHint="send"
           placeholder={
             session.status === 'running' ? 'Message…' : 'Session is down: queues for relaunch'
           }
           aria-label="Message to the session"
           onChange={(e) => {
             setDraft(e.target.value);
+            setRecall(null); // Editing a recalled message makes it your draft.
             // Grow with the text, up to about six lines.
             e.target.style.height = 'auto';
             e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
           }}
+          onPaste={(e) => {
+            const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'));
+            if (!files.length) return; // Text pastes as usual.
+            e.preventDefault();
+            void addImages(files);
+          }}
           onKeyDown={(e) => {
-            // Phones: Return adds a line (send with the button). Keyboards: Ctrl/⌘+Enter sends.
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            // As in the CLI: Return sends, Shift+Return adds a line. Never mid-composition
+            // (IME input such as Vietnamese or emoji pickers use Return to confirm a word).
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void submit();
+              return;
+            }
+            // Physical keyboards: ↑ on the first line / ↓ on the last recall messages, as in a CLI.
+            const box = e.currentTarget;
+            const before = box.value.slice(0, box.selectionStart);
+            const after = box.value.slice(box.selectionEnd);
+            if (e.key === 'ArrowUp' && !before.includes('\n') && !e.shiftKey) {
+              e.preventDefault();
+              recallMessage(1);
+            } else if (e.key === 'ArrowDown' && !after.includes('\n') && recall && !e.shiftKey) {
+              e.preventDefault();
+              recallMessage(-1);
             }
           }}
         />
-        <button
-          type="submit"
-          className="btn btn-primary chat-send"
-          disabled={!draft.trim() || sending}
-        >
-          Send
-        </button>
       </form>
     </div>
   );
@@ -479,6 +781,7 @@ export function useSessionView(session: AgentSession | null) {
   });
   const available = mobile && !!session && chatSupported(session);
   const choose = (view: SessionView) => {
+    if (view === 'terminal' && preferred === 'chat' && session) handOffDraft(session.id);
     setPreferred(view);
     try {
       localStorage.setItem(VIEW_KEY, view);

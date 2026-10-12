@@ -658,7 +658,12 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                 </header>
                 <div className="pane-body">
                   {sessionView.view === 'chat' ? (
-                    <SessionChat key={active.id} session={active} onError={setError} />
+                    <SessionChat
+                      key={active.id}
+                      session={active}
+                      onError={setError}
+                      pasteRef={pasteRef}
+                    />
                   ) : (
                     <Suspense
                       fallback={<div className="terminal skeleton" style={{ height: '100%' }} />}

@@ -950,7 +950,7 @@ function Pane({
       </header>
       <div className="pane-body">
         {sessionView.view === 'chat' ? (
-          <SessionChat key={s.id} session={s} onError={onError} />
+          <SessionChat key={s.id} session={s} onError={onError} pasteRef={pasteRef} />
         ) : (
           <Suspense fallback={<div className="terminal skeleton" style={{ height: '100%' }} />}>
             <TerminalView

@@ -3,13 +3,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, SessionTranscript } from '../../../shared/types';
 import { api } from '../api';
-import { SessionChat, chatSupported } from './SessionChat';
+import { SessionChat, chatSupported, handOffDraft, statusLine } from './SessionChat';
 
 vi.mock('../api', () => ({
   api: {
     sessionTranscript: vi.fn(),
     sessionScreen: vi.fn(async () => ({ text: 'Allow edit?\n❯ 1. Yes\n  2. No' })),
     sendSessionInput: vi.fn(async () => ({ queued: false })),
+    uploadSessionImage: vi.fn(async () => ({ path: 'S:/data/attachments/shot.png' })),
   },
 }));
 afterEach(() => {
@@ -65,12 +66,16 @@ describe('SessionChat (mobile chat view)', () => {
     fireEvent.change(screen.getByLabelText('Message to the session'), {
       target: { value: 'now commit\nand push' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-    await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledTimes(2));
+    fireEvent.keyDown(screen.getByLabelText('Message to the session'), { key: 'Enter' }); // Return sends, as in the CLI.
+    // Only what was typed: the CLI's input line is cleared first (Ctrl+E, Ctrl+U).
+    await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledTimes(3));
     expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual([
+      '\x05\x15',
       '\x1b[200~now commit\nand push\x1b[201~',
       '\r',
     ]);
+    // Shown in the chat at once, until the transcript records it.
+    expect(document.querySelector('.chat-msg.is-pending')!.textContent).toContain('now commit');
     await waitFor(() =>
       expect((screen.getByLabelText('Message to the session') as HTMLTextAreaElement).value).toBe(
         '',
@@ -127,5 +132,127 @@ describe('SessionChat formatting', () => {
     expect(steps.className).toContain('is-running');
     expect(steps.querySelector('summary')!.textContent).toMatch(/3 steps.*npm run build/);
     expect(steps.querySelectorAll('.chat-tool')).toHaveLength(3);
+  });
+});
+
+describe('SessionChat keys behave as in the terminal (PM-116)', () => {
+  const history = transcript({
+    items: [
+      { id: 'u1', kind: 'user', text: 'first message', at: null },
+      { id: 'a1', kind: 'assistant', text: 'ok', at: null },
+      { id: 'u2', kind: 'user', text: 'second message', at: null },
+    ],
+  });
+  const box = () => screen.getByLabelText('Message to the session') as HTMLTextAreaElement;
+
+  it('↑ / ↓ recall earlier messages into the box; ⏎ sends the box', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(history);
+    render(<SessionChat session={session()} onError={() => {}} />);
+    await screen.findByText('second message');
+    fireEvent.change(box(), { target: { value: 'half typed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Arrow up' }));
+    expect(box().value).toBe('second message');
+    fireEvent.click(screen.getByRole('button', { name: 'Arrow up' }));
+    expect(box().value).toBe('first message');
+    fireEvent.click(screen.getByRole('button', { name: 'Arrow down' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Arrow down' }));
+    expect(box().value).toBe('half typed'); // Back to what was being typed.
+    expect(api.sendSessionInput).not.toHaveBeenCalled(); // Nothing went to the CLI.
+    fireEvent.click(screen.getByRole('button', { name: 'Enter' }));
+    await waitFor(() =>
+      expect(api.sendSessionInput).toHaveBeenCalledWith(7, '\x1b[200~half typed\x1b[201~'),
+    );
+  });
+
+  it('while the CLI asks something, the keys go to it', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(history);
+    render(<SessionChat session={session({ tailState: 'input' })} onError={() => {}} />);
+    await screen.findByText(/Allow edit\?/);
+    fireEvent.click(screen.getByRole('button', { name: 'Arrow down' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enter' }));
+    await waitFor(() =>
+      expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual(['\x1b[B', '\r']),
+    );
+    expect(box().value).toBe('');
+  });
+
+  it('marks a message sent while the CLI works as queued', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(history);
+    render(<SessionChat session={session({ tailState: 'running' })} onError={() => {}} />);
+    await screen.findByText('second message');
+    fireEvent.change(box(), { target: { value: 'also do this' } });
+    fireEvent.keyDown(screen.getByLabelText('Message to the session'), { key: 'Enter' }); // Return sends, as in the CLI.
+    expect(await screen.findByText(/Queued, sends when the CLI is done/)).toBeDefined();
+  });
+
+  it('keeps the unsent message when switching away, and types it into the terminal', async () => {
+    sessionStorage.clear();
+    vi.mocked(api.sessionTranscript).mockResolvedValue(history);
+    const view = render(<SessionChat session={session()} onError={() => {}} />);
+    await screen.findByText('second message');
+    fireEvent.change(box(), { target: { value: 'not sent yet' } });
+    // Switching to the terminal view hands the draft over (the pane calls this on the switch).
+    handOffDraft(7);
+    view.unmount();
+    await waitFor(() =>
+      expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual([
+        '\x05\x15',
+        '\x1b[200~not sent yet\x1b[201~', // In the CLI's input line, not submitted.
+      ]),
+    );
+    render(<SessionChat session={session()} onError={() => {}} />);
+    await screen.findByText('second message');
+    expect(box().value).toBe('not sent yet');
+    sessionStorage.clear();
+  });
+});
+
+describe('statusLine', () => {
+  it("reads the CLI's live status line instead of a bare Working…", () => {
+    expect(
+      statusLine('● Running tests\n✻ Finagling… (7m 49s · ↓ 7.8k tokens · thinking)\n> '),
+    ).toBe('Finagling… (7m 49s · ↓ 7.8k tokens · thinking)');
+    expect(statusLine('• Working (8m 05s • esc to interrupt)\n› Ask Codex')).toBe(
+      'Working (8m 05s)',
+    );
+    expect(statusLine('nothing busy here')).toBeNull();
+  });
+});
+
+describe('SessionChat images (PM-116)', () => {
+  it('takes a pasted image and sends its path before the text, as the terminal does', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    render(<SessionChat session={session()} onError={() => {}} />);
+    const input = await screen.findByLabelText('Message to the session');
+    const image = new File([new Uint8Array([137, 80, 78, 71])], 'shot.png', { type: 'image/png' });
+    URL.createObjectURL = vi.fn(() => 'blob:shot');
+    URL.revokeObjectURL = vi.fn();
+    fireEvent.paste(input, { clipboardData: { files: [image], getData: () => '' } });
+    expect(await screen.findByRole('img', { name: 'shot.png' })).toBeDefined();
+    expect(api.uploadSessionImage).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ type: 'image/png' }),
+    );
+    fireEvent.change(input, { target: { value: 'what is wrong here?' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() =>
+      expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual([
+        '\x05\x15',
+        '\x1b[200~S:/data/attachments/shot.png\x1b[201~',
+        '\x1b[200~what is wrong here?\x1b[201~',
+        '\r',
+      ]),
+    );
+    expect(screen.queryByRole('img', { name: 'shot.png' })).toBeNull();
+  });
+
+  it('Shift+Return adds a line instead of sending', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    render(<SessionChat session={session()} onError={() => {}} />);
+    const input = await screen.findByLabelText('Message to the session');
+    fireEvent.change(input, { target: { value: 'line one' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(api.sendSessionInput).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull(); // No Send button.
   });
 });
