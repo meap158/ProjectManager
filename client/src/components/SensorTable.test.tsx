@@ -43,19 +43,19 @@ describe('SensorTable (PM-113)', () => {
     ]);
   });
 
-  it("says what the reading is when it isn't the CPU core (ACPI fallback)", async () => {
+  it('labels the ACPI fallback by what it is, without extra commentary', async () => {
     vi.mocked(api.getSensors).mockResolvedValue(
       reading({
         source: 'acpi',
         cpuTempC: 27.9,
         cpuTempLabel: 'ACPI thermal zone TZ00',
         fans: [],
-        note: 'This is a motherboard thermal zone, not the CPU core.',
+        note: null,
       }),
     );
     render(<SensorTable />);
-    expect(await screen.findByText(/not the CPU core/)).toBeDefined();
-    expect(screen.getByRole('rowheader', { name: 'ACPI thermal zone TZ00' })).toBeDefined();
+    expect(await screen.findByRole('rowheader', { name: 'ACPI thermal zone TZ00' })).toBeDefined();
+    expect(document.querySelector('.cpu-sensors-note')).toBeNull();
     expect(screen.getByText(/from Windows \(ACPI\)/)).toBeDefined();
   });
 

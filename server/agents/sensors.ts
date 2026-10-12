@@ -7,7 +7,7 @@
 //  2. LibreHardwareMonitor's (or OpenHardwareMonitor's) WMI namespace,
 //  3. Linux hwmon (/sys/class/hwmon: coretemp, k10temp, zenpower; fan*_input),
 //  4. the ACPI thermal zone Windows reports without admin rights: a motherboard zone, not the
-//     CPU core, so it is labelled as such and the panel says how to get the real sensors.
+//     CPU core, so its label names it as such.
 // Readings are cached briefly: the panel polls while open, and one PowerShell start per poll
 // would cost more than the reading.
 
@@ -87,7 +87,7 @@ export function fromHwinfo(entries: HwinfoEntry[]): Omit<MachineSensors, 'at'> |
     cpuTempC: cpu ? round1(cpu.c) : null,
     cpuTempLabel: cpu?.label ?? null,
     fans: cpuFansFirst(fans),
-    note: cpu ? null : 'HWiNFO reports no CPU temperature: enable "Report value in Gadget" for it.',
+    note: null,
   };
 }
 
@@ -130,7 +130,7 @@ export function fromThermalZones(
     cpuTempC: round1(hottest.c),
     cpuTempLabel: `ACPI thermal zone ${hottest.label.replace(/^\\_TZ\./, '')}`,
     fans: [],
-    note: 'This is a motherboard thermal zone, not the CPU core, and Windows reports no fan speeds. For CPU temperature and fan RPM, run HWiNFO with "Report value in Gadget" enabled for them, or LibreHardwareMonitor.',
+    note: null,
   };
 }
 
@@ -244,7 +244,7 @@ async function measure(): Promise<MachineSensors> {
       cpuTempC: null,
       cpuTempLabel: null,
       fans: [],
-      note: 'No sensors found. Run HWiNFO with "Report value in Gadget" enabled for the CPU temperature and fans, or LibreHardwareMonitor.',
+      note: 'No sensors available.',
       at,
     };
   }
@@ -256,7 +256,7 @@ async function measure(): Promise<MachineSensors> {
       cpuTempC: null,
       cpuTempLabel: null,
       fans: [],
-      note: 'No hwmon CPU sensors found (try loading the coretemp or k10temp module).',
+      note: 'No sensors available.',
       at,
     };
   }
@@ -265,7 +265,7 @@ async function measure(): Promise<MachineSensors> {
     cpuTempC: null,
     cpuTempLabel: null,
     fans: [],
-    note: 'Not available on this system: macOS only reports these to administrator tools.',
+    note: 'No sensors available.',
     at,
   };
 }

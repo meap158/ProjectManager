@@ -50,7 +50,7 @@ describe('machine sensors (PM-113)', () => {
       cpuTempLabel: 'ACPI thermal zone TZ00',
       fans: [],
     });
-    expect(reading!.note).toMatch(/not the CPU core.*HWiNFO/);
+    expect(reading!.note).toBeNull();
     expect(fromThermalZones([{ name: 'x', tenthsKelvin: 0 }])).toBeNull();
   });
 
