@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, SessionTranscript } from '../../../shared/types';
 import { api } from '../api';
-import { SessionChat, chatSupported, handOffDraft, statusLine } from './SessionChat';
+import { SessionChat, chatSupported, handOffDraft, screenInfo, statusLine } from './SessionChat';
 
 vi.mock('../api', () => ({
   api: {
@@ -335,5 +335,38 @@ describe('Continue key (PM-121)', () => {
     render(<SessionChat session={session({ tailState: 'input' })} onError={() => {}} />);
     expect(await screen.findByRole('button', { name: 'Enter' })).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+  });
+});
+
+describe('screenInfo (PM-122)', () => {
+  it('reads the status line, background agents and mode the terminal shows', () => {
+    // The owner's screenshot: a Claude Code session waiting on two background agents.
+    const screen = [
+      "  I'm holding the next items (touch",
+      '  targets under 44 px, keyboard play)',
+      '* Waiting for 2 background agents to',
+      '  finish',
+      '────────────────────────────────────',
+      '>',
+      '────────────────────────────────────',
+      '  ▸▸ auto mode on (shift+tab to cycle)',
+      '  ● main',
+      '  ( ) general-purpose 6m 16s · ↓ 113.8k',
+      '  ( ) general-purpose t6m 16s · ↓ 96.9k',
+    ].join('\n');
+    expect(screenInfo(screen)).toEqual({
+      status: 'Waiting for 2 background agents to finish',
+      mode: 'auto mode on',
+      background: ['general-purpose · 6m 16s · ↓ 113.8k', 'general-purpose · 6m 16s · ↓ 96.9k'],
+    });
+  });
+
+  it('takes Codex output bullets for output, not a status line', () => {
+    expect(screenInfo('• Ran npm test\n• Edited 2 files\n› Ask Codex to do anything')).toEqual({
+      status: null,
+      mode: null,
+      background: [],
+    });
+    expect(screenInfo('• Working (2m 03s • esc to interrupt)').status).toBe('Working (2m 03s)');
   });
 });

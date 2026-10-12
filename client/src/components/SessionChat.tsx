@@ -39,6 +39,8 @@ const KEYS: { label: string; aria: string; data: string }[] = [
   { label: '2', aria: '2', data: '2' },
   { label: '3', aria: '3', data: '3' },
   { label: '^C', aria: 'Interrupt (Control C)', data: '\x03' },
+  // Cycles the permission mode (auto / plan / accept edits), as Shift+Tab does in the CLI.
+  { label: '⇧Tab', aria: 'Shift+Tab (cycle mode)', data: '\x1b[Z' },
 ];
 
 /** Tool calls with their results attached, in order. */
@@ -241,16 +243,76 @@ const Steps = memo(function Steps({ steps }: { steps: Entry[] }) {
  * tokens · thinking)", Codex "Working (8m 05s • esc to interrupt)". Null when none shows.
  */
 export function statusLine(screen: string): string | null {
-  const lines = screen.split('\n').map((l) => l.trim());
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!;
-    if (/…\s*\(\s*\d+[smh]/.test(line) || /^[•◦]?\s*working\s*\(\s*\d+[smh]/i.test(line))
-      return line
-        .replace(/^[^\p{L}]+/u, '') // Spinner glyph.
-        .replace(/\s*[·•]\s*esc\s*to\s*interrupt/i, '')
-        .replace(/\s+/g, ' ');
+  return screenInfo(screen).status;
+}
+
+/** What the CLI shows around its input that the transcript doesn't record (PM-122). */
+export interface ScreenInfo {
+  /** Its status line: "Finagling… (7m 49s · ↓ 7.8k tokens)", "Waiting for 2 background agents". */
+  status: string | null;
+  /** Its permission mode, when not the default: "auto mode on", "plan mode on". */
+  mode: string | null;
+  /** Background agents and shells it runs: "general-purpose · 6m 16s · ↓ 113.8k". */
+  background: string[];
+}
+
+const SPINNER = /^[✻✶✢✽✳✺✹✸✷*·•◦⋆✦]\s*(?=\p{L})/u;
+const clean = (s: string) =>
+  s
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .replace(/\s*[·•]\s*esc\s*to\s*interrupt/i, '')
+    .replace(/\s*\(?shift\s*\+\s*tab[^)]*\)?/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * Reads the CLI's screen (plain text, see sessionScreen) for the chat view: the status line, the
+ * permission mode and the background agents, all things the terminal shows live but the
+ * transcript never records. Lines wrapped by the terminal are joined back.
+ */
+export function screenInfo(screen: string): ScreenInfo {
+  const raw = screen.split('\n');
+  const info: ScreenInfo = { status: null, mode: null, background: [] };
+  for (let i = 0; i < raw.length; i++) {
+    const line = raw[i]!.trim();
+    if (!line) continue;
+    // A wrapped line continues on indented lines that start no new item.
+    const continued = () => {
+      let text = line;
+      while (
+        i + 1 < raw.length &&
+        /^\s{2,}\S/.test(raw[i + 1]!) &&
+        !SPINNER.test(raw[i + 1]!.trim()) &&
+        !/^[─━>›❯(]/.test(raw[i + 1]!.trim())
+      )
+        text += ` ${raw[++i]!.trim()}`;
+      return text;
+    };
+    const mode = /\b(auto mode|plan mode|accept edits|bypass permissions)\b[^(·]*\bon\b/i.exec(
+      line,
+    );
+    if (mode) {
+      info.mode = clean(mode[0]!);
+      continue;
+    }
+    // Background agents / shells: a status bullet, a name, then time and tokens.
+    if (/^(\(\s*\)|[◯○◉●◐◓◑◒])\s+\S/.test(line) && /\d+[smh]\b|↓/.test(line)) {
+      info.background.push(
+        clean(line.replace(/^\(\s*\)\s*/, ''))
+          .replace(/\s+t?(\d+[hms]\b)/, ' · $1')
+          .replace(/\s*·\s*·\s*/g, ' · '),
+      );
+      continue;
+    }
+    // The status line: a spinner glyph with an ellipsis, a timer or "waiting for" (a bare
+    // bullet is just output, e.g. Codex's "• Ran npm test"), or Codex's "Working (…)".
+    if (
+      (SPINNER.test(line) && /…|\(\s*\d+[smh]|waiting for/i.test(line)) ||
+      /^[•◦]?\s*working\s*\(\s*\d+[smh]/i.test(line)
+    )
+      info.status = clean(continued());
   }
-  return null;
+  return info;
 }
 
 const draftKey = (id: number) => `pm.chatDraft.${id}`;
@@ -389,22 +451,26 @@ export function SessionChat({
 
   // The CLI's screen while it asks you something (a choice, a permission: answer from here), or
   // while it works (its status line: what it's doing, time, tokens).
+  // Also while idle (PM-122): background agents, the mode and "waiting for…" show then too.
+  // Read every 1.5 s while it works or asks, every 4 s otherwise; never for a stopped session.
+  const live = session.status === 'running';
   useEffect(() => {
-    if (!asking && !working) return;
+    if (!live) return;
     let active = true;
     const stop = serialPoll(
       () =>
         api.sessionScreen(id).then((s) => {
           if (active) setScreen(s.text);
         }),
-      POLL_MS,
+      asking || working ? POLL_MS : 4_000,
     );
     return () => {
       active = false;
       stop();
     };
-  }, [id, asking, working]);
-  const status = working ? statusLine(screen) : null;
+  }, [id, live, asking, working]);
+  const shown = live ? screenInfo(screen) : { status: null, mode: null, background: [] };
+  const status = shown.status;
 
   // Follow new messages while at the bottom; otherwise count them on a "new messages" pill.
   useLayoutEffect(() => {
@@ -720,14 +786,29 @@ export function SessionChat({
             )}
           </div>
         ))}
-        {working && (
-          <div className="chat-working" role="status">
-            <span className="chat-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span className="chat-status-line">{status ?? 'Working…'}</span>
+        {/* What the terminal shows live around its input (PM-122): status, mode, background. */}
+        {(working || status || shown.mode || shown.background.length > 0) && (
+          <div className="chat-live" role="status" aria-label="Session status">
+            {(working || status) && (
+              <div className="chat-working">
+                {working && (
+                  <span className="chat-dots" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                )}
+                <span className="chat-status-line">{status ?? 'Working…'}</span>
+              </div>
+            )}
+            {shown.background.length > 0 && (
+              <ul className="chat-background" aria-label="Running in the background">
+                {shown.background.map((b, i) => (
+                  <li key={i}>{b}</li>
+                ))}
+              </ul>
+            )}
+            {shown.mode && <span className="chat-mode">{shown.mode}</span>}
           </div>
         )}
         {asking && (
