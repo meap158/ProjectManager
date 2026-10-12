@@ -36,6 +36,7 @@ import {
 import { WorkSorter, sortWork, useWorkSort } from '../components/WorkSorter';
 import { readLastAgent, saveLastAgent } from '../lastAgent';
 import { isTerminalReport } from '../../../shared/terminalReports';
+import { SessionChat, ViewSwitch, useSessionView } from '../components/SessionChat';
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
 import { serialPoll } from '../lib/serialPoll';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
@@ -695,6 +696,8 @@ function Pane({
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [cardNote, setCardNote] = useState<string | null>(null);
+  // Phones: the session as a chat (its CLI's transcript) or the terminal.
+  const sessionView = useSessionView(s);
   // Pastes into this pane's terminal like the keyboard would (image paths, PM-54).
   const pasteRef = useRef<((text: string) => void) | null>(null);
   const sendImage = (file: File) =>
@@ -812,6 +815,9 @@ function Pane({
           </span>
         </div>
         <SessionRestartStatus session={s} />
+        {sessionView.available && (
+          <ViewSwitch view={sessionView.view} onChange={sessionView.choose} />
+        )}
         <span style={{ flex: 1 }} />
         <div className={`pane-controls${mobileActionsOpen ? ' is-open' : ''}`}>
           <button
@@ -943,30 +949,34 @@ function Pane({
         </button>
       </header>
       <div className="pane-body">
-        <Suspense fallback={<div className="terminal skeleton" style={{ height: '100%' }} />}>
-          <TerminalView
-            key={`${s.id}-${s.terminal}-${s.startedAt}`}
-            historyBytes={s.logBytes}
-            stopped={s.terminal === 'pty' && !running}
-            height="100%"
-            fontSize={fontSize}
-            fetchOutput={(after) => api.sessionOutput(s.id, after)}
-            streamUrl={(after) => api.sessionStreamUrl(s.id, after)}
-            {...(s.terminal === 'pty'
-              ? {
-                  pasteRef,
-                  onImage: sendImage,
-                  // A stopped session only queues real typing, not the terminal's auto-replies.
-                  onInput: (data: string) => {
-                    if (running || !isTerminalReport(data)) sendKeys(data);
-                  },
-                  onResize: (cols: number, rows: number) => {
-                    api.resizeSession(s.id, cols, rows).catch(() => undefined);
-                  },
-                }
-              : {})}
-          />
-        </Suspense>
+        {sessionView.view === 'chat' ? (
+          <SessionChat key={s.id} session={s} onError={onError} />
+        ) : (
+          <Suspense fallback={<div className="terminal skeleton" style={{ height: '100%' }} />}>
+            <TerminalView
+              key={`${s.id}-${s.terminal}-${s.startedAt}`}
+              historyBytes={s.logBytes}
+              stopped={s.terminal === 'pty' && !running}
+              height="100%"
+              fontSize={fontSize}
+              fetchOutput={(after) => api.sessionOutput(s.id, after)}
+              streamUrl={(after) => api.sessionStreamUrl(s.id, after)}
+              {...(s.terminal === 'pty'
+                ? {
+                    pasteRef,
+                    onImage: sendImage,
+                    // A stopped session only queues real typing, not the terminal's auto-replies.
+                    onInput: (data: string) => {
+                      if (running || !isTerminalReport(data)) sendKeys(data);
+                    },
+                    onResize: (cols: number, rows: number) => {
+                      api.resizeSession(s.id, cols, rows).catch(() => undefined);
+                    },
+                  }
+                : {})}
+            />
+          </Suspense>
+        )}
       </div>
       {s.terminal === 'pipe' && (
         <form

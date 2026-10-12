@@ -18,6 +18,7 @@ import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
 import { getPermissions, PERMISSION_PROVIDERS, setPermissions } from './permissions.js';
 import { getCpuBudget, setCpuBudget, totalThreads } from './cpuBudget.js';
+import { findTranscript, readTranscript, transcriptSource } from './transcript.js';
 import { readSensors } from './sensors.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
 import { removeSessionImages } from '../attachments.js';
@@ -240,6 +241,27 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     const session = supervisor.getSession(parseId(c));
     if (!session) throw new AgentError(404, 'Session not found');
     return c.json(session);
+  });
+
+  // Chat view (mobile): the CLI's own transcript, read incrementally from `after`.
+  app.get('/agent-sessions/:id/transcript', async (c) => {
+    const resume = supervisor.sessionResume(parseId(c));
+    if (!resume) throw new AgentError(404, 'Session not found');
+    const after = c.req.query('after');
+    const offset = after === undefined ? undefined : Number(after);
+    if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0))
+      throw new AgentError(400, 'Invalid offset');
+    const source = transcriptSource(resume.providerId, resume.resumeJson);
+    const file = source ? await findTranscript(source) : null;
+    if (!file) return c.json({ supported: !!source, items: [], next: 0, reset: false });
+    return c.json({ supported: true, ...(await readTranscript(file, resume.providerId, offset)) });
+  });
+
+  // What the session shows right now, as text: the chat view's live strip when the CLI asks.
+  app.get('/agent-sessions/:id/screen', (c) => {
+    const id = parseId(c);
+    if (!supervisor.getSession(id)) throw new AgentError(404, 'Session not found');
+    return c.json({ text: supervisor.sessionScreen(id, 1600) ?? '' });
   });
 
   app.patch('/agent-sessions/:id', async (c) => {

@@ -288,6 +288,31 @@ export interface CpuBudget {
   defaultThreads: number;
 }
 
+/** One entry of a session's chat view (mobile): a message, a tool call or its result. */
+export interface ChatItem {
+  id: string;
+  kind: 'user' | 'assistant' | 'tool' | 'result';
+  text?: string;
+  /** Tool calls and results pair up by this id. */
+  toolId?: string;
+  /** Tool name and a one-line summary (the command, the file…); input is the full arguments. */
+  name?: string;
+  summary?: string;
+  input?: string;
+  isError?: boolean;
+  at: string | null;
+}
+
+/** A slice of a session's transcript; `next` is the offset to read from next time. */
+export interface SessionTranscript {
+  /** False for CLIs without a readable transcript (the terminal is the only view). */
+  supported: boolean;
+  items: ChatItem[];
+  next: number;
+  /** The transcript was rewritten (e.g. compacted): replace, don't append. */
+  reset: boolean;
+}
+
 export interface SensorFan {
   label: string;
   rpm: number;

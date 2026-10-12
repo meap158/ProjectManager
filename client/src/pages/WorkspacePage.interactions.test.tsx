@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, WorkspaceLayout } from '../../../shared/types';
 import { api } from '../api';
 import { WorkspacePage } from './WorkspacePage';
@@ -32,6 +32,10 @@ vi.mock('../api', () => ({
   },
 }));
 
+beforeEach(() => {
+  // These tests exercise the terminal; phones otherwise open sessions as a chat.
+  localStorage.setItem('pm.sessionView', 'terminal');
+});
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();

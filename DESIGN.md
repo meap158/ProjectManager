@@ -644,6 +644,25 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
 - **Narrow screens** (< 900px): panes stack vertically with a minimum height and the grid
   scrolls. Phones: see §10.1.
 
+### 12.x Chat view on phones (branch `mobile-chat-view`)
+
+A terminal UI is heavy on a phone (a full screen of cells redrawn, whole-row scrolling, the
+on-screen keyboard), so on phones and touch screens a Claude Code or Codex session opens as a
+chat. Its pane header has a **Chat | CLI** switch, remembered per device (`pm.sessionView`).
+
+- The chat renders the CLI's own transcript (`GET /api/agent-sessions/:id/transcript`, read
+  incrementally from `~/.claude/projects` or `~/.codex/sessions` by the session's exact
+  conversation id; only the last 2 MB at first, then new bytes, refreshed every 1.5 s while
+  visible). Nothing is dropped: replies (light Markdown: code, tables, headings, bold), and
+  tool calls with their full input and output, one tap away.
+- Consecutive tool calls fold into one **N steps** row (tools used, latest step, running /
+  failed state), like chat apps do, so the agent's messages stand out.
+- A composer sends to the same session (bracketed paste, then Enter; Return adds a line on
+  phones, Ctrl/⌘+Enter sends on keyboards); quick keys (Esc, arrows, Enter, 1–3, ^C) answer
+  menus; while the CLI asks something, its current screen shows above them
+  (`GET /api/agent-sessions/:id/screen`).
+- Other CLIs, and desktop, keep the terminal.
+
 ## 13. Spacing, alignment and symmetry
 
 Every margin, padding and gap in `styles.css` comes from one scale, and every box is

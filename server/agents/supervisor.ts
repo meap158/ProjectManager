@@ -2656,6 +2656,12 @@ export class AgentSupervisor {
    * The last lines a session shows, as plain text (escapes stripped, blank runs folded), for
    * orchestrator context such as what an agent waiting for input is asking (PM-70).
    */
+  /** Provider and resume argv of a session, for its chat view's transcript (mobile). */
+  sessionResume(id: number): { providerId: string; resumeJson: string | null } | null {
+    const row = this.getSessionRow(id);
+    return row ? { providerId: row.provider_id, resumeJson: row.resume_json } : null;
+  }
+
   sessionScreen(id: number, maxChars = 500): string | null {
     const row = this.getSessionRow(id);
     const tail = row ? this.logTail(row.log_path) : null;

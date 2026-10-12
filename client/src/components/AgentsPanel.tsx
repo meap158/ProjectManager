@@ -22,6 +22,7 @@ import { LimitsStrip } from './LimitsStrip';
 import { sendImageToSession } from '../sessionImages';
 import { SessionImageButton } from './SessionImageButton';
 import { SessionProgress, SessionRestartStatus } from './SessionProgress';
+import { SessionChat, ViewSwitch, useSessionView } from './SessionChat';
 import { RecentCache } from '../lib/recentCache';
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
@@ -205,6 +206,8 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   }, [visible, alive, sessions, runs, load]);
 
   const active = sessions?.find((s) => `session:${s.id}` === selected) ?? null;
+  // Phones: the open session as a chat (its CLI's transcript) or the terminal.
+  const sessionView = useSessionView(active);
   const activeRun = runs?.find((r) => `run:${r.id}` === selected) ?? null;
   const work = sessions && runs ? mergeWork(sessions, runs) : null;
   const available = providers?.filter((p) => p.available).length ?? 0;
@@ -531,6 +534,9 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                     </span>
                   </div>
                   <SessionRestartStatus session={active} />
+                  {sessionView.available && (
+                    <ViewSwitch view={sessionView.view} onChange={sessionView.choose} />
+                  )}
                   <span style={{ flex: 1 }} />
                   <div className="project-terminal-actions">
                     {active.terminal === 'pty' && <SessionProgress session={active} />}
@@ -651,37 +657,41 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                   </button>
                 </header>
                 <div className="pane-body">
-                  <Suspense
-                    fallback={<div className="terminal skeleton" style={{ height: '100%' }} />}
-                  >
-                    <TerminalView
-                      key={`${active.id}-${active.terminal}-${active.startedAt}`}
-                      historyBytes={active.logBytes}
-                      stopped={active.terminal === 'pty' && active.status !== 'running'}
-                      height="100%"
-                      fetchOutput={(after) => api.sessionOutput(active.id, after)}
-                      streamUrl={(after) => api.sessionStreamUrl(active.id, after)}
-                      paused={!visible}
-                      {...(active.terminal === 'pty'
-                        ? {
-                            pasteRef,
-                            onImage: (file: File) =>
-                              sendImageToSession(active.id, file, pasteRef.current).catch(
-                                (e: Error) => setError(e.message),
-                              ),
-                            // A stopped session only queues real typing, not the terminal's auto-replies.
-                            onInput: (data: string) => {
-                              if (active.status === 'running' || !isTerminalReport(data)) {
-                                sendKeys(active.id, data);
-                              }
-                            },
-                            onResize: (cols: number, rows: number) => {
-                              api.resizeSession(active.id, cols, rows).catch(() => undefined);
-                            },
-                          }
-                        : {})}
-                    />
-                  </Suspense>
+                  {sessionView.view === 'chat' ? (
+                    <SessionChat key={active.id} session={active} onError={setError} />
+                  ) : (
+                    <Suspense
+                      fallback={<div className="terminal skeleton" style={{ height: '100%' }} />}
+                    >
+                      <TerminalView
+                        key={`${active.id}-${active.terminal}-${active.startedAt}`}
+                        historyBytes={active.logBytes}
+                        stopped={active.terminal === 'pty' && active.status !== 'running'}
+                        height="100%"
+                        fetchOutput={(after) => api.sessionOutput(active.id, after)}
+                        streamUrl={(after) => api.sessionStreamUrl(active.id, after)}
+                        paused={!visible}
+                        {...(active.terminal === 'pty'
+                          ? {
+                              pasteRef,
+                              onImage: (file: File) =>
+                                sendImageToSession(active.id, file, pasteRef.current).catch(
+                                  (e: Error) => setError(e.message),
+                                ),
+                              // A stopped session only queues real typing, not the terminal's auto-replies.
+                              onInput: (data: string) => {
+                                if (active.status === 'running' || !isTerminalReport(data)) {
+                                  sendKeys(active.id, data);
+                                }
+                              },
+                              onResize: (cols: number, rows: number) => {
+                                api.resizeSession(active.id, cols, rows).catch(() => undefined);
+                              },
+                            }
+                          : {})}
+                      />
+                    </Suspense>
+                  )}
                 </div>
                 {active.terminal !== 'pty' && (
                   <form className="pane-input" onSubmit={sendInput}>

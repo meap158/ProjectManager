@@ -1,0 +1,368 @@
+/* Chat view of an agent session (mobile): native scrolling chat over the CLI's transcript. */
+
+.session-chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 12px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-empty {
+  margin: 24px auto;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.chat-msg {
+  display: flex;
+}
+.chat-msg.is-user {
+  justify-content: flex-end;
+}
+.chat-bubble {
+  max-width: 88%;
+  padding: 8px 11px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-msg.is-user .chat-bubble {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-bottom-right-radius: 4px;
+}
+.chat-msg.is-assistant .chat-bubble {
+  background: var(--surface-2);
+  color: var(--text);
+  border-bottom-left-radius: 4px;
+}
+.chat-bubble code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.chat-code {
+  margin: 6px 0;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Tool calls: one compact line (name + what it does); tap to see input and output. */
+.chat-tool {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 12.5px;
+}
+.chat-tool > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.chat-tool > summary::-webkit-details-marker {
+  display: none;
+}
+.chat-tool[open] {
+  padding-bottom: 6px;
+}
+.chat-tool[open] > :not(summary) {
+  margin-left: 10px;
+  margin-right: 10px;
+}
+.chat-tool-state {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--good);
+}
+.chat-tool.is-running .chat-tool-state {
+  background: var(--accent);
+  animation: chat-pulse 1.2s ease-in-out infinite;
+}
+.chat-tool.is-error .chat-tool-state {
+  background: var(--danger);
+}
+.chat-tool-name {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+}
+.chat-tool-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.chat-tool-label {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chat-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  padding: 2px 4px;
+}
+.chat-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.chat-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: chat-pulse 1.2s ease-in-out infinite;
+}
+.chat-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.chat-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes chat-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-dots i,
+  .chat-tool.is-running .chat-tool-state {
+    animation: none;
+  }
+}
+.chat-asking {
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+
+.chat-new {
+  position: absolute;
+  left: 50%;
+  bottom: 112px;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 12.5px;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+}
+
+/* Quick keys for menus and choices, then the composer. */
+.chat-keys {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chat-keys::-webkit-scrollbar {
+  display: none;
+}
+.chat-key {
+  flex: none;
+  min-width: 40px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.chat-composer {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+}
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  max-height: 160px;
+  padding: 10px 12px;
+  border-radius: 20px;
+  resize: none;
+  font-size: 16px; /* 16px keeps iOS from zooming into the field. */
+  line-height: 1.4;
+}
+.chat-send {
+  flex: none;
+  min-height: 44px;
+  border-radius: 22px;
+  padding: 0 16px;
+}
+
+/* The pane header's Chat / Terminal switch. */
+.session-view-switch {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.session-view-switch button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.session-view-switch button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+/* Phone pane headers are a fixed grid (dot, title, three buttons): the switch gets its own
+   column beside the title instead of overlapping the buttons. */
+.workspace .pane-head:has(> .session-view-switch) {
+  grid-template-columns: 8px minmax(0, 1fr) auto repeat(3, var(--pane-action-size, 34px));
+}
+@media (max-width: 768px) {
+  .session-view-switch button {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+}
+
+/* A run of tool calls folded into one row (count, tools, latest step); tap for every step. */
+.chat-steps {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 12.5px;
+}
+.chat-steps > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.chat-steps > summary::-webkit-details-marker {
+  display: none;
+}
+.chat-steps.is-running .chat-tool-state {
+  background: var(--accent);
+  animation: chat-pulse 1.2s ease-in-out infinite;
+}
+.chat-steps.is-error .chat-tool-state {
+  background: var(--danger);
+}
+.chat-steps-count {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+}
+.chat-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-steps.is-running .chat-tool-state {
+    animation: none;
+  }
+}
+
+/* Markdown tables and headings in replies. */
+.chat-table-wrap {
+  margin: 6px 0;
+  overflow-x: auto;
+  white-space: normal;
+}
+.chat-table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.chat-table th,
+.chat-table td {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  /* Readable columns: a wide table scrolls sideways instead of a word per line. */
+  min-width: 9em;
+}
+.chat-table th:first-child,
+.chat-table td:first-child {
+  min-width: 2.5em;
+}
+.chat-table th {
+  background: var(--surface);
+  font-weight: 600;
+}
+.chat-heading {
+  margin: 6px 0 2px;
+  font-weight: 700;
+}
+/* The project tab's docked terminal header: the session name keeps some room beside the
+   switch and the buttons. */
+@media (max-width: 768px) {
+  .project-terminal-head > .pane-identity {
+    min-width: 72px;
+  }
+}

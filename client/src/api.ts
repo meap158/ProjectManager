@@ -12,6 +12,7 @@ import type {
   AgentPermissions,
   CpuBudget,
   MachineSensors,
+  SessionTranscript,
   LanStatus,
   AgentProviderStatus,
   AgentTerminal,
@@ -235,6 +236,13 @@ export const api = {
   /** Saves an image for a session (PM-54); returns its absolute path to paste into the CLI. */
   uploadSessionImage: (id: number, image: { name: string; type: string; data: string }) =>
     request<{ path: string }>('POST', `/agent-sessions/${id}/images`, image),
+  /** Chat view (mobile): the CLI's transcript from `after` (a previous `next`), or its tail. */
+  sessionTranscript: (id: number, after?: number) =>
+    request<SessionTranscript>(
+      'GET',
+      `/agent-sessions/${id}/transcript${after === undefined ? '' : `?after=${after}`}`,
+    ),
+  sessionScreen: (id: number) => request<{ text: string }>('GET', `/agent-sessions/${id}/screen`),
   sendSessionInput: (id: number, data: string) =>
     request<{ queued: boolean; session: AgentSession }>('POST', `/agent-sessions/${id}/input`, {
       data,
