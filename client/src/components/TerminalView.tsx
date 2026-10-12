@@ -432,16 +432,40 @@ export function TerminalView({
     host.addEventListener('dragover', onDragOver);
     host.addEventListener('drop', onDrop);
     // Capture owns touch scrolling so xterm's built-in handler cannot process it twice.
+    const rowHeight = () => (term.options.fontSize ?? 12.5) * (term.options.lineHeight ?? 1.25);
+    // Full-screen CLIs (alternate screen) scroll themselves: one wheel step per row of finger
+    // travel, so a fast swipe loses no steps and both directions move alike (PM-114). xterm
+    // turned each touch event into at most one step before, whatever its distance.
+    const flushAlternateScroll = () => {
+      const row = rowHeight();
+      const lines = Math.trunc(touchRemainder / row);
+      for (let i = 0; i < Math.abs(lines); i++) {
+        term.element?.dispatchEvent(
+          new WheelEvent('wheel', {
+            deltaY: Math.sign(lines),
+            deltaMode: WheelEvent.DOM_DELTA_LINE,
+            clientX: touchX,
+            clientY: touchY ?? 0,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+      touchRemainder -= lines * row;
+    };
     const flushTouchScroll = () => {
       scrollFrame = null;
-      if (cancelled || term.buffer.active.type !== 'normal') return;
+      if (cancelled) return;
+      if (term.buffer.active.type !== 'normal') return flushAlternateScroll();
       const element = viewport();
       if (element) {
         const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-        pixelTarget = Math.max(
-          0,
-          Math.min(maximum, (pixelTarget ?? element.scrollTop) + touchRemainder),
-        );
+        // Continue from our own fractional position (xterm rounds the view to whole rows),
+        // unless xterm moved the view by a row or more itself: the oldest lines dropping off as
+        // output streams in, or a jump to the bottom. Snapping back then stuttered (PM-114).
+        let base = pixelTarget ?? element.scrollTop;
+        if (Math.abs(element.scrollTop - base) >= rowHeight()) base = element.scrollTop;
+        pixelTarget = Math.max(0, Math.min(maximum, base + touchRemainder));
         element.scrollTop = pixelTarget;
         if (pixelTarget >= maximum - 2) {
           term.scrollToBottom();
@@ -451,11 +475,11 @@ export function TerminalView({
         touchRemainder = 0;
         return;
       }
-      const rowHeight = (term.options.fontSize ?? 12.5) * (term.options.lineHeight ?? 1.25);
-      const lines = Math.trunc(touchRemainder / rowHeight);
+      const row = rowHeight();
+      const lines = Math.trunc(touchRemainder / row);
       if (lines) {
         term.scrollLines(lines);
-        touchRemainder -= lines * rowHeight;
+        touchRemainder -= lines * row;
       }
     };
     const onTouchStart = (event: TouchEvent) => {
@@ -489,31 +513,23 @@ export function TerminalView({
       if (velocity * delta < 0) velocity = instantVelocity;
       lastMove = now;
       event.preventDefault(); // The swipe scrolls the terminal, not the page around it.
+      touchRemainder += delta;
       if (term.buffer.active.type === 'normal') {
         // Scroll the entire terminal viewport, including the CLI's prompt/footer. Sending
         // mouse reports instead lets the CLI scroll only its output pane and pins its chrome.
-        touchRemainder += delta;
         // Coalesce rapid touch events into one viewport update per display frame.
         if (scrollFrame === null) scrollFrame = requestAnimationFrame(flushTouchScroll);
         return;
       }
-      term.element?.dispatchEvent(
-        new WheelEvent('wheel', {
-          deltaY: delta,
-          deltaMode: WheelEvent.DOM_DELTA_PIXEL,
-          clientX: touchX,
-          clientY: y,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
+      flushAlternateScroll();
     };
     const onTouchEnd = (event: TouchEvent) => {
       touchY = null;
+      // Both kinds of screen coast after a flick, in either direction (PM-114).
+      const normal = term.buffer.active.type === 'normal';
       if (
         event.type === 'touchcancel' ||
-        !viewport() ||
-        term.buffer.active.type !== 'normal' ||
+        (normal && !viewport()) ||
         performance.now() - lastMove > 120 ||
         Math.abs(velocity) < 0.05 ||
         window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -526,7 +542,7 @@ export function TerminalView({
         previous = now;
         touchRemainder += velocity * elapsed;
         flushTouchScroll();
-        const element = viewport();
+        const element = normal ? viewport() : null;
         const maximum = element ? Math.max(0, element.scrollHeight - element.clientHeight) : 0;
         const atEdge =
           element &&

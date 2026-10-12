@@ -525,12 +525,22 @@ describe('TerminalView', () => {
     await waitFor(() => expect(terms.at(-1)!.scrolled).toEqual([-1]));
     expect(wheels).toEqual([]);
     expect(move.defaultPrevented).toBe(true); // The page around it doesn't scroll instead.
+    // Full-screen CLIs: one wheel step per row of finger travel (rows are 12.5 x 1.25 = 15.6 px),
+    // the same in both directions (PM-114).
     terms.at(-1)!.buffer.active.type = 'alternate';
     touch('touchstart', 100);
-    touch('touchmove', 140);
-    touch('touchmove', 120);
-    touch('touchend', null);
-    expect(wheels).toEqual([-40, 20]);
+    touch('touchmove', 140); // 40 px back through the history: two rows.
+    touch('touchmove', 120); // 20 px forward: under a row with the remainder, no step yet.
+    touch('touchcancel', null);
+    expect(wheels).toEqual([-1, -1]);
+    wheels.length = 0;
+    touch('touchstart', 100);
+    touch('touchmove', 147); // 47 px up the history: three rows.
+    touch('touchcancel', null);
+    touch('touchstart', 100);
+    touch('touchmove', 53); // 47 px down: three rows too.
+    touch('touchcancel', null);
+    expect(wheels).toEqual([-1, -1, -1, 1, 1, 1]);
   });
 
   it('sends a pasted or dropped image as a file and pastes text through xterm', async () => {
@@ -626,6 +636,11 @@ it('keeps downward touch movement continuous when xterm rounds its viewport', as
   viewport.scrollTop = 200; // Renderer synchronizes to the nearest terminal row.
   touch('touchmove', 88);
   await waitFor(() => expect(viewport.scrollTop).toBe(212));
+  // xterm moved the view by more than a row itself (the oldest lines dropped off as output
+  // streamed in): the swipe continues from there instead of snapping back (PM-114).
+  viewport.scrollTop = 180;
+  touch('touchmove', 82);
+  await waitFor(() => expect(viewport.scrollTop).toBe(186));
   touch('touchmove', -1000);
   await waitFor(() => expect(viewport.scrollTop).toBe(800));
   touch('touchcancel', 0);
