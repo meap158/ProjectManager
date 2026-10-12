@@ -3,13 +3,13 @@
 Implementation status, revalidated 2026-10-12. This table is the current assessment;
 chronological findings later in this document preserve earlier implementation evidence.
 
-| Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                           |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Durable execution        | Keyed reservations/reconciliation, lease epochs, scheduler and chat heartbeats, synchronous insertion fences, task revision checks, superseded-attempt refunds                                              | Request replay identity, durable task generations, process crash matrix                                                             |
-| Controls and convenience | Scoped Check now, paged read-only preview, pending-work queue/run actions, card/worker links, Pause/Observe/Autonomous modes, manual chat tools                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                |
-| Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Commit coordinated partial-index migration; measure whole API/tick and index write cost; versioned summary and situation pagination |
-| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                    |
-| Evaluation               | Full regression suite: 451 tests / 93 files pass, including four process-boundary cases; server types and targeted lint passed                                                                              | Live runtime/mobile checks, end-to-end latency and completion metrics                                                               |
+| Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Durable execution        | Keyed reservations/reconciliation, lease epochs, scheduler and chat heartbeats, synchronous insertion fences, task revision checks, superseded-attempt refunds                                              | Request replay identity, durable task generations, process crash matrix                                                                                       |
+| Controls and convenience | Scoped Check now, paged read-only preview, pending-work queue/run actions, card/worker links, Pause/Observe/Autonomous modes, manual chat tools                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                                          |
+| Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Partial-index migration committed with upgrade/query-plan regression; measure whole API/tick and index write cost; versioned summary and situation pagination |
+| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                              |
+| Evaluation               | Full regression suite: 463 tests / 98 files pass, including four process-boundary cases; server types and targeted lint passed                                                                              | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                         |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -23,8 +23,9 @@ The measured 1k-card/100k-history situation builder median fell from 2,769.92ms 
 In isolated database fixtures, partial indexes reduced planning projection median from 9.49ms
 to 0.53ms and live occupancy from 41.43ms to 0.02ms. See
 [benchmark scope and reproduction](ORCHESTRATOR_BENCHMARK.md). These are synthetic component
-measurements, not whole-request or mobile latency claims. The production migration remains
-uncommitted alongside another agent's append-only schema change; preserve migration order.
+measurements, not whole-request or mobile latency claims. The append-only production index migration is committed after the last-input schema change,
+with an existing-database upgrade test. Run ownership is separately persisted and recoverable
+assignment history is backfilled.
 
 ## Next upgrades and release evidence
 
@@ -40,8 +41,7 @@ uncommitted alongside another agent's append-only schema change; preserve migrat
    wait for correction; quota reset schedules fresh verification. Preserve explicit review and
    never send automatic input into manual terminals or permission prompts. Test policy changes,
    drafts, retry exhaustion and scoped result links before physical mobile review.
-3. **Finish measured efficiency.** Adopt the tested partial indexes after the shared migration
-   is committed. Measure complete read-only inspection/preview and isolated dispatch ticks at
+3. **Finish measured efficiency.** The tested partial indexes and upgrade migration are committed. Measure complete read-only inspection/preview and isolated dispatch ticks at
    1k/10k cards, 100k history and 1/5/20 masters: p50/p95, SQL/quota reads, writes, RSS and response
    bytes. Include many unreviewed runs and unscoped masters. Then introduce a versioned summary
    and paginated situation details where measured payloads require it. Preserve the current
@@ -299,3 +299,15 @@ restart feedback and error reporting. Hiding the chat unmounts its stream withou
 Sixteen focused chat/terminal/page tests pass. Project card workers remain project work; master
 control sessions are the separate Orchestrator-owned sessions currently identified by the API.
 Explicit historical run ownership is not persisted on AgentRun and remains a schema/design gap.
+
+## Workspace and review isolation, 2026-10-12
+
+Created orchestrators now have a compact chooser and one selected workspace, including chat
+CLI lifecycle controls and owned dispatched runs with output, stop/retry and review. Activity
+counts and events are scoped to selection. Regular Agents lists exclude owned sessions/runs.
+Owned worker and pending-review links open the owning Orchestrator workspace and its run
+section. Ownership persists across retry and mutable assignment replacement; historical runs
+whose assignment was already overwritten cannot be reliably backfilled.
+
+Physical mobile checks, whole-request measurements, durable request replay, and remote
+GitHub Project status/reviewer synchronization remain open. The active goal is not complete.

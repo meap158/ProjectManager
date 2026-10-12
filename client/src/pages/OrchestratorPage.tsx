@@ -82,12 +82,8 @@ export function OrchestratorPage() {
   const [state, setState] = useState<OrchestratorState>({ instances: [], events: [] });
   const [search, setSearch] = useSearchParams();
   const requestedOwner = search.get('orchestrator');
-  const [selectedId, setSelectedId] = useState<string | null>(requestedOwner);
-  useEffect(() => {
-    if (requestedOwner) setSelectedId(requestedOwner);
-  }, [requestedOwner]);
   const selectedInstance =
-    state.instances.find((item) => item.id === selectedId) ?? state.instances[0];
+    state.instances.find((item) => item.id === requestedOwner) ?? state.instances[0];
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -357,7 +353,7 @@ export function OrchestratorPage() {
                   key={item.id}
                   aria-pressed={selectedInstance?.id === item.id}
                   onClick={() => {
-                    setSelectedId(item.id);
+                    setSearch({ orchestrator: item.id });
                     setPreview(null);
                     setActionResult(null);
                     setHistoryLimit(25);
@@ -851,6 +847,13 @@ export function OrchestratorPage() {
                           </div>
                         )}
                         <OrchestratorPending
+                          runOwners={
+                            new Map(
+                              runs
+                                .filter((run) => run.orchestratorId)
+                                .map((run) => [run.id, run.orchestratorId!]),
+                            )
+                          }
                           masterId={instance.id}
                           busy={busy}
                           canRun={instance.enabled && instance.strategy !== 'observe'}

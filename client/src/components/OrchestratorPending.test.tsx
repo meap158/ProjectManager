@@ -103,3 +103,23 @@ it('limits visible items and keeps the last inspection after a failed refresh', 
   expect((await screen.findByRole('alert')).textContent).toBe('Inspection unavailable');
   expect(screen.getByText('Issue 11')).toBeTruthy();
 });
+
+it('reviews owned runs in their Orchestrator instead of the filtered project Agents list', async () => {
+  vi.mocked(api.orchestratorSituation).mockResolvedValue(snapshot);
+  render(
+    <MemoryRouter>
+      <OrchestratorPending
+        masterId="master"
+        busy={false}
+        canRun={false}
+        onFollowUp={vi.fn()}
+        runOwners={new Map([[7, 'owner']])}
+      />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect pending work' }));
+  const link = await screen.findByRole('link', { name: 'Review run #7' });
+  expect(link.getAttribute('href')).toBe(
+    '/orchestrators?orchestrator=owner&run=7#orchestrator-runs-owner',
+  );
+});

@@ -10,8 +10,10 @@ export function OrchestratorPending({
   busy,
   canRun,
   onFollowUp,
+  runOwners,
 }: {
   masterId: string;
+  runOwners?: Map<number, string>;
   projectId?: number;
   busy: boolean;
   canRun: boolean;
@@ -112,7 +114,14 @@ export function OrchestratorPending({
                   </Link>
                 )}
                 {item.runId && (
-                  <Link className="btn btn-sm" to={`/projects/${item.projectId}?tab=agents`}>
+                  <Link
+                    className="btn btn-sm"
+                    to={
+                      runOwners?.get(item.runId)
+                        ? `/orchestrators?orchestrator=${runOwners.get(item.runId)}&run=${item.runId}#orchestrator-runs-${runOwners.get(item.runId)}`
+                        : `/projects/${item.projectId}?tab=agents`
+                    }
+                  >
                     Review run #{item.runId}
                   </Link>
                 )}
