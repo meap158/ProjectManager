@@ -4,16 +4,20 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { api } from '../api';
 import { OrchestratorPending } from './OrchestratorPending';
-import type { OrchestratorSituation } from '../../../shared/orchestrator';
-vi.mock('../api', () => ({ api: { orchestratorSituation: vi.fn() } }));
+import type { OrchestratorPendingPage } from '../../../shared/orchestrator';
+vi.mock('../api', () => ({ api: { orchestratorPending: vi.fn() } }));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
 });
-const snapshot: OrchestratorSituation = {
+const snapshot: OrchestratorPendingPage = {
+  version: 1,
+  total: 3,
+  offset: 0,
+  limit: 10,
+  nextOffset: null,
   generatedAt: '2026-10-11T10:00:00Z',
-  beingWorkedOn: [],
-  needsAttention: [
+  items: [
     {
       kind: 'project-alert',
       projectId: 1,
@@ -48,7 +52,10 @@ const snapshot: OrchestratorSituation = {
   ],
 };
 it('inspects on demand and offers scoped follow-ups and context links', async () => {
-  vi.mocked(api.orchestratorSituation).mockResolvedValue(snapshot);
+  vi.mocked(api.orchestratorPending).mockResolvedValue({
+    ...snapshot,
+    items: snapshot.items.filter((item) => item.projectId === 1),
+  });
   const followUp = vi.fn();
   render(
     <MemoryRouter>
@@ -61,11 +68,11 @@ it('inspects on demand and offers scoped follow-ups and context links', async ()
       />
     </MemoryRouter>,
   );
-  expect(api.orchestratorSituation).not.toHaveBeenCalled();
+  expect(api.orchestratorPending).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Inspect pending work' }));
   await screen.findByText('Uncommitted files');
-  expect(api.orchestratorSituation).toHaveBeenCalledWith('master');
-  expect(screen.queryByText('Other project')).toBeNull();
+  expect(api.orchestratorPending).toHaveBeenCalledWith('master', 0, 1);
+
   expect(screen.getByRole('link', { name: 'Review task' }).getAttribute('href')).toBe(
     '/board?card=4',
   );
@@ -79,14 +86,23 @@ it('inspects on demand and offers scoped follow-ups and context links', async ()
   expect(followUp).toHaveBeenCalledWith(1);
 });
 it('limits visible items and keeps the last inspection after a failed refresh', async () => {
-  vi.mocked(api.orchestratorSituation)
+  vi.mocked(api.orchestratorPending)
     .mockResolvedValueOnce({
       ...snapshot,
-      needsAttention: Array.from({ length: 12 }, (_, index) => ({
-        ...snapshot.needsAttention[0]!,
+      total: 12,
+      nextOffset: 10,
+      items: Array.from({ length: 10 }, (_, index) => ({
+        ...snapshot.items[0]!,
         projectId: index + 1,
         title: 'Issue ' + index,
       })),
+    })
+    .mockResolvedValueOnce({
+      ...snapshot,
+      total: 12,
+      offset: 10,
+      nextOffset: null,
+      items: [{ ...snapshot.items[0]!, title: 'Issue 11' }],
     })
     .mockRejectedValueOnce(new Error('Inspection unavailable'));
   render(
@@ -97,15 +113,15 @@ it('limits visible items and keeps the last inspection after a failed refresh', 
   fireEvent.click(screen.getByRole('button', { name: 'Inspect pending work' }));
   await screen.findByText('Issue 0');
   expect(screen.queryByText('Issue 11')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Show more (2)' }));
-  expect(screen.getByText('Issue 11')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await screen.findByText('Issue 11');
   fireEvent.click(screen.getByRole('button', { name: 'Refresh pending work' }));
   expect((await screen.findByRole('alert')).textContent).toBe('Inspection unavailable');
   expect(screen.getByText('Issue 11')).toBeTruthy();
 });
 
 it('reviews owned runs in their Orchestrator instead of the filtered project Agents list', async () => {
-  vi.mocked(api.orchestratorSituation).mockResolvedValue(snapshot);
+  vi.mocked(api.orchestratorPending).mockResolvedValue(snapshot);
   render(
     <MemoryRouter>
       <OrchestratorPending

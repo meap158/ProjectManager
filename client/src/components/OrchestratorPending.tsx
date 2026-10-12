@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api';
-import type { OrchestratorSituation } from '../../../shared/orchestrator';
+import type { OrchestratorPendingPage } from '../../../shared/orchestrator';
 
 /** Explicit inspection avoids adding a large history request to every dashboard poll. */
 export function OrchestratorPending({
@@ -19,10 +19,9 @@ export function OrchestratorPending({
   canRun: boolean;
   onFollowUp: (projectId: number) => void;
 }) {
-  const [snapshot, setSnapshot] = useState<OrchestratorSituation | null>(null);
+  const [snapshot, setSnapshot] = useState<OrchestratorPendingPage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [limit, setLimit] = useState(10);
   const epoch = useRef(0);
   const active = useRef(false);
   useEffect(() => {
@@ -32,16 +31,15 @@ export function OrchestratorPending({
       active.current = false;
     };
   }, []);
-  const inspect = async () => {
+  const inspect = async (offset = 0) => {
     if (loading) return;
     const request = ++epoch.current;
     setLoading(true);
     setError('');
     try {
-      const next = await api.orchestratorSituation(masterId);
+      const next = await api.orchestratorPending(masterId, offset, projectId);
       if (active.current && request === epoch.current) {
         setSnapshot(next);
-        setLimit(10);
       }
     } catch (e) {
       if (active.current && request === epoch.current) setError((e as Error).message);
@@ -49,8 +47,7 @@ export function OrchestratorPending({
       if (active.current && request === epoch.current) setLoading(false);
     }
   };
-  const items =
-    snapshot?.needsAttention.filter((item) => !projectId || item.projectId === projectId) ?? [];
+  const items = snapshot?.items ?? [];
   return (
     <div className="orchestrator-pending">
       <div className="orchestrator-result-links">
@@ -64,7 +61,7 @@ export function OrchestratorPending({
         </button>
         {snapshot && (
           <span className="faint">
-            {items.length} pending; inspected{' '}
+            {snapshot.total} pending; inspected{' '}
             {new Date(snapshot.generatedAt).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
@@ -77,14 +74,14 @@ export function OrchestratorPending({
           {error}
         </p>
       )}
-      {snapshot && !items.length && (
+      {snapshot && !snapshot.total && (
         <p role="status" className="faint">
           No pending items in this scope.
         </p>
       )}
       {items.length > 0 && (
         <ul className="orchestrator-pending-list">
-          {items.slice(0, limit).map((item, index) => (
+          {items.map((item, index) => (
             <li
               key={`${item.kind}-${item.projectId}-${item.cardId ?? item.sessionId ?? item.runId ?? index}`}
             >
@@ -133,14 +130,29 @@ export function OrchestratorPending({
           ))}
         </ul>
       )}
-      {items.length > limit && (
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={() => setLimit((current) => current + 10)}
-        >
-          Show more ({items.length - limit})
-        </button>
+      {snapshot && snapshot.total > snapshot.limit && (
+        <nav className="orchestrator-result-links" aria-label="Pending work pages">
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={loading || snapshot.offset === 0}
+            onClick={() => void inspect(Math.max(0, snapshot.offset - snapshot.limit))}
+          >
+            Previous
+          </button>
+          <span className="faint" role="status">
+            {snapshot.offset + 1}-{Math.min(snapshot.offset + items.length, snapshot.total)} of{' '}
+            {snapshot.total}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={loading || snapshot.nextOffset === null}
+            onClick={() => void inspect(snapshot.nextOffset ?? 0)}
+          >
+            Next
+          </button>
+        </nav>
       )}
     </div>
   );

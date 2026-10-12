@@ -88,3 +88,34 @@ it('bounds and validates plan preview pages before inspecting tasks', async () =
   expect((await app.request('/orchestrators/master/preview?offset=100&limit=50')).status).toBe(200);
   expect(preview).toHaveBeenLastCalledWith('master', 100, 50);
 });
+
+it('validates pending pages before reading and passes bounded scope to the service', async () => {
+  const pending = vi.fn(() => ({
+    version: 1,
+    total: 0,
+    offset: 0,
+    limit: 10,
+    items: [],
+    nextOffset: null,
+    generatedAt: 'now',
+  }));
+  const app = new Hono();
+  registerOrchestratorRoutes(app, { pending } as unknown as OrchestratorService);
+  for (const query of [
+    'offset=-1',
+    'limit=0',
+    'limit=101',
+    'projectId=0',
+    'offset=1.5',
+    'unknown=1',
+  ]) {
+    expect((await app.request('/orchestrators/master/pending?' + query)).status).toBe(400);
+  }
+  expect(pending).not.toHaveBeenCalled();
+  expect(
+    (await app.request('/orchestrators/master/pending?offset=10&limit=10&projectId=2')).status,
+  ).toBe(200);
+  expect(pending).toHaveBeenCalledWith('master', 10, 10, 2);
+  pending.mockReturnValueOnce(null as unknown as ReturnType<typeof pending>);
+  expect((await app.request('/orchestrators/missing/pending')).status).toBe(404);
+});

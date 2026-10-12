@@ -75,6 +75,24 @@ export class OrchestratorService {
     });
   }
 
+  /** Bounded transport for pending-work inspection; internal planning keeps the full situation. */
+  pending(id: string, offset = 0, limit = 20, projectId?: number) {
+    const situation = this.situation(id);
+    if (!situation) return null;
+    const items = situation.needsAttention.filter(
+      (item) => !projectId || item.projectId === projectId,
+    );
+    return {
+      version: 1 as const,
+      generatedAt: situation.generatedAt,
+      total: items.length,
+      offset,
+      limit,
+      items: items.slice(offset, offset + limit),
+      nextOffset: offset + limit < items.length ? offset + limit : null,
+    };
+  }
+
   async preview(id: string, offset = 0, limit = 100) {
     const instance = this.state().instances.find((i) => i.id === id);
     if (!instance) return null;

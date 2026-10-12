@@ -78,7 +78,7 @@ for (const cards of cardCounts) {
         delete expected.generatedAt;
         delete actual.generatedAt;
         assert.deepEqual(actual, expected, 'Projected inspection changed visible data');
-        for (const operation of ['preview', 'situation']) {
+        for (const operation of ['preview', 'situation', 'pending']) {
           const run = async () => {
             let bytes = 0;
             for (const id of ids) {
@@ -89,7 +89,9 @@ for (const cards of cardCounts) {
               assert(
                 operation === 'preview'
                   ? data.decisions.length <= 100
-                  : Array.isArray(data.needsAttention),
+                  : operation === 'pending'
+                    ? data.items.length <= 20
+                    : Array.isArray(data.needsAttention),
               );
               bytes += Buffer.byteLength(body);
             }

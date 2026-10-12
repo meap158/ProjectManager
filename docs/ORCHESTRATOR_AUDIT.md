@@ -356,3 +356,13 @@ The isolated real-route benchmark reduced the 10k-card project inspection median
 See ORCHESTRATOR_BENCHMARK.md for scope and limits. Full visible equivalence is asserted by
 the benchmark. The 5.4 MB global response still needs summary/pagination; physical mobile
 and complete runtime measurements remain open.
+
+## Pending-work transport pagination, 2026-10-13
+
+Pending inspection now uses a versioned endpoint with validated offset/limit/project scope,
+accurate filtered totals and nextOffset. The UI requests ten items and offers Previous/Next;
+refresh failures preserve its populated page. Eighteen service/HTTP/UI tests pass. The large
+10k-card/100k-history fixture returned 4,562 bytes for a global 20-item page versus 5,409,189
+bytes for full inspection. Server still computes the complete situation before slicing;
+this bounds transport/rendering, not computation or snapshot consistency across changes.
+SQL-level paging, versioned snapshot cursors, mobile browser verification remain open.

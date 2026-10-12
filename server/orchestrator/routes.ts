@@ -64,6 +64,24 @@ export function registerOrchestratorRoutes(
     const situation = service.situation(c.req.param('id'));
     return situation ? c.json(situation) : c.json({ error: 'Orchestrator not found' }, 404);
   });
+  app.get('/orchestrators/:id/pending', (c) => {
+    const page = z
+      .object({
+        offset: z.coerce.number().int().min(0).max(1000000).default(0),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+        projectId: z.coerce.number().int().positive().optional(),
+      })
+      .strict()
+      .safeParse(c.req.query());
+    if (!page.success) return c.json({ error: 'Invalid pending page' }, 400);
+    const result = service.pending(
+      c.req.param('id'),
+      page.data.offset,
+      page.data.limit,
+      page.data.projectId,
+    );
+    return result ? c.json(result) : c.json({ error: 'Orchestrator not found' }, 404);
+  });
   app.get('/orchestrators/:id/preview', async (c) => {
     const page = z
       .object({

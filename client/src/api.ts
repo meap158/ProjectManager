@@ -1,6 +1,7 @@
 import type {
   OrchestratorConfig,
   OrchestratorSituation,
+  OrchestratorPendingPage,
   OrchestratorPlanDecision,
   OrchestratorState,
 } from '../../shared/orchestrator';
@@ -52,6 +53,12 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
+  orchestratorPending: (id: string, offset = 0, projectId?: number) =>
+    request<OrchestratorPendingPage>(
+      'GET',
+      `/orchestrators/${encodeURIComponent(id)}/pending?offset=${offset}&limit=10${projectId ? `&projectId=${projectId}` : ''}`,
+    ),
+
   orchestratorSituation: (id: string) =>
     request<OrchestratorSituation>('GET', `/orchestrators/${encodeURIComponent(id)}/situation`),
   orchestrators: () => request<OrchestratorState>('GET', '/orchestrators'),

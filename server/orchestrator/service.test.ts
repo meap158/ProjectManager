@@ -642,3 +642,47 @@ it('includes the actual run owner in a paged review decision', async () => {
     db.close();
   }
 });
+
+it('bounds pending transport and filters scope before paging without truncating totals', () => {
+  const db = openDb(':memory:');
+  try {
+    const service = new OrchestratorService(db, {} as AgentSupervisor, null);
+    const items = Array.from({ length: 25 }, (_, i) => ({
+      kind: 'awaiting-review' as const,
+      projectId: (i % 2) + 1,
+      projectName: 'Project',
+      title: 'Review',
+      detail: 'Pending',
+      runId: i + 1,
+    }));
+    vi.spyOn(service, 'situation').mockReturnValue({
+      generatedAt: 'now',
+      needsAttention: items,
+      beingWorkedOn: [],
+    });
+    expect(service.pending('master', 0, 10)).toMatchObject({
+      version: 1,
+      total: 25,
+      nextOffset: 10,
+      items: items.slice(0, 10),
+    });
+    expect(service.pending('master', 20, 10)).toMatchObject({
+      total: 25,
+      nextOffset: null,
+      items: items.slice(20),
+    });
+    expect(service.pending('master', 0, 10, 1)).toMatchObject({
+      total: 13,
+      items: items.filter((i) => i.projectId === 1).slice(0, 10),
+    });
+    expect(service.pending('master', 30, 10)).toMatchObject({
+      total: 25,
+      items: [],
+      nextOffset: null,
+    });
+    vi.mocked(service.situation).mockReturnValue(null);
+    expect(service.pending('missing')).toBeNull();
+  } finally {
+    db.close();
+  }
+});

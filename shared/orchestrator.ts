@@ -145,3 +145,13 @@ export interface OrchestratorSituation {
   needsAttention: SituationItem[];
   beingWorkedOn: SituationCard[];
 }
+
+export interface OrchestratorPendingPage {
+  version: 1;
+  generatedAt: string;
+  total: number;
+  offset: number;
+  limit: number;
+  items: SituationItem[];
+  nextOffset: number | null;
+}
