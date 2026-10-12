@@ -105,7 +105,7 @@ const textOf = (content: unknown): string => {
 /** Housekeeping the CLIs put in user turns (context, reminders, command echoes): not chat. */
 const isNoise = (text: string) =>
   !text.trim() ||
-  /^\s*<(environment_context|system-reminder|command-|local-command|user_instructions|permissions|skills_instructions|task-notification)/.test(
+  /^\s*<(environment_context|system-reminder|command-|local-command|user_instructions|permissions|skills_instructions|task-notification|cross-session-message)/.test(
     text,
   );
 
@@ -118,11 +118,20 @@ export function parseClaudeLine(line: string): ChatItem[] {
     isSidechain?: boolean;
     isMeta?: boolean;
     message?: { role?: string; content?: unknown };
+    attachment?: { type?: string; prompt?: unknown };
   };
   try {
     o = JSON.parse(line);
   } catch {
     return [];
+  }
+  // A message you sent while Claude was working: recorded as a queued command when it reached
+  // Claude mid-task, not as a user message (PM-118). Without this it never showed as yours.
+  if (o.type === 'attachment' && o.attachment?.type === 'queued_command' && !o.isSidechain) {
+    const text = textOf(o.attachment.prompt);
+    return isNoise(text)
+      ? []
+      : [{ id: o.uuid ?? `queued-${o.timestamp}`, kind: 'user', text, at: o.timestamp ?? null }];
   }
   if ((o.type !== 'user' && o.type !== 'assistant') || o.isSidechain || o.isMeta) return [];
   const at = o.timestamp ?? null;

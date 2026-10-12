@@ -541,13 +541,22 @@ export function SessionChat({
   const unrecorded = pending.filter((p) => !recorded.has(p.text));
   /** Which earlier message ↑ / ↓ is showing (from the newest back), and the draft it replaced. */
   const [recall, setRecall] = useState<{ index: number; draft: string } | null>(null);
+  /**
+   * Your messages, newest first, as a CLI's ↑ walks them (PM-118): what you just sent that the
+   * transcript doesn't show yet, then the transcript's, newest to oldest. A message you send
+   * again counts at its newest place, not where it first appeared.
+   */
   const history = () => {
     const fromTranscript = items
       .filter((i) => i.kind === 'user' && i.text)
       .map((i) => i.text!.trim());
-    const all = [...fromTranscript, ...sent.filter((t) => !fromTranscript.includes(t))];
-    // Newest first, without repeats of the same message in a row.
-    return all.reverse().filter((t, i, list) => t && t !== list[i - 1]);
+    const newestFirst = [
+      ...unrecorded.map((p) => p.text).reverse(),
+      ...[...sent].reverse().filter((t) => !fromTranscript.includes(t)),
+      ...fromTranscript.reverse(),
+    ];
+    const seen = new Set<string>();
+    return newestFirst.filter((t) => t && !seen.has(t) && (seen.add(t), true));
   };
   const fill = (text: string) => {
     setDraft(text);

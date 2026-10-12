@@ -162,3 +162,16 @@ describe('session transcript (chat view)', () => {
     expect(reset.items.map((i) => i.text)).toEqual(['fresh']);
   });
 });
+
+describe('messages sent while Claude works (PM-118)', () => {
+  it('shows a queued message as yours; messages from other sessions are not', () => {
+    const queued = (prompt: string) =>
+      parseClaudeLine(
+        `${JSON.stringify({ type: 'attachment', uuid: 'q1', timestamp: 't', attachment: { type: 'queued_command', prompt } })}\n`,
+      );
+    expect(queued('also fix the header')).toEqual([
+      { id: 'q1', kind: 'user', text: 'also fix the header', at: 't' },
+    ]);
+    expect(queued('<cross-session-message from="x">relayed</cross-session-message>')).toEqual([]);
+  });
+});
