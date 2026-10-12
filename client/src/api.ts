@@ -10,6 +10,7 @@ import type {
   AgentOutput,
   AgentPermissions,
   CpuBudget,
+  MachineSensors,
   LanStatus,
   AgentProviderStatus,
   AgentTerminal,
@@ -161,6 +162,7 @@ export const api = {
   /** Global agent permissions and per-CLI overrides (Settings). */
   getCpuBudget: () => request<CpuBudget>('GET', '/agents/cpu-budget'),
   setCpuBudget: (threads: number) => request<CpuBudget>('PUT', '/agents/cpu-budget', { threads }),
+  getSensors: () => request<MachineSensors>('GET', '/agents/sensors'),
   getPermissions: () => request<AgentPermissions>('GET', '/agents/permissions'),
   savePermissions: (value: AgentPermissions) =>
     request<AgentPermissions>('PUT', '/agents/permissions', value),

@@ -288,6 +288,25 @@ export interface CpuBudget {
   defaultThreads: number;
 }
 
+export interface SensorFan {
+  label: string;
+  rpm: number;
+}
+
+/** CPU temperature and fan speeds, from the best source on this machine (PM-113). */
+export interface MachineSensors {
+  /** Where they come from; null when nothing is readable. */
+  source: 'hwinfo' | 'librehardwaremonitor' | 'hwmon' | 'acpi' | null;
+  /** Degrees Celsius: the CPU package / Tctl / hottest core where known. */
+  cpuTempC: number | null;
+  cpuTempLabel: string | null;
+  /** The CPU fan (and pump) first. */
+  fans: SensorFan[];
+  /** What the reading is or how to get better ones (e.g. ACPI zone, enable HWiNFO). */
+  note: string | null;
+  at: string;
+}
+
 export const PERMISSION_LEVEL_LABELS: Record<PermissionLevel, string> = {
   cli: "CLI's own settings",
   ...AGENT_AUTONOMY_LABELS,

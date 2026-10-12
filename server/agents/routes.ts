@@ -18,6 +18,7 @@ import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
 import { getPermissions, PERMISSION_PROVIDERS, setPermissions } from './permissions.js';
 import { getCpuBudget, setCpuBudget, totalThreads } from './cpuBudget.js';
+import { readSensors } from './sensors.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
 import { removeSessionImages } from '../attachments.js';
 
@@ -149,6 +150,9 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     void supervisor.refreshCpuBudget();
     return c.json(budget);
   });
+
+  // CPU temperature and fan speeds beside the budget (PM-113). Read-only, briefly cached.
+  app.get('/agents/sensors', async (c) => c.json(await readSensors()));
 
   app.get('/agents/providers', async (c) => {
     const refresh = c.req.query('refresh');

@@ -1,0 +1,128 @@
+/* Settings → CPU budget: the budget row and the live sensors (PM-110, PM-113). */
+
+.cpu-budget-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.cpu-budget-label .faint {
+  font-size: 12.5px;
+}
+
+/* HWiNFO-style table: sensor, current, min, max; numbers right-aligned in tabular figures. */
+.cpu-sensors {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.cpu-sensors-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+}
+.cpu-sensors-title {
+  font-weight: 600;
+}
+.cpu-sensors-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.cpu-sensors-table th,
+.cpu-sensors-table td {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+.cpu-sensors-table thead th {
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding-top: 0;
+}
+.cpu-sensors-table th:first-child {
+  text-align: left;
+  font-weight: 500;
+  max-width: 0; /* Lets a long sensor name truncate instead of widening the table. */
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 12px;
+}
+.cpu-sensors-table td {
+  padding-left: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.cpu-sensors-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.cpu-temp {
+  font-weight: 600;
+}
+.cpu-temp.is-cool {
+  color: var(--good);
+}
+.cpu-temp.is-warm {
+  color: var(--series-4);
+}
+.cpu-temp.is-hot {
+  color: var(--danger);
+}
+.cpu-temp-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: currentColor;
+}
+.cpu-temp-dot.is-cool {
+  color: var(--good);
+}
+.cpu-temp-dot.is-warm {
+  color: var(--series-4);
+}
+.cpu-temp-dot.is-hot {
+  color: var(--danger);
+}
+.cpu-sensors-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* Phones (PM-110): the label sits above a full-width picker instead of being squeezed into a
+   narrow column beside it; the table drops the min column first. */
+@media (max-width: 640px) {
+  .cpu-budget-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .cpu-budget-row > .cpu-budget-label {
+    flex-basis: 100%;
+  }
+  .cpu-budget-row > .dropdown {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .cpu-budget-row > .dropdown .dropdown-trigger {
+    width: 100%;
+    min-height: 44px;
+  }
+  .cpu-sensors-table th:nth-child(3),
+  .cpu-sensors-table td:nth-child(3) {
+    display: none;
+  }
+  .cpu-sensors-table td {
+    padding-left: 12px;
+  }
+}
