@@ -47,27 +47,13 @@
 .project-dock-resizer {
   touch-action: none;
 }
-/* Phones keep a fixed-height column: the list gives the terminal its room. */
+/* Phones (PM-106): the page scrolls. The whole Sessions and runs list shows (no inner scroll box
+   squeezed by the terminal), and the terminal follows below at its own height; picking a
+   session scrolls it into view (AgentsPanel). */
 @media (max-width: 768px) {
-  .project-agents.has-terminal > .panel {
-    flex-shrink: 0;
-  }
-  .project-agents.has-terminal > .project-work-panel {
-    flex: 1 1 auto;
-    min-height: 100px;
-  }
-  .project-agents.has-terminal .project-work-panel .work-list-scroll {
-    flex: 1;
-    min-height: 0;
+  .project-agents .project-work-panel .work-list-scroll {
     max-height: none;
-  }
-  .project-agents.has-terminal > .project-cli-dock {
-    flex: 0 0 auto;
-    margin-top: auto;
-  }
-  .project-agents.has-terminal {
-    height: calc(100dvh - 180px);
-    min-height: 500px;
+    overflow: visible;
   }
   .project-agents.has-terminal > .project-cli-dock {
     height: var(--project-dock-height, 360px) !important;
@@ -125,16 +111,18 @@
     font-size: 11px;
     padding: 4px 6px;
   }
-  .project-agents.has-terminal > .project-work-panel {
-    min-height: 190px;
-  }
-  .project-agents.has-terminal .project-work-panel .work-list-scroll {
-    min-height: 140px;
+  /* The header is one centred row with no extra padding (the panel already has its own), and a
+     divider shows where the scrolling list starts (PM-106). */
+  .project-agents .project-work-panel {
+    padding: 8px 12px 10px;
   }
   .project-work-panel .panel-header {
-    padding: 8px;
-    margin: 0;
-    min-height: 40px;
+    flex: none;
+    align-items: center;
+    padding: 0 0 4px;
+    margin: 0 0 4px;
+    min-height: 44px;
+    border-bottom: 1px solid var(--border);
   }
   .project-work-panel .panel-header > .meta {
     display: none;
@@ -153,7 +141,11 @@
     display: flex;
     flex-wrap: nowrap;
     gap: 2px;
-    padding: 2px 4px;
+    /* The status dot and title get the same inset as the list rows above (PM-106). */
+    padding: 2px 4px 2px 12px;
+  }
+  .project-terminal-head > .status-dot {
+    margin-right: 6px;
   }
   .project-terminal-head > .pane-identity {
     flex: 1 1 auto;
