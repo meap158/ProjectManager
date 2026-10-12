@@ -720,7 +720,8 @@ read it before product work. `/References` is empty.
     - The sidebar sorts by A–Z, Recently active, Newest project and Most code.
     - Projects without data for a column always sort last.
   - workspace polish: keyboard shortcuts, drag-to-swap panes, font size, → Review from a pane
-  - session host: sessions survive server restarts (DESIGN.md §12.3)
+  - session host: sessions survive quick server restarts; closing ProjectManager ends them
+    (DESIGN.md §12.3)
   - attach a card to a running session: `POST /api/agent-sessions/:id/card`. The task is
     bracket-pasted and submitted, only into AI CLI sessions (never shells). Auto-named sessions
     follow the card.
@@ -789,10 +790,12 @@ See the map in `CLAUDE.md` and the agent design in DESIGN.md §12–12.1.
 
 ## Gotchas
 
-- **Session host processes** (`ptyHost`) legitimately outlive the server while sessions run.
+- **Session host processes** (`ptyHost`) outlive the server for up to 20s (`ORPHAN_MS`, env
+  `PM_HOST_ORPHAN_MS` for tests), then end every session and exit (generation 3).
   Rendezvous: `<dataDir>/agent-host.json`; diagnostics: `<dataDir>/agent-host.log`.
-  A running host keeps its old code: host-side fixes (e.g. log compaction) only take effect
-  after it restarts (reboot, or every session stopped so it idles out after a minute).
+  A running host keeps its old code: host-side fixes only take effect after it restarts. Bump
+  `HOST_GENERATION` for host behaviour changes so new sessions go to a new host; a generation-2
+  host from before this change still keeps its sessions until a reboot or they are stopped.
 - **Session log offsets are logical** (`server/agents/logFile.ts`): a log over 32 MB is compacted
   to its last 1 MB, with the dropped byte count in `<log>.base`. Use `logicalSize()` for
   offsets/`logBytes` and `physicalSize()` only for raw file reads; delete logs with `removeLog()`.

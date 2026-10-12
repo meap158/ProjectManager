@@ -53,7 +53,8 @@ export interface HostRendezvous {
 }
 
 // Generation 2 rotates full logs instead of suppressing PTY output.
-export const HOST_GENERATION = 2;
+// Generation 3 ends its sessions once no server is attached (ProjectManager closed).
+export const HOST_GENERATION = 3;
 
 export function hostSocketPath(dataDir: string, generation?: number): string {
   const identity = path.resolve(dataDir).toLowerCase() + (generation ? `:v${generation}` : '');

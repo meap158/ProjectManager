@@ -664,9 +664,12 @@ values (5px, 7px, 9px, 18px…) are never added.
 Sessions are never lost unless you stop or delete them (owner requirement, Research Addendum 4).
 
 - **Session host** (`server/agents/host/ptyHost.ts`): one small background process per data
-  folder owns the interactive session processes (PTYs), like tmux. Server restarts (dev reloads,
-  crashes, out-of-memory kills) only detach from it. The next server re-attaches to the same
-  processes: same PID, no relaunch, no lost state.
+  folder owns the interactive session processes (PTYs), like tmux. A quick server restart (dev
+  reload) only detaches from it. The next server re-attaches to the same processes: same PID, no
+  relaunch, no lost state.
+- **Closing ProjectManager:** once no server has been attached for 20s (`ORPHAN_MS`: closed
+  window, Ctrl+C, Task Manager, crash) the host ends every session's process tree and exits, so
+  no agent CLI keeps using CPU unseen. Sessions stay wanted and relaunch on the next start.
 - **Reboots:** the host dies with the machine. On the next start the supervisor relaunches every
   wanted session, and Claude resumes its own conversation (`--resume <id>`).
 - **Isolation:**
@@ -680,8 +683,8 @@ Sessions are never lost unless you stop or delete them (owner requirement, Resea
   to its last 1 MB and the bytes dropped from its head go in a `<log>.base` sidecar, so offsets
   only ever grow (`server/agents/logFile.ts`). Output never stops streaming at the cap (it used
   to, which left restarted OpenCode sessions blank with no input box).
-- **Efficiency:** the host exits on its own when no session is alive and no server has been
-  attached for a minute.
+- **Efficiency:** the host exits on its own once no server is attached and its sessions have
+  ended.
 - **Simpler UI:** the "Supervise" option was removed. Every session persists by default.
 - Disable with `AGENT_HOST=off` (sessions then run inside the server as before).
 

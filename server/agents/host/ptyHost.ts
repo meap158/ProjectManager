@@ -1,12 +1,13 @@
 // Agent session host: a small background process that owns interactive session processes (PTYs)
-// so they survive ProjectManager server restarts — code reloads in dev, crashes, out-of-memory
-// kills — like tmux does for a shell. Only a reboot (or deliberately stopping a session) ends them.
+// so they survive quick ProjectManager server restarts (code reloads in dev), like tmux does for a
+// shell. Closing ProjectManager ends them: see ORPHAN_MS.
 //
 //  - Started detached by the server when needed (one per data folder/generation), outside the server's
 //    process tree so killing the server tree never takes sessions down with it.
 //  - Writes each session's output straight to its log file, so nothing is missed while no server
 //    is attached; attached servers also get live `data` events with exact byte offsets.
-//  - Exits on its own once no session is alive and no server has been attached for a minute.
+//  - Once no server has been attached for ORPHAN_MS (ProjectManager closed, killed or crashed),
+//    ends every session's process tree, then exits. Wanted sessions relaunch on the next start.
 //
 // Usage: node ptyHost.js --data-dir <dir>   (the server launches it; see client.ts)
 
@@ -36,7 +37,13 @@ import {
   type HostSessionInfo,
 } from './protocol.js';
 
-const IDLE_EXIT_MS = 60_000;
+/**
+ * No server attached for this long means ProjectManager is gone, however it ended: every session
+ * is ended rather than left running unseen (each is an agent CLI using CPU and memory). Long
+ * enough to ride out a dev restart (tsx watch), which reconnects within a few seconds.
+ */
+const ORPHAN_MS = Number(process.env.PM_HOST_ORPHAN_MS) || 20_000; // Env override for tests.
+const CHECK_MS = Math.min(5_000, ORPHAN_MS / 2);
 
 interface HostedSession {
   key: string;
@@ -297,13 +304,24 @@ server.listen(socketPath, () => {
   log(`listening pid=${process.pid}`);
 });
 
-// Idle exit: nothing alive and nobody attached for a while → no lingering background process.
+// Orphaned: end every session (retried each check until they are gone), then exit.
+let orphanLogged = false;
 setInterval(() => {
-  const anyAlive = [...sessions.values()].some((s) => s.alive);
-  if (anyAlive || clients.size > 0 || Date.now() - lastClientAt < IDLE_EXIT_MS) return;
-  log('idle, exiting');
-  shutdownHost(0);
-}, 10_000).unref();
+  if (clients.size > 0 || Date.now() - lastClientAt < ORPHAN_MS) {
+    orphanLogged = false;
+    return;
+  }
+  const alive = [...sessions.values()].filter((s) => s.alive);
+  if (alive.length === 0) {
+    log('no server attached and no sessions, exiting');
+    shutdownHost(0);
+    return;
+  }
+  if (!orphanLogged)
+    log(`no server attached for ${ORPHAN_MS / 1000}s, ending ${alive.length} sessions`);
+  orphanLogged = true;
+  for (const s of alive) if (s.pid) killTree(s.pid);
+}, CHECK_MS).unref();
 
 function shutdownHost(code: number): void {
   try {

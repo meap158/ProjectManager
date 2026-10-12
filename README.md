@@ -45,8 +45,9 @@ on your computer.
 ### 🔄 Sessions that survive restarts
 
 Close the browser without stopping your agents. A separate session host keeps CLI processes
-running across ProjectManager server restarts. After a reboot, active sessions relaunch with
-their saved conversation when the CLI supports resume; terminal history stays with the session.
+running across quick server restarts. Closing ProjectManager, even abruptly, ends them within
+about 20 seconds; on the next start (or after a reboot) active sessions relaunch with their saved
+conversation when the CLI supports resume; terminal history stays with the session.
 
 </td>
 <td width="50%" valign="top">
@@ -217,11 +218,13 @@ one project, or work across several projects and harnesses at once. Every row an
 the session's project and linked card visible, so you can switch tasks without losing context.
 
 Session records, terminal logs and conversation identifiers are saved locally. Closing a tab
-leaves the process running. The separate session host keeps CLI processes alive during server
-restarts, and the app reconnects to them. If the host is unavailable, sessions run in the server
-and resume after it restarts. After a reboot, active sessions relaunch when ProjectManager starts
-again, using the CLI's saved conversation when available. A reboot interrupts the current
-process; resuming the conversation does not preserve an in-flight command.
+leaves the process running. The separate session host keeps CLI processes alive during quick
+server restarts, and the app reconnects to them. Closing ProjectManager (or a crash) ends every
+session's process within about 20 seconds, so no agent keeps running unseen. If the host is
+unavailable, sessions run in the server and end with it. Active sessions relaunch when
+ProjectManager starts again, using the CLI's saved conversation when available. Closing or
+rebooting interrupts the current process; resuming the conversation does not preserve an
+in-flight command.
 
 | Agent       | Exact resume after a restart | Name syncs with `/rename` |
 | ----------- | :--------------------------: | :-----------------------: |
@@ -359,9 +362,10 @@ longer need.
 <summary><b>What happens if I close the browser or restart my computer?</b></summary>
 <br>
 Closing the browser leaves sessions running. The separate session host also keeps CLI processes
-running across server restarts. Rebooting the computer interrupts them, then active sessions
-relaunch when ProjectManager starts again. Saved conversation identifiers let supported CLIs
-resume their conversation; terminal history is retained locally.
+running across quick server restarts. Closing ProjectManager (even by closing its window or
+ending it in Task Manager) or rebooting ends them, then active sessions relaunch when
+ProjectManager starts again. Saved conversation identifiers let supported CLIs resume their
+conversation; terminal history is retained locally.
 </details>
 
 <details>
