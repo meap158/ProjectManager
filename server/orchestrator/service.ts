@@ -83,11 +83,17 @@ export class OrchestratorService {
     if (!instance) return null;
     const projects = this.db.prepare('SELECT id FROM projects').all() as { id: number }[];
     const providers = await providerStatuses();
+    const runs = planningRuns(this.db, instance.projectIds);
+    const latestRuns = new Map<number, (typeof runs)[number]>();
+    for (const run of runs) {
+      if (run.cardId != null && run.id > (latestRuns.get(run.cardId)?.id ?? -1))
+        latestRuns.set(run.cardId, run);
+    }
     const decisions = planOrchestration(instance, {
       cards: projects
         .filter((p) => !instance.projectIds.length || instance.projectIds.includes(p.id))
         .flatMap((p) => listCards(this.db, p.id)),
-      runs: planningRuns(this.db, instance.projectIds),
+      runs,
       sessions: this.supervisor.listAllSessions(),
       availableProviders: providers.filter((p) => p.available).map((p) => p.id),
       limits: readLimits(this.dataDir),
@@ -121,8 +127,20 @@ export class OrchestratorService {
         // The planner preserves reservations; preview explains the exact persisted blocker.
         // Live workers and pending reviews keep precedence over retry metadata.
         const explainRetry = decision.waitReason === 'assignment_reserved' && waitReason;
+        const latest = latestRuns.get(decision.cardId);
+        const inspectRun =
+          decision.waitReason === 'review_required' ||
+          (explainRetry && waitReason === 'retry_budget_exhausted');
         return {
           ...decision,
+          ...(inspectRun && latest
+            ? {
+                worker: {
+                  runId: latest.id,
+                  orchestratorId: latest.orchestratorId ?? null,
+                },
+              }
+            : {}),
           ...(explainRetry ? { waitReason, reason: retry.blocker ?? decision.reason } : {}),
           retry,
           execution: { autonomy: 'edit' as const, supervisorAttempts: 1, requiresReview: true },

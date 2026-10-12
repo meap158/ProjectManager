@@ -600,3 +600,45 @@ it('explains persisted cooldown and exhausted budgets without mislabelling live 
     db.close();
   }
 });
+
+it('includes the actual run owner in a paged review decision', async () => {
+  const db = openDb(':memory:');
+  try {
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture',?,?)").run(
+      tmp,
+      now,
+    );
+    db.prepare(
+      "INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(1,1,'Review','review',0,?,?)",
+    ).run(now, now);
+    db.prepare(
+      "INSERT INTO agent_runs(id,project_id,card_id,name,command_json,status,created_at,log_path,orchestrator_id) VALUES(77,1,1,'Worker','[]','succeeded',?,'','actual-owner')",
+    ).run(now);
+    const service = new OrchestratorService(
+      db,
+      { listAllSessions: () => [] } as unknown as AgentSupervisor,
+      null,
+    );
+    const master = service.save({
+      name: 'Fixture',
+      enabled: true,
+      strategy: 'observe',
+      projectIds: [1],
+      providers: ['codex'],
+      maxWorkers: 2,
+      maxWorkersPerProject: 2,
+      maxWorkersPerProvider: 2,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
+    });
+    const preview = await service.preview(master.id, 0, 1);
+    expect(preview?.decisions[0]).toMatchObject({
+      action: 'review',
+      worker: { runId: 77, orchestratorId: 'actual-owner' },
+    });
+  } finally {
+    db.close();
+  }
+});

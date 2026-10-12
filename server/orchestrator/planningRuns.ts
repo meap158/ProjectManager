@@ -9,7 +9,7 @@ export function planningRuns(db: Db, projectIds: number[] = []): PlanningRun[] {
   return db
     .prepare(
       `
-    SELECT id, project_id AS projectId, card_id AS cardId, provider_id AS providerId, status, validation
+    SELECT id, project_id AS projectId, card_id AS cardId, provider_id AS providerId, status, validation, orchestrator_id AS orchestratorId
     FROM agent_runs WHERE id IN (
       SELECT id FROM agent_runs WHERE status IN ('running', 'queued')
       UNION

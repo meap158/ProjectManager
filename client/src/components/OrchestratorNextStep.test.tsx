@@ -51,3 +51,23 @@ it('directs exhausted budgets to failed-run inspection', () => {
     '/projects/7?tab=agents',
   );
 });
+
+it('opens an owned review in its Orchestrator workspace', () => {
+  render(
+    <MemoryRouter>
+      <OrchestratorNextStep
+        decision={{
+          cardId: 4,
+          projectId: 7,
+          action: 'review',
+          reason: 'Review',
+          waitReason: 'review_required',
+          worker: { runId: 9, orchestratorId: 'master' },
+        }}
+      />
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('link', { name: 'Review runs' }).getAttribute('href')).toBe(
+    '/orchestrators?orchestrator=master&run=9#orchestrator-runs-master',
+  );
+});

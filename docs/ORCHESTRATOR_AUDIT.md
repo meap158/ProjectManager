@@ -341,3 +341,8 @@ reservation label and next action even though the stored retry details differed.
 and review decisions retain precedence, and preview does not modify assignments or dispatch.
 The queue can now show the existing cooldown/task and exhausted-budget/run-inspection advice.
 Provider authentication classification and explicit bounded recovery remain separate gaps.
+
+Queue preview review and exhausted-budget decisions now include the latest projected run's
+identity and persisted owner. Their inspection links open that owner's run section rather
+than a regular Agents list that excludes owned work. Unowned runs retain project navigation.
+Ownership comes from the existing bounded SQL projection, with no extra history query.

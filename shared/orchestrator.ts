@@ -44,6 +44,7 @@ export interface OrchestratorExecutionStatus {
 }
 
 export interface OrchestratorPlanDecision {
+  worker?: { runId: number; orchestratorId: string | null };
   cardId: number;
   projectId: number;
   action: 'dispatch' | 'review' | 'wait';

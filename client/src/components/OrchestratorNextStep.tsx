@@ -76,7 +76,9 @@ export function OrchestratorNextStep({ decision }: { decision: OrchestratorPlanD
   if (!step) return null;
   const href =
     step.target === 'workers'
-      ? `/projects/${decision.projectId}?tab=agents`
+      ? decision.worker?.orchestratorId
+        ? `/orchestrators?orchestrator=${decision.worker.orchestratorId}&run=${decision.worker.runId}#orchestrator-runs-${decision.worker.orchestratorId}`
+        : `/projects/${decision.projectId}?tab=agents`
       : step.target === 'card'
         ? `/board?project=${decision.projectId}&card=${decision.cardId}`
         : step.target === 'settings'
