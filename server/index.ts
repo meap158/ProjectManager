@@ -52,6 +52,8 @@ async function main() {
     dataDir: config.dataDir,
     // Sessions live in the session host and survive server restarts (AGENT_HOST=off disables).
     agentHost: process.env.AGENT_HOST !== 'off',
+    // Agent processes share Settings → CPU budget (affinity + below-normal priority).
+    cpuBudget: true,
   });
   root.route('/', api);
   // Boards follow commits on their own: new commits' card refs apply within ~15s, no Refresh.

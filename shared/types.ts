@@ -279,6 +279,15 @@ export interface AgentPermissions {
   providers: Record<string, PermissionLevel | 'inherit'>;
 }
 
+/** Settings → CPU budget: how many logical CPUs agent processes may use together. */
+export interface CpuBudget {
+  /** False where the OS offers no way to apply it (macOS). */
+  supported: boolean;
+  totalThreads: number;
+  threads: number;
+  defaultThreads: number;
+}
+
 export const PERMISSION_LEVEL_LABELS: Record<PermissionLevel, string> = {
   cli: "CLI's own settings",
   ...AGENT_AUTONOMY_LABELS,

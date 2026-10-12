@@ -17,6 +17,7 @@ import { sessionUsage } from './usage.js';
 import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
 import { getPermissions, PERMISSION_PROVIDERS, setPermissions } from './permissions.js';
+import { getCpuBudget, setCpuBudget, totalThreads } from './cpuBudget.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
 import { removeSessionImages } from '../attachments.js';
 
@@ -134,6 +135,19 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
       }),
     );
     return c.json(setPermissions(db, body));
+  });
+
+  // CPU budget for agent processes (Settings): applied at once to everything running.
+  app.get('/agents/cpu-budget', (c) => c.json(getCpuBudget(db)));
+
+  app.put('/agents/cpu-budget', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({ threads: z.number().int().min(1).max(totalThreads()) }),
+    );
+    const budget = setCpuBudget(db, body.threads);
+    void supervisor.refreshCpuBudget();
+    return c.json(budget);
   });
 
   app.get('/agents/providers', async (c) => {

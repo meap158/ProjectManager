@@ -71,6 +71,7 @@ import {
   workingInTail,
 } from './activity.js';
 import { readLimits } from './limits.js';
+import { applyCpuBudget, getCpuBudget } from './cpuBudget.js';
 import { allowanceReset, emptyCodexPrompt } from './continuation.js';
 import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
 import {
@@ -478,6 +479,8 @@ export class AgentSupervisor {
   /** Keys whose spawn is in flight (argv resolution is async): guards double starts. */
   private starting = new Set<string>();
   private readonly maxParallelRuns: number;
+  /** Apply Settings → CPU budget to agent processes (production; tests opt in). */
+  private readonly cpuBudget: boolean;
   /** When each session last spawned and whether that spawn resumed a conversation. */
   private lastSpawn = new Map<string, { at: number; resumed: boolean; byUser: boolean }>();
   /** Sessions whose last resume died right away: their next relaunch starts fresh. */
@@ -537,11 +540,13 @@ export class AgentSupervisor {
       dataDir?: string;
       installRecipes?: Partial<Record<string, InstallRecipe>>;
       maxParallelRuns?: number;
+      cpuBudget?: boolean;
     } = {},
   ) {
     mkdirSync(logDir, { recursive: true });
     this.dataDir = options.dataDir ?? null;
     this.maxParallelRuns = options.maxParallelRuns ?? MAX_PARALLEL_RUNS;
+    this.cpuBudget = options.cpuBudget ?? false;
     this.installRecipes = options.installRecipes ?? {};
     this.useHost = !!options.host && !!this.dataDir && ptyAvailable();
     this.ready = this.reconcile().catch((e: Error) => {
@@ -572,6 +577,8 @@ export class AgentSupervisor {
         return null;
       }
       this.host = client;
+      // Every session the host starts inherits the budget; this also covers ones it already runs.
+      void this.limitCpu([client.hostPid]);
       client.on('data', (key, offset, data) => this.hosted.get(key)?.log.ingest(offset, data));
       client.on('exit', (key, code, signal) =>
         this.hosted.get(key)?.proc.deliverExit(code, signal),
@@ -580,6 +587,21 @@ export class AgentSupervisor {
       return client;
     });
     return this.hostConnecting;
+  }
+
+  /** Settings → CPU budget for the given processes and everything they run. */
+  private async limitCpu(pids: (number | undefined)[]): Promise<void> {
+    if (!this.cpuBudget || this.closed) return;
+    const roots = pids.filter((pid): pid is number => !!pid);
+    if (roots.length) await applyCpuBudget(roots, getCpuBudget(this.db).threads);
+  }
+
+  /** Re-applies the CPU budget to every agent process (after the setting changed). */
+  async refreshCpuBudget(): Promise<void> {
+    const pids = [...this.live.values()]
+      .filter((live) => !(live.proc instanceof HostedProc))
+      .map((live) => live.proc.pid);
+    await this.limitCpu([this.host?.connected ? this.host.hostPid : undefined, ...pids]);
   }
 
   /** The host went away (crashed/killed): its sessions are gone; restart them normally. */
@@ -1866,6 +1888,7 @@ export class AgentSupervisor {
 
       const live: LiveProc = { proc, log, stoppedByUser: false, kind: 'session', id: row.id };
       this.live.set(key, live);
+      void this.limitCpu([proc.pid]);
       this.db
         .prepare(
           `UPDATE agent_sessions SET status = 'running', pid = ?, started_at = ?, ended_at = NULL WHERE id = ?`,
@@ -2182,6 +2205,7 @@ export class AgentSupervisor {
 
       const live: LiveProc = { proc, log, stoppedByUser: false, kind: 'run', id: row.id };
       this.live.set(key, live);
+      void this.limitCpu([proc.pid]);
       let timedOut = false;
       const minutes = Math.round(timeoutMs / 60000);
       const timer = setTimeout(() => {

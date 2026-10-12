@@ -127,6 +127,8 @@ export function createApp(
     dataDir?: string;
     /** Run interactive sessions in the session host so they survive server restarts. */
     agentHost?: boolean;
+    /** Apply Settings → CPU budget to agent processes (index.ts; tests leave it off). */
+    cpuBudget?: boolean;
   } = {},
 ): AppWithAgents {
   const scanner = new Scanner(db);
@@ -139,6 +141,7 @@ export function createApp(
   );
   const supervisor = new AgentSupervisor(db, logDir, {
     host: options.agentHost ?? false,
+    cpuBudget: options.cpuBudget ?? false,
     ...(options.dataDir ? { dataDir: options.dataDir } : {}),
   });
   const app = new Hono().basePath('/api');

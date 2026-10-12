@@ -523,6 +523,11 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   Caps: 8 sessions/project, 3 active runs/project, at most `MAX_PARALLEL_RUNS` runs executing
   machine-wide (CPU threads / 4, between 1 and 4; the rest wait as `queued`), 8MB logs, 20min
   default run timeout.
+- **CPU budget (Settings, below Agent permissions):** one dropdown, "N of M threads (P%)", with
+  1, every even count and "All M threads (no limit)"; the default (3/4 of threads, even) is
+  marked "recommended". Agent processes are pinned to the highest-numbered CPUs (CPU 0 stays
+  free) at below-normal priority; both are inherited by everything an agent starts. Applies at
+  once; macOS shows "Not available on this system".
 
 ### 12.1 How the CLI integration works (verified 2026-10-05 on Windows)
 

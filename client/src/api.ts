@@ -9,6 +9,7 @@ import type {
   AgentInstall,
   AgentOutput,
   AgentPermissions,
+  CpuBudget,
   LanStatus,
   AgentProviderStatus,
   AgentTerminal,
@@ -153,6 +154,8 @@ export const api = {
   lanSignOut: (deviceId?: string) =>
     request<LanStatus>('DELETE', deviceId ? `/lan/devices/${deviceId}` : '/lan/devices'),
   /** Global agent permissions and per-CLI overrides (Settings). */
+  getCpuBudget: () => request<CpuBudget>('GET', '/agents/cpu-budget'),
+  setCpuBudget: (threads: number) => request<CpuBudget>('PUT', '/agents/cpu-budget', { threads }),
   getPermissions: () => request<AgentPermissions>('GET', '/agents/permissions'),
   savePermissions: (value: AgentPermissions) =>
     request<AgentPermissions>('PUT', '/agents/permissions', value),

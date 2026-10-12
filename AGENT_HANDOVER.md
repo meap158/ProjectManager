@@ -614,6 +614,12 @@ atomic commits). Nothing is pending in the working tree.
   `queued` in `agent_runs` and `startQueuedRuns` starts the oldest when a run finishes, fails to
   start or is deleted, so the queue survives restarts. Run timeouts count from the actual start.
   Interactive sessions are not capped machine-wide (a person is typing in them).
+- **CPU budget** (`server/agents/cpuBudget.ts`, Settings, `GET/PUT /api/agents/cpu-budget`,
+  setting `cpu_budget_threads`): processor affinity (highest N CPUs) + below-normal priority on
+  the session host and each run/in-process session, inherited by their children; re-applied to
+  existing trees on change. Windows: one PowerShell per apply (inputs via env, PID-reuse guard by
+  creation time); Linux: taskset/renice; macOS unsupported. Only index.ts enables it
+  (`createApp({ cpuBudget: true })`), so tests don't spawn PowerShell per run.
 - **Agent permissions** (Settings): global level + per-CLI inherit/own, translated into each CLI's
   flags/config (`server/agents/permissions.ts`); applied to sessions at launch, default for runs.
 - **LAN access** (Settings, opt-in): separate listener, devices sign in with a 4-character

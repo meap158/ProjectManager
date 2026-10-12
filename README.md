@@ -352,10 +352,12 @@ installed CLIs and their existing provider authentication.
 <details>
 <summary><b>Will many agents at once overload my computer?</b></summary>
 <br>
-Card runs share a machine-wide limit: up to a quarter of your CPU threads (at most 4) run at
-once, and the rest wait as queued and start on their own when one finishes. Project scans run
-two at a time. Interactive sessions you open yourself are not limited, so close the ones you no
-longer need.
+Settings → CPU budget caps how many CPU threads all agents may use together, including the
+builds and tests they start (three quarters by default), and runs them at below-normal priority
+so the rest of your computer stays responsive. Card runs also share a machine-wide limit: up to a
+quarter of your CPU threads (at most 4) run at once, and the rest wait as queued and start on
+their own when one finishes. Project scans run two at a time. Closing ProjectManager ends every
+agent it started.
 </details>
 
 <details>

@@ -12,6 +12,7 @@ import {
 import { useAgentLimits } from '../agentLimits';
 import { api } from '../api';
 import { AgentPermissionsPanel } from '../components/AgentPermissionsPanel';
+import { CpuBudgetPanel } from '../components/CpuBudgetPanel';
 import { LanAccessPanel } from '../components/LanAccessPanel';
 import { UsageLimits } from '../components/UsageLimits';
 import { Dropdown } from '../components/Dropdown';
@@ -188,6 +189,8 @@ export function SettingsPage() {
       </section>
 
       <AgentPermissionsPanel providers={providers} onError={setError} />
+
+      <CpuBudgetPanel onError={setError} />
 
       <LanAccessPanel onError={setError} />
 
