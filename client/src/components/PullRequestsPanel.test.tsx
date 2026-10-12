@@ -5,7 +5,9 @@ import type { PullRequest, PullRequestsResult } from '../../../shared/types';
 import { api } from '../api';
 import { PullRequestsPanel } from './PullRequestsPanel';
 
-vi.mock('../api', () => ({ api: { pullRequests: vi.fn(), pullRequestAction: vi.fn() } }));
+vi.mock('../api', () => ({
+  api: { pullRequests: vi.fn(), pullRequestAction: vi.fn(), setPullRequestAccount: vi.fn() },
+}));
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = vi.fn();
   HTMLDialogElement.prototype.close = vi.fn();
@@ -56,6 +58,13 @@ const result = (
     deleteBranchOnMerge: false,
     canPush: true,
     isAdmin: false,
+  },
+  account: {
+    login: 'meap158',
+    source: 'owner',
+    owner: 'meap158',
+    accounts: ['meapwork', 'meap158'],
+    override: null,
   },
   error: null,
   fetchedAt: new Date().toISOString(),
@@ -141,4 +150,27 @@ it('lists closed pull requests with reopen and restore branch', async () => {
   await screen.findByText('Restored.');
   expect(api.pullRequestAction).toHaveBeenCalledWith(4, 12, { action: 'restore-branch' });
   expect(api.pullRequests).toHaveBeenLastCalledWith(4, 'closed');
+});
+
+it('names the account it acts as, in the tab and in the merge and close confirmations', async () => {
+  vi.mocked(api.pullRequests).mockResolvedValue(result([pr()]));
+  render(<PullRequestsPanel projectId={4} visible />);
+  expect((await screen.findByText('meap158')).closest('p')?.textContent).toContain(
+    'Acting as meap158 (owner of meap158)',
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for #12' }));
+  const merge = screen.getByText('Squash and merge: #12?').closest('dialog')!;
+  expect(merge.textContent).toContain('Acting as meap158.');
+  const close = screen.getByText('Close #12 without merging?').closest('dialog')!;
+  expect(close.textContent).toContain('Acting as meap158.');
+});
+
+it('chooses another gh account for the project, then reloads as it', async () => {
+  vi.mocked(api.pullRequests).mockResolvedValue(result([]));
+  vi.mocked(api.setPullRequestAccount).mockResolvedValue({ override: 'meapwork' });
+  render(<PullRequestsPanel projectId={4} visible />);
+  fireEvent.click(await screen.findByRole('button', { name: /GitHub account/ }));
+  fireEvent.click(within(screen.getByRole('option', { name: /meapwork/ })).getByRole('button'));
+  await waitFor(() => expect(api.setPullRequestAccount).toHaveBeenCalledWith(4, 'meapwork'));
+  await waitFor(() => expect(api.pullRequests).toHaveBeenCalledTimes(2));
 });

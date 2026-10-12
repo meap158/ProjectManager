@@ -15,6 +15,7 @@ import {
   originUrl,
   scanGit,
 } from './analysis/git.js';
+import { ghAccountSettingKey } from './ghAccount.js';
 import { pullRequestEvents } from './pullRequests.js';
 import type { Db } from './db.js';
 import {
@@ -161,7 +162,10 @@ export class Scanner {
   async applyPullRequestRefs(projectId: number): Promise<CardMove[] | null> {
     const project = getProjectRow(this.db, projectId);
     if (!project || !this.lookback(projectId)) return [];
-    const events = await pullRequestEvents(project.path);
+    const events = await pullRequestEvents(
+      project.path,
+      getSetting<string>(this.db, ghAccountSettingKey(projectId)),
+    );
     return events
       ? this.applyEvents(projectId, [
           ...events,

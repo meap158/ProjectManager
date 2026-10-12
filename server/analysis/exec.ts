@@ -12,7 +12,7 @@ export interface ExecResult {
 export function run(
   command: string,
   args: string[],
-  options: { cwd?: string; timeoutMs?: number } = {},
+  options: { cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -20,13 +20,14 @@ export function run(
       args,
       {
         cwd: options.cwd,
+        env: options.env,
         timeout: options.timeoutMs ?? 120_000,
         maxBuffer: 512 * 1024 * 1024,
         windowsHide: true,
         encoding: 'utf8',
       },
       (error, stdout, stderr) => {
-        if (error) reject(Object.assign(error, { stderr }));
+        if (error) reject(Object.assign(error, { stdout, stderr }));
         else resolve({ stdout, stderr });
       },
     );

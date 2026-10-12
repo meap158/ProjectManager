@@ -591,11 +591,31 @@ export interface PullRequest {
   mergeability: PullRequestMergeability;
 }
 
+/**
+ * The GitHub account the Pull requests tab runs gh as for a project. gh acts as its active
+ * account; when several are logged in, the tab uses the one that owns the repo (or the project's
+ * chosen account) instead, through GH_TOKEN in that one gh process. No token is ever in here.
+ */
+export interface PullRequestAccount {
+  /** Who gh acts as; null when gh lists no account (missing, or not logged in). */
+  login: string | null;
+  /** Why: the project's chosen account, the repo owner's own login, or gh's active account. */
+  source: 'override' | 'owner' | 'active';
+  /** Owner of the GitHub repo gh resolves in the project folder; null when there's none. */
+  owner: string | null;
+  /** Every account logged in to gh for github.com. */
+  accounts: string[];
+  /** The account chosen for this project in the tab, or null for automatic. */
+  override: string | null;
+}
+
 export interface PullRequestsResult {
   state: PullRequestListState;
   requests: PullRequest[];
   /** Null when the repo settings couldn't be read (actions then fall back to gh's own errors). */
   repo: PullRequestRepoSettings | null;
+  /** Who the actions run as; null when it couldn't be worked out (error then says why). */
+  account: PullRequestAccount | null;
   error: string | null;
   fetchedAt: string;
 }

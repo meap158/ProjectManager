@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { run } from './analysis/exec.js';
+import { GhAccountError, redactTokens, resolveGhIdentity } from './ghAccount.js';
 import { PR_MERGE_METHODS } from '../shared/types.js';
 import type {
   PullRequest,
+  PullRequestAccount,
   PullRequestAction,
   PullRequestActionResult,
   PullRequestCheck,
@@ -20,7 +22,20 @@ import type { RefEvent } from './analysis/cardRefs.js';
  * project folder (gh resolves {owner}/{repo} from its remote). Every command is an argument array
  * (never a shell string), and every action re-reads the PR from GitHub rather than trusting the
  * client's copy of it: the client only names a PR number and a validated action.
+ *
+ * Every gh call runs as the account ghAccount.ts resolves for the project (the repo owner's own
+ * login when it is logged in), through GH_TOKEN in that call's environment only.
  */
+
+/** Where and as whom gh runs: the project folder, and GH_TOKEN for the resolved account. */
+interface Gh {
+  cwd: string;
+  env: NodeJS.ProcessEnv | undefined;
+}
+
+function runGh(ctx: Gh, args: string[], timeoutMs: number) {
+  return run('gh', args, { cwd: ctx.cwd, timeoutMs, ...(ctx.env ? { env: ctx.env } : {}) });
+}
 
 const LIST_FIELDS = [
   'number',
@@ -252,18 +267,18 @@ function repoSettingsOf(row: z.infer<typeof repoRow>): PullRequestRepoSettings {
   };
 }
 
-async function repoSettings(cwd: string): Promise<PullRequestRepoSettings> {
-  const { stdout } = await run('gh', ['api', 'repos/{owner}/{repo}'], { cwd, timeoutMs: 15_000 });
+async function repoSettings(ctx: Gh): Promise<PullRequestRepoSettings> {
+  const { stdout } = await runGh(ctx, ['api', 'repos/{owner}/{repo}'], 15_000);
   return repoSettingsOf(repoRow.parse(JSON.parse(stdout)));
 }
 
 /** Names of every branch on the GitHub repo (null when they can't be listed). */
-async function remoteBranches(cwd: string): Promise<Set<string> | null> {
+async function remoteBranches(ctx: Gh): Promise<Set<string> | null> {
   try {
-    const { stdout } = await run(
-      'gh',
+    const { stdout } = await runGh(
+      ctx,
       ['api', '--paginate', 'repos/{owner}/{repo}/branches?per_page=100', '--jq', '.[].name'],
-      { cwd, timeoutMs: 30_000 },
+      30_000,
     );
     return new Set(stdout.split(/\r?\n/).filter(Boolean));
   } catch {
@@ -315,41 +330,59 @@ function toPullRequest(
   };
 }
 
-function ghErrorMessage(error: unknown, fallback: string): string {
+/** gh's stderr (or the fallback) for the client, with anything token-shaped removed. */
+function ghErrorMessage(error: unknown, fallback: string, env?: NodeJS.ProcessEnv): string {
+  if (error instanceof GhAccountError) return error.message;
   const e = error as Error & { code?: string; stderr?: string };
   if (e.code === 'ENOENT')
     return 'Install GitHub CLI (gh) and run gh auth login to use pull requests.';
-  return e.stderr?.trim().slice(0, 1000) || fallback;
+  return redactTokens(e.stderr?.trim() ?? '', env).slice(0, 1000) || fallback;
 }
 
+/**
+ * The project's open or closed PRs. `override` is the project's chosen gh account (null: the
+ * repo owner's account when it is logged in, else gh's active one).
+ */
 export async function pullRequests(
   cwd: string,
   state: PullRequestListState = 'open',
+  override: string | null = null,
 ): Promise<PullRequestsResult> {
+  let env: NodeJS.ProcessEnv | undefined;
+  let account: PullRequestAccount | null = null;
   try {
+    const identity = await resolveGhIdentity(cwd, override);
+    ({ env, account } = identity);
+    const ctx: Gh = { cwd, env };
     const [{ stdout }, repo, branches] = await Promise.all([
-      run('gh', ['pr', 'list', '--state', state, '--limit', '100', '--json', LIST_FIELDS], {
-        cwd,
-        timeoutMs: 30_000,
-      }),
-      repoSettings(cwd).catch(() => null),
+      runGh(ctx, ['pr', 'list', '--state', state, '--limit', '100', '--json', LIST_FIELDS], 30_000),
+      repoSettings(ctx).catch(() => null),
       // Only closed PRs can have lost their head branch; open ones always have it.
-      state === 'closed' ? remoteBranches(cwd) : Promise.resolve(null),
+      state === 'closed' ? remoteBranches(ctx) : Promise.resolve(null),
     ]);
     const requests = z
       .array(prRow)
       .parse(JSON.parse(stdout))
       .filter((p) => new URL(p.url).protocol === 'https:')
       .map((p) => toPullRequest(p, repo, branches));
-    return { state, requests, repo, error: null, fetchedAt: new Date().toISOString() };
+    return {
+      state,
+      requests,
+      repo,
+      account,
+      error: null,
+      fetchedAt: new Date().toISOString(),
+    };
   } catch (error) {
     return {
       state,
       requests: [],
       repo: null,
+      account: error instanceof GhAccountError ? error.account : account,
       error: ghErrorMessage(
         error,
         'Could not load pull requests. Check gh auth status and the project GitHub remote.',
+        env,
       ),
       fetchedAt: new Date().toISOString(),
     };
@@ -399,11 +432,24 @@ export class PullRequestActionError extends Error {
 
 const ACTION_TIMEOUT = 60_000;
 
-async function gh(cwd: string, args: string[], fallback: string): Promise<string> {
+/** GH_TOKEN for the project's account; refuses (409) rather than act as the wrong account. */
+async function identityEnv(
+  cwd: string,
+  override: string | null,
+): Promise<NodeJS.ProcessEnv | undefined> {
   try {
-    return (await run('gh', args, { cwd, timeoutMs: ACTION_TIMEOUT })).stdout;
+    return (await resolveGhIdentity(cwd, override)).env;
   } catch (error) {
-    throw new PullRequestActionError(502, ghErrorMessage(error, fallback));
+    if (error instanceof GhAccountError) throw new PullRequestActionError(409, error.message);
+    throw error;
+  }
+}
+
+async function gh(ctx: Gh, args: string[], fallback: string): Promise<string> {
+  try {
+    return (await runGh(ctx, args, ACTION_TIMEOUT)).stdout;
+  } catch (error) {
+    throw new PullRequestActionError(502, ghErrorMessage(error, fallback, ctx.env));
   }
 }
 
@@ -417,9 +463,9 @@ const viewRow = z.object({
 });
 type ViewRow = z.infer<typeof viewRow>;
 
-async function viewPullRequest(cwd: string, number: number): Promise<ViewRow> {
+async function viewPullRequest(ctx: Gh, number: number): Promise<ViewRow> {
   const stdout = await gh(
-    cwd,
+    ctx,
     [
       'pr',
       'view',
@@ -484,19 +530,19 @@ async function deleteLocalBranch(cwd: string, pr: ViewRow): Promise<string> {
   }
 }
 
-async function deleteBranch(cwd: string, pr: ViewRow): Promise<string> {
+async function deleteBranch(ctx: Gh, pr: ViewRow): Promise<string> {
   assertOwnBranch(pr);
   let remote = 'deleted on GitHub';
   try {
-    await run(
-      'gh',
+    await runGh(
+      ctx,
       [
         'api',
         '--method',
         'DELETE',
         `repos/{owner}/{repo}/git/refs/heads/${refPath(pr.headRefName)}`,
       ],
-      { cwd, timeoutMs: ACTION_TIMEOUT },
+      ACTION_TIMEOUT,
     );
   } catch (error) {
     const stderr = (error as { stderr?: string }).stderr ?? '';
@@ -504,23 +550,31 @@ async function deleteBranch(cwd: string, pr: ViewRow): Promise<string> {
     if (/reference does not exist|HTTP 422|HTTP 404/i.test(stderr))
       remote = 'already gone on GitHub';
     else
-      throw new PullRequestActionError(502, ghErrorMessage(error, 'Could not delete the branch.'));
+      throw new PullRequestActionError(
+        502,
+        ghErrorMessage(error, 'Could not delete the branch.', ctx.env),
+      );
   }
-  const local = await deleteLocalBranch(cwd, pr);
+  const local = await deleteLocalBranch(ctx.cwd, pr);
   return `Branch ${pr.headRefName}: ${remote}; ${local}.`;
 }
 
-/** Runs one validated action on PR #number in the project folder. */
+/**
+ * Runs one validated action on PR #number in the project folder, as the project's gh account
+ * (see pullRequests for `override`).
+ */
 export async function pullRequestAction(
   cwd: string,
   number: number,
   action: PullRequestAction,
+  override: string | null = null,
 ): Promise<PullRequestActionResult> {
+  const ctx: Gh = { cwd, env: await identityEnv(cwd, override) };
   const n = String(number);
   const done = (message: string): PullRequestActionResult => ({ ok: true, message });
   switch (action.action) {
     case 'merge': {
-      const repo = await repoSettings(cwd).catch(() => null);
+      const repo = await repoSettings(ctx).catch(() => null);
       if (repo && !repo.mergeMethods.includes(action.method))
         throw new PullRequestActionError(
           400,
@@ -528,7 +582,7 @@ export async function pullRequestAction(
         );
       if (action.auto && repo && !repo.allowAutoMerge)
         throw new PullRequestActionError(400, "This repository doesn't allow auto-merge.");
-      const pr = await viewPullRequest(cwd, number);
+      const pr = await viewPullRequest(ctx, number);
       if (pr.state !== 'OPEN')
         throw new PullRequestActionError(409, `#${number} is already ${pr.state.toLowerCase()}.`);
       // Never --delete-branch: gh would also check out the base branch in the project folder.
@@ -536,18 +590,18 @@ export async function pullRequestAction(
       if (action.auto) args.push('--auto');
       if (action.admin) args.push('--admin');
       if (action.headOid) args.push('--match-head-commit', action.headOid);
-      await gh(cwd, args, `Could not merge #${number}.`);
+      await gh(ctx, args, `Could not merge #${number}.`);
       if (action.auto)
         return done(`Auto-merge enabled for #${number}: it merges once its requirements pass.`);
-      const branch = action.deleteBranch ? ` ${await deleteBranch(cwd, pr)}` : '';
+      const branch = action.deleteBranch ? ` ${await deleteBranch(ctx, pr)}` : '';
       return done(`Merged #${number}.${branch}`);
     }
     case 'disable-auto-merge':
-      await gh(cwd, ['pr', 'merge', n, '--disable-auto'], `Could not disable auto-merge.`);
+      await gh(ctx, ['pr', 'merge', n, '--disable-auto'], `Could not disable auto-merge.`);
       return done(`Auto-merge disabled for #${number}.`);
     case 'update-branch':
       await gh(
-        cwd,
+        ctx,
         ['pr', 'update-branch', n, ...(action.rebase ? ['--rebase'] : [])],
         `Could not update the branch of #${number}.`,
       );
@@ -555,37 +609,37 @@ export async function pullRequestAction(
         `Updated the branch of #${number} with its base${action.rebase ? ' (rebased)' : ''}.`,
       );
     case 'ready':
-      await gh(cwd, ['pr', 'ready', n], `Could not mark #${number} ready.`);
+      await gh(ctx, ['pr', 'ready', n], `Could not mark #${number} ready.`);
       return done(`#${number} is ready for review.`);
     case 'draft':
-      await gh(cwd, ['pr', 'ready', n, '--undo'], `Could not convert #${number} to a draft.`);
+      await gh(ctx, ['pr', 'ready', n, '--undo'], `Could not convert #${number} to a draft.`);
       return done(`#${number} is now a draft.`);
     case 'close': {
-      const pr = action.deleteBranch ? await viewPullRequest(cwd, number) : null;
+      const pr = action.deleteBranch ? await viewPullRequest(ctx, number) : null;
       // Never gh's own --delete-branch here either (it can switch the project's checkout).
-      await gh(cwd, ['pr', 'close', n], `Could not close #${number}.`);
-      const branch = pr ? ` ${await deleteBranch(cwd, pr)}` : '';
+      await gh(ctx, ['pr', 'close', n], `Could not close #${number}.`);
+      const branch = pr ? ` ${await deleteBranch(ctx, pr)}` : '';
       return done(`Closed #${number}.${branch}`);
     }
     case 'reopen':
-      await gh(cwd, ['pr', 'reopen', n], `Could not reopen #${number}.`);
+      await gh(ctx, ['pr', 'reopen', n], `Could not reopen #${number}.`);
       return done(`Reopened #${number}.`);
     case 'delete-branch': {
-      const pr = await viewPullRequest(cwd, number);
+      const pr = await viewPullRequest(ctx, number);
       if (pr.state === 'OPEN')
         throw new PullRequestActionError(
           409,
           `#${number} is still open: deleting its branch would close it. Merge or close it first.`,
         );
-      return done(await deleteBranch(cwd, pr));
+      return done(await deleteBranch(ctx, pr));
     }
     case 'restore-branch': {
-      const pr = await viewPullRequest(cwd, number);
+      const pr = await viewPullRequest(ctx, number);
       assertOwnBranch(pr);
       if (!/^[0-9a-f]{40}$/i.test(pr.headRefOid))
         throw new PullRequestActionError(409, `GitHub returned no head commit for #${number}.`);
       await gh(
-        cwd,
+        ctx,
         [
           'api',
           '--method',
@@ -621,10 +675,14 @@ const refRows = z.array(
  * (title, description or branch name) and, once merged, the merge. Null when gh is missing, not
  * signed in, or the project has no GitHub remote.
  */
-export async function pullRequestEvents(cwd: string): Promise<RefEvent[] | null> {
+export async function pullRequestEvents(
+  cwd: string,
+  override: string | null = null,
+): Promise<RefEvent[] | null> {
   try {
-    const { stdout } = await run(
-      'gh',
+    const { env } = await resolveGhIdentity(cwd, override);
+    const { stdout } = await runGh(
+      { cwd, env },
       [
         'pr',
         'list',
@@ -635,7 +693,7 @@ export async function pullRequestEvents(cwd: string): Promise<RefEvent[] | null>
         '--json',
         'number,title,body,headRefName,state,createdAt,mergedAt,closingIssuesReferences',
       ],
-      { cwd, timeoutMs: 20_000 },
+      20_000,
     );
     return refRows.parse(JSON.parse(stdout)).flatMap((pr): RefEvent[] => {
       const text = `${pr.title}\n${pr.body ?? ''}\n${pr.headRefName}\n${(pr.closingIssuesReferences ?? []).map((issue) => `Closes ${issue.url}`).join('\n')}`;

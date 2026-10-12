@@ -234,6 +234,12 @@ describe('pull request actions API', () => {
     expect((await call('POST', url('3'), injected)).status).toBe(400);
     const listAll = await call('GET', `/projects/${created.id}/pull-requests?state=all`);
     expect(listAll.status).toBe(400);
+    // The gh account override: a GitHub login (checked against gh in pullRequests.test.ts), or
+    // null for automatic. Malformed values are refused before gh runs.
+    const account = `/projects/${created.id}/pull-requests/account`;
+    for (const bad of ['--user', 'a b', '', 'x'.repeat(40), 42])
+      expect((await call('PUT', account, { account: bad })).status).toBe(400);
+    expect((await call('PUT', account, { account: null })).status).toBe(200);
     const missing = await call('POST', '/projects/999999/pull-requests/3/actions', {
       action: 'ready',
     });

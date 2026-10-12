@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { PR_MERGE_METHODS } from '../../../shared/types';
 import type {
   PullRequest,
+  PullRequestAccount,
   PullRequestAction,
   PullRequestListState,
   PullRequestMergeMethod,
@@ -153,6 +154,16 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
             {error || result?.error}
           </div>
         )}
+        {result?.account && (
+          <AccountLine
+            projectId={projectId}
+            account={result.account}
+            onChanged={() => {
+              setBusy(true);
+              void load(listState);
+            }}
+          />
+        )}
         {message && (
           <div className="notice" role="status">
             <span>{message}</span>
@@ -190,6 +201,7 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
                       pr={pr}
                       open={open}
                       repo={result.repo}
+                      actingAs={result.account?.login ?? null}
                       onToggle={() => setExpanded(open ? null : pr.number)}
                       onAction={(action) => act(pr, action)}
                     />
@@ -209,16 +221,96 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
   );
 }
 
+const AUTO = '';
+
+/**
+ * Which GitHub account gh acts as for this project, and (with several logged in) a choice of
+ * another. Automatic means the account that owns the repo, else gh's active account.
+ */
+function AccountLine({
+  projectId,
+  account,
+  onChanged,
+}: {
+  projectId: number;
+  account: PullRequestAccount;
+  onChanged: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const selectId = useId();
+  const why =
+    account.source === 'override'
+      ? 'chosen for this project'
+      : account.source === 'owner'
+        ? `owner of ${account.owner ?? 'this repository'}`
+        : account.owner
+          ? `gh's active account: no logged-in account owns ${account.owner}`
+          : "gh's active account";
+  const choices = [...account.accounts];
+  if (account.override && !choices.includes(account.override)) choices.push(account.override);
+  const options = [
+    { value: AUTO, label: 'Automatic (repository owner)' },
+    ...choices.map((login) => ({
+      value: login,
+      label: login,
+      hint: account.accounts.includes(login) ? undefined : 'not logged in',
+    })),
+  ];
+  async function choose(value: string) {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.setPullRequestAccount(projectId, value === AUTO ? null : value);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="pr-action-row">
+      <p className="pr-merge-status">
+        Acting as <strong>{account.login ?? 'no account'}</strong>{' '}
+        <span className="faint">({why})</span>
+      </p>
+      {(choices.length > 1 || account.override) && (
+        <>
+          <label className="sr-only" htmlFor={selectId}>
+            GitHub account
+          </label>
+          <Dropdown
+            id={selectId}
+            label="GitHub account"
+            value={account.override ?? AUTO}
+            options={options}
+            onChange={(value) => void choose(value)}
+            disabled={saving}
+          />
+        </>
+      )}
+      {error && (
+        <div className="error-banner" role="alert">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PullRequestRow({
   pr,
   open,
   repo,
+  actingAs,
   onToggle,
   onAction,
 }: {
   pr: PullRequest;
   open: boolean;
   repo: PullRequestRepoSettings | null;
+  actingAs: string | null;
   onToggle: () => void;
   onAction: (action: PullRequestAction) => Promise<void>;
 }) {
@@ -260,7 +352,7 @@ function PullRequestRow({
       {open && (
         <tr className="pr-details-row">
           <td colSpan={8} id={detailsId}>
-            <PullRequestActions pr={pr} repo={repo} onAction={onAction} />
+            <PullRequestActions pr={pr} repo={repo} actingAs={actingAs} onAction={onAction} />
           </td>
         </tr>
       )}
@@ -272,10 +364,13 @@ function PullRequestRow({
 export function PullRequestActions({
   pr,
   repo,
+  actingAs = null,
   onAction,
 }: {
   pr: PullRequest;
   repo: PullRequestRepoSettings | null;
+  /** The GitHub account the server will act as, named in every confirmation. */
+  actingAs?: string | null;
   onAction: (action: PullRequestAction) => Promise<void>;
 }) {
   const allowed = repo?.mergeMethods ?? [...PR_MERGE_METHODS];
@@ -308,6 +403,7 @@ export function PullRequestActions({
       Open on GitHub
     </a>
   );
+  const asWho = ` Acting as ${actingAs ?? "gh's active account"}.`;
   const errorBanner = error && (
     <div className="error-banner" role="alert">
       {error}
@@ -347,7 +443,7 @@ export function PullRequestActions({
               label={`Delete branch ${pr.headRefName}`}
               text={working === 'delete' ? 'Deleting…' : 'Delete branch'}
               heading={`Delete branch ${pr.headRefName}?`}
-              message={`Deletes ${pr.headRefName} on GitHub, and the local branch too when it isn't checked out and matches the pull request's head. It can be restored from here afterwards.`}
+              message={`Deletes ${pr.headRefName} on GitHub, and the local branch too when it isn't checked out and matches the pull request's head. It can be restored from here afterwards.${asWho}`}
               disabled={isBusy}
               onConfirm={() => run('delete', { action: 'delete-branch' })}
             />
@@ -473,7 +569,7 @@ export function PullRequestActions({
           label={canMergeNow ? METHOD_LABEL[method].button : (m.reason ?? 'Cannot merge yet')}
           text={working === 'merge' ? 'Merging…' : METHOD_LABEL[method].button}
           heading={`${METHOD_LABEL[method].button}: #${pr.number}?`}
-          message={`${METHOD_LABEL[method].option} of ${pr.headRefName} into ${pr.baseRefName}${bypassing ? ', bypassing branch protection' : ''}.${branchNote}`}
+          message={`${METHOD_LABEL[method].option} of ${pr.headRefName} into ${pr.baseRefName}${bypassing ? ', bypassing branch protection' : ''}.${branchNote}${asWho}`}
           confirmLabel={METHOD_LABEL[method].button}
           disabled={!canMergeNow || isBusy}
           onConfirm={() =>
@@ -495,7 +591,7 @@ export function PullRequestActions({
             label="Enable auto-merge"
             text={working === 'auto' ? 'Enabling…' : 'Enable auto-merge'}
             heading={`Enable auto-merge for #${pr.number}?`}
-            message={`GitHub will ${METHOD_LABEL[method].option.toLowerCase()} once the required reviews and checks pass. Branch deletion then follows the repository's own setting.`}
+            message={`GitHub will ${METHOD_LABEL[method].option.toLowerCase()} once the required reviews and checks pass. Branch deletion then follows the repository's own setting.${asWho}`}
             confirmLabel="Enable auto-merge"
             disabled={isBusy}
             onConfirm={() =>
@@ -558,7 +654,7 @@ export function PullRequestActions({
           label={`Close pull request #${pr.number}`}
           text={working === 'close' ? 'Closing…' : 'Close pull request'}
           heading={`Close #${pr.number} without merging?`}
-          message={`The pull request is closed, not merged, and can be reopened from the Closed list.${branchNote}`}
+          message={`The pull request is closed, not merged, and can be reopened from the Closed list.${branchNote}${asWho}`}
           confirmLabel="Close pull request"
           disabled={isBusy}
           onConfirm={() => run('close', { action: 'close', deleteBranch: removeBranch })}

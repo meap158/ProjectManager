@@ -114,6 +114,11 @@ export const api = {
       `/projects/${id}/pull-requests/${number}/actions`,
       action,
     ),
+  /** Chooses the gh account for a project's pull requests (null: automatic, the repo owner). */
+  setPullRequestAccount: (id: number, account: string | null) =>
+    request<{ override: string | null }>('PUT', `/projects/${id}/pull-requests/account`, {
+      account,
+    }),
   listProjects: () => request<ProjectSummary[]>('GET', '/projects'),
   getProject: (id: number) => request<ProjectDetail>('GET', `/projects/${id}`),
   addProject: (path: string, name?: string) =>

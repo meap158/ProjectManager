@@ -23,6 +23,7 @@ import {
   pullRequests,
 } from './pullRequests.js';
 import { openInFileManager } from './openFolder.js';
+import { GH_LOGIN, ghAccountSettingKey, isLoggedIn } from './ghAccount.js';
 import {
   registerAttachmentRoutes,
   registerSessionImageRoutes,
@@ -236,13 +237,34 @@ export function createApp(
     return c.json({ added, skipped }, 201);
   });
 
+  // The gh account chosen for a project in the Pull requests tab (null: automatic, i.e. the
+  // repo owner's account when it is logged in, else gh's active one). See server/ghAccount.ts.
+  const ghAccountOverride = (projectId: number) =>
+    store.getSetting<string>(db, ghAccountSettingKey(projectId));
+
+  app.put('/projects/:id/pull-requests/account', async (c) => {
+    const project = store.getProjectRow(db, parseId(c));
+    if (!project) throw new HttpError(404, 'Project not found');
+    const { account } = await parseBody(
+      c,
+      z.object({ account: z.string().regex(GH_LOGIN, 'Not a GitHub login').nullable() }),
+    );
+    if (account === null) store.deleteSetting(db, ghAccountSettingKey(project.id));
+    else {
+      if (!(await isLoggedIn(account)))
+        throw new HttpError(400, `${account} is not logged in to gh. Run gh auth login first.`);
+      store.setSetting(db, ghAccountSettingKey(project.id), account);
+    }
+    return c.json({ override: account });
+  });
+
   app.get('/projects/:id/pull-requests', async (c) => {
     const project = store.getProjectRow(db, parseId(c));
     if (!project) throw new HttpError(404, 'Project not found');
     const state = c.req.query('state') ?? 'open';
     if (state !== 'open' && state !== 'closed')
       throw new HttpError(400, 'state must be open or closed');
-    return c.json(await pullRequests(project.path, state));
+    return c.json(await pullRequests(project.path, state, ghAccountOverride(project.id)));
   });
 
   // Act on one pull request (merge, close, branches…) through gh in the project folder. The
@@ -254,7 +276,9 @@ export function createApp(
     if (number === null) throw new HttpError(400, 'Pull request number must be a positive integer');
     const body = await parseBody(c, pullRequestActionBody);
     try {
-      return c.json(await pullRequestAction(project.path, number, body));
+      return c.json(
+        await pullRequestAction(project.path, number, body, ghAccountOverride(project.id)),
+      );
     } catch (error) {
       if (error instanceof PullRequestActionError)
         return c.json({ error: error.message }, error.status);
@@ -282,6 +306,7 @@ export function createApp(
     const id = parseId(c);
     // Only removes tracking data; files on disk are never touched.
     if (!store.deleteProject(db, id)) throw new HttpError(404, 'Project not found');
+    store.deleteSetting(db, ghAccountSettingKey(id));
     scanner.forget(id);
     await supervisor.onProjectDeleted(id);
     return c.body(null, 204);

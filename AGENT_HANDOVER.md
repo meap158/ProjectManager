@@ -2,6 +2,14 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- PM-112 (gh account per repo): every gh call of the Pull requests tab (and the PR scanner)
+  runs as the logged-in gh account whose login equals the repo owner, via GH_TOKEN from
+  `gh auth token -u` in that child process only (server/ghAccount.ts; accounts and tokens cached
+  60s; never `gh auth switch`, never logged or sent to the client, stderr redacted). No match:
+  gh's active account. Per-project override in the tab (settings key `gh-account:<id>`,
+  validated against `gh auth status`). Fixes TiemNet merges landing as meapwork, which Vercel
+  Hobby refused to deploy.
+
 - PM-64: Explicit card issueUrl persists through board moves and is editable in CardDialog.
   Commit/PR scanners translate only linked issue identities; short references require matching
   origin repository. Native GitHub closing references fence merged-PR completion. Default

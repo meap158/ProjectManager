@@ -9,9 +9,13 @@ import {
   pullRequests,
   summarizeChecks,
 } from './pullRequests.js';
+import { githubRepoOf, isLoggedIn, parseStatusText, resetGhAccountCache } from './ghAccount.js';
 import type { PullRequestRepoSettings } from '../shared/types.js';
 vi.mock('./analysis/exec.js', () => ({ run: vi.fn() }));
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  resetGhAccountCache();
+});
 
 const OID = 'a'.repeat(40);
 const REPO_JSON = JSON.stringify({
@@ -45,7 +49,15 @@ function fakeRunner(match: (cmd: string, args: string[]) => Reply | undefined) {
     return Promise.resolve({ stdout: reply.stdout ?? '', stderr: reply.stderr ?? '' });
   });
 }
-const calls = () => vi.mocked(run).mock.calls.map(([cmd, args]) => [cmd, ...args].join(' '));
+/** Calls that work out which gh account to act as (ghAccount.ts), not the PR work itself. */
+const isIdentityCall = (cmd: string, args: string[]) =>
+  (cmd === 'gh' && (args[0] === 'auth' || (args[0] === 'repo' && args[1] === 'set-default'))) ||
+  (cmd === 'git' && args[0] === 'config');
+const calls = () =>
+  vi
+    .mocked(run)
+    .mock.calls.filter(([cmd, args]) => !isIdentityCall(cmd, args))
+    .map(([cmd, args]) => [cmd, ...args].join(' '));
 const isRepoCall = (args: string[]) => args[0] === 'api' && args.length === 2;
 const isView = (args: string[]) => args[0] === 'pr' && args[1] === 'view';
 
@@ -268,7 +280,8 @@ describe('pull request actions', () => {
     expect(calls().some((c) => c.includes('--delete-branch'))).toBe(false);
     expect(result.message).toContain('Merged #7.');
     expect(result.message).toContain('local branch deleted');
-    for (const [, , options] of vi.mocked(run).mock.calls) expect(options?.cwd).toBe('folder');
+    for (const [cmd, args, options] of vi.mocked(run).mock.calls)
+      if (!isIdentityCall(cmd, args)) expect(options?.cwd).toBe('folder');
   });
 
   it('refuses a merge method the repository disallows without calling gh pr merge', async () => {
@@ -401,5 +414,199 @@ describe('pull request actions', () => {
     expect(calls()).toContain(
       `gh api --method POST repos/{owner}/{repo}/git/refs -f ref=refs/heads/feat/x -f sha=${OID}`,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Which gh account the tab acts as
+
+const TOKEN_158 = 'gho_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+const TOKEN_WORK = 'gho_' + 'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2';
+const STATUS_JSON = JSON.stringify({
+  hosts: {
+    'github.com': [
+      { state: 'success', active: true, host: 'github.com', login: 'meapwork' },
+      { state: 'success', active: false, host: 'github.com', login: 'meap158' },
+    ],
+  },
+});
+
+/**
+ * gh with meapwork active and meap158 also logged in, in a folder whose origin is `remote`.
+ * `reply` answers the PR calls themselves.
+ */
+function twoAccounts(
+  remote: string,
+  reply: (args: string[]) => Reply | undefined = () => undefined,
+) {
+  fakeRunner((cmd, args) => {
+    if (cmd === 'gh' && args[0] === 'auth' && args[1] === 'status') return { stdout: STATUS_JSON };
+    if (cmd === 'gh' && args[0] === 'auth' && args[1] === 'token') {
+      const user = args[args.indexOf('--user') + 1];
+      return { stdout: `${user === 'meap158' ? TOKEN_158 : TOKEN_WORK}\n` };
+    }
+    if (cmd === 'gh' && args[0] === 'repo')
+      return { stdout: 'X No default remote repository has been set.' };
+    if (cmd === 'git' && args[0] === 'config') return { stdout: `remote.origin.url ${remote}\n` };
+    return reply(args);
+  });
+}
+/** GH_TOKEN each non-identity gh call ran with ('none' when it inherited gh's active account). */
+const tokensUsed = () =>
+  vi
+    .mocked(run)
+    .mock.calls.filter(([cmd, args]) => cmd === 'gh' && !isIdentityCall(cmd, args))
+    .map(([, , options]) => options?.env?.GH_TOKEN ?? 'none');
+
+describe('gh account per repository', () => {
+  it("runs every call as the logged-in account that owns the repo, via that call's GH_TOKEN", async () => {
+    twoAccounts('https://github.com/meap158/TiemNet.git', (args) =>
+      isRepoCall(args) ? { stdout: REPO_JSON } : isView(args) ? { stdout: VIEW_OPEN } : undefined,
+    );
+    const list = await pullRequests('folder');
+    expect(list.account).toEqual({
+      login: 'meap158',
+      source: 'owner',
+      owner: 'meap158',
+      accounts: ['meapwork', 'meap158'],
+      override: null,
+    });
+    await pullRequestAction('folder', 7, {
+      action: 'merge',
+      method: 'squash',
+      deleteBranch: false,
+      auto: false,
+      admin: false,
+    });
+    expect(calls()).toContain('gh pr merge 7 --squash');
+    const used = tokensUsed();
+    expect(used.length).toBeGreaterThan(3);
+    expect(new Set(used)).toEqual(new Set([TOKEN_158]));
+    // The token is fetched by login, never by switching gh's active account.
+    expect(vi.mocked(run).mock.calls.some(([, args]) => args.includes('switch'))).toBe(false);
+    // ...and it never reaches the client.
+    expect(JSON.stringify(list)).not.toContain(TOKEN_158);
+  });
+
+  it("keeps gh's active account for a repo that none of the logged-in accounts owns", async () => {
+    twoAccounts('git@github.com:some-org/tool.git', (args) =>
+      isRepoCall(args) ? { stdout: REPO_JSON } : { stdout: '[]' },
+    );
+    const list = await pullRequests('folder');
+    expect(list.account).toMatchObject({ login: 'meapwork', source: 'active', owner: 'some-org' });
+    await pullRequestAction('folder', 7, { action: 'ready' });
+    expect(new Set(tokensUsed())).toEqual(new Set(['none']));
+    expect(vi.mocked(run).mock.calls.some(([, args]) => args[1] === 'token')).toBe(false);
+  });
+
+  it('acts as the owner even when that owner is the active account (an account switch then changes nothing)', async () => {
+    twoAccounts('https://github.com/meapwork/maymeo-shop', () => ({ stdout: '[]' }));
+    expect((await pullRequests('folder')).account?.login).toBe('meapwork');
+    expect(new Set(tokensUsed())).toEqual(new Set([TOKEN_WORK]));
+  });
+
+  it('never returns the token in an error message', async () => {
+    const stderr = `HTTP 401: Bad credentials (token ${TOKEN_158} rejected; also ghp_${'x'.repeat(36)})`;
+    twoAccounts('https://github.com/meap158/TiemNet.git', (args) =>
+      isView(args) ? { stdout: VIEW_OPEN } : { fail: true, stderr },
+    );
+    const error = (await pullRequestAction('folder', 7, { action: 'ready' }).catch(
+      (e: unknown) => e,
+    )) as PullRequestActionError;
+    expect(error.status).toBe(502);
+    expect(error.message).toContain('Bad credentials');
+    expect(error.message).not.toContain(TOKEN_158);
+    expect(error.message).not.toContain('ghp_x');
+    const list = await pullRequests('folder');
+    expect(list.error).toContain('Bad credentials');
+    expect(JSON.stringify(list)).not.toContain(TOKEN_158);
+  });
+
+  it("refuses to act as the wrong account when the owner's token can't be read", async () => {
+    twoAccounts('https://github.com/meap158/TiemNet.git');
+    const base = vi.mocked(run).getMockImplementation()!;
+    vi.mocked(run).mockImplementation((cmd, args, options) =>
+      args[1] === 'token'
+        ? Promise.reject(Object.assign(new Error('x'), { stderr: `leak ${TOKEN_158}` }))
+        : base(cmd, args, options),
+    );
+    const error = (await pullRequestAction('folder', 7, {
+      action: 'close',
+      deleteBranch: false,
+    }).catch((e: unknown) => e)) as PullRequestActionError;
+    expect(error).toMatchObject({ status: 409 });
+    expect(error.message).toContain('meap158');
+    expect(error.message).not.toContain(TOKEN_158);
+    expect(calls().some((c) => c.startsWith('gh pr close'))).toBe(false);
+  });
+
+  it('uses a per-project override, and refuses one that is not logged in', async () => {
+    twoAccounts('https://github.com/meap158/TiemNet.git', () => ({ stdout: '[]' }));
+    const chosen = await pullRequests('folder', 'open', 'meapwork');
+    expect(chosen.account).toMatchObject({ login: 'meapwork', source: 'override' });
+    expect(new Set(tokensUsed())).toEqual(new Set([TOKEN_WORK]));
+
+    vi.mocked(run).mockClear();
+    const gone = await pullRequests('folder', 'open', 'someone-else');
+    expect(gone.error).toContain('someone-else');
+    expect(gone.account).toMatchObject({
+      login: null,
+      source: 'override',
+      override: 'someone-else',
+    });
+    vi.mocked(run).mockClear();
+    await expect(
+      pullRequestAction('folder', 7, { action: 'ready' }, 'someone-else'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(calls()).toEqual([]);
+  });
+
+  it('caches the account list and tokens instead of asking gh on every call', async () => {
+    twoAccounts('https://github.com/meap158/TiemNet.git', () => ({ stdout: '[]' }));
+    await pullRequests('folder');
+    await pullRequests('folder');
+    const asked = (sub: string) =>
+      vi.mocked(run).mock.calls.filter(([, args]) => args[0] === 'auth' && args[1] === sub).length;
+    expect(asked('status')).toBe(1);
+    expect(asked('token')).toBe(1);
+  });
+
+  it('reads the accounts from older gh text output and parses remote URLs', () => {
+    const text = [
+      'github.com',
+      '  ✓ Logged in to github.com account meapwork (keyring)',
+      '  - Active account: true',
+      '  ✓ Logged in to github.com account meap158 (keyring)',
+      '  - Active account: false',
+      'ghe.example.com',
+      '  ✓ Logged in to ghe.example.com account other (keyring)',
+    ].join('\n');
+    expect(parseStatusText(text)).toEqual([
+      { login: 'meapwork', active: true },
+      { login: 'meap158', active: false },
+    ]);
+    expect(parseStatusText('  ✓ Logged in to github.com as solo (oauth_token)')).toEqual([
+      { login: 'solo', active: true },
+    ]);
+    expect(githubRepoOf('https://github.com/meap158/TiemNet.git')).toEqual({
+      owner: 'meap158',
+      repo: 'TiemNet',
+    });
+    expect(githubRepoOf('git@github.com:meapwork/maymeo-shop.git')?.owner).toBe('meapwork');
+    expect(githubRepoOf('ssh://git@github.com/a-b/c')?.owner).toBe('a-b');
+    expect(githubRepoOf('https://gitlab.com/meap158/TiemNet.git')).toBeNull();
+  });
+});
+
+describe('gh account override validation', () => {
+  it('accepts only an account gh has logged in, re-reading gh once before refusing', async () => {
+    twoAccounts('https://github.com/meap158/TiemNet.git');
+    expect(await isLoggedIn('meap158')).toBe(true);
+    expect(await isLoggedIn('MEAPWORK')).toBe(true);
+    expect(await isLoggedIn('someone-else')).toBe(false);
+    const statusReads = vi
+      .mocked(run)
+      .mock.calls.filter(([, args]) => args[0] === 'auth' && args[1] === 'status').length;
+    expect(statusReads).toBe(2); // cached for the first two, refreshed once for the miss
   });
 });

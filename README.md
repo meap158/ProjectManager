@@ -70,7 +70,8 @@ cards through **Backlog → To do → In progress → Review → Done**. Code st
 usage and commit charts keep the bigger picture close to the work. The **Pull requests** tab
 works like GitHub's own page: see checks, reviews and whether a PR can merge, then merge (merge
 commit, squash or rebase, or auto-merge), update the branch, mark ready or draft, close or
-reopen, and delete or restore the branch.
+reopen, and delete or restore the branch. With several accounts in `gh auth login`, it acts as
+the one that owns the repo (shown as "Acting as …", and changeable per project).
 
 </td>
 <td width="50%" valign="top">
