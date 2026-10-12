@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -122,6 +123,12 @@ export const ORCHESTRATOR_TOOLS = [
           description: 'One of your providers; default: the first available',
         },
         instructions: { type: 'string', maxLength: 4000, description: 'What to focus on or check' },
+        requestId: {
+          type: 'string',
+          maxLength: 128,
+          description:
+            'Unique dispatch request ID. Reuse exactly this ID and arguments after response loss to recover the original run; use a new ID for new work.',
+        },
       },
       required: ['card'],
       additionalProperties: false,
@@ -482,10 +489,49 @@ export class OrchestratorChat implements OrchestratorToolHost {
           card: z.unknown(),
           providerId: z.string().optional(),
           instructions: z.string().trim().max(4000).optional(),
+          requestId: z.string().trim().min(1).max(128).optional(),
         })
         .strict()
         .parse(args);
       const c = card(input.card);
+      const fingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            cardId: c.id,
+            providerId: input.providerId ?? null,
+            instructions: input.instructions ?? '',
+          }),
+        )
+        .digest('hex');
+      const replay = () => {
+        if (!input.requestId) return null;
+        const existing = ChatDispatchIntent.replay(
+          this.db,
+          orchestratorId,
+          input.requestId,
+          fingerprint,
+        );
+        if (!existing) return null;
+        const run = existing.runId ? this.supervisor.getRun(existing.runId) : null;
+        return {
+          replayed: true,
+          request: existing,
+          ...(existing.status === 'pending'
+            ? {
+                note: 'Dispatch acknowledgement is pending. Recheck with the same request ID; do not start a replacement.',
+              }
+            : {}),
+          ...(existing.status === 'interrupted'
+            ? {
+                note: 'No recoverable worker remains for this request. Inspect the task and retry policy before submitting new work with a new request ID.',
+              }
+            : {}),
+          ...(run ? { dispatched: runBrief(run) } : {}),
+          card: brief(c),
+        };
+      };
+      const prior = replay();
+      if (prior) return prior;
       if (c.status === 'done') fail(`${c.key} is done; move it back first if it needs more work`);
       const { sessions, runs } = workers();
       const live = sessions.length + runs.length;
@@ -508,6 +554,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const providerId = input.providerId ?? instance.providers.find((p) => available.has(p));
       if (!providerId || !available.has(providerId))
         fail(`None of your providers is installed: ${instance.providers.join(', ')}`);
+      // Provider discovery yielded: another caller may already have reserved this request.
+      const concurrent = replay();
+      if (concurrent) return concurrent;
       const reservation: { intent?: ChatDispatchIntent } = {};
       const check = () => {
         if (reservation.intent && !reservation.intent.current())
@@ -545,8 +594,26 @@ export class OrchestratorChat implements OrchestratorToolHost {
         };
       };
       const permission = check();
-      if (!permission.allowed) fail(permission.reason);
-      const intent = new ChatDispatchIntent(this.db, c.id, orchestratorId);
+      if (!permission.allowed) {
+        const raced = replay();
+        if (raced) return raced;
+        fail(permission.reason);
+      }
+      let intent: ChatDispatchIntent;
+      try {
+        intent = new ChatDispatchIntent(
+          this.db,
+          c.id,
+          orchestratorId,
+          Date.now(),
+          input.requestId ? { id: input.requestId, fingerprint, revision: c.updatedAt } : undefined,
+        );
+      } catch (error) {
+        // Another process may have committed the same request after our last lookup.
+        const raced = replay();
+        if (raced) return raced;
+        throw error;
+      }
       reservation.intent = intent;
       const heartbeat = setInterval(() => intent?.heartbeat(), 30000);
       heartbeat.unref();
@@ -577,7 +644,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
           `${c.key}: one-time ${providerId} worker, run #${run.id} (chat)`,
           c.id,
         );
-        return { dispatched: runBrief(run), card: brief(getCard(this.db, c.id) ?? c) };
+        return {
+          dispatched: runBrief(run),
+          card: brief(getCard(this.db, c.id) ?? c),
+          ...(input.requestId ? { requestId: input.requestId } : {}),
+        };
       } catch (error) {
         if (insertionDenied) intent.superseded();
         else intent.failed();
@@ -757,7 +828,7 @@ ${projects.map(project).join('\n') || '- (none)'}
 - \`list_cards\`, \`get_card\`: read the board; get_card shows a card's workers, recent runs and agent activity.
 - \`update_card\`: move a card and/or append a note (evidence, blocker, question).
 - \`create_card\`: split work or record follow-ups.
-- \`dispatch_worker\`: start a one-time agent worker on a card, with your instructions.
+- \`dispatch_worker\`: start a one-time agent worker on a card, with your instructions. Supply a unique requestId for each new dispatch; reuse it with identical arguments after a lost response to recover the original run. A pending replay means wait; it is not permission to launch another worker.
 - \`worker_output\`: what a worker session or run shows now.
 - \`message_worker\`: message an idle worker session (e.g. ask for a status update).
 

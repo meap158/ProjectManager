@@ -5,11 +5,11 @@ chronological findings later in this document preserve earlier implementation ev
 
 | Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                                                     |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Durable execution        | Keyed reservations/reconciliation, lease epochs, scheduler and chat heartbeats, synchronous insertion fences, task revision checks, superseded-attempt refunds                                              | Request replay identity, durable task generations, process crash matrix                                                                                       |
+| Durable execution        | Keyed reservations/reconciliation, lease epochs, heartbeats, insertion fences, revision checks, superseded-attempt refunds and manual request replay                                                        | Scheduler request identity, durable task generations, full supervisor process crash matrix                                                                    |
 | Controls and convenience | Scoped Check now, paged read-only preview, pending-work queue/run actions, card/worker links, Pause/Observe/Autonomous modes, manual chat tools                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                                          |
 | Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Partial-index migration committed with upgrade/query-plan regression; measure whole API/tick and index write cost; versioned summary and situation pagination |
 | Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                              |
-| Evaluation               | Full regression suite: 463 tests / 98 files pass, including four process-boundary cases; server types and targeted lint passed                                                                              | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                         |
+| Evaluation               | Full regression suite: 467 tests / 98 files pass, including four process-boundary cases; server types and targeted lint passed                                                                              | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                         |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -309,5 +309,26 @@ Owned worker and pending-review links open the owning Orchestrator workspace and
 section. Ownership persists across retry and mutable assignment replacement; historical runs
 whose assignment was already overwritten cannot be reliably backfilled.
 
-Physical mobile checks, whole-request measurements, durable request replay, and remote
+Physical mobile checks, whole-request measurements, full runtime request recovery, and remote
 GitHub Project status/reviewer synchronization remain open. The active goal is not complete.
+
+## Manual dispatch replay, 2026-10-12
+
+Chat dispatch now accepts a stable requestId and persists it atomically with the assignment
+claim, task revision, argument fingerprint and unique dispatch key. An identical replay
+returns the original run status or pending/interrupted guidance; conflicting argument reuse
+is rejected. Lookup survives assignment replacement and database reopen. Request insertion
+failure rolls back the claim and retry charge. The chat briefing asks the master to supply
+and reuse request identities after response loss. Calls without requestId retain the older
+reservation behavior for compatibility and do not gain request-level replay protection.
+
+Focused regressions cover concurrent calls, owner isolation, changed arguments, reopen,
+completed run recovery, interrupted requests and rollback. Four child-process exit boundary tests also verify replay absence before claim, interrupted
+state after claim, and recovery of the inserted run before/after acknowledgement. Actual
+supervisor spawning, durable task generations and scheduler-level request identity remain
+acceptance work. This closes manual tool replay storage, not the complete runtime crash gate.
+
+Regression validation for manual replay: the full suite passed 467 tests across 98 files
+(335.28 seconds). A subsequently added completed-card replay test passed in the 14-test chat
+suite. The four process-exit tests passed independently after extension. Typechecking and
+lint passed; npm run check stops at formatting in five concurrently edited UI/design files.

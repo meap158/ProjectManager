@@ -10,11 +10,66 @@ export class ChatDispatchIntent {
     readonly cardId: number,
     orchestratorId: string,
     now = Date.now(),
+    request?: { id: string; fingerprint: string; revision: string },
   ) {
     this.assignments = new OrchestratorAssignments(db);
-    if (!this.assignments.claim(cardId, orchestratorId, now))
-      throw new Error('Task is reserved or its retry cooldown/budget has been reached');
-    this.key = this.assignments.dispatchKey(cardId)!;
+    if (request) db.exec('BEGIN IMMEDIATE');
+    try {
+      if (!this.assignments.claim(cardId, orchestratorId, now))
+        throw new Error('Task is reserved or its retry cooldown/budget has been reached');
+      this.key = this.assignments.dispatchKey(cardId)!;
+      if (request) {
+        db.prepare(
+          `INSERT INTO orchestrator_dispatch_requests
+          (orchestrator_id, request_id, fingerprint, card_id, card_revision, dispatch_key, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          orchestratorId,
+          request.id,
+          request.fingerprint,
+          cardId,
+          request.revision,
+          this.key,
+          now,
+        );
+        db.exec('COMMIT');
+      }
+    } catch (error) {
+      if (request) db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  static replay(db: Db, owner: string, id: string, fingerprint: string) {
+    const row = db
+      .prepare(
+        `SELECT q.fingerprint, q.card_id, q.card_revision, r.id AS run_id,
+      r.status AS run_status, a.state AS assignment_state
+      FROM orchestrator_dispatch_requests q
+      LEFT JOIN agent_runs r ON r.dispatch_key = q.dispatch_key
+      LEFT JOIN orchestrator_assignments a ON a.dispatch_key = q.dispatch_key
+      WHERE q.orchestrator_id = ? AND q.request_id = ?`,
+      )
+      .get(owner, id) as
+      | {
+          fingerprint: string;
+          card_id: number;
+          card_revision: string;
+          run_id: number | null;
+          run_status: string | null;
+          assignment_state: string | null;
+        }
+      | undefined;
+    if (!row) return null;
+    if (row.fingerprint !== fingerprint)
+      throw new Error('Request ID was already used with different dispatch arguments');
+    return {
+      requestId: id,
+      cardId: row.card_id,
+      cardRevision: row.card_revision,
+      runId: row.run_id,
+      status:
+        row.run_status ?? (row.assignment_state === 'dispatching' ? 'pending' : 'interrupted'),
+    };
   }
   current(): boolean {
     return !!this.db

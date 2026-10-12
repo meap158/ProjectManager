@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { expect, it } from 'vitest';
 import { openDb } from '../db.js';
 import { OrchestratorAssignments } from './assignments.js';
+import { ChatDispatchIntent } from './chatIntent.js';
 
 it.each(['before-claim', 'after-claim', 'after-insertion', 'after-acknowledgement'])(
   'recovers persisted chat dispatch after process exit %s',
@@ -16,7 +17,7 @@ it.each(['before-claim', 'after-claim', 'after-insertion', 'after-acknowledgemen
       const db = openDb(process.argv[1]);
       db.exec("INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture','/fixture','2026-10-12'); INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(1,1,'Fixture task','todo',0,'2026-10-12','2026-10-12');");
       if(process.argv[2] === 'before-claim') process.exit(86);
-      const intent = new ChatDispatchIntent(db, 1, 'fixture-master', 1000);
+      const intent = new ChatDispatchIntent(db, 1, 'fixture-master', 1000, {id:'fixture-request', fingerprint:'fixture-args', revision:'fixture-revision'});
       if(process.argv[2] === 'after-insertion' || process.argv[2] === 'after-acknowledgement') {
         db.prepare("INSERT INTO agent_runs(id,project_id,card_id,name,provider_id,command_json,status,created_at,log_path,dispatch_key) VALUES(1,1,1,'Fixture worker','codex','[]','queued','2026-10-12','',?)").run(intent.key);
       }
@@ -54,10 +55,18 @@ it.each(['before-claim', 'after-claim', 'after-insertion', 'after-acknowledgemen
             'SELECT state,attempts,run_id,retry_after FROM orchestrator_assignments WHERE card_id=1',
           )
           .get();
+        const replay = ChatDispatchIntent.replay(
+          db,
+          'fixture-master',
+          'fixture-request',
+          'fixture-args',
+        );
         if (boundary === 'before-claim') {
+          expect(replay).toBeNull();
           expect(state).toBeUndefined();
           expect(assignments.claim(1, 'recovery', 130001)).toBe(true);
         } else if (boundary === 'after-claim') {
+          expect(replay).toMatchObject({ status: 'interrupted', runId: null });
           expect(state).toMatchObject({
             state: 'error',
             attempts: 1,
@@ -66,6 +75,14 @@ it.each(['before-claim', 'after-claim', 'after-insertion', 'after-acknowledgemen
           });
           expect(assignments.claim(1, 'recovery', 130002)).toBe(false);
         } else {
+          expect(replay).toMatchObject({
+            status: 'queued',
+            runId: 1,
+            cardRevision: 'fixture-revision',
+          });
+          expect(() =>
+            ChatDispatchIntent.replay(db, 'fixture-master', 'fixture-request', 'different'),
+          ).toThrow(/different dispatch arguments/);
           expect(state).toMatchObject({ state: 'assigned', attempts: 1, run_id: 1 });
           expect(assignments.claim(1, 'recovery', 130002)).toBe(false);
           assignments.reconcile(undefined, 140000);

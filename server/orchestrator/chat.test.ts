@@ -410,3 +410,50 @@ describe('board tools endpoint (PM-89)', () => {
     expect(host.call).toHaveBeenCalledWith('master-1', chatId, 'overview', {});
   });
 });
+
+it('replays simultaneous chat requests and rejects conflicting request ID reuse', async () => {
+  const { call, mine, supervisor, db } = setup();
+  try {
+    const args = { card: mine.key, requestId: 'same-request', instructions: 'Check tests' };
+    const results = await Promise.all([
+      call('dispatch_worker', args),
+      call('dispatch_worker', args),
+    ]);
+    expect(supervisor.dispatchCard).toHaveBeenCalledTimes(1);
+    expect(results).toContainEqual(
+      expect.objectContaining({
+        replayed: true,
+        request: expect.objectContaining({ status: 'pending' }),
+      }),
+    );
+    await expect(
+      call('dispatch_worker', { ...args, instructions: 'Different work' }),
+    ).rejects.toThrow(/different dispatch arguments/);
+    expect(supervisor.dispatchCard).toHaveBeenCalledTimes(1);
+  } finally {
+    db.close();
+  }
+});
+
+it('recovers the completed run after a lost response without dispatching a done card', async () => {
+  const { call, mine, supervisor, db, a } = setup();
+  try {
+    const args = { card: mine.key, requestId: 'completed-request' };
+    await call('dispatch_worker', args);
+    const key = db
+      .prepare('SELECT dispatch_key FROM orchestrator_dispatch_requests WHERE request_id = ?')
+      .get(args.requestId)!.dispatch_key as string;
+    db.prepare(
+      "INSERT INTO agent_runs(id,project_id,card_id,name,command_json,status,created_at,log_path,dispatch_key) VALUES(77,?,?,'Worker','[]','succeeded','2026-10-12','',?)",
+    ).run(a, mine.id, key);
+    db.prepare("UPDATE cards SET status='done' WHERE id=?").run(mine.id);
+    expect(await call('dispatch_worker', args)).toMatchObject({
+      replayed: true,
+      request: { runId: 77, status: 'succeeded' },
+      card: { status: 'done' },
+    });
+    expect(supervisor.dispatchCard).toHaveBeenCalledTimes(1);
+  } finally {
+    db.close();
+  }
+});

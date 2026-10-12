@@ -188,6 +188,17 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX agent_runs_orchestrator ON agent_runs(orchestrator_id, id);`,
   // Explicit GitHub issue identity for board lifecycle references (PM-64).
   `ALTER TABLE cards ADD COLUMN issue_url TEXT;`,
+  // Stable manual request identity survives assignment replacement and response loss (PM-64).
+  `CREATE TABLE orchestrator_dispatch_requests (
+    orchestrator_id TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    card_id INTEGER NOT NULL,
+    card_revision TEXT NOT NULL,
+    dispatch_key TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (orchestrator_id, request_id)
+  );`,
 ];
 
 export function openDb(dataDir: string): Db {
