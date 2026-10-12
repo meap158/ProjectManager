@@ -296,24 +296,28 @@ describe('TerminalView', () => {
     return scrollIntoView;
   };
 
-  it('keeps the input line above the phone keyboard and key bar while typing (PM-79)', () =>
+  it('pins the terminal to the visible area above the phone keyboard while typing (PM-111)', () =>
     withViewport(true, async (viewport) => {
-      const scrollIntoView = await mountFocused();
+      const pageScroll = await mountFocused();
+      const host = screen.getByRole('application');
       viewport.height = 450;
       viewport.dispatchEvent(new Event('resize'));
-      await waitFor(() =>
-        expect(scrollIntoView).toHaveBeenCalledWith({ top: 254, behavior: 'instant' }),
-      );
+      // Its bottom edge (the CLI's input line) sits at the visible area's bottom: right above
+      // the key bar and keyboard, every time, without scrolling the page.
+      await waitFor(() => expect(host.style.position).toBe('fixed'));
+      expect(host.style.top).toBe('0px');
+      expect(host.style.height).toBe('450px');
+      expect(pageScroll).not.toHaveBeenCalled();
       expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(true);
-      scrollIntoView.mockClear();
+      // Safari shifts the visible area (e.g. to the focused field): the terminal follows it.
+      Object.assign(viewport, { offsetTop: 120 });
       viewport.dispatchEvent(new Event('scroll'));
-      expect(scrollIntoView).not.toHaveBeenCalled();
-      // Keyboard closed: the tab bar comes back.
+      expect(host.style.top).toBe('120px');
+      // Keyboard closed: back in the page, and the tab bar comes back.
       viewport.height = 800;
       viewport.dispatchEvent(new Event('resize'));
-      await waitFor(() =>
-        expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(false),
-      );
+      await waitFor(() => expect(host.style.position).toBe(''));
+      expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(false);
     }));
 
   it('never takes a shorter desktop window for an on-screen keyboard (PM-96)', () =>
@@ -323,6 +327,7 @@ describe('TerminalView', () => {
       viewport.dispatchEvent(new Event('resize'));
       await new Promise((r) => setTimeout(r, 20));
       expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(screen.getByRole('application').style.position).toBe('');
       expect(document.documentElement.hasAttribute('data-terminal-typing')).toBe(false);
     }));
 

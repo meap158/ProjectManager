@@ -72,8 +72,6 @@ export function TerminalView({
 
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const keysRef = useRef<HTMLDivElement>(null);
-  /** Keeps the CLI's input line (the terminal's bottom) just above the keyboard and key bar. */
-  const revealInputRef = useRef<() => void>(() => undefined);
   useEffect(() => {
     const strip = keysRef.current?.querySelector<HTMLElement>('.terminal-key-scroll');
     const firstFunction = strip?.querySelector<HTMLElement>('[aria-label="Function 1"]');
@@ -88,42 +86,54 @@ export function TerminalView({
     let timer: ReturnType<typeof setTimeout> | undefined;
     let frame = 0;
     let open = false;
-    // Phone typing (PM-79): while the keyboard is up, the terminal's bottom edge, where CLIs
-    // draw their input line, must sit just above our key bar. iOS doesn't shrink the page for
-    // the keyboard, so scroll the terminal into the visible area (scroll-margin leaves room for
-    // the key bar). Only when it's out of view, so reading back through the page isn't fought.
-    const revealInput = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const host = hostRef.current;
-        if (!open || !host) return;
-        const bar = keysRef.current?.offsetHeight ?? 0;
-        const visibleTop = viewport.offsetTop;
-        const visibleBottom = viewport.offsetTop + viewport.height - bar;
-        const rect = host.getBoundingClientRect();
-        if (rect.bottom > visibleBottom + 1 || rect.bottom < visibleTop + 48) {
-          // scrollIntoView aligns against the layout viewport on iOS, behind the keyboard.
-          // Move only the required distance in the actual scroll container instead.
-          const delta = rect.bottom - visibleBottom + 4;
-          let parent = host.parentElement;
-          while (parent && parent !== document.documentElement) {
-            const overflow = getComputedStyle(parent).overflowY;
-            if (/(auto|scroll)/.test(overflow) && parent.scrollHeight > parent.clientHeight) break;
-            parent = parent.parentElement;
-          }
-          if (parent && parent !== document.documentElement) parent.scrollTop += delta;
-          else window.scrollBy({ top: delta, behavior: 'instant' });
+    let pinned = false;
+    // Phone typing (PM-111): while the on-screen keyboard is up, the terminal is pinned to the
+    // visible area, from its top down to our key bar, like native terminal apps. Its bottom
+    // edge, where CLIs draw their input line, then always sits directly above the keyboard,
+    // and xterm refits its rows to the space (the CLI redraws for it). Scrolling the page to
+    // bring the terminal into view (PM-79) fought iOS, which scrolls to the focused field on its
+    // own, so the input line landed somewhere different every time.
+    const pin = () => {
+      const host = hostRef.current;
+      if (!host) return;
+      if (!open) {
+        if (pinned) {
+          for (const prop of [
+            'position',
+            'left',
+            'top',
+            'width',
+            'height',
+            'zIndex',
+            'borderRadius',
+          ])
+            host.style.removeProperty(prop.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`));
+          host.classList.remove('is-pinned');
+          pinned = false;
         }
+        return;
+      }
+      const bar = keysRef.current?.offsetHeight ?? 0;
+      Object.assign(host.style, {
+        position: 'fixed',
+        left: `${viewport.offsetLeft}px`,
+        top: `${viewport.offsetTop}px`,
+        width: `${viewport.width}px`,
+        height: `${Math.max(120, viewport.height - bar)}px`,
+        zIndex: '99', // Under the key bar (100).
+        borderRadius: '0',
       });
+      host.classList.add('is-pinned');
+      pinned = true;
     };
-    revealInputRef.current = revealInput;
     // Only touch devices have an on-screen keyboard. On desktop a window that got shorter (an
     // un-maximize, DevTools) read as one and scrolled the page and terminal on every resize.
     const touch = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-    const update = (reveal = true) => {
+    const update = () => {
       const focused = hostRef.current?.contains(document.activeElement) ?? false;
       // Browser chrome can resize the viewport too; a keyboard takes substantially more space.
       restingHeight = Math.max(restingHeight, viewport.height, window.innerHeight);
+      const wasOpen = open;
       open = touch && focused && restingHeight - viewport.height > 80;
       if (keysRef.current) {
         keysRef.current.style.top = `${viewport.offsetTop + viewport.height}px`;
@@ -134,10 +144,13 @@ export function TerminalView({
       // While typing, the page hides chrome that only takes space (the phone tab bar).
       document.documentElement.toggleAttribute('data-terminal-typing', open);
       if (!open) setExtraKeys(false);
-      if (reveal && open && hostRef.current) {
-        const vp = hostRef.current.querySelector<HTMLElement>('.xterm-viewport');
+      pin();
+      // The key bar appears with the keyboard: pin again once it has its height.
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(pin);
+      if (open && !wasOpen) {
+        const vp = hostRef.current?.querySelector<HTMLElement>('.xterm-viewport');
         if (vp) vp.scrollTop = vp.scrollHeight;
-        revealInput();
       }
     };
     const focusChanged = () => {
@@ -145,9 +158,8 @@ export function TerminalView({
       timer = setTimeout(update, 0);
     };
     const resizeViewport = () => update();
-    const scrollViewport = () => update(false);
     viewport.addEventListener('resize', resizeViewport);
-    viewport.addEventListener('scroll', scrollViewport);
+    viewport.addEventListener('scroll', resizeViewport);
     window.addEventListener('resize', resizeViewport);
     document.addEventListener('focusin', focusChanged);
     document.addEventListener('focusout', focusChanged);
@@ -155,10 +167,11 @@ export function TerminalView({
     return () => {
       clearTimeout(timer);
       cancelAnimationFrame(frame);
-      revealInputRef.current = () => undefined;
+      open = false;
+      pin();
       document.documentElement.removeAttribute('data-terminal-typing');
       viewport.removeEventListener('resize', resizeViewport);
-      viewport.removeEventListener('scroll', scrollViewport);
+      viewport.removeEventListener('scroll', resizeViewport);
       window.removeEventListener('resize', resizeViewport);
       document.removeEventListener('focusin', focusChanged);
       document.removeEventListener('focusout', focusChanged);
@@ -351,7 +364,6 @@ export function TerminalView({
       ? term.onData((data) => {
           lastInputTime = Date.now();
           scrollToBottomAndSync();
-          revealInputRef.current(); // Typing brings the input line back above the keyboard.
           if (replaying.current === 0) callbacks.current.onInput?.(data);
         })
       : null;
