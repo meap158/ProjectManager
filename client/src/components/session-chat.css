@@ -201,8 +201,9 @@
   flex: none;
   display: flex;
   gap: 6px;
-  padding: 6px 10px 0;
+  padding: 6px 12px 0; /* One gutter: the bubbles, keys and composer line up. */
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 .chat-keys::-webkit-scrollbar {
@@ -210,8 +211,8 @@
 }
 .chat-key {
   flex: none;
-  min-width: 40px;
-  height: 36px;
+  min-width: 44px; /* Touch targets: 44px. */
+  height: 44px;
   padding: 0 10px;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -226,7 +227,7 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
 }
 .chat-input {
   flex: 1;
@@ -359,11 +360,47 @@
   margin: 6px 0 2px;
   font-weight: 700;
 }
-/* The project tab's docked terminal header: the session name keeps some room beside the
-   switch and the buttons. */
-@media (max-width: 768px) {
+/* The project tab's docked header on phones: the title comes first. Session actions (auto,
+   restart, stop, maximise) open from ⋯ in a row below; the switch and close stay. */
+.project-actions-toggle {
+  display: none;
+}
+@media (max-width: 600px) {
+  .project-cli-dock > .pane .project-terminal-head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
   .project-terminal-head > .pane-identity {
-    min-width: 72px;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .project-terminal-head > .pane-identity .inline-rename,
+  .project-terminal-head > .pane-identity b {
+    font-size: 14px;
+  }
+  .project-actions-toggle {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 40px;
+    width: 40px;
+    min-height: 40px;
+    font-size: 18px;
+  }
+  .project-terminal-head > .project-terminal-close {
+    flex: 0 0 40px;
+    width: 40px;
+  }
+  .project-terminal-actions {
+    display: none;
+  }
+  .project-terminal-actions.is-open {
+    display: flex;
+    order: 99;
+    flex: 1 0 100%;
+    justify-content: flex-end;
+    gap: 4px;
+    padding: 2px 0 4px;
+    border-top: 1px solid var(--border);
   }
 }
 
@@ -393,7 +430,7 @@
   flex: none;
   display: flex;
   gap: 6px;
-  padding: 6px 10px 0;
+  padding: 6px 12px 0;
   overflow-x: auto;
 }
 .chat-attachment {
@@ -454,7 +491,7 @@
 /* Suggestions above the composer: slash commands and @-files (PM-117). */
 .chat-suggest {
   flex: none;
-  margin: 0 10px;
+  margin: 0 12px;
   padding: 4px;
   max-height: 40vh;
   overflow-y: auto;
@@ -496,4 +533,35 @@
   height: 40px;
   padding: 0;
   font-size: 18px;
+}
+
+/* Phones: full screen means the whole screen. The maximised pane covers the page, its header,
+   tabs and the bottom tab bar, inside the safe areas (notch, home indicator); the page under
+   it doesn't scroll. The restore button stays in the header. */
+@media (max-width: 768px) {
+  .project-terminal-head > .project-terminal-max {
+    flex: 0 0 40px;
+    width: 40px;
+  }
+  .project-agents.has-terminal > .project-cli-dock.is-dock-max {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    height: 100dvh !important;
+    min-height: 0;
+    margin: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    background: var(--bg);
+  }
+  .project-cli-dock.is-dock-max > .project-dock-resizer {
+    display: none;
+  }
+  .project-cli-dock.is-dock-max > .pane {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  html:has(.project-cli-dock.is-dock-max) .app-main {
+    overflow: hidden;
+  }
 }

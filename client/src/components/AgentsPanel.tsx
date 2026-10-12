@@ -208,6 +208,7 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   const active = sessions?.find((s) => `session:${s.id}` === selected) ?? null;
   // Phones: the open session as a chat (its CLI's transcript) or the terminal.
   const sessionView = useSessionView(active);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const activeRun = runs?.find((r) => `run:${r.id}` === selected) ?? null;
   const work = sessions && runs ? mergeWork(sessions, runs) : null;
   const available = providers?.filter((p) => p.available).length ?? 0;
@@ -538,16 +539,29 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                     <ViewSwitch view={sessionView.view} onChange={sessionView.choose} />
                   )}
                   <span style={{ flex: 1 }} />
-                  <div className="project-terminal-actions">
+                  {/* Phones: the title gets the room; the actions open from ⋯ in a row below. */}
+                  <button
+                    type="button"
+                    className="icon-btn project-actions-toggle"
+                    aria-label="Session actions"
+                    aria-expanded={actionsOpen}
+                    onClick={() => setActionsOpen((open) => !open)}
+                  >
+                    ⋯
+                  </button>
+                  <div className={`project-terminal-actions${actionsOpen ? ' is-open' : ''}`}>
                     {active.terminal === 'pty' && <SessionProgress session={active} />}
-                    {active.status === 'running' && active.terminal === 'pty' && (
-                      <SessionImageButton
-                        sessionId={active.id}
-                        pasteRef={pasteRef}
-                        onError={setError}
-                        className="icon-btn"
-                      />
-                    )}
+                    {/* The chat's composer has its own image button. */}
+                    {active.status === 'running' &&
+                      active.terminal === 'pty' &&
+                      sessionView.view !== 'chat' && (
+                        <SessionImageButton
+                          sessionId={active.id}
+                          pasteRef={pasteRef}
+                          onError={setError}
+                          className="icon-btn"
+                        />
+                      )}
                     {active.status === 'running' ? (
                       <>
                         <button
@@ -604,34 +618,36 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                         ▶
                       </button>
                     )}
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      title={dockMax ? 'Restore layout' : 'Maximise pane'}
-                      aria-pressed={dockMax}
-                      onClick={() => setDockMax((v) => !v)}
-                    >
-                      <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d={
-                            dockMax
-                              ? 'M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5'
-                              : 'M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5'
-                          }
-                        />
-                      </svg>
-                    </button>
                   </div>
+                  {/* Always visible: on phones it is the way back from full screen. */}
+                  <button
+                    type="button"
+                    className="icon-btn project-terminal-max"
+                    aria-label={dockMax ? 'Restore layout' : 'Full screen'}
+                    title={dockMax ? 'Restore layout' : 'Maximise pane'}
+                    aria-pressed={dockMax}
+                    onClick={() => setDockMax((v) => !v)}
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d={
+                          dockMax
+                            ? 'M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5'
+                            : 'M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5'
+                        }
+                      />
+                    </svg>
+                  </button>
                   <button
                     type="button"
                     className="icon-btn project-terminal-close"

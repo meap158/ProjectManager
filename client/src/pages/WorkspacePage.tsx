@@ -845,7 +845,8 @@ function Pane({
               </button>
             )}
             {!inList && s.terminal === 'pty' && <SessionProgress session={s} />}
-            {running && s.terminal === 'pty' && (
+            {/* The chat's composer has its own image button. */}
+            {running && s.terminal === 'pty' && sessionView.view !== 'chat' && (
               <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
             )}
             {running ? (
