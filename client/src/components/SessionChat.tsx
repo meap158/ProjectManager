@@ -479,10 +479,14 @@ export function SessionChat({
       return prev.filter((a) => a.path !== path);
     });
 
-  const submit = async () => {
-    const text = draft.trim();
-    const images = attachments;
-    if ((!text && !images.length) || sending || uploading) return;
+  /**
+   * Sends the box (text and images), or `quick`, a fixed message such as "continue" (PM-121)
+   * that leaves whatever you're typing in the box alone.
+   */
+  const submit = async (quick?: string) => {
+    const text = quick ?? draft.trim();
+    const images = quick ? [] : attachments;
+    if ((!text && !images.length) || sending || (!quick && uploading)) return;
     setSending(true);
     // Shown in the chat at once (PM-116), until the CLI's transcript records it.
     const pendingId = ++pendingSeq.current;
@@ -491,11 +495,13 @@ export function SessionChat({
       ...prev,
       { id: pendingId, text: text || shown, label: shown, due: false },
     ]);
-    setDraft('');
-    // Back to one line: the box had grown with the message.
-    if (composer.current) composer.current.style.height = '';
-    setAttachments([]);
-    setRecall(null);
+    if (!quick) {
+      setDraft('');
+      // Back to one line: the box had grown with the message.
+      if (composer.current) composer.current.style.height = '';
+      setAttachments([]);
+      setRecall(null);
+    }
     atBottom.current = true;
     try {
       // Only what you typed: first clear anything already in the CLI's input line (Ctrl+E to
@@ -517,8 +523,10 @@ export function SessionChat({
     } catch {
       // Shown by onError. Nothing typed is lost: the message goes back into the box.
       setPending((prev) => prev.filter((p) => p.id !== pendingId));
-      setDraft(text);
-      setAttachments(images);
+      if (!quick) {
+        setDraft(text);
+        setAttachments(images);
+      }
     } finally {
       setSending(false);
     }
@@ -760,17 +768,31 @@ export function SessionChat({
         </ul>
       )}
       <div className="chat-keys" role="group" aria-label="Terminal keys">
-        {KEYS.map((k) => (
-          <button
-            key={k.aria}
-            type="button"
-            className="chat-key"
-            aria-label={k.aria}
-            onClick={() => pressKey(k)}
-          >
-            {k.label}
-          </button>
-        ))}
+        {KEYS.map((k) =>
+          // Enter is only needed while the CLI asks something (or to pick a suggestion);
+          // otherwise its place sends "continue", the most common nudge (PM-121).
+          k.aria === 'Enter' && !asking && !suggestions.length ? (
+            <button
+              key="continue"
+              type="button"
+              className="chat-key chat-key-continue"
+              title='Send "continue"'
+              onClick={() => void submit('continue')}
+            >
+              Continue
+            </button>
+          ) : (
+            <button
+              key={k.aria}
+              type="button"
+              className="chat-key"
+              aria-label={k.aria}
+              onClick={() => pressKey(k)}
+            >
+              {k.label}
+            </button>
+          ),
+        )}
       </div>
       {(attachments.length > 0 || uploading > 0) && (
         <div className="chat-attachments" aria-label="Images to send">

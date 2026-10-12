@@ -166,7 +166,7 @@ describe('SessionChat keys behave as in the terminal (PM-116)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Arrow down' }));
     expect(box().value).toBe('half typed'); // Back to what was being typed.
     expect(api.sendSessionInput).not.toHaveBeenCalled(); // Nothing went to the CLI.
-    fireEvent.click(screen.getByRole('button', { name: 'Enter' }));
+    fireEvent.keyDown(box(), { key: 'Enter' });
     await waitFor(() =>
       expect(api.sendSessionInput).toHaveBeenCalledWith(7, '\x1b[200~half typed\x1b[201~'),
     );
@@ -310,5 +310,30 @@ describe('SessionChat suggestions (PM-117)', () => {
     fireEvent.change(input, { target: { value: 'a\nb\nc' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(input.style.height).toBe(''));
+  });
+});
+
+describe('Continue key (PM-121)', () => {
+  const box = () => screen.getByLabelText('Message to the session') as HTMLTextAreaElement;
+  it('sends "continue" without touching what you are typing; ⏎ returns while the CLI asks', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    const view = render(<SessionChat session={session()} onError={() => {}} />);
+    await screen.findByLabelText('Message to the session');
+    expect(screen.queryByRole('button', { name: 'Enter' })).toBeNull();
+    fireEvent.change(box(), { target: { value: 'my draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual([
+        '\x05\x15',
+        '\x1b[200~continue\x1b[201~',
+        '\r',
+      ]),
+    );
+    expect(box().value).toBe('my draft');
+    expect(document.querySelector('.chat-msg.is-pending')!.textContent).toContain('continue');
+    view.unmount();
+    render(<SessionChat session={session({ tailState: 'input' })} onError={() => {}} />);
+    expect(await screen.findByRole('button', { name: 'Enter' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
   });
 });

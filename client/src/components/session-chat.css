@@ -565,3 +565,11 @@
     overflow: hidden;
   }
 }
+
+/* The Continue quick key: an action, not a key, so it reads as one. */
+.chat-key-continue {
+  padding: 0 14px;
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
