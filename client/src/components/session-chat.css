@@ -450,3 +450,50 @@
   color: var(--text-2);
   cursor: pointer;
 }
+
+/* Suggestions above the composer: slash commands and @-files (PM-117). */
+.chat-suggest {
+  flex: none;
+  margin: 0 10px;
+  padding: 4px;
+  max-height: 40vh;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.chat-suggest li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.chat-suggest li.is-selected {
+  background: var(--accent-soft);
+}
+.chat-suggest-label {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+}
+.chat-suggest-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: 12px;
+}
+/* The jump-to-latest button when there's nothing new: a small round arrow. */
+.chat-new.is-plain {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  font-size: 18px;
+}

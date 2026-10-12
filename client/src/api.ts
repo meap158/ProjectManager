@@ -13,6 +13,7 @@ import type {
   CpuBudget,
   MachineSensors,
   SessionTranscript,
+  SlashCommand,
   LanStatus,
   AgentProviderStatus,
   AgentTerminal,
@@ -243,6 +244,10 @@ export const api = {
       `/agent-sessions/${id}/transcript${after === undefined ? '' : `?after=${after}`}`,
     ),
   sessionScreen: (id: number) => request<{ text: string }>('GET', `/agent-sessions/${id}/screen`),
+  /** Chat view suggestions (PM-117): the CLI's slash commands, and files matching an @-mention. */
+  sessionCommands: (id: number) => request<SlashCommand[]>('GET', `/agent-sessions/${id}/commands`),
+  sessionFiles: (id: number, q: string) =>
+    request<string[]>('GET', `/agent-sessions/${id}/files?q=${encodeURIComponent(q)}`),
   sendSessionInput: (id: number, data: string) =>
     request<{ queued: boolean; session: AgentSession }>('POST', `/agent-sessions/${id}/input`, {
       data,

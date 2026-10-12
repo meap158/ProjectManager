@@ -303,6 +303,15 @@ export interface ChatItem {
   at: string | null;
 }
 
+/** A slash command a session's CLI offers, for the chat view's suggestions (PM-117). */
+export interface SlashCommand {
+  /** Without the slash, e.g. "compact" or "frontend:test". */
+  name: string;
+  description: string;
+  /** Built into the CLI, a custom command (project / user), or a skill. */
+  source: 'builtin' | 'project' | 'user' | 'skill';
+}
+
 /** A slice of a session's transcript; `next` is the offset to read from next time. */
 export interface SessionTranscript {
   /** False for CLIs without a readable transcript (the terminal is the only view). */

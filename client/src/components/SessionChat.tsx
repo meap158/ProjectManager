@@ -8,7 +8,7 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from 'react';
-import type { AgentSession, ChatItem } from '../../../shared/types';
+import type { AgentSession, ChatItem, SlashCommand } from '../../../shared/types';
 import { api } from '../api';
 import { serialPoll } from '../lib/serialPoll';
 import { prepareImage } from '../sessionImages';
@@ -285,6 +285,35 @@ export function handOffDraft(sessionId: number): void {
     .catch(() => undefined);
 }
 
+/** A composer suggestion: a slash command or a file, and the draft that picking it gives. */
+interface Suggestion {
+  value: string;
+  label: string;
+  detail?: string;
+  insert: string;
+}
+
+/** Commands matching what follows "/": name starts with it, then contains it, then described. */
+export function rankCommands(commands: SlashCommand[], query: string, limit = 8): SlashCommand[] {
+  const q = query.toLowerCase();
+  const score = (c: SlashCommand) => {
+    const name = c.name.toLowerCase();
+    return name.startsWith(q)
+      ? 0
+      : name.includes(q)
+        ? 1
+        : c.description.toLowerCase().includes(q)
+          ? 2
+          : -1;
+  };
+  return commands
+    .map((c, i) => ({ c, s: score(c), i }))
+    .filter((x) => x.s >= 0)
+    .sort((a, b) => a.s - b.s || a.i - b.i)
+    .slice(0, limit)
+    .map((x) => x.c);
+}
+
 /** An image waiting in the composer: uploaded, its path pasted into the CLI when sent. */
 interface Attachment {
   path: string;
@@ -382,10 +411,13 @@ export function SessionChat({
     const list = listRef.current;
     if (list && atBottom.current) list.scrollTop = list.scrollHeight;
   }, [items, screen, working]);
+  // Scrolled up: a button brings you back to the latest message (with how many are new).
+  const [scrolledUp, setScrolledUp] = useState(false);
   const onScroll = () => {
     const list = listRef.current;
     if (!list) return;
     atBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+    setScrolledUp(list.scrollHeight - list.scrollTop - list.clientHeight > 240);
     if (atBottom.current) setUnseen(0);
   };
   const jumpToLatest = () => {
@@ -460,6 +492,8 @@ export function SessionChat({
       { id: pendingId, text: text || shown, label: shown, due: false },
     ]);
     setDraft('');
+    // Back to one line: the box had grown with the message.
+    if (composer.current) composer.current.style.height = '';
     setAttachments([]);
     setRecall(null);
     atBottom.current = true;
@@ -538,7 +572,87 @@ export function SessionChat({
     setRecall({ index, draft: recall?.draft ?? draft });
     fill(list[index]!);
   };
+  // Suggestions (PM-117), as the CLIs offer them: "/" at the start lists slash commands
+  // (built in, custom, skills) and "@" a project file. ↑ / ↓ move, ⏎ or Tab picks, Esc closes.
+  const [commands, setCommands] = useState<SlashCommand[]>([]);
+  useEffect(() => {
+    let active = true;
+    api.sessionCommands(id).then(
+      (list) => active && setCommands(list),
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [id]);
+  const slash = /^\/(\S*)$/.exec(draft)?.[1];
+  const mention = /(?:^|\s)@(\S*)$/.exec(draft)?.[1];
+  const [files, setFiles] = useState<{ q: string; list: string[] }>({ q: '', list: [] });
+  useEffect(() => {
+    if (mention === undefined) return;
+    let active = true;
+    const timer = setTimeout(
+      () =>
+        api.sessionFiles(id, mention).then(
+          (list) => active && setFiles({ q: mention, list }),
+          () => undefined,
+        ),
+      150,
+    );
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [id, mention]);
+  /** The draft at which Esc closed the list: it stays closed until you type on. */
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [selectedRaw, setSelected] = useState(0);
+  const suggestions: Suggestion[] =
+    dismissed === draft
+      ? []
+      : slash !== undefined
+        ? rankCommands(commands, slash).map((c) => ({
+            value: `/${c.name}`,
+            label: `/${c.name}`,
+            detail: c.description,
+            insert: `/${c.name} `,
+          }))
+        : mention !== undefined && files.q === mention
+          ? files.list.map((f) => ({
+              value: f,
+              label: f.slice(f.lastIndexOf('/') + 1),
+              detail: f,
+              insert: draft.replace(/@\S*$/, `@${f} `),
+            }))
+          : [];
+  const selected = Math.min(selectedRaw, Math.max(0, suggestions.length - 1));
+  const applySuggestion = (s: Suggestion) => {
+    fill(s.insert);
+    setSelected(0);
+    composer.current?.focus();
+  };
+  /** Handles a key while the list is open; true when it did. */
+  const suggestionKey = (key: 'up' | 'down' | 'pick' | 'close'): boolean => {
+    if (!suggestions.length) return false;
+    if (key === 'up') setSelected((selected - 1 + suggestions.length) % suggestions.length);
+    else if (key === 'down') setSelected((selected + 1) % suggestions.length);
+    else if (key === 'pick') applySuggestion(suggestions[selected]!);
+    else setDismissed(draft);
+    return true;
+  };
+
   const pressKey = (key: (typeof KEYS)[number]) => {
+    const listKey =
+      key.aria === 'Arrow up'
+        ? 'up'
+        : key.aria === 'Arrow down'
+          ? 'down'
+          : key.aria === 'Enter'
+            ? 'pick'
+            : key.aria === 'Escape'
+              ? 'close'
+              : null;
+    if (listKey && suggestionKey(listKey)) return;
     if (!asking && (key.aria === 'Arrow up' || key.aria === 'Arrow down'))
       return recallMessage(key.aria === 'Arrow up' ? 1 : -1);
     if (!asking && key.aria === 'Enter' && (draft.trim() || attachments.length))
@@ -606,10 +720,35 @@ export function SessionChat({
           </div>
         )}
       </div>
-      {unseen > 0 && (
-        <button type="button" className="chat-new" onClick={jumpToLatest}>
-          {unseen} new message{unseen === 1 ? '' : 's'} ↓
+      {(unseen > 0 || scrolledUp) && (
+        <button
+          type="button"
+          className={`chat-new${unseen > 0 ? '' : ' is-plain'}`}
+          aria-label="Jump to the latest message"
+          onClick={jumpToLatest}
+        >
+          {unseen > 0 ? `${unseen} new message${unseen === 1 ? '' : 's'} ↓` : '↓'}
         </button>
+      )}
+      {suggestions.length > 0 && (
+        <ul className="chat-suggest" role="listbox" aria-label="Suggestions">
+          {suggestions.map((s, i) => (
+            <li
+              key={s.value}
+              role="option"
+              aria-selected={i === selected}
+              className={i === selected ? 'is-selected' : undefined}
+              // Pointer down (not click) so the message box keeps focus and the keyboard stays.
+              onPointerDown={(e) => {
+                e.preventDefault();
+                applySuggestion(s);
+              }}
+            >
+              <span className="chat-suggest-label">{s.label}</span>
+              {s.detail && <span className="chat-suggest-detail">{s.detail}</span>}
+            </li>
+          ))}
+        </ul>
       )}
       <div className="chat-keys" role="group" aria-label="Terminal keys">
         {KEYS.map((k) => (
@@ -713,6 +852,7 @@ export function SessionChat({
           onChange={(e) => {
             setDraft(e.target.value);
             setRecall(null); // Editing a recalled message makes it your draft.
+            setSelected(0);
             // Grow with the text, up to about six lines.
             e.target.style.height = 'auto';
             e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
@@ -724,6 +864,22 @@ export function SessionChat({
             void addImages(files);
           }}
           onKeyDown={(e) => {
+            const listKey: Record<string, 'up' | 'down' | 'pick' | 'close'> = {
+              ArrowUp: 'up',
+              ArrowDown: 'down',
+              Enter: 'pick',
+              Tab: 'pick',
+              Escape: 'close',
+            };
+            if (
+              listKey[e.key] &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing &&
+              suggestionKey(listKey[e.key]!)
+            ) {
+              e.preventDefault();
+              return;
+            }
             // As in the CLI: Return sends, Shift+Return adds a line. Never mid-composition
             // (IME input such as Vietnamese or emoji pickers use Return to confirm a word).
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {

@@ -11,6 +11,14 @@ vi.mock('../api', () => ({
     sessionScreen: vi.fn(async () => ({ text: 'Allow edit?\n❯ 1. Yes\n  2. No' })),
     sendSessionInput: vi.fn(async () => ({ queued: false })),
     uploadSessionImage: vi.fn(async () => ({ path: 'S:/data/attachments/shot.png' })),
+    sessionCommands: vi.fn(async () => [
+      { name: 'compact', description: 'Summarise the conversation', source: 'builtin' },
+      { name: 'clear', description: 'Clear the conversation', source: 'builtin' },
+      { name: 'deploy', description: 'Ship it', source: 'project' },
+    ]),
+    sessionFiles: vi.fn(async (_id: number, q: string) =>
+      q ? ['client/src/App.tsx', 'server/app.ts'] : [],
+    ),
   },
 }));
 afterEach(() => {
@@ -254,5 +262,53 @@ describe('SessionChat images (PM-116)', () => {
     fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
     expect(api.sendSessionInput).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull(); // No Send button.
+  });
+});
+
+describe('SessionChat suggestions (PM-117)', () => {
+  const box = () => screen.getByLabelText('Message to the session') as HTMLTextAreaElement;
+  it('suggests slash commands as you type "/", picked with the keys like in the CLI', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    render(<SessionChat session={session()} onError={() => {}} />);
+    await waitFor(() => expect(api.sessionCommands).toHaveBeenCalled());
+    fireEvent.change(box(), { target: { value: '/c' } });
+    const options = await screen.findAllByRole('option');
+    expect(options.map((o) => o.textContent)).toEqual([
+      '/compactSummarise the conversation',
+      '/clearClear the conversation',
+    ]);
+    fireEvent.keyDown(box(), { key: 'ArrowDown' });
+    expect(screen.getAllByRole('option')[1]!.getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(box(), { key: 'Enter' }); // Picks; doesn't send.
+    expect(box().value).toBe('/clear ');
+    expect(api.sendSessionInput).not.toHaveBeenCalled();
+    expect(screen.queryByRole('listbox')).toBeNull();
+    // Esc closes the list; typing on brings it back.
+    fireEvent.change(box(), { target: { value: '/de' } });
+    expect(await screen.findByRole('option', { name: /deploy/ })).toBeDefined();
+    fireEvent.keyDown(box(), { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('suggests project files after "@"', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    render(<SessionChat session={session()} onError={() => {}} />);
+    fireEvent.change(await screen.findByLabelText('Message to the session'), {
+      target: { value: 'look at @app' },
+    });
+    const option = await screen.findByRole('option', { name: /App\.tsx/ });
+    expect(api.sessionFiles).toHaveBeenCalledWith(7, 'app');
+    fireEvent.pointerDown(option);
+    expect(box().value).toBe('look at @client/src/App.tsx ');
+  });
+
+  it('shrinks the message box back to one line after sending', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    render(<SessionChat session={session()} onError={() => {}} />);
+    const input = await screen.findByLabelText('Message to the session');
+    input.style.height = '120px';
+    fireEvent.change(input, { target: { value: 'a\nb\nc' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(input.style.height).toBe(''));
   });
 });

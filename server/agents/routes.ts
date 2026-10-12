@@ -18,6 +18,7 @@ import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
 import { getPermissions, PERMISSION_PROVIDERS, setPermissions } from './permissions.js';
 import { getCpuBudget, setCpuBudget, totalThreads } from './cpuBudget.js';
+import { slashCommands, suggestFiles } from './completions.js';
 import { findTranscript, readTranscript, transcriptSource } from './transcript.js';
 import { readSensors } from './sensors.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
@@ -255,6 +256,20 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     const file = source ? await findTranscript(source) : null;
     if (!file) return c.json({ supported: !!source, items: [], next: 0, reset: false });
     return c.json({ supported: true, ...(await readTranscript(file, resume.providerId, offset)) });
+  });
+
+  // Composer suggestions (PM-117): the CLI's slash commands, and project files for @-mentions
+  // (matched here, so a phone never downloads a whole file list).
+  app.get('/agent-sessions/:id/commands', async (c) => {
+    const session = supervisor.getSession(parseId(c));
+    if (!session) throw new AgentError(404, 'Session not found');
+    return c.json(await slashCommands(session.providerId, session.cwd));
+  });
+  app.get('/agent-sessions/:id/files', async (c) => {
+    const session = supervisor.getSession(parseId(c));
+    if (!session) throw new AgentError(404, 'Session not found');
+    const q = (c.req.query('q') ?? '').slice(0, 200);
+    return c.json(await suggestFiles(session.cwd, q));
   });
 
   // What the session shows right now, as text: the chat view's live strip when the CLI asks.
