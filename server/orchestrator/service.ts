@@ -12,7 +12,7 @@ import type {
   OrchestratorState,
 } from '../../shared/orchestrator.js';
 import { buildSituation, cardContext } from './situation.js';
-import { situationRunIds } from './situationRuns.js';
+import { listSituationRuns } from './situationRuns.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
 import { liveRunProjects } from './liveProjects.js';
@@ -66,12 +66,9 @@ export class OrchestratorService {
     if (instanceId && !instance) return null;
     return buildSituation({
       projects: this.attentionProjects?.() ?? [],
-      cards: listCardsInFlight(this.db),
+      cards: listCardsInFlight(this.db, instance?.projectIds),
       sessions: this.supervisor.listAllSessions(),
-      runs: situationRunIds(this.db, instance?.projectIds).flatMap((id) => {
-        const run = this.supervisor.getRun(id);
-        return run ? [run] : [];
-      }),
+      runs: listSituationRuns(this.db, instance?.projectIds),
       dismissed: (projectId) => getDismissedAttention(this.db, projectId),
       screen: (sessionId) => this.supervisor.sessionScreen(sessionId),
       projectIds: instance?.projectIds,

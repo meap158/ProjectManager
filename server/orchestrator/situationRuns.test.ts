@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import type { AgentSupervisor } from '../agents/supervisor.js';
 import { OrchestratorService } from './service.js';
 import { openDb } from '../db.js';
-import { situationRunIds } from './situationRuns.js';
+import { situationRunIds, listSituationRuns } from './situationRuns.js';
 
 it('keeps live, all unreviewed and latest active-card runs without unrelated history', () => {
   const db = openDb(':memory:');
@@ -42,6 +42,19 @@ it('keeps live, all unreviewed and latest active-card runs without unrelated his
     `,
     ).run(now);
     expect(situationRunIds(db, [1])).toEqual([7, 6, 5, 4]);
+    db.prepare('UPDATE agent_runs SET changes_json = ?, ended_at = ? WHERE id = 6').run(
+      JSON.stringify({ files: ['changed.ts'], commits: 2 }),
+      now,
+    );
+    expect(listSituationRuns(db, [1]).map((r) => r.id)).toEqual([7, 6, 5, 4]);
+    expect(listSituationRuns(db, [1]).find((r) => r.id === 6)).toMatchObject({
+      changes: { files: ['changed.ts'], commits: 2 },
+      endedAt: now,
+      status: 'failed',
+      validation: null,
+    });
+    expect(listSituationRuns(db, [99])).toEqual([]);
+
     expect(situationRunIds(db, [2])).toEqual([9, 8]);
     expect(situationRunIds(db)).toEqual([9, 8, 7, 6, 5, 4]);
     expect(situationRunIds(db, [])).toEqual(situationRunIds(db));
@@ -53,7 +66,7 @@ it('keeps live, all unreviewed and latest active-card runs without unrelated his
   }
 });
 
-it('situation hydrates selected run IDs and does not load the history list', () => {
+it('situation projects selected runs without per-run hydration or the history list', () => {
   const db = openDb(':memory:');
   try {
     const now = new Date().toISOString();
@@ -82,7 +95,7 @@ it('situation hydrates selected run IDs and does not load the history list', () 
       null,
     );
     const situation = service.situation();
-    expect(getRun).toHaveBeenCalledExactlyOnceWith(1);
+    expect(getRun).not.toHaveBeenCalled();
     expect(listAllRuns).not.toHaveBeenCalled();
     expect(situation?.needsAttention).toEqual([
       expect.objectContaining({ kind: 'awaiting-review', runId: 1 }),

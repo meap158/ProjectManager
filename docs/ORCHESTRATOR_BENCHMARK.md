@@ -69,3 +69,25 @@ The baseline decoder is a benchmark approximation of supervisor conversion, not 
 end-to-end old API comparison. Timing excludes provider/quota IO, network, rendering and
 writes; small samples and host load limit tail-latency conclusions. Index write/storage
 costs, unscoped masters and large pending-review populations still need measurement.
+
+## Complete read-route measurements (2026-10-13)
+
+Reproduce: `node --import tsx scripts/benchmark-orchestrator-api.mjs --cards=1000,10000 --masters=1 --samples=5`.
+In-memory SQLite, 20 projects, 100,000 runs, review cards with one latest unreviewed run each,
+and 20 live runs. Real Hono routes include SQL, service construction and JSON serialization.
+One warmup and five samples on Node 22.21.0. Baseline uses per-run supervisor hydration;
+revision scopes cards in SQL and projects only the situation's run fields in one query.
+
+| Scope        |  Cards | Baseline median ms | Projected median ms | Response bytes |
+| ------------ | -----: | -----------------: | ------------------: | -------------: |
+| Project 1    |  1,000 |              30.46 |                4.21 |         26,881 |
+| All projects |  1,000 |             609.18 |              103.58 |        538,385 |
+| Project 1    | 10,000 |             317.87 |               27.52 |        269,431 |
+| All projects | 10,000 |           1,693.83 |              386.25 |      5,409,189 |
+
+Response bytes match before/after. The harness also asserts complete visible equality against
+old hydration, excluding generation timestamps, and no database writes during measurements.
+Warm provider/quota caches, no worker launches, no live database writes. These exploratory
+in-process measurements exclude network/browser/cold-provider latency; five samples and
+concurrent host load do not establish tail-latency guarantees. The 5.4 MB response remains
+an explicit summary/pagination gap. Multi-master and dispatch/write-cost measurements remain.

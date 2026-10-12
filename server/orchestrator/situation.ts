@@ -20,13 +20,25 @@ import type {
 /** In progress with no live worker and no change for this long counts as stalled. */
 export const STALLED_MS = 24 * 3_600_000;
 const SUMMARY_CHARS = 280;
+export type SituationRun = Pick<
+  AgentRun,
+  | 'id'
+  | 'projectId'
+  | 'cardId'
+  | 'name'
+  | 'providerId'
+  | 'status'
+  | 'validation'
+  | 'changes'
+  | 'endedAt'
+>;
 
 export interface SituationInput {
   projects: ProjectSummary[];
   /** Cards in progress or in review (store.listCardsInFlight). */
   cards: CardWithProject[];
   sessions: AgentSession[];
-  runs: AgentRun[];
+  runs: SituationRun[];
   /** Per project: Home attention kinds the user dismissed. */
   dismissed?: (projectId: number) => string[];
   /** What a session is showing right now (for "needs input": what it asks). */
@@ -72,12 +84,12 @@ export function buildSituation(input: SituationInput): OrchestratorSituation {
     });
   }
 
-  const latestRun = new Map<number, AgentRun>();
+  const latestRun = new Map<number, SituationRun>();
   for (const r of input.runs) {
     if (r.cardId != null && r.id > (latestRun.get(r.cardId)?.id ?? -1)) latestRun.set(r.cardId, r);
   }
   const cardKeys = new Map(input.cards.map((c) => [c.id, c.key]));
-  const finished = (r: AgentRun) => r.status === 'succeeded' || r.status === 'failed';
+  const finished = (r: SituationRun) => r.status === 'succeeded' || r.status === 'failed';
   for (const r of input.runs.filter((x) => finished(x) && !x.validation && inScope(x.projectId))) {
     const files = r.changes?.files.length ?? 0;
     needsAttention.push({

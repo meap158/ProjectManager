@@ -273,13 +273,16 @@ export function listAllCards(db: Db): CardWithProject[] {
   return rows.map((r) => ({ ...toCard(r), projectName: r.project_name }));
 }
 
-export function listCardsInFlight(db: Db): CardWithProject[] {
+export function listCardsInFlight(db: Db, projectIds: readonly number[] = []): CardWithProject[] {
+  const scope = projectIds.length
+    ? ` AND c.project_id IN (${projectIds.map(() => '?').join(',')})`
+    : '';
   const rows = db
     .prepare(
       `SELECT c.*, p.name AS project_name FROM cards c JOIN projects p ON p.id = c.project_id
-        WHERE c.status IN ('in_progress', 'review') ORDER BY c.updated_at`,
+        WHERE c.status IN ('in_progress', 'review')${scope} ORDER BY c.updated_at`,
     )
-    .all() as unknown as (CardRow & { project_name: string })[];
+    .all(...projectIds) as unknown as (CardRow & { project_name: string })[];
   return rows.map((r) => ({ ...toCard(r), projectName: r.project_name }));
 }
 

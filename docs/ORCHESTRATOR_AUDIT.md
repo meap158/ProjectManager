@@ -346,3 +346,13 @@ Queue preview review and exhausted-budget decisions now include the latest proje
 identity and persisted owner. Their inspection links open that owner's run section rather
 than a regular Agents list that excludes owned work. Unowned runs retain project navigation.
 Ownership comes from the existing bounded SQL projection, with no extra history query.
+
+## Inspection hydration, 2026-10-13
+
+Scoped in-flight cards now filter in SQL. Inspection runs use one narrow projection instead
+of per-run full hydration, card reads and log stats. Thirty-six focused regressions passed.
+The isolated real-route benchmark reduced the 10k-card project inspection median from
+317.87 ms to 27.52 ms and all-project inspection from 1,693.83 ms to 386.25 ms in five samples.
+See ORCHESTRATOR_BENCHMARK.md for scope and limits. Full visible equivalence is asserted by
+the benchmark. The 5.4 MB global response still needs summary/pagination; physical mobile
+and complete runtime measurements remain open.

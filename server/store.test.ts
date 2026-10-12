@@ -1,7 +1,14 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openDb } from './db.js';
-import { getProject, insertProject, listProjects, insertCard, updateCard } from './store.js';
+import {
+  getProject,
+  insertProject,
+  listProjects,
+  insertCard,
+  updateCard,
+  listCardsInFlight,
+} from './store.js';
 
 const idle = () => ({ status: 'idle' as const });
 
@@ -42,6 +49,25 @@ it('persists and clears an explicit issue link without losing it on board moves'
     expect(card.issueUrl).toBe('https://github.com/me/app/issues/12');
     expect(updateCard(db, card.id, { status: 'review' })?.issueUrl).toBe(card.issueUrl);
     expect(updateCard(db, card.id, { issueUrl: null })?.issueUrl).toBeNull();
+  } finally {
+    db.close();
+  }
+});
+
+it('loads only scoped in-flight cards while retaining all-project behavior and ordering', () => {
+  const db = openDb(':memory:');
+  try {
+    const a = insertProject(db, 'One', '/one');
+    const b = insertProject(db, 'Two', '/two');
+    insertCard(db, a, { title: 'Active', description: '', status: 'in_progress' });
+    insertCard(db, b, { title: 'Review', description: '', status: 'review' });
+    insertCard(db, a, { title: 'Done', description: '', status: 'done' });
+    const all = listCardsInFlight(db);
+    expect(listCardsInFlight(db, [a])).toEqual(all.filter((c) => c.projectId === a));
+    expect(listCardsInFlight(db, [a, b])).toEqual(all);
+    expect(listCardsInFlight(db, [])).toEqual(all);
+    expect(listCardsInFlight(db, [999])).toEqual([]);
+    expect(all).toHaveLength(2);
   } finally {
     db.close();
   }
