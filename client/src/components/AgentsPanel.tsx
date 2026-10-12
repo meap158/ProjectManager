@@ -76,6 +76,7 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   const [dockMax, setDockMax] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const dockContainer = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const resizeTo = (height: number) => {
     const minTerminal = DOCK_MIN;
@@ -113,6 +114,35 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
     });
     return () => cancelAnimationFrame(frame);
   }, [selected]);
+
+  // Desktop (PM-105): the tab fills the space down to the window's bottom edge, so the docked
+  // terminal sits on that edge even when the list above is short (CSS: --project-fill).
+  const hasTerminal = Boolean(selected);
+  useEffect(() => {
+    const root = rootRef.current;
+    const main = root?.closest<HTMLElement>('.app-main');
+    if (!root || !main || !hasTerminal) return;
+    const measure = () => {
+      let below = 8; // The dock's gap above the window edge (sticky bottom: 8px), plus the
+      // padding and margins of the wrappers between the tab and the scroller.
+      for (let el = root.parentElement; el && el !== main; el = el.parentElement) {
+        const style = getComputedStyle(el);
+        below += (parseFloat(style.paddingBottom) || 0) + (parseFloat(style.marginBottom) || 0);
+      }
+      const top =
+        root.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+      root.style.setProperty('--project-fill', `${Math.max(0, main.clientHeight - top - below)}px`);
+    };
+    measure();
+    // The window, and anything above the tab changing height (e.g. an opened details panel).
+    const observer = new ResizeObserver(measure);
+    observer.observe(main);
+    if (main.firstElementChild) observer.observe(main.firstElementChild);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty('--project-fill');
+    };
+  }, [hasTerminal]);
 
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
@@ -274,7 +304,10 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   }
 
   return (
-    <div className={`agents project-agents${active || activeRun ? ' has-terminal' : ''}`}>
+    <div
+      ref={rootRef}
+      className={`agents project-agents${active || activeRun ? ' has-terminal' : ''}`}
+    >
       {error && <div className="error-banner">{error}</div>}
 
       <section className="panel agents-start" aria-label="Start a session">

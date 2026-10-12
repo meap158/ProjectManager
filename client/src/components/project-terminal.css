@@ -31,31 +31,40 @@
   align-items: center;
   gap: 6px;
 }
-/* Resizing gives space back to the list above, preserving the bottom edge. */
-.project-agents.has-terminal {
-  height: calc(100dvh - 240px);
-  min-height: 500px;
-}
-.project-agents.has-terminal > .panel {
-  flex-shrink: 0;
-}
-.project-agents.has-terminal > .project-work-panel {
-  flex: 1 1 auto;
-  min-height: 100px;
-}
-.project-agents.has-terminal .project-work-panel .work-list-scroll {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-}
-.project-agents.has-terminal > .project-cli-dock {
-  flex: 0 0 auto;
-  margin-top: auto;
+/* Desktop (PM-105): the terminal is anchored to the window's bottom edge and resizing it only
+   changes how much of the page it covers, like the global Agents page: the Sessions and runs
+   panel above keeps its own size. The tab fills the space down to the window's bottom
+   (--project-fill, measured in AgentsPanel) so the dock sits on that edge even when the list is
+   short; with a long page the dock stays there (sticky) while the page scrolls under it. */
+@media (min-width: 769px) {
+  .project-agents.has-terminal {
+    min-height: var(--project-fill, auto);
+  }
+  .project-agents.has-terminal > .project-cli-dock {
+    margin-top: auto;
+  }
 }
 .project-dock-resizer {
   touch-action: none;
 }
+/* Phones keep a fixed-height column: the list gives the terminal its room. */
 @media (max-width: 768px) {
+  .project-agents.has-terminal > .panel {
+    flex-shrink: 0;
+  }
+  .project-agents.has-terminal > .project-work-panel {
+    flex: 1 1 auto;
+    min-height: 100px;
+  }
+  .project-agents.has-terminal .project-work-panel .work-list-scroll {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+  .project-agents.has-terminal > .project-cli-dock {
+    flex: 0 0 auto;
+    margin-top: auto;
+  }
   .project-agents.has-terminal {
     height: calc(100dvh - 180px);
     min-height: 500px;
