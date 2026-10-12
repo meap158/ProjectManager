@@ -849,31 +849,40 @@ export function SessionChat({
         </ul>
       )}
       <div className="chat-keys" role="group" aria-label="Terminal keys">
-        {KEYS.map((k) =>
-          // Enter is only needed while the CLI asks something (or to pick a suggestion);
-          // otherwise its place sends "continue", the most common nudge (PM-121).
-          k.aria === 'Enter' && !asking && !suggestions.length ? (
-            <button
-              key="continue"
-              type="button"
-              className="chat-key chat-key-continue"
-              title='Send "continue"'
-              onClick={() => void submit('continue')}
-            >
-              Continue
-            </button>
-          ) : (
-            <button
-              key={k.aria}
-              type="button"
-              className="chat-key"
-              aria-label={k.aria}
-              onClick={() => pressKey(k)}
-            >
-              {k.label}
-            </button>
-          ),
+        {/* First key (PM-121): Continue, the most common nudge. Enter is only needed while the
+            CLI asks something or a suggestion list is open, and then takes this place. */}
+        {asking || suggestions.length ? (
+          <button
+            key="enter"
+            type="button"
+            className="chat-key"
+            aria-label="Enter"
+            onClick={() => pressKey(KEYS.find((k) => k.aria === 'Enter')!)}
+          >
+            ⏎
+          </button>
+        ) : (
+          <button
+            key="continue"
+            type="button"
+            className="chat-key chat-key-continue"
+            title='Send "continue"'
+            onClick={() => void submit('continue')}
+          >
+            Continue
+          </button>
         )}
+        {KEYS.filter((k) => k.aria !== 'Enter').map((k) => (
+          <button
+            key={k.aria}
+            type="button"
+            className="chat-key"
+            aria-label={k.aria}
+            onClick={() => pressKey(k)}
+          >
+            {k.label}
+          </button>
+        ))}
       </div>
       {(attachments.length > 0 || uploading > 0) && (
         <div className="chat-attachments" aria-label="Images to send">

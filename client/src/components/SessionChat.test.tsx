@@ -370,3 +370,21 @@ describe('screenInfo (PM-122)', () => {
     expect(screenInfo('• Working (2m 03s • esc to interrupt)').status).toBe('Working (2m 03s)');
   });
 });
+
+describe('quick key order (PM-121)', () => {
+  it('puts Continue first, before Esc; Enter takes its place while the CLI asks', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    const view = render(<SessionChat session={session()} onError={() => {}} />);
+    await screen.findByLabelText('Message to the session');
+    const keys = () =>
+      [...document.querySelectorAll('.chat-keys button')].map(
+        (b) => b.getAttribute('aria-label') ?? b.textContent,
+      );
+    expect(keys().slice(0, 2)).toEqual(['Continue', 'Escape']);
+    expect(keys()).not.toContain('Enter');
+    view.unmount();
+    render(<SessionChat session={session({ tailState: 'input' })} onError={() => {}} />);
+    await screen.findByText(/Allow edit\?/);
+    expect(keys().slice(0, 2)).toEqual(['Enter', 'Escape']);
+  });
+});
