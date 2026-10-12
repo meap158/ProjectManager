@@ -67,9 +67,6 @@ export function CpuBudgetPanel({ onError }: { onError: (message: string) => void
           <li className="permission-row cpu-budget-row">
             <span className="cpu-budget-label">
               <b>All agents</b>
-              <span className="faint">
-                up to {budget.threads} of {budget.totalThreads} threads
-              </span>
             </span>
             <Dropdown
               label="CPU threads for all agents"

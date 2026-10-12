@@ -8,9 +8,6 @@
   align-items: baseline;
   gap: 2px 8px;
 }
-.cpu-budget-label .faint {
-  font-size: 12.5px;
-}
 
 /* HWiNFO-style table: sensor, current, min, max; numbers right-aligned in tabular figures. */
 .cpu-sensors {
