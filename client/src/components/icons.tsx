@@ -235,3 +235,13 @@ export function MonitorIcon(props: IconProps) {
     </Base>
   );
 }
+
+/** Info badge: circle with "i". */
+export function InfoIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 7v4.5M8 4.75v.5" />
+    </Base>
+  );
+}

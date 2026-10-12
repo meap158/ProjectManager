@@ -1,5 +1,7 @@
-﻿import { Suspense, lazy, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { ProviderIcon } from './icons';
+import './project-agents.css';
+import './project-terminal.css';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { ProviderIcon, InfoIcon } from './icons';
 import type {
   AgentProviderStatus,
   AgentRun,
@@ -22,6 +24,7 @@ import { SessionImageButton } from './SessionImageButton';
 import { SessionProgress, SessionRestartStatus } from './SessionProgress';
 import { RecentCache } from '../lib/recentCache';
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
+import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 
 // Preload TerminalView chunk as soon as agents panel loads so it is ready when terminal renders.
 const terminalViewPromise = import('./TerminalView');
@@ -34,6 +37,18 @@ const TerminalView = lazy(() => terminalViewPromise.then((m) => ({ default: m.Te
 const sessionsCache = new RecentCache<number, AgentSession[]>(8);
 const runsCache = new RecentCache<number, AgentRun[]>(8);
 
+const DOCK_KEY = 'pm.projectAgents.dockHeight';
+const DOCK_MIN = 140;
+
+function readDockHeight(): number | null {
+  try {
+    const v = Number(localStorage.getItem(DOCK_KEY));
+    return Number.isFinite(v) && v >= DOCK_MIN ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Per-project agent HQ: providers, persistent terminal sessions, and card runs. */
 export function AgentsPanel({ projectId, visible }: { projectId: number; visible: boolean }) {
   const [providers, setProviders] = useState<AgentProviderStatus[] | null>(null);
@@ -43,7 +58,10 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   const [runs, setRuns] = useState<AgentRun[] | null>(
     () => runsCache.get(projectId)?.filter((r) => !r.orchestratorId) ?? null,
   );
-  const [selected, setSelectedState] = useState<WorkKey | null>(() => readSelection(projectId));
+  const [selected, setSelectedState] = useState<WorkKey | null>(() => {
+    const stored = readSelection(projectId);
+    return stored === 'closed' ? null : stored;
+  });
   // The selection is remembered per project (switching projects, reloads, restarts).
   const setSelected = useCallback(
     (next: WorkKey | null | ((prev: WorkKey | null) => WorkKey | null)) =>
@@ -54,6 +72,48 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
       }),
     [projectId],
   );
+  const [dockHeight, setDockHeight] = useState<number | null>(readDockHeight);
+  const [dockMax, setDockMax] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const dockContainer = useRef<HTMLDivElement>(null);
+
+  const resizeTo = (height: number) => {
+    const minTerminal = DOCK_MIN;
+    const maxTerminal = Math.max(
+      minTerminal,
+      (window.visualViewport?.height ?? window.innerHeight) - 140,
+    );
+    const next = Math.round(Math.min(Math.max(height, minTerminal), maxTerminal));
+    setDockHeight(next);
+    try {
+      localStorage.setItem(DOCK_KEY, String(next));
+    } catch {
+      // Remembering the height is a convenience only.
+    }
+  };
+
+  const resetDock = () => {
+    setDockHeight(null);
+    try {
+      localStorage.removeItem(DOCK_KEY);
+    } catch {
+      // As above.
+    }
+  };
+
+  const currentDock = () =>
+    dockHeight ?? Math.round(dockContainer.current?.getBoundingClientRect().height ?? 360);
+
+  useEffect(() => {
+    if (!selected?.startsWith('session:') || !window.matchMedia('(max-width: 768px)').matches) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      dockContainer.current?.scrollIntoView({ block: 'nearest' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selected]);
+
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
   const [input, setInput] = useState('');
@@ -83,6 +143,7 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             const exists = (key: WorkKey | null) => !!key && items.some((w) => workKey(w) === key);
             // This project's remembered choice first (prev may belong to the last project).
             const stored = readSelection(projectId);
+            if (stored === 'closed') return null;
             if (exists(stored)) return stored;
             if (exists(prev)) return prev;
             return items[0] ? workKey(items[0]) : null;
@@ -158,6 +219,9 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             try {
               await api.deleteSession(s.id);
               setSessions((prev) => prev?.filter((x) => x.id !== s.id) ?? prev);
+              if (selected === `session:${s.id}`) {
+                setSelected(null);
+              }
             } catch (e) {
               setError((e as Error).message);
             }
@@ -210,7 +274,7 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
   }
 
   return (
-    <div className="agents">
+    <div className={`agents project-agents${active || activeRun ? ' has-terminal' : ''}`}>
       {error && <div className="error-banner">{error}</div>}
 
       <section className="panel agents-start" aria-label="Start a session">
@@ -268,9 +332,17 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
         </details>
       </section>
 
-      <section className="panel" aria-label="Agent work">
+      {/* Plan usage in its own slim section under Agent work (PM-42). */}
+      {work && <LimitsStrip providerIds={[...new Set(work.map((w) => w.item.providerId))]} />}
+
+      <section className="panel workspace-list project-work-panel" aria-label="Agent work">
         <div className="panel-header">
-          <h2>Agent work</h2>
+          <div className="panel-title-row">
+            <h2>
+              Sessions and runs <span className="badge">{work?.length ?? 0}</span>
+            </h2>
+            <SessionsInfoButton />
+          </div>
           <span
             className="meta"
             title="Terminal: an interactive session you type into; it keeps running until you stop it. One-shot: a card dispatch that runs once, then waits for you to accept or reject its changes."
@@ -278,82 +350,308 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
             Terminals keep running until stopped · one-shot runs wait for your review
           </span>
         </div>
-        {/* The open terminal or run comes first, above the list (owner request, PM-91): it's
-            what you work in, and a long list would otherwise push it below the fold. */}
-        {(active || activeRun) && (
-          <div className="agent-work-open">
-            {active && (
-              <div className="terminal-wrap">
-                <div className="terminal-head">
-                  <InlineRename
-                    value={active.name}
-                    label="session"
-                    onSave={(name) =>
-                      api.patchSession(active.id, { name }).then(
-                        (next) =>
-                          setSessions(
-                            (prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev,
-                          ),
-                        (e: Error) => setError(e.message),
-                      )
+
+        <div className="work-list-scroll">
+          {work === null ? (
+            <div className="skeleton" style={{ height: 120 }} />
+          ) : work.length === 0 ? (
+            <p className="faint" style={{ margin: 0 }}>
+              Nothing yet. Start a terminal session above, or open a card on the Board and hand it
+              to an agent.
+            </p>
+          ) : (
+            <AgentWorkList
+              items={work}
+              selected={selected}
+              onSelect={(key: WorkKey) => setSelected((prev) => (key === prev ? null : key))}
+              onNavigate={(key: WorkKey) => setSelected(key)}
+              now={now}
+              tokens={usage}
+              actions={sessionActions}
+              onRename={(w, name) =>
+                w.kind === 'session'
+                  ? changeSession(() => api.patchSession(w.item.id, { name }))
+                  : api
+                      .renameRun(w.item.id, name)
+                      .then(upsertRun, (e: Error) => setError(e.message))
+              }
+            />
+          )}
+        </div>
+      </section>
+
+      {(active || activeRun) && (
+        <div
+          ref={dockContainer}
+          className={`project-cli-dock${dockMax ? ' is-dock-max' : ''}`}
+          aria-label={active ? `Terminal: ${active.name}` : `Run: ${activeRun?.name ?? 'Review'}`}
+          style={
+            dockMax
+              ? undefined
+              : ({
+                  height: dockHeight ?? 360,
+                  '--project-dock-height': `${dockHeight ?? 360}px`,
+                } as import('react').CSSProperties)
+          }
+        >
+          {active && (
+            <>
+              {!dockMax && (
+                <div
+                  className="work-resizer project-dock-resizer"
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label="Resize terminal panel"
+                  aria-valuenow={dockHeight ?? 360}
+                  tabIndex={0}
+                  title="Drag to resize · double-click to reset"
+                  onPointerDown={(e) => {
+                    try {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    } catch {
+                      // Pointer capture unsupported or denied.
+                    }
+                    const resizerEl = e.currentTarget;
+                    const startY = e.clientY;
+                    const startHeight = currentDock();
+                    const onMove = (ev: PointerEvent) => {
+                      const delta = startY - ev.clientY;
+                      resizeTo(startHeight + delta);
+                    };
+                    const onUp = (ev: PointerEvent) => {
+                      try {
+                        if (resizerEl.hasPointerCapture(ev.pointerId)) {
+                          resizerEl.releasePointerCapture(ev.pointerId);
+                        }
+                      } catch {
+                        // Already released.
+                      }
+                      window.removeEventListener('pointermove', onMove);
+                      window.removeEventListener('pointerup', onUp);
+                      window.removeEventListener('pointercancel', onUp);
+                    };
+                    window.addEventListener('pointermove', onMove);
+                    window.addEventListener('pointerup', onUp);
+                    window.addEventListener('pointercancel', onUp);
+                  }}
+                  onDoubleClick={resetDock}
+                  onKeyDown={(e) => {
+                    const cur = currentDock();
+                    if (e.key === 'ArrowUp') resizeTo(cur + 24);
+                    else if (e.key === 'ArrowDown') resizeTo(cur - 24);
+                    else return;
+                    e.preventDefault();
+                  }}
+                />
+              )}
+              <section className="pane">
+                <header
+                  className="pane-head project-terminal-head"
+                  onDoubleClick={() => setDockMax((v) => !v)}
+                  title="Double-click to maximise"
+                >
+                  <span
+                    className={`status-dot${active.status === 'running' ? ` is-${sessionActivity(active)}` : ''}`}
+                    style={{
+                      background:
+                        active.status === 'running'
+                          ? 'var(--good)'
+                          : active.status === 'dead'
+                            ? 'var(--danger)'
+                            : 'var(--series-other)',
+                    }}
+                    role="img"
+                    aria-label={
+                      active.status === 'running'
+                        ? ACTIVITY_LABEL[sessionActivity(active)]
+                        : `Ended (${active.status})`
+                    }
+                    title={
+                      active.status === 'running'
+                        ? ACTIVITY_LABEL[sessionActivity(active)]
+                        : `Ended (${active.status})`
                     }
                   />
-                  <span className="faint mono truncate" title={active.cwd}>
-                    {active.cwd}
-                  </span>
-                  <span className="faint" style={{ fontSize: 12 }}>
-                    {active.status}
-                    {active.pid ? ` · pid ${active.pid}` : ''}
-                  </span>
-                  {active.terminal === 'pty' && <SessionProgress session={active} />}
-                  <SessionRestartStatus session={active} />
-                  {active.status === 'running' && active.terminal === 'pty' && (
-                    <SessionImageButton
-                      sessionId={active.id}
-                      pasteRef={pasteRef}
-                      onError={setError}
-                      className="btn btn-sm"
-                    />
-                  )}
-                </div>
-                <Suspense fallback={<div className="terminal skeleton" style={{ height: 380 }} />}>
-                  <TerminalView
-                    key={`${active.id}-${active.terminal}-${active.startedAt}`}
-                    historyBytes={active.logBytes}
-                    stopped={active.terminal === 'pty' && active.status !== 'running'}
-                    height={active.terminal === 'pty' ? 380 : 320}
-                    fetchOutput={(after) => api.sessionOutput(active.id, after)}
-                    streamUrl={(after) => api.sessionStreamUrl(active.id, after)}
-                    paused={!visible}
-                    {...(active.terminal === 'pty'
-                      ? {
-                          pasteRef,
-                          onImage: (file: File) =>
-                            sendImageToSession(active.id, file, pasteRef.current).catch(
-                              (e: Error) => setError(e.message),
+                  <div className="pane-identity">
+                    <InlineRename
+                      value={active.name}
+                      label="session"
+                      onSave={(name) =>
+                        api.patchSession(active.id, { name }).then(
+                          (next) =>
+                            setSessions(
+                              (prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev,
                             ),
-                          // A stopped session only queues real typing, not the terminal's auto-replies.
-                          onInput: (data: string) => {
-                            if (active.status === 'running' || !isTerminalReport(data)) {
-                              sendKeys(active.id, data);
+                          (e: Error) => setError(e.message),
+                        )
+                      }
+                    />
+                    <span className="pane-meta faint">
+                      <span className="truncate mono" title={active.cwd}>
+                        {active.cwd}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        {active.status}
+                        {active.pid ? ` · pid ${active.pid}` : ''}
+                      </span>
+                    </span>
+                  </div>
+                  <SessionRestartStatus session={active} />
+                  <span style={{ flex: 1 }} />
+                  <div className="project-terminal-actions">
+                    {active.terminal === 'pty' && <SessionProgress session={active} />}
+                    {active.status === 'running' && active.terminal === 'pty' && (
+                      <SessionImageButton
+                        sessionId={active.id}
+                        pasteRef={pasteRef}
+                        onError={setError}
+                        className="icon-btn"
+                      />
+                    )}
+                    {active.status === 'running' ? (
+                      <>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Restart ${active.name}`}
+                          title="Restart session (stop, then start)"
+                          disabled={
+                            restarting ||
+                            (!!active.restartProgress && active.restartProgress !== 'failed')
+                          }
+                          onClick={async () => {
+                            setRestarting(true);
+                            try {
+                              await changeSession(() => api.restartSession(active.id));
+                            } finally {
+                              setRestarting(false);
                             }
-                          },
-                          onResize: (cols: number, rows: number) => {
-                            api.resizeSession(active.id, cols, rows).catch(() => undefined);
-                          },
-                        }
-                      : {})}
-                  />
-                </Suspense>
-                {active.terminal === 'pty' ? (
-                  <p className="faint" style={{ margin: '6px 0 0', fontSize: 12.5 }}>
-                    Click the terminal and type: keystrokes (including Ctrl+C and arrow keys) go
-                    straight to the session.
-                    {active.status !== 'running' &&
-                      ' The session is down; input queues until it restarts.'}
-                  </p>
-                ) : (
-                  <form className="terminal-input" onSubmit={sendInput}>
+                          }}
+                        >
+                          {restarting ? (
+                            <span className="spinner" aria-hidden="true" />
+                          ) : (
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              aria-hidden="true"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M20 7v5h-5M20 12a8 8 0 1 0-2 6M20 7l-2 2" />
+                            </svg>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="Stop session"
+                          disabled={restarting}
+                          onClick={() => changeSession(() => api.stopSession(active.id))}
+                        >
+                          ■
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Start session"
+                        onClick={() => changeSession(() => api.startSession(active.id))}
+                      >
+                        ▶
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title={dockMax ? 'Restore layout' : 'Maximise pane'}
+                      aria-pressed={dockMax}
+                      onClick={() => setDockMax((v) => !v)}
+                    >
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d={
+                            dockMax
+                              ? 'M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5'
+                              : 'M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5'
+                          }
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn project-terminal-close"
+                    title="Close terminal view (keeps the session running)"
+                    aria-label="Close terminal view"
+                    onClick={() => {
+                      setDockMax(false);
+                      setSelected(null);
+                    }}
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      aria-hidden="true"
+                    >
+                      <path d="m6 6 12 12M18 6 6 18" />
+                    </svg>
+                  </button>
+                </header>
+                <div className="pane-body">
+                  <Suspense
+                    fallback={<div className="terminal skeleton" style={{ height: '100%' }} />}
+                  >
+                    <TerminalView
+                      key={`${active.id}-${active.terminal}-${active.startedAt}`}
+                      historyBytes={active.logBytes}
+                      stopped={active.terminal === 'pty' && active.status !== 'running'}
+                      height="100%"
+                      fetchOutput={(after) => api.sessionOutput(active.id, after)}
+                      streamUrl={(after) => api.sessionStreamUrl(active.id, after)}
+                      paused={!visible}
+                      {...(active.terminal === 'pty'
+                        ? {
+                            pasteRef,
+                            onImage: (file: File) =>
+                              sendImageToSession(active.id, file, pasteRef.current).catch(
+                                (e: Error) => setError(e.message),
+                              ),
+                            // A stopped session only queues real typing, not the terminal's auto-replies.
+                            onInput: (data: string) => {
+                              if (active.status === 'running' || !isTerminalReport(data)) {
+                                sendKeys(active.id, data);
+                              }
+                            },
+                            onResize: (cols: number, rows: number) => {
+                              api.resizeSession(active.id, cols, rows).catch(() => undefined);
+                            },
+                          }
+                        : {})}
+                    />
+                  </Suspense>
+                </div>
+                {active.terminal !== 'pty' && (
+                  <form className="pane-input" onSubmit={sendInput}>
                     <input
                       className="input mono"
                       value={input}
@@ -388,60 +686,106 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                   </form>
                 )}
                 {queuedNote && (
-                  <div className="notice" role="status">
+                  <div className="notice" role="status" style={{ margin: '6px 0 0' }}>
                     <span>Queued — it flushes into the session when the process is back.</span>
                     <button className="btn btn-sm" onClick={() => setQueuedNote(false)}>
                       Dismiss
                     </button>
                   </div>
                 )}
-              </div>
-            )}
-            {activeRun && (
-              <div className="runs">
-                <RunCard
-                  run={activeRun}
-                  now={now}
-                  paused={!visible}
-                  onChanged={upsertRun}
-                  onDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
-                />
-              </div>
-            )}
-          </div>
-        )}
-        {work === null ? (
-          <div className="skeleton" style={{ height: 120 }} />
-        ) : work.length === 0 ? (
-          <p className="faint" style={{ margin: 0 }}>
-            Nothing yet. Start a terminal session above, or open a card on the Board and hand it to
-            an agent.
-          </p>
-        ) : (
-          <AgentWorkList
-            items={work}
-            selected={selected}
-            onSelect={setSelected}
-            now={now}
-            tokens={usage}
-            actions={sessionActions}
-            onRename={(w, name) =>
-              w.kind === 'session'
-                ? changeSession(() => api.patchSession(w.item.id, { name }))
-                : api.renameRun(w.item.id, name).then(upsertRun, (e: Error) => setError(e.message))
-            }
-          />
-        )}
-      </section>
-      {/* Plan usage in its own slim section under Agent work and its terminal (PM-42). */}
-      {work && <LimitsStrip providerIds={[...new Set(work.map((w) => w.item.providerId))]} />}
+              </section>
+            </>
+          )}
 
-      <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
-        Sessions run on this machine as your user, rooted in the project folder by default, and only
-        answer this page — the API refuses anything but same-machine requests. Sessions keep running
-        when ProjectManager restarts, relaunch after crashes and reboots, and are only removed when
-        you stop or delete them; input typed while one is down waits in a durable queue.
-      </p>
+          {activeRun && (
+            <section className="pane pane-run">
+              <header className="pane-head" style={{ marginBottom: 8 }}>
+                <span style={{ fontWeight: 600 }}>Review: {activeRun.name}</span>
+                <span style={{ flex: 1 }} />
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Close run view"
+                  aria-label="Close run view"
+                  onClick={() => setSelected(null)}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m6 6 12 12M18 6 6 18" />
+                  </svg>
+                </button>
+              </header>
+              <RunCard
+                run={activeRun}
+                now={now}
+                paused={!visible}
+                onChanged={upsertRun}
+                onDeleted={(id) => {
+                  setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev);
+                  setSelected(null);
+                }}
+              />
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SessionsInfoButton() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('pointerdown', onClick);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onClick);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="info-wrap" ref={ref}>
+      <button
+        type="button"
+        className={`icon-btn info-btn${open ? ' is-active' : ''}`}
+        title="About sessions and runs"
+        aria-label="About sessions and runs"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <InfoIcon size={14} />
+      </button>
+      {open && (
+        <div className="info-popup panel" role="tooltip">
+          <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5 }}>
+            Sessions run on this machine as your user, rooted in the project folder by default, and
+            only answer this page — the API refuses anything but same-machine requests. Sessions
+            keep running when ProjectManager restarts, relaunch after crashes and reboots, and are
+            only removed when you stop or delete them; input typed while one is down waits in a
+            durable queue.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -567,11 +911,12 @@ function NewSessionForm({
 
 const SELECTION_KEY = 'pm.agents.selected';
 
-/** The session or run last selected on this project's Agents tab (null if none). */
-function readSelection(projectId: number): WorkKey | null {
+/** The session or run last selected on this project's Agents tab (null if none, 'closed' if explicitly closed). */
+function readSelection(projectId: number): WorkKey | null | 'closed' {
   try {
     const all = JSON.parse(localStorage.getItem(SELECTION_KEY) ?? '{}') as Record<string, string>;
     const value = all[projectId];
+    if (value === 'closed') return 'closed';
     return value && /^(session|run):\d+$/.test(value) ? (value as WorkKey) : null;
   } catch {
     return null;
@@ -582,7 +927,7 @@ function saveSelection(projectId: number, key: WorkKey | null): void {
   try {
     const all = JSON.parse(localStorage.getItem(SELECTION_KEY) ?? '{}') as Record<string, string>;
     if (key) all[projectId] = key;
-    else delete all[projectId];
+    else all[projectId] = 'closed';
     localStorage.setItem(SELECTION_KEY, JSON.stringify(all));
   } catch {
     // Remembering the selection is a convenience only.

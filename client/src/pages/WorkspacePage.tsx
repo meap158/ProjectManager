@@ -1515,6 +1515,7 @@ function WorkList({
             items={items}
             selected={selected}
             onSelect={(key: WorkKey) => onSelect(key === selected ? null : key)}
+            onNavigate={(key: WorkKey) => onSelect(key)}
             now={now}
             tokens={usage}
             projectNames={projectName}

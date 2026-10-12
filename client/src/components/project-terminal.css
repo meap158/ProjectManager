@@ -1,0 +1,190 @@
+/* Project CLI sizing and identity are independent of the global workspace pane grid. */
+.project-cli-dock > .pane .project-terminal-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  height: auto;
+  min-height: 40px;
+  padding-block: 4px;
+  position: relative;
+}
+.project-terminal-head > .status-dot {
+  flex: 0 0 auto;
+  align-self: center;
+}
+.project-terminal-head > .pane-identity {
+  flex: 1 1 140px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px 8px;
+}
+.project-terminal-head .pane-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Resizing gives space back to the list above, preserving the bottom edge. */
+.project-agents.has-terminal {
+  height: calc(100dvh - 240px);
+  min-height: 500px;
+}
+.project-agents.has-terminal > .panel {
+  flex-shrink: 0;
+}
+.project-agents.has-terminal > .project-work-panel {
+  flex: 1 1 auto;
+  min-height: 100px;
+}
+.project-agents.has-terminal .project-work-panel .work-list-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+.project-agents.has-terminal > .project-cli-dock {
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+.project-dock-resizer {
+  touch-action: none;
+}
+@media (max-width: 768px) {
+  .project-agents.has-terminal {
+    height: calc(100dvh - 180px);
+    min-height: 500px;
+  }
+  .project-agents.has-terminal > .project-cli-dock {
+    height: var(--project-dock-height, 360px) !important;
+    min-height: 140px;
+  }
+  .project-cli-dock > .pane .project-terminal-head {
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr) 44px;
+    gap: 2px 6px;
+    padding: 2px 8px;
+    min-height: 48px;
+  }
+  .project-terminal-head > .status-dot {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .project-terminal-head > .pane-identity {
+    grid-column: 2;
+    grid-row: 1;
+    flex-wrap: nowrap;
+  }
+  .project-terminal-head > .project-terminal-close {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .project-terminal-head .pane-meta {
+    display: none;
+  }
+  .project-terminal-head > span[style]:not(.status-dot) {
+    display: none;
+  }
+  .project-terminal-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-end;
+    min-width: 0;
+    gap: 2px;
+  }
+  .project-terminal-actions .session-progress {
+    margin-right: auto;
+    font-size: 12px;
+  }
+  .project-terminal-head .icon-btn {
+    min-height: 44px;
+    min-width: 44px;
+    flex: 0 0 44px;
+    padding: 8px;
+  }
+  .project-terminal-head .session-restart-status {
+    position: absolute;
+    top: 100%;
+    right: 4px;
+    z-index: 2;
+    background: var(--surface);
+    font-size: 11px;
+    padding: 4px 6px;
+  }
+  .project-agents.has-terminal > .project-work-panel {
+    min-height: 190px;
+  }
+  .project-agents.has-terminal .project-work-panel .work-list-scroll {
+    min-height: 140px;
+  }
+  .project-work-panel .panel-header {
+    padding: 8px;
+    margin: 0;
+    min-height: 40px;
+  }
+  .project-work-panel .panel-header > .meta {
+    display: none;
+  }
+  .project-work-panel .panel-title-row h2 {
+    font-size: 14px;
+    margin: 0;
+  }
+  .project-work-panel .info-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+@media (min-width: 360px) and (max-width: 768px) {
+  .project-cli-dock > .pane .project-terminal-head {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 2px;
+    padding: 2px 4px;
+  }
+  .project-terminal-head > .pane-identity {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  .project-terminal-head .inline-rename {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .project-terminal-actions {
+    display: flex;
+    gap: 0;
+    flex: 0 0 auto;
+  }
+  .project-terminal-actions .session-progress {
+    margin: 0;
+  }
+  .project-terminal-actions .session-auto-continue {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    font-size: 0;
+  }
+  .project-terminal-actions .session-auto-continue::before {
+    content: 'Auto';
+    font-size: 11px;
+  }
+  .project-terminal-actions .session-auto-continue[aria-pressed='true'] {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .project-terminal-head > .project-terminal-close {
+    flex: 0 0 44px;
+  }
+  .project-terminal-actions .icon-btn,
+  .project-terminal-head > .project-terminal-close {
+    width: 44px;
+  }
+}

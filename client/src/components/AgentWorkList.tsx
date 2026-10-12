@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { AgentRun, AgentSession, AgentTokenUsage } from '../../../shared/types';
 import {
   formatBytes,
@@ -216,6 +216,7 @@ export function AgentWorkList({
   items,
   selected,
   onSelect,
+  onNavigate,
   now,
   tokens,
   projectNames,
@@ -225,6 +226,8 @@ export function AgentWorkList({
   items: WorkItem[];
   selected: WorkKey | null;
   onSelect: (key: WorkKey) => void;
+  /** Explicit navigation callback (e.g. keyboard shortcut) that selects without toggling off. */
+  onNavigate?: (key: WorkKey) => void;
   now: number;
   /** Token usage by session id, where the CLI exposes it. */
   tokens?: Record<number, AgentTokenUsage | null>;
@@ -234,8 +237,49 @@ export function AgentWorkList({
   /** Rename a session or run straight from its row (click its name). */
   onRename?: (w: WorkItem, name: string) => Promise<unknown>;
 }) {
+  const selectedRowRef = useRef<HTMLLIElement | null>(null);
+
+  useEffect(() => {
+    if (selected && selectedRowRef.current) {
+      selectedRowRef.current.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [selected]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') &&
+        !target.classList.contains('xterm-helper-textarea')
+      ) {
+        return;
+      }
+      if (items.length === 0) return;
+      e.preventDefault();
+      const currentIdx = selected ? items.findIndex((w) => workKey(w) === selected) : -1;
+      const delta = e.key === 'ArrowDown' ? 1 : -1;
+      let nextIdx: number;
+      if (currentIdx === -1) {
+        nextIdx = delta === 1 ? 0 : items.length - 1;
+      } else {
+        nextIdx = (currentIdx + delta + items.length) % items.length;
+      }
+      const nextKey = workKey(items[nextIdx]!);
+      if (onNavigate) {
+        onNavigate(nextKey);
+      } else {
+        onSelect(nextKey);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [items, selected, onSelect, onNavigate]);
+
   return (
-    <ul className="list work-list">
+    <ul className="list work-list" aria-label="Agent sessions and runs">
       {items.map((w) => {
         const key = workKey(w);
         const state = stateLabel(w, now);
@@ -245,7 +289,12 @@ export function AgentWorkList({
             ? sessionFacts(w.item, now, tokens?.[w.item.id])
             : runFacts(w.item, now);
         return (
-          <li key={key} data-kind={w.kind} className={key === selected ? 'selected' : undefined}>
+          <li
+            key={key}
+            data-kind={w.kind}
+            className={key === selected ? 'selected' : undefined}
+            ref={key === selected ? selectedRowRef : undefined}
+          >
             {/* Clicking the row selects it; the name renames in place (its click stops here);
                 the select button keeps the row reachable from the keyboard. */}
             <div
@@ -263,6 +312,7 @@ export function AgentWorkList({
                   className="work-select"
                   aria-current={key === selected || undefined}
                   aria-label={`Show ${w.item.name}`}
+                  title="Select session (Ctrl+↑/↓ to navigate)"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSelect(key);
