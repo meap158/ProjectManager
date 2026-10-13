@@ -34,6 +34,15 @@ function readHandMode(): HandMode {
     return 'terminal';
   }
 }
+/** The CLI last chosen for handing a card over (PM-8), kept like the hand mode. */
+const PROVIDER_KEY = 'pm.card.provider';
+function readProvider(): string {
+  try {
+    return localStorage.getItem(PROVIDER_KEY) || 'claude';
+  } catch {
+    return 'claude';
+  }
+}
 const HAND_MODES: {
   value: HandMode;
   label: string;
@@ -113,7 +122,15 @@ export function CardDialog({
   const [sessionsProject, setSessionsProject] = useState<number | null>(null);
   const liveSessions = sessionsProject === effectiveProjectId ? loadedSessions : [];
   const [attachTo, setAttachTo] = useState<number | null>(null);
-  const [dispatchProvider, setDispatchProvider] = useState('claude');
+  const [dispatchProvider, setDispatchProviderState] = useState(readProvider);
+  const setDispatchProvider = (next: string) => {
+    setDispatchProviderState(next);
+    try {
+      localStorage.setItem(PROVIDER_KEY, next);
+    } catch {
+      // Remembering the choice is a convenience only.
+    }
+  };
   const [prompt, setPrompt] = useState('');
   // A run's permission level: the user's pick, else the configured level for the chosen agent
   // (Settings → Agent permissions), else Edit files.

@@ -95,3 +95,16 @@ it('keeps the dialog open and shows submission errors for retry', async () => {
   expect(onDispatched).not.toHaveBeenCalled();
   expect(screen.getByTestId('location').textContent).toBe('/board');
 });
+
+it('remembers the CLI chosen to hand a card to (PM-8)', async () => {
+  localStorage.setItem('pm.card.provider', 'codex');
+  vi.mocked(api.listProviders).mockResolvedValue([
+    { id: 'claude', name: 'Claude Code', binary: 'claude', available: true },
+    { id: 'codex', name: 'Codex', binary: 'codex', available: true },
+  ] as Awaited<ReturnType<typeof api.listProviders>>);
+  await openDialog();
+  fireEvent.click(screen.getByRole('radio', { name: /One-shot run/ }));
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Agent' }).textContent).toContain('Codex'),
+  );
+});
