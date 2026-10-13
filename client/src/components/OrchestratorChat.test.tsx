@@ -12,9 +12,18 @@ vi.mock('../api', () => ({
   },
 }));
 vi.mock('./OrchestratorTerminal', () => ({
-  OrchestratorTerminal: ({ session }: { session: AgentSession }) => (
+  OrchestratorTerminal: ({
+    session,
+    onSessionChanged,
+  }: {
+    session: AgentSession;
+    onSessionChanged?: (session: AgentSession) => void;
+  }) => (
     <div role="region" aria-label={session.name}>
       Inline terminal {session.id}
+      <button onClick={() => onSessionChanged?.({ ...session, status: 'killed' })}>
+        Simulate stopped response
+      </button>
     </div>
   ),
 }));
@@ -36,6 +45,33 @@ it('opens and hides master chat inline without navigating to Agents or stopping 
   fireEvent.click(screen.getByRole('button', { name: 'Hide chat' }));
   expect(screen.queryByRole('region')).toBeNull();
   expect(screen.queryByRole('link')).toBeNull();
+});
+
+it('unlocks agent selection immediately after the stopped response', async () => {
+  const current = {
+    id: 41,
+    name: 'Master chat',
+    providerId: 'codex',
+    status: 'running',
+  } as AgentSession;
+  vi.mocked(api.openOrchestratorChat).mockResolvedValueOnce(current);
+  render(
+    <OrchestratorChat
+      instance={
+        { id: 'master', name: 'Master', providers: ['codex', 'claude'] } as OrchestratorConfig
+      }
+      session={current}
+      disabled={false}
+      onChanged={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Simulate stopped response' }));
+  fireEvent.click(screen.getByRole('button', { name: /Orchestrator chat agent/ }));
+  expect(
+    screen.getByRole('option', { name: /Claude Code/ }).querySelector('button')!.disabled,
+  ).toBe(false);
+  expect(screen.getByText(/Stopped/)).toBeDefined();
 });
 
 it('explains why another agent cannot replace a running chat', () => {

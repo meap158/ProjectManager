@@ -48,6 +48,7 @@ export function OrchestratorChat({
   onChanged: () => void;
 }) {
   const [opened, setOpened] = useState<AgentSession | null>(null);
+  const [openedFrom, setOpenedFrom] = useState<AgentSession | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -70,6 +71,7 @@ export function OrchestratorChat({
       const opened = providerId
         ? await api.openOrchestratorChat(instance.id, providerId)
         : await api.openOrchestratorChat(instance.id);
+      setOpenedFrom(session);
       setOpened(opened);
       setTerminalOpen(true);
       onChanged();
@@ -78,10 +80,12 @@ export function OrchestratorChat({
     run(focus, async () => {
       const chat = await api.checkOrchestrator(instance.id, focus);
       setSent({ sessionId: chat.id, label });
+      setOpenedFrom(session);
       setOpened(chat);
       onChanged();
     });
-  const activeSession = opened && session?.id === opened.id ? session : (opened ?? session);
+  const activeSession =
+    opened && session?.id === opened.id && session !== openedFrom ? session : (opened ?? session);
   return (
     <div className="orchestrator-chat" aria-label={`${instance.name} chat`}>
       <div className="orchestrator-chat-head">
@@ -167,7 +171,14 @@ export function OrchestratorChat({
         </p>
       )}
       {terminalOpen && activeSession && (
-        <OrchestratorTerminal session={activeSession} onChanged={onChanged} />
+        <OrchestratorTerminal
+          session={activeSession}
+          onChanged={onChanged}
+          onSessionChanged={(next) => {
+            setOpenedFrom(session);
+            setOpened(next);
+          }}
+        />
       )}
       {error && (
         <p className="error-banner" role="alert">

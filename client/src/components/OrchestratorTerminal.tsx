@@ -13,9 +13,11 @@ const TerminalView = lazy(() =>
 export function OrchestratorTerminal({
   session,
   onChanged,
+  onSessionChanged,
 }: {
   session: AgentSession;
   onChanged: () => void;
+  onSessionChanged?: (session: AgentSession) => void;
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -23,7 +25,8 @@ export function OrchestratorTerminal({
     setBusy(true);
     setError('');
     try {
-      await action();
+      const next = await action();
+      onSessionChanged?.(next);
       onChanged();
     } catch (e) {
       setError((e as Error).message);

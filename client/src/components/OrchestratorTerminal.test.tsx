@@ -23,10 +23,12 @@ const session = {
 it('stops the master and refreshes its state only after success', async () => {
   vi.mocked(api.stopSession).mockResolvedValue({ ...session, status: 'killed' });
   const refresh = vi.fn();
-  render(<OrchestratorTerminal session={session} onChanged={refresh} />);
+  const changed = vi.fn();
+  render(<OrchestratorTerminal session={session} onChanged={refresh} onSessionChanged={changed} />);
   fireEvent.click(screen.getByRole('button', { name: 'Stop Master' }));
   await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
   expect(api.stopSession).toHaveBeenCalledWith(41);
+  expect(changed).toHaveBeenCalledWith(expect.objectContaining({ id: 41, status: 'killed' }));
 });
 it('reports stop failures and keeps lifecycle controls available', async () => {
   vi.mocked(api.stopSession).mockRejectedValue(new Error('Connection interrupted'));
