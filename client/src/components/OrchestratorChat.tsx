@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PROVIDER_LABELS } from './icons';
 import { OrchestratorTerminal } from './OrchestratorTerminal';
 import { api } from '../api';
 import type { AgentSession } from '../../../shared/types';
@@ -63,9 +64,11 @@ export function OrchestratorChat({
       setWorking(null);
     }
   };
-  const open = () =>
+  const open = (providerId?: string) =>
     run('open', async () => {
-      const opened = await api.openOrchestratorChat(instance.id);
+      const opened = providerId
+        ? await api.openOrchestratorChat(instance.id, providerId)
+        : await api.openOrchestratorChat(instance.id);
       setOpened(opened);
       setTerminalOpen(true);
       onChanged();
@@ -89,6 +92,30 @@ export function OrchestratorChat({
           </p>
         </div>
         <div className="orchestrator-chat-open">
+          <label>
+            <span className="faint">Agent </span>
+            <select
+              aria-label="Orchestrator chat agent"
+              title="Changing agents opens a separate chat"
+              disabled={busy}
+              value={
+                activeSession?.providerId ??
+                instance.providers?.find((p) =>
+                  ['claude', 'codex', 'opencode', 'antigravity'].includes(p),
+                ) ??
+                ''
+              }
+              onChange={(event) => void open(event.target.value)}
+            >
+              {(instance.providers ?? [])
+                .filter((p) => ['claude', 'codex', 'opencode', 'antigravity'].includes(p))
+                .map((provider) => (
+                  <option key={provider} value={provider}>
+                    {PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] ?? provider}
+                  </option>
+                ))}
+            </select>
+          </label>
           <span
             className={`orchestrator-chat-state${session?.status === 'running' ? ' is-live' : ''}`}
           >

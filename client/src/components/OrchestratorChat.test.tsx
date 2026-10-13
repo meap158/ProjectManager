@@ -37,3 +37,27 @@ it('opens and hides master chat inline without navigating to Agents or stopping 
   expect(screen.queryByRole('region')).toBeNull();
   expect(screen.queryByRole('link')).toBeNull();
 });
+
+it('offers only configured chat agents and opens the chosen provider', async () => {
+  render(
+    <OrchestratorChat
+      instance={
+        {
+          id: 'master',
+          name: 'Master',
+          providers: ['codex', 'claude', 'grok'],
+        } as OrchestratorConfig
+      }
+      session={{ id: 1, providerId: 'codex', status: 'killed' } as AgentSession}
+      disabled={false}
+      onChanged={() => {}}
+    />,
+  );
+  const selector = screen.getByRole('combobox', { name: 'Orchestrator chat agent' });
+  expect(
+    screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value),
+  ).toEqual(['codex', 'claude']);
+  fireEvent.change(selector, { target: { value: 'claude' } });
+  expect(await screen.findByRole('region', { name: 'Master chat' })).toBeDefined();
+  expect(api.openOrchestratorChat).toHaveBeenLastCalledWith('master', 'claude');
+});

@@ -9,7 +9,7 @@ chronological findings later in this document preserve earlier implementation ev
 | Controls and convenience | Scoped Check now, paged read-only preview, pending-work queue/run actions, card/worker links, Pause/Observe/Autonomous modes, manual chat tools                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                                          |
 | Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Partial-index migration committed with upgrade/query-plan regression; measure whole API/tick and index write cost; versioned summary and situation pagination |
 | Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                              |
-| Evaluation               | Full regression suite: 566 tests / 111 files pass, including four process-boundary cases; server and client types and targeted lint passed                                                                  | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                                                                     |
+| Evaluation               | Full regression suite: 566 tests / 111 files pass, including four process-boundary cases; server and client types and targeted lint passed                                                                  | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                         |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -458,3 +458,11 @@ Fourteen focused supervisor/service tests pass; the isolated real-supervisor fix
 complete equality against individual hydration and exactly one prepared SQL read. Empty
 identity lists issue no read. Existing log-size checks and JSON decoding remain per run;
 this is SQL-read reduction, not a measured LAN latency improvement or narrow summary payload.
+
+## Scoped chat-agent selector, 2026-10-14
+
+Orchestrator chat now offers configured supported chat providers in an agent selector.
+Selecting another provider opens its own chat; server open requests reject providers outside
+configuration and default selection no longer falls back to unconfigured providers. Existing
+same-provider chats resume when allowed. Seventeen focused chat UI/tool tests pass, including
+selector options and scope rejection. Cross-provider conversation transfer is not implemented.

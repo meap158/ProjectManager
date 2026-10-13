@@ -457,3 +457,14 @@ it('recovers the completed run after a lost response without dispatching a done 
     db.close();
   }
 });
+
+it('rejects chat providers outside configured scope and does not fall back to unconfigured agents', async () => {
+  const { chat, db, instance } = setup();
+  try {
+    await expect(chat.open(instance.id, 'claude')).rejects.toThrow(/configured provider/);
+    instance.providers = ['grok'];
+    await expect(chat.open(instance.id)).rejects.toThrow(/chat needs/);
+  } finally {
+    db.close();
+  }
+});

@@ -218,9 +218,15 @@ export class OrchestratorChat implements OrchestratorToolHost {
   /** Opens the orchestrator's chat: reuses its session (restarting it if stopped) or starts one. */
   async open(id: string, providerId?: string, prompt?: string): Promise<AgentSession> {
     const instance = this.instance(id);
+    if (providerId && !instance.providers.includes(providerId))
+      throw new AgentError(400, `Choose a configured provider: ${instance.providers.join(', ')}`);
     const cwd = this.writeBriefing(instance);
     const existing = this.session(id);
-    if (existing && (!providerId || providerId === existing.providerId)) {
+    if (
+      existing &&
+      instance.providers.includes(existing.providerId) &&
+      (!providerId || providerId === existing.providerId)
+    ) {
       return existing.status === 'running' ? existing : this.supervisor.startSession(existing.id);
     }
     const home = this.scope(instance)[0];
@@ -229,11 +235,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
       (await providerStatuses()).filter((p) => p.available).map((p) => p.id),
     );
     const provider =
-      providerId ??
-      [...instance.providers, ...CHAT_PROVIDERS].find(
-        (p) => CHAT_PROVIDERS.includes(p) && available.has(p),
-      );
-    if (!provider || !CHAT_PROVIDERS.includes(provider))
+      providerId ?? instance.providers.find((p) => CHAT_PROVIDERS.includes(p) && available.has(p));
+    if (!provider || !CHAT_PROVIDERS.includes(provider) || !available.has(provider))
       throw new AgentError(
         400,
         `The orchestrator chat needs one of: ${CHAT_PROVIDERS.join(', ')} (installed)`,
