@@ -451,6 +451,33 @@ export interface ScreenInfo {
   mode: string | null;
   /** Background agents and shells it runs: "general-purpose · 6m 16s · ↓ 113.8k". */
   background: string[];
+  /** Claude Code's goal line: "/goal active (26m)". */
+  goal: string | null;
+}
+
+/** Which mode it is, for its colour as in the CLI (PM-134). */
+export function modeKind(mode: string): 'auto' | 'plan' | 'accept' | 'bypass' | 'other' {
+  return /auto/i.test(mode)
+    ? 'auto'
+    : /plan/i.test(mode)
+      ? 'plan'
+      : /accept/i.test(mode)
+        ? 'accept'
+        : /bypass/i.test(mode)
+          ? 'bypass'
+          : 'other';
+}
+
+/**
+ * The status line split the way the CLI draws it (PM-134): the activity ("Finagling…", in the
+ * CLI's accent) and its details in brackets ("(7m 49s · ↓ 7.8k tokens)", muted). Special
+ * characters (…, ·, ↓) are kept as they are.
+ */
+export function statusParts(status: string): { activity: string; details: string } {
+  const at = status.indexOf(' (');
+  return at > 0
+    ? { activity: status.slice(0, at), details: status.slice(at + 1) }
+    : { activity: status, details: '' };
 }
 
 const SPINNER = /^[✻✶✢✽✳✺✹✸✷*·•◦⋆✦]\s*(?=\p{L})/u;
@@ -469,7 +496,7 @@ const clean = (s: string) =>
  */
 export function screenInfo(screen: string): ScreenInfo {
   const raw = screen.split('\n');
-  const info: ScreenInfo = { status: null, mode: null, background: [] };
+  const info: ScreenInfo = { status: null, mode: null, background: [], goal: null };
   for (let i = 0; i < raw.length; i++) {
     const line = raw[i]!.trim();
     if (!line) continue;
@@ -485,6 +512,13 @@ export function screenInfo(screen: string): ScreenInfo {
         text += ` ${raw[++i]!.trim()}`;
       return text;
     };
+    // Claude Code's goal line, on a line of its own (often after the input box's rule):
+    // "◎ /goal active (26m)".
+    const goal = /◎\s*(\/goal\b[^─━│]*?)\s*[─━│]*$/.exec(line);
+    if (goal) {
+      info.goal = goal[1]!.replace(/\s+/g, ' ').trim();
+      continue;
+    }
     const mode = /\b(auto mode|plan mode|accept edits|bypass permissions)\b[^(·]*\bon\b/i.exec(
       line,
     );
@@ -684,7 +718,9 @@ export function SessionChat({
       stop();
     };
   }, [id, live, asking, working]);
-  const shown = live ? screenInfo(screen) : { status: null, mode: null, background: [] };
+  const shown: ScreenInfo = live
+    ? screenInfo(screen)
+    : { status: null, mode: null, background: [], goal: null };
   const status = shown.status;
 
   // Follow new messages while at the bottom; otherwise count them on a "new messages" pill.
@@ -1017,10 +1053,10 @@ export function SessionChat({
           </div>
         ))}
         {/* What the terminal shows live around its input (PM-122): status, mode, background. */}
-        {(working || status || shown.mode || shown.background.length > 0) && (
+        {(working || status || shown.mode || shown.goal || shown.background.length > 0) && (
           <div className="chat-live" role="status" aria-label="Session status">
             {(working || status) && (
-              <div className="chat-working">
+              <div className={working ? 'chat-working is-working' : 'chat-working'}>
                 {working && (
                   <span className="chat-dots" aria-hidden="true">
                     <i />
@@ -1028,7 +1064,18 @@ export function SessionChat({
                     <i />
                   </span>
                 )}
-                <span className="chat-status-line">{status ?? 'Working…'}</span>
+                <span className="chat-status-line">
+                  {status ? (
+                    <>
+                      <span className="chat-status-activity">{statusParts(status).activity}</span>
+                      {statusParts(status).details && (
+                        <span className="chat-status-details"> {statusParts(status).details}</span>
+                      )}
+                    </>
+                  ) : (
+                    'Working…'
+                  )}
+                </span>
               </div>
             )}
             {shown.background.length > 0 && (
@@ -1038,7 +1085,12 @@ export function SessionChat({
                 ))}
               </ul>
             )}
-            {shown.mode && <span className="chat-mode">{shown.mode}</span>}
+            {shown.goal && <span className="chat-goal">◎ {shown.goal}</span>}
+            {shown.mode && (
+              <span className={`chat-mode is-${modeKind(shown.mode)}`}>
+                {modeKind(shown.mode) === 'plan' ? '⏸' : '⏵⏵'} {shown.mode}
+              </span>
+            )}
           </div>
         )}
         {asking && (

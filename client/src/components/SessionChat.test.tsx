@@ -10,6 +10,8 @@ import {
   handOffDraft,
   isImageFile,
   screenInfo,
+  statusParts,
+  modeKind,
   statusLine,
 } from './SessionChat';
 
@@ -366,6 +368,7 @@ describe('screenInfo (PM-122)', () => {
       status: 'Waiting for 2 background agents to finish',
       mode: 'auto mode on',
       background: ['general-purpose · 6m 16s · ↓ 113.8k', 'general-purpose · 6m 16s · ↓ 96.9k'],
+      goal: null,
     });
   });
 
@@ -374,8 +377,34 @@ describe('screenInfo (PM-122)', () => {
       status: null,
       mode: null,
       background: [],
+      goal: null,
     });
     expect(screenInfo('• Working (2m 03s • esc to interrupt)').status).toBe('Working (2m 03s)');
+  });
+
+  it("reads Claude Code's goal line and splits the status line as the CLI colours it (PM-134)", () => {
+    const info = screenInfo(
+      [
+        '✻ Finagling… (7m 49s · ↓ 7.8k tokens · esc to interrupt)',
+        '────────────────────────────────────',
+        '>',
+        '──────────────── ◎ /goal active (26m) ─',
+        '  ⏵⏵ accept edits on (shift+tab to cycle)',
+      ].join('\n'),
+    );
+    expect(info.goal).toBe('/goal active (26m)');
+    expect(info.mode).toBe('accept edits on');
+    expect(statusParts(info.status!)).toEqual({
+      activity: 'Finagling…',
+      details: '(7m 49s · ↓ 7.8k tokens)',
+    });
+    expect(statusParts('Waiting for 2 background agents')).toEqual({
+      activity: 'Waiting for 2 background agents',
+      details: '',
+    });
+    expect(
+      ['auto mode on', 'plan mode on', 'accept edits on', 'bypass permissions on'].map(modeKind),
+    ).toEqual(['auto', 'plan', 'accept', 'bypass']);
   });
 });
 

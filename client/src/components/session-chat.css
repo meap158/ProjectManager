@@ -530,12 +530,60 @@
   animation: chat-pulse 1.2s ease-in-out infinite;
 }
 /* The permission mode: quiet text, not a coloured pill (owner: the pill was distracting). */
+/* Colours as the CLI draws them (PM-134): the activity in its accent, details muted, and each
+   mode in its own colour. */
+.chat-status-activity {
+  color: var(--brand-claude);
+}
+/* The CLI's shimmer: a lighter band sweeps across the activity word while it works. */
+.chat-working.is-working .chat-status-activity {
+  background: linear-gradient(
+      90deg,
+      var(--brand-claude) 0 40%,
+      color-mix(in srgb, var(--brand-claude) 45%, white) 50%,
+      var(--brand-claude) 60% 100%
+    )
+    0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: chat-shimmer 2.4s linear infinite;
+}
+@keyframes chat-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+.chat-status-details {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.chat-goal {
+  color: var(--series-3);
+  font-size: 11.5px;
+}
 .chat-mode {
   color: var(--text-3);
   font-size: 11.5px;
 }
+.chat-mode.is-auto {
+  color: var(--series-4);
+}
+.chat-mode.is-accept {
+  color: var(--series-7);
+}
+.chat-mode.is-plan {
+  color: var(--series-3);
+}
+.chat-mode.is-bypass {
+  color: var(--danger);
+}
 @media (prefers-reduced-motion: reduce) {
-  .chat-background li::before {
+  .chat-background li::before,
+  .chat-working.is-working .chat-status-activity {
     animation: none;
   }
 }
