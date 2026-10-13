@@ -29,6 +29,17 @@ it('retains old actionable work and pages owned history without unrelated newest
       historyIds: [],
       nextBefore: null,
     });
+    expect(workspaceRunIds(db, 'owner', [1], undefined, 1, 3)).toMatchObject({
+      ids: [501, 3, 2, 1],
+      focusFound: true,
+    });
+    expect(workspaceRunIds(db, 'owner', [1], undefined, 1, 500)).toMatchObject({
+      ids: [501, 2, 1],
+      focusFound: false,
+    });
+    expect(workspaceRunIds(db, 'owner', [1], undefined, 1, 999)).toMatchObject({
+      focusFound: false,
+    });
     expect(workspaceRunIds(db, 'missing', []).ids).toEqual([4, 2, 1]);
   } finally {
     db.close();

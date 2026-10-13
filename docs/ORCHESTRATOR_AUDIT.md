@@ -428,3 +428,13 @@ existing page actions and recovery from a failed history-page request. Physical 
 runs outside the current page, consolidated summary transport and narrow run hydration
 remain acceptance work. The automatic refresh cutoff finding is addressed for actionable
 runs by the new server selection, rather than by raising the old global history limit.
+
+## Historical run links, 2026-10-14
+
+Workspace run feeds accept a validated positive `focus` run identity. SQL includes the
+requested run only when persisted ownership matches the selected master; focused inclusion
+does not change history cursors or paging limits. The client passes its run URL parameter,
+fences responses by owner/cursor/focus and displays missing-owned-run feedback. Existing
+page/query/route/hook regressions passed (22 tests), followed by ten focused tests including
+new focus validation and missing-link feedback. A different owner's historical run cannot
+be injected through focus. Physical scroll/keyboard/mobile behavior remains unverified.

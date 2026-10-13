@@ -3,7 +3,12 @@ import { api } from '../api';
 import { serialPoll } from '../lib/serialPoll';
 
 /** Owner and cursor travel with results so a late response cannot populate another workspace. */
-export function useOrchestratorRuns(owner: string | undefined, refresh: number, paused: boolean) {
+export function useOrchestratorRuns(
+  owner: string | undefined,
+  refresh: number,
+  paused: boolean,
+  focus?: number,
+) {
   const [selection, setSelection] = useState<{ owner: string; cursors: (number | undefined)[] }>({
     owner: '',
     cursors: [undefined],
@@ -13,11 +18,13 @@ export function useOrchestratorRuns(owner: string | undefined, refresh: number, 
   const [result, setResult] = useState<{
     owner: string;
     before?: number;
+    focus?: number;
     data: Awaited<ReturnType<typeof api.orchestratorRuns>>;
   } | null>(null);
   const [failure, setFailure] = useState<{
     owner: string;
     before?: number;
+    focus?: number;
     message: string;
   } | null>(null);
   const [pending, setPending] = useState(false);
@@ -27,13 +34,13 @@ export function useOrchestratorRuns(owner: string | undefined, refresh: number, 
     const stop = serialPoll(async () => {
       if (active) setPending(true);
       try {
-        const data = await api.orchestratorRuns(owner, before);
+        const data = await api.orchestratorRuns(owner, before, focus);
         if (active) {
-          setResult({ owner, before, data });
+          setResult({ owner, before, focus, data });
           setFailure(null);
         }
       } catch (error) {
-        if (active) setFailure({ owner, before, message: (error as Error).message });
+        if (active) setFailure({ owner, before, focus, message: (error as Error).message });
       } finally {
         if (active) setPending(false);
       }
@@ -42,13 +49,22 @@ export function useOrchestratorRuns(owner: string | undefined, refresh: number, 
       active = false;
       stop();
     };
-  }, [owner, before, refresh, paused]);
-  const data = result && result.owner === owner && result.before === before ? result.data : null;
+  }, [owner, before, refresh, paused, focus]);
+  const data =
+    result && result.owner === owner && result.before === before && result.focus === focus
+      ? result.data
+      : null;
   const error =
-    failure && failure.owner === owner && failure.before === before ? failure.message : '';
+    failure && failure.owner === owner && failure.before === before && failure.focus === focus
+      ? failure.message
+      : '';
   return {
     runs: data?.runs ?? [],
-    error,
+    error:
+      error ||
+      (focus !== undefined && data?.focusFound === false
+        ? 'Linked run was not found in this Orchestrator.'
+        : ''),
     loading: pending || (!data && !error),
     next:
       data?.nextBefore == null

@@ -124,12 +124,33 @@ it('validates workspace run cursors before reading and preserves missing-owner r
   const workspaceRuns = vi.fn(() => ({ version: 1, runs: [], historyIds: [], nextBefore: null }));
   const app = new Hono();
   registerOrchestratorRoutes(app, { workspaceRuns } as unknown as OrchestratorService);
-  for (const query of ['before=0', 'before=-1', 'before=no', 'limit=0', 'limit=101', 'extra=1']) {
+  for (const query of [
+    'before=0',
+    'before=-1',
+    'before=no',
+    'limit=0',
+    'limit=101',
+    'focus=0',
+    'focus=no',
+    'extra=1',
+  ]) {
     expect((await app.request(`/orchestrators/owner/runs?${query}`)).status).toBe(400);
   }
   expect(workspaceRuns).not.toHaveBeenCalled();
   expect((await app.request('/orchestrators/owner/runs?before=40&limit=10')).status).toBe(200);
-  expect(workspaceRuns).toHaveBeenCalledExactlyOnceWith('owner', 40, 10);
+  expect(workspaceRuns).toHaveBeenCalledExactlyOnceWith('owner', 40, 10, undefined);
   workspaceRuns.mockReturnValueOnce(null as unknown as ReturnType<typeof workspaceRuns>);
   expect((await app.request('/orchestrators/missing/runs')).status).toBe(404);
+});
+
+it('validates and forwards a linked workspace run identity', async () => {
+  const workspaceRuns = vi.fn(() => ({ runs: [], focusFound: false }));
+  const app = new Hono();
+  registerOrchestratorRoutes(app, { workspaceRuns } as unknown as OrchestratorService);
+  for (const focus of ['0', '-1', 'no', '1.5']) {
+    expect((await app.request(`/orchestrators/owner/runs?focus=${focus}`)).status).toBe(400);
+  }
+  expect(workspaceRuns).not.toHaveBeenCalled();
+  expect((await app.request('/orchestrators/owner/runs?focus=3')).status).toBe(200);
+  expect(workspaceRuns).toHaveBeenCalledExactlyOnceWith('owner', undefined, 20, 3);
 });

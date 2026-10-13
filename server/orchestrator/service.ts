@@ -108,10 +108,10 @@ export class OrchestratorService {
   }
 
   /** Selected workspace run feed; old actionable work survives the history page limit. */
-  workspaceRuns(id: string, before?: number, limit = 20) {
+  workspaceRuns(id: string, before?: number, limit = 20, focus?: number) {
     const instance = this.state().instances.find((item) => item.id === id);
     if (!instance) return null;
-    const page = workspaceRunIds(this.db, id, instance.projectIds, before, limit);
+    const page = workspaceRunIds(this.db, id, instance.projectIds, before, limit, focus);
     return {
       version: 1 as const,
       generatedAt: new Date().toISOString(),

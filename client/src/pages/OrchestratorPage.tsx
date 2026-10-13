@@ -96,7 +96,13 @@ export function OrchestratorPage() {
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const runFeed = useOrchestratorRuns(selectedInstance?.id, runRefresh, busy);
+  const linkedRun = Number(search.get('run'));
+  const runFeed = useOrchestratorRuns(
+    selectedInstance?.id,
+    runRefresh,
+    busy,
+    Number.isSafeInteger(linkedRun) && linkedRun > 0 ? linkedRun : undefined,
+  );
   const runs = runFeed.runs;
   const [preview, setPreview] = useState<{
     id: string;

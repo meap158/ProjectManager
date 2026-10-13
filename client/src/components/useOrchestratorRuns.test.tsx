@@ -52,12 +52,12 @@ it('pages with the returned identity cursor and resets history on owner change',
   await waitFor(() => expect(result.current.next).toBeDefined());
   act(() => result.current.next!());
   await waitFor(() => expect(result.current.runs[0]?.id).toBe(20));
-  expect(api.orchestratorRuns).toHaveBeenLastCalledWith('one', 40);
+  expect(api.orchestratorRuns).toHaveBeenLastCalledWith('one', 40, undefined);
   act(() => result.current.previous!());
   await waitFor(() => expect(result.current.runs[0]?.id).toBe(40));
   rerender({ owner: 'two' });
   await waitFor(() => expect(result.current.runs[0]?.id).toBe(90));
-  expect(api.orchestratorRuns).toHaveBeenLastCalledWith('two', undefined);
+  expect(api.orchestratorRuns).toHaveBeenLastCalledWith('two', undefined, undefined);
   expect(result.current.page).toBe(1);
 });
 
@@ -75,4 +75,22 @@ it('allows returning from a failed history page rather than leaving navigation d
   act(() => result.current.previous!());
   await waitFor(() => expect(result.current.runs[0]?.id).toBe(40));
   expect(result.current.error).toBe('');
+});
+
+it('passes a historical link identity and reports a missing owned run', async () => {
+  vi.mocked(api.orchestratorRuns)
+    .mockResolvedValueOnce({ ...page(3), focusFound: true })
+    .mockResolvedValueOnce({ ...page(40), focusFound: false });
+  const { result, rerender } = renderHook(
+    ({ focus }) => useOrchestratorRuns('one', 0, false, focus),
+    { initialProps: { focus: 3 } },
+  );
+  await waitFor(() => expect(result.current.runs[0]?.id).toBe(3));
+  expect(api.orchestratorRuns).toHaveBeenLastCalledWith('one', undefined, 3);
+  rerender({ focus: 99 });
+  expect(result.current.runs).toEqual([]);
+  await waitFor(() =>
+    expect(result.current.error).toBe('Linked run was not found in this Orchestrator.'),
+  );
+  expect(api.orchestratorRuns).toHaveBeenLastCalledWith('one', undefined, 99);
 });
