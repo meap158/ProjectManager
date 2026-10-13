@@ -11,6 +11,7 @@ import type { OrchestratorService } from './service.js';
 import { OrchestratorChat, briefing } from './chat.js';
 import { readLimits } from '../agents/limits.js';
 import { OrchestratorAssignments } from './assignments.js';
+import { providerStatuses } from '../agents/providers.js';
 
 vi.mock('../agents/providers.js', () => ({
   providerStatuses: vi.fn(async () => [
@@ -471,6 +472,21 @@ it('does not send checks to a chat provider removed from configuration', async (
     expect(await chat.check(instance.id, 'review')).toBe(replacement);
     expect(open).toHaveBeenCalledWith(instance.id, undefined, expect.stringContaining('Review'));
     expect(supervisor.sendInput).not.toHaveBeenCalled();
+  } finally {
+    db.close();
+  }
+});
+
+it('rechecks configured chat providers after asynchronous discovery', async () => {
+  const { chat, db, instance } = setup();
+  try {
+    vi.spyOn(chat, 'session').mockReturnValue(null);
+    vi.mocked(providerStatuses).mockImplementationOnce(async () => {
+      instance.providers = ['claude'];
+      return [{ id: 'codex', available: true }] as Awaited<ReturnType<typeof providerStatuses>>;
+    });
+    await expect(chat.open(instance.id, 'codex')).rejects.toThrow(/configured provider/);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM agent_sessions').get()!.n).toBe(0);
   } finally {
     db.close();
   }

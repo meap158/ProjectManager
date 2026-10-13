@@ -217,7 +217,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
 
   /** Opens the orchestrator's chat: reuses its session (restarting it if stopped) or starts one. */
   async open(id: string, providerId?: string, prompt?: string): Promise<AgentSession> {
-    const instance = this.instance(id);
+    let instance = this.instance(id);
     if (providerId && !instance.providers.includes(providerId))
       throw new AgentError(400, `Choose a configured provider: ${instance.providers.join(', ')}`);
     const cwd = this.writeBriefing(instance);
@@ -234,6 +234,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
     const available = new Set(
       (await providerStatuses()).filter((p) => p.available).map((p) => p.id),
     );
+    // Discovery can yield while the user edits or deletes this master.
+    instance = this.instance(id);
+    if (providerId && !instance.providers.includes(providerId))
+      throw new AgentError(400, `Choose a configured provider: ${instance.providers.join(', ')}`);
+    const currentHome = this.scope(instance)[0];
+    if (!currentHome) throw new AgentError(400, 'This orchestrator has no projects in scope');
+    this.writeBriefing(instance);
     const provider =
       providerId ?? instance.providers.find((p) => CHAT_PROVIDERS.includes(p) && available.has(p));
     if (!provider || !CHAT_PROVIDERS.includes(provider) || !available.has(provider))
@@ -241,7 +248,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         400,
         `The orchestrator chat needs one of: ${CHAT_PROVIDERS.join(', ')} (installed)`,
       );
-    return this.supervisor.createSession(home.id, {
+    return this.supervisor.createSession(currentHome.id, {
       providerId: provider,
       name: `Orchestrator · ${instance.name}`.slice(0, 80),
       cwd,
