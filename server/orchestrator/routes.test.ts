@@ -119,3 +119,17 @@ it('validates pending pages before reading and passes bounded scope to the servi
   pending.mockReturnValueOnce(null as unknown as ReturnType<typeof pending>);
   expect((await app.request('/orchestrators/missing/pending')).status).toBe(404);
 });
+
+it('validates workspace run cursors before reading and preserves missing-owner responses', async () => {
+  const workspaceRuns = vi.fn(() => ({ version: 1, runs: [], historyIds: [], nextBefore: null }));
+  const app = new Hono();
+  registerOrchestratorRoutes(app, { workspaceRuns } as unknown as OrchestratorService);
+  for (const query of ['before=0', 'before=-1', 'before=no', 'limit=0', 'limit=101', 'extra=1']) {
+    expect((await app.request(`/orchestrators/owner/runs?${query}`)).status).toBe(400);
+  }
+  expect(workspaceRuns).not.toHaveBeenCalled();
+  expect((await app.request('/orchestrators/owner/runs?before=40&limit=10')).status).toBe(200);
+  expect(workspaceRuns).toHaveBeenCalledExactlyOnceWith('owner', 40, 10);
+  workspaceRuns.mockReturnValueOnce(null as unknown as ReturnType<typeof workspaceRuns>);
+  expect((await app.request('/orchestrators/missing/runs')).status).toBe(404);
+});

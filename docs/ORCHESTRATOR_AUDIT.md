@@ -403,3 +403,16 @@ and unreviewed runs plus bounded paginated history; test an old owned run beyond
 rows and owner isolation. Keep explicit review actions and populated-view error behavior.
 The multi-master route measurements are now recorded in ORCHESTRATOR_BENCHMARK.md; dispatch,
 write costs, physical mobile checks and stable snapshot pagination remain outstanding.
+
+## Workspace run feed foundation, 2026-10-14
+
+`GET /orchestrators/:id/runs` now exposes a versioned workspace run feed with a validated
+positive `before` identity cursor and bounded history limit (default 20, maximum 100).
+Scoped live and unreviewed runs are retained independently of the owned-history cap;
+history follows persisted ownership even after project scope changes. Unknown owners return
+404 and invalid page arguments are rejected before reads. Query regression retains old
+live/review work behind 500 unrelated rows, excludes unrelated history, and verifies that
+new insertion does not shift an older history cursor. Eighteen focused query/route/service
+tests pass. The page still uses the old global 200-row feed; client integration and selection
+race tests remain required. This endpoint currently hydrates returned runs through getRun;
+it is a correctness foundation, not the completed efficient summary endpoint.

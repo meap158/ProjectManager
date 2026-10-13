@@ -13,6 +13,7 @@ import type {
 } from '../../shared/orchestrator.js';
 import { buildSituation, cardContext } from './situation.js';
 import { listSituationRuns } from './situationRuns.js';
+import { workspaceRunIds } from './workspaceRuns.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
 import { liveRunProjects } from './liveProjects.js';
@@ -103,6 +104,22 @@ export class OrchestratorService {
       limit,
       items: items.slice(offset, offset + limit),
       nextOffset: offset + limit < items.length ? offset + limit : null,
+    };
+  }
+
+  /** Selected workspace run feed; old actionable work survives the history page limit. */
+  workspaceRuns(id: string, before?: number, limit = 20) {
+    const instance = this.state().instances.find((item) => item.id === id);
+    if (!instance) return null;
+    const page = workspaceRunIds(this.db, id, instance.projectIds, before, limit);
+    return {
+      version: 1 as const,
+      generatedAt: new Date().toISOString(),
+      ...page,
+      runs: page.ids.flatMap((runId) => {
+        const run = this.supervisor.getRun(runId);
+        return run ? [run] : [];
+      }),
     };
   }
 

@@ -82,6 +82,18 @@ export function registerOrchestratorRoutes(
     );
     return result ? c.json(result) : c.json({ error: 'Orchestrator not found' }, 404);
   });
+  app.get('/orchestrators/:id/runs', (c) => {
+    const parsed = z
+      .object({
+        before: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+      })
+      .strict()
+      .safeParse(c.req.query());
+    if (!parsed.success) return c.json({ error: 'Invalid run page' }, 400);
+    const page = service.workspaceRuns(c.req.param('id'), parsed.data.before, parsed.data.limit);
+    return page ? c.json(page) : c.json({ error: 'Orchestrator not found' }, 404);
+  });
   app.get('/orchestrators/:id/preview', async (c) => {
     const page = z
       .object({
