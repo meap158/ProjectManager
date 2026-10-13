@@ -12,6 +12,8 @@ import {
   screenInfo,
   statusParts,
   modeKind,
+  editDiff,
+  proposedPlan,
   statusLine,
 } from './SessionChat';
 
@@ -606,5 +608,50 @@ describe('loading (PM-127)', () => {
     resolve(transcript({}));
     expect(await screen.findByText('No messages yet. Send one below.')).toBeDefined();
     expect(screen.queryByRole('status', { name: 'Loading messages' })).toBeNull();
+  });
+});
+
+describe('edits and plans (PM-123)', () => {
+  it("shows Claude's edits and Codex's patches as diffs", () => {
+    const edit = JSON.stringify({ file_path: 'a.ts', old_string: 'one', new_string: 'two\nthree' });
+    expect(editDiff('Edit', edit)).toEqual([
+      { kind: 'file', text: 'a.ts' },
+      { kind: 'del', text: 'one' },
+      { kind: 'add', text: 'two' },
+      { kind: 'add', text: 'three' },
+    ]);
+    const patch = '*** Begin Patch\n*** Update File: b.ts\n@@\n keep\n-old\n+new\n*** End Patch';
+    expect(editDiff('apply_patch', patch)).toEqual([
+      { kind: 'file', text: 'Update File: b.ts' },
+      { kind: 'file', text: '@@' },
+      { kind: 'same', text: 'keep' },
+      { kind: 'del', text: 'old' },
+      { kind: 'add', text: 'new' },
+    ]);
+    expect(editDiff('Bash', '{"command":"ls"}')).toBeNull();
+    expect(editDiff('Edit', '{"file_path": "cut short')).toBeNull();
+  });
+
+  it('shows the plan Claude asks to approve as a card with its state', async () => {
+    expect(proposedPlan(JSON.stringify({ plan: '## Steps\n1. Do it' }))).toBe('## Steps\n1. Do it');
+    expect(proposedPlan('{}')).toBeNull();
+    vi.mocked(api.sessionTranscript).mockResolvedValue(
+      transcript({
+        items: [
+          {
+            id: 't1',
+            kind: 'tool',
+            toolId: 't1',
+            name: 'ExitPlanMode',
+            input: '{"plan":"Rename the field"}',
+            summary: '',
+            at: null,
+          },
+        ],
+      }),
+    );
+    render(<SessionChat session={session()} onError={() => {}} />);
+    expect((await screen.findByText(/waiting for your approval/)).textContent).toContain('Plan');
+    expect(screen.getByText('Rename the field')).toBeDefined();
   });
 });

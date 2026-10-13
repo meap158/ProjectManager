@@ -230,7 +230,13 @@ export function parseCodexLine(line: string): ChatItem[] {
 
 /** One line saying what a tool call does: the command, the file, the pattern… */
 export function toolSummary(name: string, input: unknown): string {
-  if (typeof input === 'string') return firstLine(input);
+  if (typeof input === 'string') {
+    // Codex's apply_patch: the files it changes, not its "*** Begin Patch" header.
+    const files = [...input.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) =>
+      m[1]!.trim(),
+    );
+    return files.length ? files.join(', ') : firstLine(input);
+  }
   if (!input || typeof input !== 'object') return '';
   const i = input as Record<string, unknown>;
   for (const key of [

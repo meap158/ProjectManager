@@ -749,3 +749,28 @@
   color: var(--danger);
   font-size: 12.5px;
 }
+
+/* File edits as diffs (PM-123): added and removed lines tinted, file headers emphasised. */
+.chat-diff span {
+  display: block;
+}
+.chat-diff .is-add {
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+  color: var(--text);
+}
+.chat-diff .is-del {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--text);
+}
+.chat-diff .is-file {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* The plan Claude asks to have approved when leaving plan mode. */
+.chat-proposed-plan {
+  border-color: var(--series-3);
+}
+.chat-proposed-plan-body {
+  overflow-wrap: anywhere;
+}

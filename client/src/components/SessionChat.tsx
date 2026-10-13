@@ -260,9 +260,68 @@ const Message = memo(function Message({ item }: { item: ChatItem }) {
   );
 });
 
+interface DiffLine {
+  kind: 'add' | 'del' | 'same' | 'file';
+  text: string;
+}
+const DIFF_LINES = 400;
+/**
+ * A file edit as a diff, like the CLIs show it (PM-123): Claude's Edit / MultiEdit / Write
+ * inputs and Codex's apply_patch. Null for other tools, or an input cut short.
+ */
+export function editDiff(name: string | undefined, input: string | undefined): DiffLine[] | null {
+  if (!input) return null;
+  const lines = (text: string, kind: DiffLine['kind']) =>
+    text.split('\n').map((t) => ({ kind, text: t }));
+  let out: DiffLine[] | null = null;
+  if (name === 'apply_patch' || input.startsWith('*** Begin Patch')) {
+    out = input
+      .split('\n')
+      .filter((t) => !/^\*\*\* (Begin|End) Patch/.test(t))
+      .map((t) =>
+        t.startsWith('*** ') || t.startsWith('@@')
+          ? { kind: 'file' as const, text: t.replace(/^\*\*\* /, '') }
+          : t.startsWith('+')
+            ? { kind: 'add' as const, text: t.slice(1) }
+            : t.startsWith('-')
+              ? { kind: 'del' as const, text: t.slice(1) }
+              : { kind: 'same' as const, text: t.replace(/^ /, '') },
+      );
+  } else if (name === 'Edit' || name === 'MultiEdit' || name === 'Write') {
+    try {
+      const o = JSON.parse(input) as {
+        file_path?: string;
+        old_string?: string;
+        new_string?: string;
+        content?: string;
+        edits?: { old_string?: string; new_string?: string }[];
+      };
+      const edits =
+        name === 'Write'
+          ? [{ old_string: '', new_string: o.content ?? '' }]
+          : (o.edits ?? [{ old_string: o.old_string, new_string: o.new_string }]);
+      out = [{ kind: 'file', text: o.file_path ?? '' }];
+      for (const e of edits) {
+        if (e.old_string) out.push(...lines(e.old_string, 'del'));
+        if (e.new_string) out.push(...lines(e.new_string, 'add'));
+      }
+    } catch {
+      return null;
+    }
+  }
+  if (!out) return null;
+  return out.length > DIFF_LINES
+    ? [
+        ...out.slice(0, DIFF_LINES),
+        { kind: 'file', text: `… ${out.length - DIFF_LINES} more lines` },
+      ]
+    : out;
+}
+
 const ToolCall = memo(function ToolCall({ entry }: { entry: Entry }) {
   const { item, result } = entry;
   const state = !result ? 'running' : result.isError ? 'error' : 'done';
+  const diff = editDiff(item.name, item.input);
   return (
     <details className={`chat-tool is-${state}`}>
       <summary>
@@ -270,11 +329,26 @@ const ToolCall = memo(function ToolCall({ entry }: { entry: Entry }) {
         <span className="chat-tool-name">{item.name}</span>
         <span className="chat-tool-summary">{item.summary}</span>
       </summary>
-      {item.input && (
+      {diff ? (
         <>
-          <div className="chat-tool-label">Input</div>
-          <pre className="chat-code">{item.input}</pre>
+          <div className="chat-tool-label">Changes</div>
+          <pre className="chat-code chat-diff">
+            {diff.map((l, i) => (
+              <span key={i} className={`is-${l.kind}`}>
+                {l.kind === 'add' ? '+ ' : l.kind === 'del' ? '- ' : l.kind === 'same' ? '  ' : ''}
+                {l.text}
+                {'\n'}
+              </span>
+            ))}
+          </pre>
         </>
+      ) : (
+        item.input && (
+          <>
+            <div className="chat-tool-label">Input</div>
+            <pre className="chat-code">{item.input}</pre>
+          </>
+        )
       )}
       {result && (
         <>
@@ -293,7 +367,17 @@ type Block = { kind: 'message'; entry: Entry } | { kind: 'steps'; id: string; st
  * Tool calls that speak to you rather than do work (PM-123): a question with options, or the
  * agent's plan / to-do list. They show as their own cards, never folded into "N steps".
  */
-const SPEAKING_TOOLS = new Set(['AskUserQuestion', 'TodoWrite', 'update_plan']);
+const SPEAKING_TOOLS = new Set(['AskUserQuestion', 'TodoWrite', 'update_plan', 'ExitPlanMode']);
+
+/** The plan Claude asks you to approve when leaving plan mode (ExitPlanMode's input). */
+export function proposedPlan(input: string | undefined): string | null {
+  try {
+    const plan = (JSON.parse(input ?? '') as { plan?: unknown }).plan;
+    return typeof plan === 'string' && plan.trim() ? plan : null;
+  } catch {
+    return null;
+  }
+}
 
 interface PlanStep {
   text: string;
@@ -370,6 +454,19 @@ const SpeakingTool = memo(function SpeakingTool({ entry }: { entry: Entry }) {
         {result?.text && (
           <div className="chat-question-answer">Answered: {result.text.slice(0, 300)}</div>
         )}
+      </div>
+    );
+  }
+  if (item.name === 'ExitPlanMode') {
+    const plan = proposedPlan(item.input);
+    if (!plan) return <ToolCall entry={entry} />;
+    return (
+      <div className="chat-card chat-proposed-plan">
+        <div className="chat-card-title">
+          Plan ·{' '}
+          {!result ? 'waiting for your approval' : result.isError ? 'not approved' : 'approved'}
+        </div>
+        <div className="chat-proposed-plan-body">{renderText(plan)}</div>
       </div>
     );
   }
