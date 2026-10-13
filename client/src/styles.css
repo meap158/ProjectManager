@@ -5952,3 +5952,31 @@ span.path-link:hover .path-icon {
   padding-top: 0;
   border-top: 0;
 }
+
+/* Desktop row metadata shares stable columns regardless of badge or status length. */
+@media (min-width: 769px) {
+  .work-list .work-side {
+    display: grid;
+    grid-template-columns: 64px 148px auto;
+    align-items: center;
+    column-gap: 12px;
+    padding-right: 6px;
+  }
+  .work-list .work-card-slot {
+    width: 64px;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .work-list .work-state {
+    min-width: 0;
+    width: 148px;
+    margin: 0;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .work-list .work-card-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
