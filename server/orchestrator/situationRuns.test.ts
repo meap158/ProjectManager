@@ -56,11 +56,15 @@ it('keeps live, all unreviewed and latest active-card runs without unrelated his
     expect(listSituationRuns(db, [99])).toEqual([]);
 
     expect(situationRunIds(db, [2])).toEqual([9, 8]);
+    expect(listSituationRuns(db, [2], false).map((r) => r.id)).toEqual([8]);
+    expect(listSituationRuns(db, [], false).map((r) => r.id)).toEqual([8, 7, 6, 5, 4]);
+    expect(listSituationRuns(db, [99], false)).toEqual([]);
     expect(situationRunIds(db)).toEqual([9, 8, 7, 6, 5, 4]);
     expect(situationRunIds(db, [])).toEqual(situationRunIds(db));
     expect(situationRunIds(db, [99])).toEqual([]);
     db.prepare('DELETE FROM agent_runs WHERE id IN (6, 7)').run();
     expect(situationRunIds(db, [1])).toEqual([5, 4, 3]);
+    expect(listSituationRuns(db, [1], false).map((r) => r.id)).toEqual([5, 4]);
   } finally {
     db.close();
   }

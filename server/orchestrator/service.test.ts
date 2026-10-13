@@ -686,3 +686,56 @@ it('bounds pending transport and filters scope before paging without truncating 
     db.close();
   }
 });
+
+it('narrows pending SQL reads to an authorized project and rejects scope expansion', () => {
+  const db = openDb(':memory:');
+  try {
+    const listAllSessions = vi.fn(() => []);
+    const service = new OrchestratorService(
+      db,
+      { listAllSessions } as unknown as AgentSupervisor,
+      null,
+    );
+    const now = new Date().toISOString();
+    for (const id of [1, 2]) {
+      db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, ?)').run(
+        id,
+        `Project ${id}`,
+        `/fixture/${id}`,
+        now,
+      );
+      db.prepare(
+        "INSERT INTO cards (project_id, title, status, position, created_at, updated_at) VALUES (?, ?, 'in_progress', 0, ?, ?)",
+      ).run(id, `Task ${id}`, '2020-01-01', '2020-01-01');
+    }
+    const master = service.save({
+      name: 'Scoped',
+      enabled: false,
+      strategy: 'observe',
+      projectIds: [1],
+      providers: ['codex'],
+      maxWorkers: 2,
+      maxWorkersPerProject: 2,
+      maxWorkersPerProvider: 2,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
+    });
+    expect(service.pending(master.id, 0, 10, 2)).toMatchObject({ total: 0, items: [] });
+    expect(listAllSessions).not.toHaveBeenCalled();
+    service.save({ ...master, projectIds: [] });
+    const prepare = vi.spyOn(db, 'prepare');
+    expect(service.pending(master.id, 0, 10, 2)).toMatchObject({
+      total: 1,
+      items: [expect.objectContaining({ projectId: 2, title: expect.stringContaining('Task 2') })],
+    });
+    const reads = prepare.mock.calls.map(([sql]) => sql);
+    expect(reads.some((sql) => sql.includes('c.project_id IN (?)'))).toBe(true);
+    expect(
+      reads.some((sql) => sql.includes('project_id IN (?)') && sql.includes('agent_runs')),
+    ).toBe(true);
+    expect(service.pending('missing', 0, 10, 2)).toBeNull();
+  } finally {
+    db.close();
+  }
+});

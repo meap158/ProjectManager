@@ -61,18 +61,28 @@ export class OrchestratorService {
    * What this orchestrator sees of Home (PM-70): needs attention and being worked on, with the
    * identity to trace each item back. Limited to one master's projects when given.
    */
-  situation(instanceId?: string, includeWork = true): OrchestratorSituation | null {
+  situation(
+    instanceId?: string,
+    includeWork = true,
+    projectId?: number,
+  ): OrchestratorSituation | null {
     const instance = instanceId ? this.state().instances.find((i) => i.id === instanceId) : null;
     if (instanceId && !instance) return null;
+    // A drill-down narrows the configured scope; an empty scope means all projects,
+    // so reject disallowed filters before constructing any database projection.
+    if (projectId && instance?.projectIds.length && !instance.projectIds.includes(projectId)) {
+      return { generatedAt: new Date().toISOString(), needsAttention: [], beingWorkedOn: [] };
+    }
+    const projectIds = projectId ? [projectId] : instance?.projectIds;
     return buildSituation(
       {
         projects: this.attentionProjects?.() ?? [],
-        cards: listCardsInFlight(this.db, instance?.projectIds),
+        cards: listCardsInFlight(this.db, projectIds),
         sessions: this.supervisor.listAllSessions(),
-        runs: listSituationRuns(this.db, instance?.projectIds),
+        runs: listSituationRuns(this.db, projectIds, includeWork),
         dismissed: (projectId) => getDismissedAttention(this.db, projectId),
         screen: (sessionId) => this.supervisor.sessionScreen(sessionId),
-        projectIds: instance?.projectIds,
+        projectIds,
       },
       includeWork,
     );
@@ -80,7 +90,7 @@ export class OrchestratorService {
 
   /** Bounded transport for pending-work inspection; internal planning keeps the full situation. */
   pending(id: string, offset = 0, limit = 20, projectId?: number) {
-    const situation = this.situation(id, false);
+    const situation = this.situation(id, false, projectId);
     if (!situation) return null;
     const items = situation.needsAttention.filter(
       (item) => !projectId || item.projectId === projectId,

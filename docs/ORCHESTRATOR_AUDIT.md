@@ -379,3 +379,13 @@ at 6.76 ms median for project scope and 148.41 ms for global scope; maximums wer
 173.44 ms. Responses remained 4,534/4,562 bytes. These are warm-cache in-process measurements,
 not LAN/mobile latency or a controlled before/after speedup. The benchmark additionally
 asserts that pending totals and the returned first page equal the full situation projection.
+
+## Scoped pending reads, 2026-10-14
+
+Project-filtered pending inspection now narrows card/run SQL projections before loading data.
+A filter outside a master's configured scope returns an empty page before supervisor reads;
+it never turns an empty intersection into the all-project scope. Pending-only run selection
+retains live and all unreviewed runs while omitting latest historical runs used only for card
+context. Twenty-five focused tests pass, including scope isolation and history beyond 100k
+rows. The isolated benchmark's pending/full-situation equivalence assertions pass. Unfiltered
+pending lists still grow with unresolved work; SQL pagination and consistent cursors remain open.
