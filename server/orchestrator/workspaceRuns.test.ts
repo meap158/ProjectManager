@@ -17,9 +17,9 @@ it('retains old actionable work and pages owned history without unrelated newest
     expect(first).toEqual({ ids: [5, 4, 2, 1], historyIds: [5, 4], nextBefore: 4 });
     // Actionable runs are retained on every page, even behind hundreds of unrelated rows.
     const second = workspaceRunIds(db, 'owner', [1], first.nextBefore!, 2);
-    expect(second).toEqual({ ids: [3, 2, 1], historyIds: [3, 2], nextBefore: 2 });
+    expect(second).toEqual({ ids: [4, 3, 2, 1], historyIds: [3, 2], nextBefore: 2 });
     const last = workspaceRunIds(db, 'owner', [1], second.nextBefore!, 2);
-    expect(last).toEqual({ ids: [2, 1], historyIds: [1], nextBefore: null });
+    expect(last).toEqual({ ids: [4, 2, 1], historyIds: [1], nextBefore: null });
     db.exec(
       "INSERT INTO agent_runs(id,project_id,name,command_json,status,validation,created_at,log_path,orchestrator_id) VALUES (501,1,'New','[]','succeeded','accepted','now','','owner')",
     );
@@ -30,17 +30,44 @@ it('retains old actionable work and pages owned history without unrelated newest
       nextBefore: null,
     });
     expect(workspaceRunIds(db, 'owner', [1], undefined, 1, 3)).toMatchObject({
-      ids: [501, 3, 2, 1],
+      ids: [501, 4, 3, 2, 1],
       focusFound: true,
     });
     expect(workspaceRunIds(db, 'owner', [1], undefined, 1, 500)).toMatchObject({
-      ids: [501, 2, 1],
+      ids: [501, 4, 2, 1],
       focusFound: false,
     });
     expect(workspaceRunIds(db, 'owner', [1], undefined, 1, 999)).toMatchObject({
       focusFound: false,
     });
     expect(workspaceRunIds(db, 'missing', []).ids).toEqual([4, 2, 1]);
+  } finally {
+    db.close();
+  }
+});
+
+it('retains owned live and review work after scope changes without retaining unrelated old work', () => {
+  const db = openDb(':memory:');
+  try {
+    db.exec(`INSERT INTO projects(id,name,path,created_at) VALUES (1,'One','/one','now'),(2,'Two','/two','now');
+      INSERT INTO agent_runs(id,project_id,name,command_json,status,validation,created_at,log_path,orchestrator_id) VALUES
+      (1,2,'Owned live','[]','running',NULL,'now','','owner'),
+      (2,2,'Owned review','[]','failed',NULL,'now','','owner'),
+      (3,2,'Other live','[]','running',NULL,'now','','other'),
+      (4,2,'Other review','[]','succeeded',NULL,'now','','other'),
+      (5,1,'Owned history','[]','succeeded','accepted','now','','owner');`);
+    expect(workspaceRunIds(db, 'owner', [1], undefined, 1)).toMatchObject({
+      ids: [5, 2, 1],
+      historyIds: [5],
+    });
+    expect(workspaceRunIds(db, 'owner', [1], 2, 1)).toMatchObject({ ids: [2, 1], historyIds: [1] });
+    db.exec(
+      "UPDATE agent_runs SET status='succeeded', validation='accepted' WHERE id=1; UPDATE agent_runs SET validation='rejected' WHERE id=2;",
+    );
+    expect(workspaceRunIds(db, 'owner', [1], undefined, 1)).toMatchObject({
+      ids: [5],
+      historyIds: [5],
+    });
   } finally {
     db.close();
   }

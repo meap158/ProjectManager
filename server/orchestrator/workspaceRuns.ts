@@ -12,7 +12,7 @@ export function workspaceRunIds(
   focus?: number,
 ) {
   const marks = projectIds.map(() => '?').join(',');
-  const scope = projectIds.length ? ` AND project_id IN (${marks})` : '';
+  const scope = projectIds.length ? ` AND (project_id IN (${marks}) OR orchestrator_id = ?)` : '';
   const actionable = db
     .prepare(
       `SELECT id FROM agent_runs
@@ -20,7 +20,7 @@ export function workspaceRunIds(
       (status IN ('succeeded', 'failed') AND validation IS NULL))${scope}
     ORDER BY id DESC`,
     )
-    .all(...projectIds) as { id: number }[];
+    .all(...projectIds, ...(projectIds.length ? [owner] : [])) as { id: number }[];
   // Persisted ownership is authoritative even if a master's project scope changes.
   const history = db
     .prepare(

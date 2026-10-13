@@ -438,3 +438,13 @@ fences responses by owner/cursor/focus and displays missing-owned-run feedback. 
 page/query/route/hook regressions passed (22 tests), followed by ten focused tests including
 new focus validation and missing-link feedback. A different owner's historical run cannot
 be injected through focus. Physical scroll/keyboard/mobile behavior remains unverified.
+
+## Owned work after scope changes, 2026-10-14
+
+Workspace actionable selection now retains a master's owned live and unreviewed runs even
+if their project is removed from its configured scope. They remain available for stop/review
+on every history page. Unrelated live/review runs outside scope remain excluded. Accepted or
+rejected finished owned work returns to paginated history, avoiding permanent active-feed
+retention. Twenty query/route/service tests pass, including scope changes and validation
+transitions. This retains visibility and controls; it does not authorize new dispatch outside
+the edited scope. Physical UI verification and narrow hydration remain open.
