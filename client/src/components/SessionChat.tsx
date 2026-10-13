@@ -269,11 +269,118 @@ const ToolCall = memo(function ToolCall({ entry }: { entry: Entry }) {
 /** Messages stay as they are; runs of consecutive tool calls become one group. */
 type Block = { kind: 'message'; entry: Entry } | { kind: 'steps'; id: string; steps: Entry[] };
 
+/**
+ * Tool calls that speak to you rather than do work (PM-123): a question with options, or the
+ * agent's plan / to-do list. They show as their own cards, never folded into "N steps".
+ */
+const SPEAKING_TOOLS = new Set(['AskUserQuestion', 'TodoWrite', 'update_plan']);
+
+interface PlanStep {
+  text: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+/** A to-do / plan tool's steps (Claude TodoWrite: todos[]; Codex update_plan: plan[]). */
+export function planSteps(input: string | undefined): PlanStep[] | null {
+  try {
+    const o = JSON.parse(input ?? '') as {
+      todos?: { content?: string; activeForm?: string; status?: string }[];
+      plan?: { step?: string; status?: string }[];
+    };
+    const list = o.todos ?? o.plan;
+    if (!Array.isArray(list)) return null;
+    return list.map((s) => {
+      const status = String(s.status ?? 'pending');
+      const text =
+        ('content' in s ? (status === 'in_progress' && s.activeForm) || s.content : undefined) ??
+        ('step' in s ? s.step : undefined) ??
+        '';
+      return {
+        text: String(text),
+        status: status === 'completed' || status === 'in_progress' ? status : 'pending',
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
+interface Question {
+  question: string;
+  options: { label: string; description?: string }[];
+}
+/** AskUserQuestion's questions and their options. */
+export function questions(input: string | undefined): Question[] | null {
+  try {
+    const o = JSON.parse(input ?? '') as {
+      questions?: { question?: string; options?: { label?: string; description?: string }[] }[];
+    };
+    if (!Array.isArray(o.questions)) return null;
+    return o.questions.map((q) => ({
+      question: String(q.question ?? ''),
+      options: (q.options ?? []).map((op) => ({
+        label: String(op.label ?? ''),
+        description: op.description,
+      })),
+    }));
+  } catch {
+    return null;
+  }
+}
+
+const SpeakingTool = memo(function SpeakingTool({ entry }: { entry: Entry }) {
+  const { item, result } = entry;
+  if (item.name === 'AskUserQuestion') {
+    const asked = questions(item.input);
+    if (!asked) return <ToolCall entry={entry} />;
+    return (
+      <div className="chat-card chat-question">
+        {asked.map((q, i) => (
+          <div key={i}>
+            <div className="chat-card-title">{q.question}</div>
+            <ol className="chat-question-options">
+              {q.options.map((op, j) => (
+                <li key={j}>
+                  <span className="chat-question-label">{op.label}</span>
+                  {op.description && <span className="faint"> · {op.description}</span>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))}
+        {result?.text && (
+          <div className="chat-question-answer">Answered: {result.text.slice(0, 300)}</div>
+        )}
+      </div>
+    );
+  }
+  const steps = planSteps(item.input);
+  if (!steps) return <ToolCall entry={entry} />;
+  const done = steps.filter((s) => s.status === 'completed').length;
+  return (
+    <div className="chat-card chat-plan">
+      <div className="chat-card-title">
+        Plan · {done}/{steps.length} done
+      </div>
+      <ul className="chat-plan-steps">
+        {steps.map((s, i) => (
+          <li key={i} className={`is-${s.status}`}>
+            <span className="chat-plan-mark" aria-label={s.status.replace('_', ' ')}>
+              {s.status === 'completed' ? '☑' : s.status === 'in_progress' ? '◐' : '☐'}
+            </span>
+            {s.text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+});
+
 function blocks(entries: Entry[]): Block[] {
   const out: Block[] = [];
   for (const entry of entries) {
     const last = out.at(-1);
-    if (entry.item.kind !== 'tool') out.push({ kind: 'message', entry });
+    if (entry.item.kind !== 'tool' || SPEAKING_TOOLS.has(entry.item.name ?? ''))
+      out.push({ kind: 'message', entry });
     else if (last?.kind === 'steps') last.steps.push(entry);
     else out.push({ kind: 'steps', id: entry.item.id, steps: [entry] });
   }
@@ -827,6 +934,8 @@ export function SessionChat({
           blocks(entries).map((b) =>
             b.kind === 'steps' ? (
               <Steps key={b.id} steps={b.steps} />
+            ) : b.entry.item.kind === 'tool' ? (
+              <SpeakingTool key={b.entry.item.id} entry={b.entry} />
             ) : (
               <Message key={b.entry.item.id} item={b.entry.item} />
             ),

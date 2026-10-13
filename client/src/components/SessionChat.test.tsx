@@ -425,3 +425,49 @@ describe('reply rendering (PM-120)', () => {
     expect(document.querySelector('hr.chat-rule')).not.toBeNull();
   });
 });
+
+describe('tools that speak to you (PM-123)', () => {
+  it('shows a question with its options and a plan as a checklist, never folded', async () => {
+    const tool = (id: string, name: string, input: unknown) => ({
+      id,
+      kind: 'tool' as const,
+      toolId: id,
+      name,
+      summary: name,
+      input: JSON.stringify(input),
+      at: null,
+    });
+    vi.mocked(api.sessionTranscript).mockResolvedValue(
+      transcript({
+        items: [
+          tool('b1', 'Bash', { command: 'git status' }),
+          tool('q', 'AskUserQuestion', {
+            questions: [
+              {
+                question: 'Which layout should the phone use?',
+                options: [{ label: 'Stacked', description: 'one column' }, { label: 'Tabs' }],
+              },
+            ],
+          }),
+          tool('b2', 'Bash', { command: 'npm test' }),
+          tool('p', 'TodoWrite', {
+            todos: [
+              { content: 'Fix tables', activeForm: 'Fixing tables', status: 'completed' },
+              { content: 'Add lists', activeForm: 'Adding lists', status: 'in_progress' },
+              { content: 'Ship', activeForm: 'Shipping', status: 'pending' },
+            ],
+          }),
+        ],
+      }),
+    );
+    render(<SessionChat session={session()} onError={() => {}} />);
+    expect(await screen.findByText('Which layout should the phone use?')).toBeDefined();
+    expect(screen.getByText('Stacked')).toBeDefined();
+    expect(screen.getByText('Tabs')).toBeDefined();
+    expect(screen.getByText('Plan · 1/3 done')).toBeDefined();
+    expect(screen.getByText('Adding lists')).toBeDefined(); // In progress shows what it does.
+    // The question and the plan sit between the Bash calls, not folded into a steps group.
+    expect(document.querySelectorAll('.chat-steps')).toHaveLength(0);
+    expect(document.querySelectorAll('.chat-card')).toHaveLength(2);
+  });
+});

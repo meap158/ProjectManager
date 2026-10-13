@@ -670,3 +670,58 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* Tool calls that speak to you (PM-123): a question with options, the agent's plan. */
+.chat-card {
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.chat-card-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.chat-question {
+  border-color: var(--accent);
+}
+.chat-question-options {
+  margin: 0;
+  padding-left: 1.4em;
+}
+.chat-question-options li {
+  margin: 3px 0;
+}
+.chat-question-label {
+  font-weight: 600;
+}
+.chat-question-answer {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.chat-plan-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chat-plan-steps li {
+  display: flex;
+  gap: 8px;
+  margin: 3px 0;
+}
+.chat-plan-steps li.is-completed {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.chat-plan-steps li.is-in_progress {
+  font-weight: 600;
+}
+.chat-plan-mark {
+  flex: none;
+  width: 1.2em;
+  text-decoration: none;
+  display: inline-block;
+}
