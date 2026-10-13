@@ -477,6 +477,30 @@ it('does not send checks to a chat provider removed from configuration', async (
   }
 });
 
+it('rejects overlapping chat opens and releases the startup guard after failure', async () => {
+  const { chat, db, instance } = setup();
+  try {
+    vi.spyOn(chat, 'session').mockReturnValue(null);
+    let release!: () => void;
+    vi.mocked(providerStatuses).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      instance.providers = ['grok'];
+      return [];
+    });
+    const first = chat.open(instance.id);
+    const failed = expect(first).rejects.toThrow(/chat needs/);
+    await expect(chat.open(instance.id)).rejects.toThrow(/chat is opening/);
+    release();
+    await failed;
+    await expect(chat.open(instance.id)).rejects.toThrow(/chat needs/);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM agent_sessions').get()!.n).toBe(0);
+  } finally {
+    db.close();
+  }
+});
+
 it('rechecks configured chat providers after asynchronous discovery', async () => {
   const { chat, db, instance } = setup();
   try {

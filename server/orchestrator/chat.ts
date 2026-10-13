@@ -217,6 +217,19 @@ export class OrchestratorChat implements OrchestratorToolHost {
 
   /** Opens the orchestrator's chat: reuses its session (restarting it if stopped) or starts one. */
   async open(id: string, providerId?: string, prompt?: string): Promise<AgentSession> {
+    if (this.opening.has(id))
+      throw new AgentError(409, 'This orchestrator chat is opening; wait a moment and try again');
+    this.opening.add(id);
+    try {
+      return await this.openOnce(id, providerId, prompt);
+    } finally {
+      this.opening.delete(id);
+    }
+  }
+
+  private opening = new Set<string>();
+
+  private async openOnce(id: string, providerId?: string, prompt?: string): Promise<AgentSession> {
     let instance = this.instance(id);
     if (providerId && !instance.providers.includes(providerId))
       throw new AgentError(400, `Choose a configured provider: ${instance.providers.join(', ')}`);
