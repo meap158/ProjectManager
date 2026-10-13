@@ -4079,6 +4079,11 @@ span.path-link:hover .path-icon {
   flex: none;
   width: 14px;
   height: 14px;
+  /* The rename field inherits its title's size elsewhere; under 16px iOS zooms in on focus
+     (PM-133). */
+  .input.inline-rename-input {
+    font-size: 16px;
+  }
   align-items: center;
   justify-content: center;
   margin-right: 6px;
