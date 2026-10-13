@@ -98,6 +98,7 @@ import {
   supportsAutonomy,
 } from './providers.js';
 import { resolveArgv } from './resolve.js';
+import { renderScreen } from './screen.js';
 import {
   compactLog,
   LOG_KEEP_BYTES,
@@ -462,6 +463,12 @@ interface RunRow {
   orchestrator_id: string | null;
 }
 
+/**
+ * How much of a session log its screen is rebuilt from. CLIs repaint only what changed, so the
+ * screen needs more than the latest frames; 256 KB covers the last full redraw in practice and
+ * replays in a few milliseconds.
+ */
+const SCREEN_TAIL_BYTES = 256 * 1024;
 /** A working line counts only with output this recent (a busy CLI redraws its timer constantly). */
 const FRESH_OUTPUT_MS = 6_000;
 /** Output this soon after a keystroke is its echo (typing), not the agent working. */
@@ -2656,36 +2663,49 @@ export class AgentSupervisor {
     return turnState(row.id, lastOutputAt) ?? screen;
   }
 
-  /**
-   * The last lines a session shows, as plain text (escapes stripped, blank runs folded), for
-   * orchestrator context such as what an agent waiting for input is asking (PM-70).
-   */
   /** Provider and resume argv of a session, for its chat view's transcript (mobile). */
   sessionResume(id: number): { providerId: string; resumeJson: string | null } | null {
     const row = this.getSessionRow(id);
     return row ? { providerId: row.provider_id, resumeJson: row.resume_json } : null;
   }
 
+  /**
+   * What a session's screen shows, as plain text (blank runs folded), for its chat view's live
+   * panel and orchestrator context such as what an agent waiting for input is asking (PM-70).
+   * The log tail is replayed on a screen of the session's size rather than stripped of escapes:
+   * stripping ran in-place redraws together, so the spinner read "Roosting… Roosting…" (PM-129).
+   */
   sessionScreen(id: number, maxChars = 500): string | null {
     const row = this.getSessionRow(id);
-    const tail = row ? this.logTail(row.log_path) : null;
+    const tail = row ? this.logTail(row.log_path, SCREEN_TAIL_BYTES) : null;
     if (!tail) return null;
-    const text = stripTerminal(tail)
-      .split('\n')
-      .map((line) => line.replace(/\s+$/, ''))
+    // eslint-disable-next-line no-control-regex -- the geometry marker the log records
+    const recorded = [...tail.matchAll(/\x1b\]777;pm-size;(\d+);(\d+)\x07/g)].at(-1);
+    const size =
+      this.sessionSizes.get(id) ??
+      (recorded ? { cols: Number(recorded[1]), rows: Number(recorded[2]) } : null);
+    // Cursor moves only make sense at the size they were drawn for; without it (e.g. after a
+    // restart, before a viewer reports one) the latest output is shown stripped, as before.
+    const lines =
+      size && size.cols >= 20 && size.cols <= 500 && size.rows >= 1 && size.rows <= 500
+        ? renderScreen(tail, size.cols, size.rows, true)
+        : stripTerminal(tail.slice(-4096))
+            .split('\n')
+            .map((line) => line.replace(/\s+$/, ''));
+    const text = lines
       .filter((line, i, all) => line || (i > 0 && all[i - 1]))
       .join('\n')
       .trim();
     return text.slice(-maxChars) || null;
   }
 
-  /** The last 4 KB of a session log (the current screen and a little scrollback). */
-  private logTail(file: string): string | null {
+  /** The end of a session log: by default 4 KB (the latest output and a little before it). */
+  private logTail(file: string, bytes = 4096): string | null {
     try {
       const fd = openSync(file, 'r');
       try {
         const size = fstatSync(fd).size;
-        const len = Math.min(4096, size);
+        const len = Math.min(bytes, size);
         if (len === 0) return null;
         const buf = Buffer.allocUnsafe(len);
         const bytesRead = readSync(fd, buf, 0, len, size - len);
