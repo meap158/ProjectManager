@@ -55,6 +55,7 @@ import type { Db } from '../db.js';
 import {
   deleteSetting,
   getCard,
+  cardKey as formatCardKey,
   getProjectRow,
   getSetting,
   setSetting,
@@ -1307,6 +1308,30 @@ export class AgentSupervisor {
       .prepare(`SELECT * FROM agent_runs ORDER BY id DESC LIMIT ?`)
       .all(limit) as unknown as RunRow[];
     return rows.map((r) => this.toRun(r));
+  }
+
+  /** Batch workspace hydration: one SQL read, including card identity, in requested order. */
+  getRunsByIds(ids: readonly number[]): AgentRun[] {
+    if (!ids.length) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT r.*, c.id AS existing_card_id
+      FROM agent_runs r LEFT JOIN cards c ON c.id = r.card_id
+      WHERE r.id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(JSON.stringify(ids)) as unknown as (RunRow & { existing_card_id: number | null })[];
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return [...new Set(ids)].flatMap((id) => {
+      const row = byId.get(id);
+      return row
+        ? [
+            this.toRun(
+              row,
+              row.existing_card_id == null ? null : formatCardKey(row.existing_card_id),
+            ),
+          ]
+        : [];
+    });
   }
 
   getRun(id: number, projectId?: number): AgentRun | null {
@@ -2592,11 +2617,11 @@ export class AgentSupervisor {
     };
   }
 
-  private toRun(row: RunRow): AgentRun {
+  private toRun(row: RunRow, projectedCardKey?: string | null): AgentRun {
     const { command } = JSON.parse(row.command_json) as { command: string[] };
     const live = this.live.get(`run:${row.id}`);
-    let cardKey: string | null = null;
-    if (row.card_id) {
+    let cardKey: string | null = projectedCardKey ?? null;
+    if (projectedCardKey === undefined && row.card_id) {
       const card = getCard(this.db, row.card_id);
       if (card) cardKey = card.key;
     }

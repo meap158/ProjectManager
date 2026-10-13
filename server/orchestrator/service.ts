@@ -116,10 +116,7 @@ export class OrchestratorService {
       version: 1 as const,
       generatedAt: new Date().toISOString(),
       ...page,
-      runs: page.ids.flatMap((runId) => {
-        const run = this.supervisor.getRun(runId);
-        return run ? [run] : [];
-      }),
+      runs: this.supervisor.getRunsByIds(page.ids),
     };
   }
 

@@ -448,3 +448,13 @@ rejected finished owned work returns to paginated history, avoiding permanent ac
 retention. Twenty query/route/service tests pass, including scope changes and validation
 transitions. This retains visibility and controls; it does not authorize new dispatch outside
 the edited scope. Physical UI verification and narrow hydration remain open.
+
+## Batched workspace hydration, 2026-10-14
+
+Workspace run feeds hydrate selected identities through one joined SQL read rather than
+one run read plus card read per returned item. Batch conversion preserves requested order,
+omits missing rows, deduplicates identities and preserves the existing AgentRun contract.
+Fourteen focused supervisor/service tests pass; the isolated real-supervisor fixture asserts
+complete equality against individual hydration and exactly one prepared SQL read. Empty
+identity lists issue no read. Existing log-size checks and JSON decoding remain per run;
+this is SQL-read reduction, not a measured LAN latency improvement or narrow summary payload.
