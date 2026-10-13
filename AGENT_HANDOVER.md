@@ -2,6 +2,19 @@
 
 _Current-state snapshot. Update it after every meaningful unit of work._
 
+- Chat view (SessionChat, 2026-10-13): the live panel shows the CLI's colours (mode per kind,
+  status activity in --brand-claude with a shimmer, details muted) and Claude's
+  "◎ /goal active" line (PM-134). The screen behind it (`supervisor.sessionScreen`) now
+  replays the last 256 KB of the log on a grid of the session's size (`server/agents/screen.ts`)
+  instead of stripping escapes, which ran redraws together ("Roosting… Roosting…", PM-129);
+  with no known size (after a restart, before a viewer reports one) it falls back to the old
+  stripped text. Edits show as diffs, ExitPlanMode plans as approval cards, and Agent steps
+  load their subagent's own steps on demand (`GET /agent-sessions/:id/subagent?tool=`, from
+  Claude's `<conversation>/subagents/*.jsonl` + `.meta.json` toolUseId). PM-123's remaining
+  items and why they wait are on the card (Antigravity keeps protobuf blobs in SQLite).
+  Server-side parts need a server restart to take effect in a running app.
+- PM-133: on touch screens the inline rename field uses 16px, so iOS no longer zooms on focus.
+
 - PM-112 (gh account per repo): every gh call of the Pull requests tab (and the PR scanner)
   runs as the logged-in gh account whose login equals the repo owner, via GH_TOKEN from
   `gh auth token -u` in that child process only (server/ghAccount.ts; accounts and tokens cached
