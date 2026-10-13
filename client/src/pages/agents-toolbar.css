@@ -292,3 +292,49 @@
     min-height: 44px;
   }
 }
+
+/* PM-51: phones pick how many panes with a compact segmented control in the toolbar row
+   (the full layout picker stays desktop-only, as panes always stack on phones). */
+.workspace .pane-count {
+  display: none;
+}
+@media (max-width: 768px) {
+  .workspace .pane-count {
+    display: inline-flex;
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .workspace .pane-count button {
+    min-width: 26px;
+    min-height: 40px;
+    padding: 0;
+    border: none;
+    border-left: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-2);
+    font: inherit;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .workspace .pane-count button:first-child {
+    border-left: none;
+  }
+  .workspace .pane-count button.is-active {
+    background: var(--surface-2);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .workspace .pane-count button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+}
+@media (max-width: 380px) {
+  /* Narrower phones: the view buttons keep their labels but drop their icons, so the pane
+     count and + New still share one row. */
+  .workspace .view-switch .btn svg {
+    display: none;
+  }
+}

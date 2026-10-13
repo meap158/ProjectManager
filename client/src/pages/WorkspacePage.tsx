@@ -84,6 +84,13 @@ export function resetWorkspaceCache(): void {
 
 const SESSIONS_POLL_MS = 4000;
 const VIEW_KEY = 'pm.workspace.view';
+/** The phone pane-count picker's choices: stacked panes, so one preset per count. */
+const PHONE_PRESETS: [number, WorkspacePreset][] = [
+  [1, '1'],
+  [2, '2h'],
+  [3, '3v'],
+  [4, '2x2'],
+];
 type View = 'panes' | 'list';
 
 function readView(): View {
@@ -411,6 +418,26 @@ export function WorkspacePage() {
             ))}
           </div>
         </div>
+        {/* Phones (PM-51): panes always stack there, so the layout is just how many. */}
+        {view === 'panes' && (
+          <div className="pane-count" role="radiogroup" aria-label="Number of panes">
+            {PHONE_PRESETS.map(([count, preset]) => (
+              <button
+                key={preset}
+                type="button"
+                role="radio"
+                aria-checked={info.panes === count}
+                aria-label={`${count} ${count === 1 ? 'pane' : 'panes'}`}
+                className={info.panes === count ? 'is-active' : undefined}
+                onClick={() =>
+                  update({ preset, panes: fitPanes(layout.panes, preset), maximized: null })
+                }
+              >
+                {count}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="workspace-mobile-actions">
           <button
             type="button"

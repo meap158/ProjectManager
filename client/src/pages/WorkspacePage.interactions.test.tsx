@@ -88,6 +88,19 @@ describe('Agents workspace interactions', () => {
     );
   });
 
+  it('picks how many panes with the compact phone control (PM-51)', async () => {
+    localStorage.setItem('pm.workspace.view', 'panes');
+    await renderWorkspace({ preset: '1', panes: [1], maximized: null });
+    const group = await screen.findByRole('radiogroup', { name: 'Number of panes' });
+    expect(group.querySelector('[aria-checked="true"]')?.textContent).toBe('1');
+    fireEvent.click(screen.getByRole('radio', { name: '3 panes' }));
+    await waitFor(() =>
+      expect(api.saveWorkspace).toHaveBeenLastCalledWith(
+        expect.objectContaining({ preset: '3v', panes: [1, null, null] }),
+      ),
+    );
+  });
+
   it('brings a selected mobile list terminal into view and lets it maximise and close', async () => {
     localStorage.setItem('pm.workspace.view', 'list');
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
