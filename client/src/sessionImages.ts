@@ -23,8 +23,18 @@ function base64(blob: Blob): Promise<string> {
 export async function prepareImage(
   file: File,
 ): Promise<{ name: string; type: string; data: string }> {
-  if (SENDABLE.has(file.type) && file.size <= KEEP_BYTES) {
-    return { name: file.name || 'image', type: file.type, data: await base64(file) };
+  // iOS sometimes hands over a photo with no type: go by its name then (PM-130), so a normal
+  // JPEG or PNG is sent as is rather than re-encoded.
+  const byName: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+  };
+  const type = file.type || byName[/\.([a-z]+)$/i.exec(file.name)?.[1]?.toLowerCase() ?? ''] || '';
+  if (SENDABLE.has(type) && file.size <= KEEP_BYTES) {
+    return { name: file.name || 'image', type, data: await base64(file) };
   }
   // Phone photos (often several MB, sometimes HEIC): scale the long edge to 2000px as JPEG.
   const bitmap = await createImageBitmap(file).catch(() => {

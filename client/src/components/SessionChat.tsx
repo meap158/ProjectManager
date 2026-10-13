@@ -573,6 +573,24 @@ export function rankCommands(commands: SlashCommand[], query: string, limit = 8)
     .map((x) => x.c);
 }
 
+/**
+ * Image files on a paste or drop (PM-130): from `files`, or from `items` when that's all there
+ * is (iPhone Safari often puts a pasted image only in `items`).
+ */
+export function droppedFiles(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const files = [...data.files];
+  if (files.length) return files;
+  return [...data.items]
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.getAsFile())
+    .filter((f): f is File => !!f);
+}
+
+/** An image by its type, or by its name when the type is missing (iOS sometimes sends none). */
+export const isImageFile = (f: File) =>
+  f.type.startsWith('image/') || (!f.type && /\.(png|jpe?g|gif|webp|heic|heif)$/i.test(f.name));
+
 /** An image waiting in the composer: uploaded, its path pasted into the CLI when sent. */
 interface Attachment {
   path: string;
@@ -717,8 +735,13 @@ export function SessionChat({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(0);
   const picker = useRef<HTMLInputElement>(null);
+  /** Why the last image couldn't be added, shown beside the composer (PM-130). */
+  const [imageError, setImageError] = useState('');
   const addImages = async (files: File[]) => {
-    const images = files.filter((f) => f.type.startsWith('image/'));
+    const images = files.filter(isImageFile);
+    if (files.length && !images.length) setImageError('That file is not an image.');
+    if (!images.length) return;
+    setImageError('');
     setUploading((n) => n + images.length);
     for (const file of images) {
       try {
@@ -726,6 +749,9 @@ export function SessionChat({
         const name = file.name || 'image';
         setAttachments((prev) => [...prev, { path, name, preview: URL.createObjectURL(file) }]);
       } catch (e) {
+        // Shown here, by the composer: the page's error banner is off-screen in the dock and
+        // in full screen, so a failure looked like nothing happened.
+        setImageError(`Couldn't add ${file.name || 'the image'}: ${(e as Error).message}`);
         onError((e as Error).message);
       } finally {
         setUploading((n) => n - 1);
@@ -1088,6 +1114,14 @@ export function SessionChat({
           </button>
         ))}
       </div>
+      {imageError && (
+        <p className="chat-image-error" role="alert">
+          {imageError}{' '}
+          <button type="button" className="link-button" onClick={() => setImageError('')}>
+            Dismiss
+          </button>
+        </p>
+      )}
       {(attachments.length > 0 || uploading > 0) && (
         <div className="chat-attachments" aria-label="Images to send">
           {attachments.map((a) => (
@@ -1116,11 +1150,10 @@ export function SessionChat({
           void submit();
         }}
         onDragOver={(e) => {
-          if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/')))
-            e.preventDefault();
+          if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault();
         }}
         onDrop={(e) => {
-          const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'));
+          const files = droppedFiles(e.dataTransfer).filter(isImageFile);
           if (!files.length) return;
           e.preventDefault();
           void addImages(files);
@@ -1180,7 +1213,7 @@ export function SessionChat({
             setSelected(0);
           }}
           onPaste={(e) => {
-            const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'));
+            const files = droppedFiles(e.clipboardData).filter(isImageFile);
             if (!files.length) return; // Text pastes as usual.
             e.preventDefault();
             void addImages(files);

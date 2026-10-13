@@ -8,6 +8,7 @@ import {
   SessionChat,
   chatSupported,
   handOffDraft,
+  isImageFile,
   screenInfo,
   statusLine,
 } from './SessionChat';
@@ -531,5 +532,37 @@ describe('message box size (PM-128)', () => {
       if (height) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', height);
       sessionStorage.clear();
     }
+  });
+});
+
+describe('images on phones (PM-130)', () => {
+  it('takes an image pasted only through clipboard items (iPhone Safari)', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    render(<SessionChat session={session()} onError={() => {}} />);
+    const input = await screen.findByLabelText('Message to the session');
+    const image = new File([new Uint8Array([137, 80])], 'IMG_0001.png', { type: 'image/png' });
+    fireEvent.paste(input, {
+      clipboardData: {
+        files: [],
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => image }],
+        getData: () => '',
+      },
+    });
+    expect(await screen.findByRole('img', { name: 'IMG_0001.png' })).toBeDefined();
+  });
+
+  it('accepts a photo with no type by its name, and says why when one fails', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    vi.mocked(api.uploadSessionImage).mockRejectedValueOnce(new Error('Image over 8 MB'));
+    render(<SessionChat session={session()} onError={() => {}} />);
+    const input = await screen.findByLabelText('Message to the session');
+    const photo = new File([new Uint8Array([255, 216])], 'IMG_0002.jpg', { type: '' });
+    expect(isImageFile(photo)).toBe(true);
+    expect(isImageFile(new File(['x'], 'notes.txt', { type: '' }))).toBe(false);
+    fireEvent.paste(input, { clipboardData: { files: [photo], getData: () => '' } });
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      "Couldn't add IMG_0002.jpg: Image over 8 MB",
+    );
   });
 });

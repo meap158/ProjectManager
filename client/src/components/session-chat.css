@@ -674,3 +674,11 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Why an image couldn't be added, right by the composer (PM-130). */
+.chat-image-error {
+  flex: none;
+  margin: 6px 12px 0;
+  color: var(--danger);
+  font-size: 12.5px;
+}
