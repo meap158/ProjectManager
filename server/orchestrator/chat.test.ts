@@ -477,6 +477,21 @@ it('does not send checks to a chat provider removed from configuration', async (
   }
 });
 
+it('does not hide a running chat by switching to another provider', async () => {
+  const { chat, db, instance } = setup({ providers: ['codex', 'claude'] });
+  try {
+    vi.spyOn(chat, 'session').mockReturnValue({
+      id: 10,
+      providerId: 'codex',
+      status: 'running',
+    } as AgentSession);
+    await expect(chat.open(instance.id, 'claude')).rejects.toThrow(/Stop the current/);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM agent_sessions').get()!.n).toBe(0);
+  } finally {
+    db.close();
+  }
+});
+
 it('rejects overlapping chat opens and releases the startup guard after failure', async () => {
   const { chat, db, instance } = setup();
   try {

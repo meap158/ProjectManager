@@ -482,3 +482,14 @@ No live processes were stopped to free resources. Current acceptance still requi
 full run, runtime crash recovery, physical mobile checks and the other open audit gates.
 Chat switching additionally needs explicit old-session lifecycle handling: selecting another
 agent currently creates a separate session and can leave the prior session running.
+
+## Chat switching lifecycle guard, 2026-10-14
+
+Switching providers now rejects replacing a running master chat with a new session (409).
+The shared dropdown disables other providers while it is running and explains: Stop current
+chat first. Stopped-chat provider selection remains available; the existing terminal Stop
+control provides the transition. Twenty-two focused chat UI/server tests pass, with client
+and server typechecking and scoped lint. This prevents newly hidden running chats through
+this switch flow; historical duplicate sessions and physical mobile behavior remain open.
+Cross-provider conversation transfer is not implemented, and the full regression gate is
+still failing as recorded above.

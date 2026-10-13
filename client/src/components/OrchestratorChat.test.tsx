@@ -38,6 +38,24 @@ it('opens and hides master chat inline without navigating to Agents or stopping 
   expect(screen.queryByRole('link')).toBeNull();
 });
 
+it('explains why another agent cannot replace a running chat', () => {
+  render(
+    <OrchestratorChat
+      instance={
+        { id: 'master', name: 'Master', providers: ['codex', 'claude'] } as OrchestratorConfig
+      }
+      session={{ id: 1, providerId: 'codex', status: 'running' } as AgentSession}
+      disabled={false}
+      onChanged={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /Orchestrator chat agent/ }));
+  const option = screen.getByRole('option', { name: /Claude Code/ });
+  expect(option.getAttribute('aria-disabled')).toBe('true');
+  expect(option.textContent).toContain('Stop current chat first');
+  expect(option.querySelector('button')!.disabled).toBe(true);
+});
+
 it('offers only configured chat agents and opens the chosen provider', async () => {
   render(
     <OrchestratorChat

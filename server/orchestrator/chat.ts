@@ -242,6 +242,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
     ) {
       return existing.status === 'running' ? existing : this.supervisor.startSession(existing.id);
     }
+    if (existing?.status === 'running')
+      throw new AgentError(409, 'Stop the current orchestrator chat before changing agents');
     const home = this.scope(instance)[0];
     if (!home) throw new AgentError(400, 'This orchestrator has no projects in scope');
     const available = new Set(

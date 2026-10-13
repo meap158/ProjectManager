@@ -109,6 +109,12 @@ export function OrchestratorChat({
               .map((provider) => ({
                 value: provider,
                 icon: <ProviderIcon id={provider} size={14} />,
+                disabled:
+                  activeSession?.status === 'running' && provider !== activeSession.providerId,
+                hint:
+                  activeSession?.status === 'running' && provider !== activeSession.providerId
+                    ? 'Stop current chat first'
+                    : undefined,
                 label: PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] ?? provider,
                 sub: 'Open chat with this agent',
               }))}
