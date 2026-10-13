@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PROVIDER_LABELS } from './icons';
+import { PROVIDER_LABELS, ProviderIcon } from './icons';
 import { Dropdown } from './Dropdown';
 import { OrchestratorTerminal } from './OrchestratorTerminal';
 import { api } from '../api';
@@ -108,6 +108,7 @@ export function OrchestratorChat({
               .filter((p) => ['claude', 'codex', 'opencode', 'antigravity'].includes(p))
               .map((provider) => ({
                 value: provider,
+                icon: <ProviderIcon id={provider} size={14} />,
                 label: PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] ?? provider,
                 sub: 'Open this agent?s chat',
               }))}
