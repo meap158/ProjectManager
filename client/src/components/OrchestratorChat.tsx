@@ -110,7 +110,7 @@ export function OrchestratorChat({
                 value: provider,
                 icon: <ProviderIcon id={provider} size={14} />,
                 label: PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] ?? provider,
-                sub: 'Open this agent?s chat',
+                sub: 'Open chat with this agent',
               }))}
           />
           <span

@@ -9,7 +9,7 @@ chronological findings later in this document preserve earlier implementation ev
 | Controls and convenience | Scoped Check now, paged read-only preview, pending-work queue/run actions, card/worker links, Pause/Observe/Autonomous modes, manual chat tools                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                                          |
 | Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Partial-index migration committed with upgrade/query-plan regression; measure whole API/tick and index write cost; versioned summary and situation pagination |
 | Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                              |
-| Evaluation               | Full regression suite: 566 tests / 111 files pass, including four process-boundary cases; server and client types and targeted lint passed                                                                  | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                         |
+| Evaluation               | Earlier full regression: 566 tests / 111 files passed; latest resource-constrained rerun failed (details below). Focused Orchestrator checks passed                                                         | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                         |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -466,3 +466,19 @@ Selecting another provider opens its own chat; server open requests reject provi
 configuration and default selection no longer falls back to unconfigured providers. Existing
 same-provider chats resume when allowed. Seventeen focused chat UI/tool tests pass, including
 selector options and scope rejection. Cross-provider conversation transfer is not implemented.
+
+## Full regression rerun under resource pressure, 2026-10-14
+
+The latest full `vitest run --maxWorkers=1` completed with exit 1: 105 files passed,
+3 files failed; 532 tests passed and 2 failed, with 3 unhandled worker errors (179.69 seconds).
+Failures: Windows CPU-budget affinity fixture produced an invalid child PID; CLI teardown
+hit EBUSY removing its fixture; completion matching returned no files. Workers also exited
+unexpectedly, including a logged V8 out-of-memory failure. Earlier commands reported paging
+file exhaustion and npm-cache ENOSPC. TEMP/TMP were redirected to workspace data/test-tmp;
+that puts completion fixtures under this repository's ignored data directory, so inherited
+Git ignore behavior is a plausible fixture-placement cause requiring isolated confirmation.
+This run does not establish a clean full regression gate or prove all failures environmental.
+No live processes were stopped to free resources. Current acceptance still requires a clean
+full run, runtime crash recovery, physical mobile checks and the other open audit gates.
+Chat switching additionally needs explicit old-session lifecycle handling: selecting another
+agent currently creates a separate session and can leave the prior session running.
