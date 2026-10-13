@@ -469,6 +469,18 @@ interface RunRow {
  * replays in a few milliseconds.
  */
 const SCREEN_TAIL_BYTES = 256 * 1024;
+/** How far back a log is searched for its last recorded size. */
+const RECORDED_SIZE_SCAN_BYTES = 64 * 1024 * 1024;
+
+/** The last size marker (`OSC 777;pm-size;cols;rows`) in some log text, if a sane one. */
+function lastRecordedSize(text: string): { cols: number; rows: number } | null {
+  // eslint-disable-next-line no-control-regex -- the geometry marker the log records
+  const m = [...text.matchAll(/\x1b\]777;pm-size;(\d+);(\d+)\x07/g)].at(-1);
+  if (!m) return null;
+  const cols = Number(m[1]);
+  const rows = Number(m[2]);
+  return cols >= 20 && cols <= 500 && rows >= 1 && rows <= 500 ? { cols, rows } : null;
+}
 /** A working line counts only with output this recent (a busy CLI redraws its timer constantly). */
 const FRESH_OUTPUT_MS = 6_000;
 /** Output this soon after a keystroke is its echo (typing), not the agent working. */
@@ -483,6 +495,9 @@ const seenTitleKey = (id: number) => `session-cli-title:${id}`;
 export class AgentSupervisor {
   private live = new Map<string, LiveProc>();
   private sessionSizes = new Map<number, { cols: number; rows: number }>();
+  /** Sizes read back from session logs, for screens no viewer has sized yet (PM-129). */
+  private recordedSizes = new Map<number, { cols: number; rows: number }>();
+  private sizeSearched = new Set<number>();
   private logs = new Map<string, OutputLog>();
   /** Keys whose spawn is in flight (argv resolution is async): guards double starts. */
   private starting = new Set<string>();
@@ -2679,13 +2694,16 @@ export class AgentSupervisor {
     const row = this.getSessionRow(id);
     const tail = row ? this.logTail(row.log_path, SCREEN_TAIL_BYTES) : null;
     if (!tail) return null;
-    // eslint-disable-next-line no-control-regex -- the geometry marker the log records
-    const recorded = [...tail.matchAll(/\x1b\]777;pm-size;(\d+);(\d+)\x07/g)].at(-1);
+    // Before a viewer reports a size (e.g. after a restart, with only chat views open), the
+    // latest size the log records: in the tail, else further back (cached once found).
+    const inTail = lastRecordedSize(tail);
+    if (inTail) this.recordedSizes.set(id, inTail);
     const size =
       this.sessionSizes.get(id) ??
-      (recorded ? { cols: Number(recorded[1]), rows: Number(recorded[2]) } : null);
-    // Cursor moves only make sense at the size they were drawn for; without it (e.g. after a
-    // restart, before a viewer reports one) the latest output is shown stripped, as before.
+      this.recordedSizes.get(id) ??
+      this.findRecordedSize(id, row!.log_path);
+    // Cursor moves only make sense at the size they were drawn for; without one the latest
+    // output is shown stripped, as before.
     const lines =
       size && size.cols >= 20 && size.cols <= 500 && size.rows >= 1 && size.rows <= 500
         ? renderScreen(tail, size.cols, size.rows, true)
@@ -2697,6 +2715,41 @@ export class AgentSupervisor {
       .join('\n')
       .trim();
     return text.slice(-maxChars) || null;
+  }
+
+  /**
+   * The last size a session log records, reading back from the end in chunks (a long session
+   * can go many megabytes between resizes). Null when there is none; remembered once found.
+   */
+  private findRecordedSize(id: number, file: string): { cols: number; rows: number } | null {
+    // Searched once per session: any later size is recorded in the tail, which is read anyway.
+    if (this.sizeSearched.has(id)) return null;
+    this.sizeSearched.add(id);
+    const CHUNK = 1024 * 1024;
+    const OVERLAP = 64; // A marker split across two chunks is still found whole.
+    try {
+      const fd = openSync(file, 'r');
+      try {
+        let end = fstatSync(fd).size;
+        const buf = Buffer.allocUnsafe(CHUNK + OVERLAP);
+        for (let read = 0; end > 0 && read < RECORDED_SIZE_SCAN_BYTES; read += CHUNK) {
+          const start = Math.max(0, end - CHUNK);
+          const len = Math.min(CHUNK + OVERLAP, fstatSync(fd).size - start);
+          const n = readSync(fd, buf, 0, len, start);
+          const size = lastRecordedSize(buf.subarray(0, n).toString('latin1'));
+          if (size) {
+            this.recordedSizes.set(id, size);
+            return size;
+          }
+          end = start;
+        }
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      // Unreadable log: the caller falls back to stripped text.
+    }
+    return null;
   }
 
   /** The end of a session log: by default 4 KB (the latest output and a little before it). */
