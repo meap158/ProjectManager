@@ -56,6 +56,17 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
+  orchestratorRuns: (id: string, before?: number) =>
+    request<{
+      version: 1;
+      generatedAt: string;
+      runs: AgentRun[];
+      historyIds: number[];
+      nextBefore: number | null;
+    }>(
+      'GET',
+      `/orchestrators/${encodeURIComponent(id)}/runs?limit=20${before === undefined ? '' : `&before=${before}`}`,
+    ),
   orchestratorPending: (id: string, offset = 0, projectId?: number) =>
     request<OrchestratorPendingPage>(
       'GET',

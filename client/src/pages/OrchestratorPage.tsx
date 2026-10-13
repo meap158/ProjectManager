@@ -6,17 +6,13 @@ import { OrchestratorNextStep } from '../components/OrchestratorNextStep';
 import { Dropdown } from '../components/Dropdown';
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { PROVIDER_LABELS } from '../components/icons';
-import type {
-  AgentRun,
-  AgentSession,
-  CardWithProject,
-  ProjectSummary,
-} from '../../../shared/types';
+import type { AgentSession, CardWithProject, ProjectSummary } from '../../../shared/types';
 import type { OrchestratorConfig, OrchestratorState } from '../../../shared/orchestrator';
 import { projectAttention } from '../../../shared/projectAttention';
 import './orchestrator.css';
 import { serialPoll } from '../lib/serialPoll';
 import { RunCard } from '../components/RunCard';
+import { useOrchestratorRuns } from '../components/useOrchestratorRuns';
 import { OrchestratorChat } from '../components/OrchestratorChat';
 import { collapseButtonProps, useCollapsed } from '../useCollapsed';
 
@@ -85,7 +81,7 @@ export function OrchestratorPage() {
   const selectedInstance =
     state.instances.find((item) => item.id === requestedOwner) ?? state.instances[0];
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [runs, setRuns] = useState<AgentRun[]>([]);
+  const [runRefresh, setRunRefresh] = useState(0);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [inFlightCards, setInFlightCards] = useState<CardWithProject[]>([]);
   // Collapsed orchestrators and panels (PM-90), remembered in this browser.
@@ -100,6 +96,8 @@ export function OrchestratorPage() {
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const runFeed = useOrchestratorRuns(selectedInstance?.id, runRefresh, busy);
+  const runs = runFeed.runs;
   const [preview, setPreview] = useState<{
     id: string;
     data: Awaited<ReturnType<typeof api.previewOrchestrator>>;
@@ -135,12 +133,6 @@ export function OrchestratorPage() {
           },
           () => {},
         ),
-        api.listAllRuns().then(
-          (next) => {
-            if (current()) setRuns(next);
-          },
-          () => {},
-        ),
         api.listAllSessions().then(
           (next) => {
             if (current()) setSessions(next);
@@ -171,16 +163,15 @@ export function OrchestratorPage() {
     setActionResult(null);
     try {
       await action();
-      const [nextState, nextProjects, nextRuns, nextSessions, nextInFlight] = await Promise.all([
+      const [nextState, nextProjects, nextSessions, nextInFlight] = await Promise.all([
         api.orchestrators(),
         api.listProjects().catch(() => projects),
-        api.listAllRuns().catch(() => runs),
         api.listAllSessions().catch(() => sessions),
         api.listCardsInFlight().catch(() => inFlightCards),
       ]);
       setState(nextState);
       setProjects(nextProjects);
-      setRuns(nextRuns);
+      setRunRefresh((value) => value + 1);
       setSessions(nextSessions);
       setInFlightCards(nextInFlight);
     } catch (e) {
@@ -608,7 +599,7 @@ export function OrchestratorPage() {
                       >
                         <summary>
                           Dispatched runs (
-                          {runs.filter((run) => run.orchestratorId === instance.id).length})
+                          {runs.filter((run) => run.orchestratorId === instance.id).length} shown)
                         </summary>
                         {runs
                           .filter((run) => run.orchestratorId === instance.id)
@@ -621,12 +612,37 @@ export function OrchestratorPage() {
                               onDeleted={() => void perform(async () => undefined)}
                             />
                           ))}
-                        {!runs.some((run) => run.orchestratorId === instance.id) && (
-                          <p className="faint">
-                            Runs started by this orchestrator appear here, with output and review
-                            controls.
+                        {runFeed.error && (
+                          <p role="alert" className="error-banner">
+                            {runFeed.error}
                           </p>
                         )}
+                        <nav className="orchestrator-result-links" aria-label="Run history pages">
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            disabled={runFeed.loading || !runFeed.previous}
+                            onClick={runFeed.previous}
+                          >
+                            Previous
+                          </button>
+                          <span>History page {runFeed.page}</span>
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            disabled={runFeed.loading || !runFeed.next}
+                            onClick={runFeed.next}
+                          >
+                            Next
+                          </button>
+                        </nav>
+                        {!runFeed.loading &&
+                          !runs.some((run) => run.orchestratorId === instance.id) && (
+                            <p className="faint">
+                              Runs started by this orchestrator appear here, with output and review
+                              controls.
+                            </p>
+                          )}
                       </details>
 
                       {/* Needs you: issues and failures in scope */}

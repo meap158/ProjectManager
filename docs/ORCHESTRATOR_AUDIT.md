@@ -416,3 +416,15 @@ new insertion does not shift an older history cursor. Eighteen focused query/rou
 tests pass. The page still uses the old global 200-row feed; client integration and selection
 race tests remain required. This endpoint currently hydrates returned runs through getRun;
 it is a correctness foundation, not the completed efficient summary endpoint.
+
+## Workspace run feed client integration, 2026-10-14
+
+OrchestratorPage now loads its selected master's versioned run feed instead of the global
+newest-200 feed, including after actions. Owned history has Previous/Next controls and a
+shown-count label. Settled polling retains populated results on errors; owner/cursor identity
+and effect cleanup prevent late responses from populating another workspace. Seventeen page
+and hook tests pass, covering owner-switch races, cursor navigation, refresh failure and
+existing page actions and recovery from a failed history-page request. Physical browser/mobile checks, explicit deep links to historical
+runs outside the current page, consolidated summary transport and narrow run hydration
+remain acceptance work. The automatic refresh cutoff finding is addressed for actionable
+runs by the new server selection, rather than by raising the old global history limit.

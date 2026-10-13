@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { api } from '../api';
 import { OrchestratorPage } from './OrchestratorPage';
+const runFixture = vi.hoisted(() => vi.fn(async () => []));
 vi.mock('../api', () => ({
   api: {
     orchestrators: vi.fn(async () => ({ instances: [], events: [] })),
@@ -25,7 +26,14 @@ vi.mock('../api', () => ({
       ok: true,
       state: { instances: [], events: [] },
     })),
-    listAllRuns: vi.fn(async () => []),
+    listAllRuns: runFixture,
+    orchestratorRuns: vi.fn(async () => ({
+      version: 1,
+      generatedAt: 'now',
+      runs: await runFixture(),
+      historyIds: [],
+      nextBefore: null,
+    })),
     listAllSessions: vi.fn(async () => []),
     listCardsInFlight: vi.fn(async () => []),
     previewOrchestrator: vi.fn(),
@@ -352,7 +360,7 @@ it('renders scope board progress summary and live workers with direct links', as
 
   // Being worked on
   expect(screen.getByText('Working now')).toBeDefined();
-  expect(screen.getByText('2 active')).toBeDefined();
+  expect(await screen.findByText('2 active')).toBeDefined();
   expect(screen.getByText('Build feature')).toBeDefined();
   expect(screen.getByText('PM-42')).toBeDefined();
   expect(screen.getByText('Claude Terminal')).toBeDefined();
@@ -554,7 +562,7 @@ it('displays Being worked on badge for attention items with active workers', asy
   );
 
   expect(await screen.findByText('Needs you')).toBeDefined();
-  expect(screen.getByText('1 being worked on')).toBeDefined();
+  expect(await screen.findByText('1 being worked on')).toBeDefined();
   expect(screen.getAllByText('Working now').length).toBeGreaterThanOrEqual(1);
 });
 
