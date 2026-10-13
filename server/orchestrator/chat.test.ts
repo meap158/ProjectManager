@@ -458,6 +458,24 @@ it('recovers the completed run after a lost response without dispatching a done 
   }
 });
 
+it('does not send checks to a chat provider removed from configuration', async () => {
+  const { chat, db, supervisor, instance } = setup();
+  try {
+    vi.spyOn(chat, 'session').mockReturnValue({
+      id: 10,
+      providerId: 'claude',
+      status: 'running',
+    } as AgentSession);
+    const replacement = { id: 11, providerId: 'codex', status: 'running' } as AgentSession;
+    const open = vi.spyOn(chat, 'open').mockResolvedValue(replacement);
+    expect(await chat.check(instance.id, 'review')).toBe(replacement);
+    expect(open).toHaveBeenCalledWith(instance.id, undefined, expect.stringContaining('Review'));
+    expect(supervisor.sendInput).not.toHaveBeenCalled();
+  } finally {
+    db.close();
+  }
+});
+
 it('rejects chat providers outside configured scope and does not fall back to unconfigured agents', async () => {
   const { chat, db, instance } = setup();
   try {

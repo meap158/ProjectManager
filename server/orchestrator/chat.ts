@@ -257,13 +257,16 @@ export class OrchestratorChat implements OrchestratorToolHost {
   async check(id: string, focus: CheckFocus = 'all'): Promise<AgentSession> {
     const instance = this.instance(id);
     const request = checkPrompt(instance, focus);
-    const existing = this.session(id);
-    if (!existing || existing.status !== 'running') {
-      if (!existing) return this.open(id, undefined, `${openingLine(instance)}\n\n${request}`);
-      await this.open(id);
+    let existing = this.session(id);
+    if (!existing || !instance.providers.includes(existing.providerId))
+      return this.open(id, undefined, `${openingLine(instance)}\n\n${request}`);
+    if (existing.status !== 'running') {
+      existing = await this.open(id);
       await this.waitUntilReady(existing.id);
     }
-    const live = this.supervisor.getSession(existing!.id)!;
+    const live = this.supervisor.getSession(existing.id);
+    if (!live || live.status !== 'running')
+      throw new AgentError(409, 'The orchestrator chat is stopped; reopen it before checking');
     if (live.tailState === 'running' || live.tailState === 'input')
       throw new AgentError(
         409,

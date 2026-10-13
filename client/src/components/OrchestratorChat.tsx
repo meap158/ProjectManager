@@ -114,9 +114,9 @@ export function OrchestratorChat({
               }))}
           />
           <span
-            className={`orchestrator-chat-state${session?.status === 'running' ? ' is-live' : ''}`}
+            className={`orchestrator-chat-state${activeSession?.status === 'running' ? ' is-live' : ''}`}
           >
-            {chatState(session)}
+            {chatState(activeSession)}
           </span>
           <button
             type="button"
@@ -141,7 +141,9 @@ export function OrchestratorChat({
             key={c.focus}
             type="button"
             className="btn btn-sm"
-            disabled={busy || session?.tailState === 'running' || session?.tailState === 'input'}
+            disabled={
+              busy || activeSession?.tailState === 'running' || activeSession?.tailState === 'input'
+            }
             title={c.title}
             onClick={() => void check(c.focus, c.label)}
           >
