@@ -268,3 +268,30 @@
     overflow: hidden;
   }
 }
+
+/* The project's name beside the open session (PM-131). Desktop: after the name, in the accent
+   colour; phones: a second line under it, since the folder path is hidden there. */
+.project-terminal-project {
+  flex: 0 0 auto; /* Kept whole on desktop (names are short); the session title shrinks first. */
+  max-width: 16em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+}
+@media (max-width: 768px) {
+  .project-cli-dock > .pane .project-terminal-head > .pane-identity {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+  }
+  .project-terminal-head > .pane-identity .project-terminal-project {
+    max-width: 100%;
+    font-size: 11.5px;
+    line-height: 1.2;
+  }
+}

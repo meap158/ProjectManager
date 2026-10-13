@@ -51,7 +51,16 @@ function readDockHeight(): number | null {
 }
 
 /** Per-project agent HQ: providers, persistent terminal sessions, and card runs. */
-export function AgentsPanel({ projectId, visible }: { projectId: number; visible: boolean }) {
+export function AgentsPanel({
+  projectId,
+  projectName,
+  visible,
+}: {
+  projectId: number;
+  /** Shown beside the open session, so the CLI says which project it is in (PM-131). */
+  projectName?: string;
+  visible: boolean;
+}) {
   const [providers, setProviders] = useState<AgentProviderStatus[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[] | null>(
     () => sessionsCache.get(projectId)?.filter((s) => !s.orchestratorId) ?? null,
@@ -523,6 +532,13 @@ export function AgentsPanel({ projectId, visible }: { projectId: number; visible
                         )
                       }
                     />
+                    {/* Which project this CLI belongs to, also on phones and in full screen
+                        where the page title is out of sight (PM-131). */}
+                    {projectName && (
+                      <span className="project-terminal-project" title={projectName}>
+                        {projectName}
+                      </span>
+                    )}
                     <span className="pane-meta faint">
                       <span className="truncate mono" title={active.cwd}>
                         {active.cwd}

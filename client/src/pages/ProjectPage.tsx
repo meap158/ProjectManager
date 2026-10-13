@@ -248,7 +248,12 @@ export function ProjectPage() {
         <PullRequestsPanel key={id} projectId={id} visible={tab === 'pull-requests'} />
       </div>
       <div className="tab-panel" hidden={tab !== 'agents'}>
-        <AgentsPanel key={id} projectId={id} visible={tab === 'agents'} />
+        <AgentsPanel
+          key={id}
+          projectId={id}
+          projectName={project?.name}
+          visible={tab === 'agents'}
+        />
       </div>
     </main>
   );
