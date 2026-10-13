@@ -604,12 +604,9 @@
   vertical-align: middle;
   animation: chat-pulse 1.2s ease-in-out infinite;
 }
+/* The permission mode: quiet text, not a coloured pill (owner: the pill was distracting). */
 .chat-mode {
-  align-self: flex-start;
-  padding: 2px 8px;
-  border: 1px solid var(--series-4);
-  border-radius: 999px;
-  color: var(--series-4);
+  color: var(--text-3);
   font-size: 11.5px;
 }
 @media (prefers-reduced-motion: reduce) {

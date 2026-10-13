@@ -3,7 +3,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, SessionTranscript } from '../../../shared/types';
 import { api } from '../api';
-import { SessionChat, chatSupported, handOffDraft, screenInfo, statusLine } from './SessionChat';
+import {
+  CLEAR_INPUT,
+  SessionChat,
+  chatSupported,
+  handOffDraft,
+  screenInfo,
+  statusLine,
+} from './SessionChat';
 
 vi.mock('../api', () => ({
   api: {
@@ -78,7 +85,7 @@ describe('SessionChat (mobile chat view)', () => {
     // Only what was typed: the CLI's input line is cleared first (Ctrl+E, Ctrl+U).
     await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledTimes(3));
     expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual([
-      '\x05\x15',
+      CLEAR_INPUT,
       '\x1b[200~now commit\nand push\x1b[201~',
       '\r',
     ]);
@@ -204,7 +211,7 @@ describe('SessionChat keys behave as in the terminal (PM-116)', () => {
     view.unmount();
     await waitFor(() =>
       expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual([
-        '\x05\x15',
+        CLEAR_INPUT,
         '\x1b[200~not sent yet\x1b[201~', // In the CLI's input line, not submitted.
       ]),
     );
@@ -245,7 +252,7 @@ describe('SessionChat images (PM-116)', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() =>
       expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual([
-        '\x05\x15',
+        CLEAR_INPUT,
         '\x1b[200~S:/data/attachments/shot.png\x1b[201~',
         '\x1b[200~what is wrong here?\x1b[201~',
         '\r',
@@ -321,10 +328,10 @@ describe('Continue key (PM-121)', () => {
     await screen.findByLabelText('Message to the session');
     expect(screen.queryByRole('button', { name: 'Enter' })).toBeNull();
     fireEvent.change(box(), { target: { value: 'my draft' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'continue' }));
     await waitFor(() =>
       expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual([
-        '\x05\x15',
+        CLEAR_INPUT,
         '\x1b[200~continue\x1b[201~',
         '\r',
       ]),
@@ -334,7 +341,7 @@ describe('Continue key (PM-121)', () => {
     view.unmount();
     render(<SessionChat session={session({ tailState: 'input' })} onError={() => {}} />);
     expect(await screen.findByRole('button', { name: 'Enter' })).toBeDefined();
-    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'continue' })).toBeNull();
   });
 });
 
@@ -380,7 +387,7 @@ describe('quick key order (PM-121)', () => {
       [...document.querySelectorAll('.chat-keys button')].map(
         (b) => b.getAttribute('aria-label') ?? b.textContent,
       );
-    expect(keys().slice(0, 2)).toEqual(['Continue', 'Escape']);
+    expect(keys().slice(0, 2)).toEqual(['continue', 'Escape']);
     expect(keys()).not.toContain('Enter');
     view.unmount();
     render(<SessionChat session={session({ tailState: 'input' })} onError={() => {}} />);
@@ -469,5 +476,34 @@ describe('tools that speak to you (PM-123)', () => {
     // The question and the plan sit between the Bash calls, not folded into a steps group.
     expect(document.querySelectorAll('.chat-steps')).toHaveLength(0);
     expect(document.querySelectorAll('.chat-card')).toHaveLength(2);
+  });
+});
+
+describe('only the typed message is sent (PM-125)', () => {
+  /** A readline-style input: Ctrl+E end of line, Ctrl+U delete to line start, Backspace. */
+  const edit = (text: string, keys: string) => {
+    let value = text;
+    let cursor = value.length;
+    for (const key of keys) {
+      const start = value.lastIndexOf('\n', cursor - 1) + 1;
+      if (key === '\x05') {
+        const end = value.indexOf('\n', cursor);
+        cursor = end < 0 ? value.length : end;
+      } else if (key === '\x15') {
+        value = value.slice(0, start) + value.slice(cursor);
+        cursor = start;
+      } else if (key === '\x7f' && cursor > 0) {
+        value = value.slice(0, cursor - 1) + value.slice(cursor);
+        cursor--;
+      }
+    }
+    return value;
+  };
+  it("empties the CLI's whole input, not just its last line", () => {
+    // E.g. two queued messages Claude put back into its input after an Esc.
+    const leftover = 'first queued message\nsecond line of it\nanother queued message';
+    expect(edit(leftover, '\x05\x15')).toBe('first queued message\nsecond line of it\n'); // Before.
+    expect(edit(leftover, CLEAR_INPUT)).toBe('');
+    expect(edit('', CLEAR_INPUT)).toBe(''); // Harmless on an empty input.
   });
 });

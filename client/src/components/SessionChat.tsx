@@ -30,6 +30,16 @@ const CHAT_PROVIDERS = new Set(['claude', 'codex']);
 export const chatSupported = (session: AgentSession) =>
   session.terminal === 'pty' && CHAT_PROVIDERS.has(session.providerId);
 
+/**
+ * Empties the CLI's whole input before a message goes in (PM-125). Text can already be there,
+ * often over several lines: messages Claude puts back after an Esc while busy, a draft handed
+ * to the terminal view, typing in the terminal. Ctrl+U alone cleared only the last line, so
+ * the rest went out in front of the new message. Per line: Ctrl+E (end), Ctrl+U (delete it),
+ * Backspace (into the line above); all harmless on an empty input, and nothing here can
+ * interrupt a running agent (unlike Ctrl+C).
+ */
+export const CLEAR_INPUT = '\x05\x15\x7f'.repeat(12) + '\x05\x15';
+
 const KEYS: { label: string; aria: string; data: string }[] = [
   { label: 'Esc', aria: 'Escape', data: '\x1b' },
   { label: '↑', aria: 'Arrow up', data: '\x1b[A' },
@@ -529,7 +539,7 @@ export function handOffDraft(sessionId: number): void {
   const text = readDraft(sessionId).trim();
   if (!text) return;
   void api
-    .sendSessionInput(sessionId, '\x05\x15')
+    .sendSessionInput(sessionId, CLEAR_INPUT)
     .then(() => api.sendSessionInput(sessionId, `\x1b[200~${text}\x1b[201~`))
     .catch(() => undefined);
 }
@@ -757,11 +767,11 @@ export function SessionChat({
     }
     atBottom.current = true;
     try {
-      // Only what you typed: first clear anything already in the CLI's input line (Ctrl+E to
-      // its end, Ctrl+U to delete it; e.g. text typed in the terminal view). Each image path
+      // Only what you typed: first empty the CLI's whole input (CLEAR_INPUT: leftovers there
+      // went out in front of the message, PM-125). Each image path
       // goes in as its own paste (that's how the CLIs recognise an image), then the text as
       // one bracketed paste (multi-line stays one prompt), and Enter submits it.
-      await send('\x05\x15');
+      await send(CLEAR_INPUT);
       for (const image of images) await send(`\x1b[200~${image.path}\x1b[201~`);
       if (text) await send(`\x1b[200~${text}\x1b[201~`);
       await send('\r');
@@ -1058,7 +1068,7 @@ export function SessionChat({
             title='Send "continue"'
             onClick={() => void submit('continue')}
           >
-            Continue
+            continue
           </button>
         )}
         {KEYS.filter((k) => k.aria !== 'Enter').map((k) => (
