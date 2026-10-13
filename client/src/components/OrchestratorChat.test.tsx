@@ -53,11 +53,10 @@ it('offers only configured chat agents and opens the chosen provider', async () 
       onChanged={() => {}}
     />,
   );
-  const selector = screen.getByRole('combobox', { name: 'Orchestrator chat agent' });
-  expect(
-    screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value),
-  ).toEqual(['codex', 'claude']);
-  fireEvent.change(selector, { target: { value: 'claude' } });
+  const selector = screen.getByRole('button', { name: /Orchestrator chat agent/ });
+  fireEvent.click(selector);
+  expect(screen.getAllByRole('option')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('option', { name: /Claude Code/ }).querySelector('button')!);
   expect(await screen.findByRole('region', { name: 'Master chat' })).toBeDefined();
   expect(api.openOrchestratorChat).toHaveBeenLastCalledWith('master', 'claude');
 });
