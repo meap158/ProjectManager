@@ -130,7 +130,7 @@ export function OrchestratorPending({
           ))}
         </ul>
       )}
-      {snapshot && snapshot.total > snapshot.limit && (
+      {snapshot && (snapshot.total > snapshot.limit || snapshot.offset > 0) && (
         <nav className="orchestrator-result-links" aria-label="Pending work pages">
           <button
             type="button"
@@ -141,8 +141,9 @@ export function OrchestratorPending({
             Previous
           </button>
           <span className="faint" role="status">
-            {snapshot.offset + 1}-{Math.min(snapshot.offset + items.length, snapshot.total)} of{' '}
-            {snapshot.total}
+            {items.length
+              ? `${snapshot.offset + 1}-${Math.min(snapshot.offset + items.length, snapshot.total)} of ${snapshot.total}`
+              : 'This page is empty; pending work changed. Go back or refresh.'}
           </span>
           <button
             type="button"

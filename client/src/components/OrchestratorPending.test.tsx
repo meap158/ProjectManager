@@ -139,3 +139,24 @@ it('reviews owned runs in their Orchestrator instead of the filtered project Age
     '/orchestrators?orchestrator=owner&run=7#orchestrator-runs-owner',
   );
 });
+
+it('keeps Previous available when pending work shrinks past the current page', async () => {
+  vi.mocked(api.orchestratorPending)
+    .mockResolvedValueOnce({ ...snapshot, total: 12, nextOffset: 10 })
+    .mockResolvedValueOnce({ ...snapshot, total: 3, offset: 10, items: [], nextOffset: null })
+    .mockResolvedValueOnce({ ...snapshot, total: 3 });
+  render(
+    <MemoryRouter>
+      <OrchestratorPending masterId="master" busy={false} canRun={false} onFollowUp={vi.fn()} />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect pending work' }));
+  await screen.findByRole('button', { name: 'Next' });
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await screen.findByText('This page is empty; pending work changed. Go back or refresh.');
+  const previous = screen.getByRole('button', { name: 'Previous' });
+  expect((previous as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(previous);
+  await screen.findByText('Uncommitted files');
+  expect(api.orchestratorPending).toHaveBeenLastCalledWith('master', 0, undefined);
+});
