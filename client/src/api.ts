@@ -7,6 +7,7 @@ import type {
 } from '../../shared/orchestrator';
 import type {
   AgentAutonomy,
+  ChatItem,
   AgentInstall,
   AgentOutput,
   AgentPermissions,
@@ -244,6 +245,12 @@ export const api = {
       `/agent-sessions/${id}/transcript${after === undefined ? '' : `?after=${after}`}`,
     ),
   sessionScreen: (id: number) => request<{ text: string }>('GET', `/agent-sessions/${id}/screen`),
+  /** A Claude subagent's own steps, for the tool call that started it; null when none kept. */
+  sessionSubagent: (id: number, toolId: string) =>
+    request<{ items: ChatItem[] | null }>(
+      'GET',
+      `/agent-sessions/${id}/subagent?tool=${encodeURIComponent(toolId)}`,
+    ),
   /** Chat view suggestions (PM-117): the CLI's slash commands, and files matching an @-mention. */
   sessionCommands: (id: number) => request<SlashCommand[]>('GET', `/agent-sessions/${id}/commands`),
   sessionFiles: (id: number, q: string) =>

@@ -5,7 +5,7 @@
 // exact conversation id (its resume target), so the right file is found without guessing.
 // Transcripts can be hundreds of MB (Codex): only the tail is read at first, then new bytes.
 
-import { open, readdir, stat } from 'node:fs/promises';
+import { open, readFile, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { ChatItem, SessionTranscript } from '../../shared/types.js';
@@ -109,8 +109,8 @@ const isNoise = (text: string) =>
     text,
   );
 
-/** One Claude Code transcript line → chat items. */
-export function parseClaudeLine(line: string): ChatItem[] {
+/** One Claude Code transcript line → chat items. `sidechain` reads a subagent's own file. */
+export function parseClaudeLine(line: string, sidechain = false): ChatItem[] {
   let o: {
     type?: string;
     uuid?: string;
@@ -128,13 +128,19 @@ export function parseClaudeLine(line: string): ChatItem[] {
   }
   // A message you sent while Claude was working: recorded as a queued command when it reached
   // Claude mid-task, not as a user message (PM-118). Without this it never showed as yours.
-  if (o.type === 'attachment' && o.attachment?.type === 'queued_command' && !o.isSidechain) {
+  if (
+    o.type === 'attachment' &&
+    o.attachment?.type === 'queued_command' &&
+    !o.isSidechain &&
+    !sidechain
+  ) {
     const text = textOf(o.attachment.prompt);
     return isNoise(text)
       ? []
       : [{ id: o.uuid ?? `queued-${o.timestamp}`, kind: 'user', text, at: o.timestamp ?? null }];
   }
-  if ((o.type !== 'user' && o.type !== 'assistant') || o.isSidechain || o.isMeta) return [];
+  if ((o.type !== 'user' && o.type !== 'assistant') || (o.isSidechain && !sidechain) || o.isMeta)
+    return [];
   const at = o.timestamp ?? null;
   const base = o.uuid ?? `${o.type}-${at}`;
   const content = o.message?.content;
@@ -289,10 +295,41 @@ export async function readTranscript(
   if (from > 0 && (after === undefined || reset)) start = text.indexOf('\n') + 1;
   const end = text.lastIndexOf('\n') + 1;
   if (end <= start) return { items: [], next: from, reset };
-  const parse = providerId === 'codex' ? parseCodexLine : parseClaudeLine;
+  const parse =
+    providerId === 'codex'
+      ? parseCodexLine
+      : (line: string) => parseClaudeLine(line, providerId === 'claude-subagent');
   const items = text
     .slice(start, end)
     .split('\n')
     .flatMap((line) => (line ? parse(line) : []));
   return { items, next: from + Buffer.byteLength(text.slice(0, end), 'utf8'), reset };
+}
+
+const TOOL_ID = /^[A-Za-z0-9_-]{1,100}$/;
+
+/**
+ * What a Claude subagent did (PM-123): the steps and messages of the agent a tool call
+ * started, read from the subagent transcript Claude Code keeps beside the conversation
+ * (<conversation>/subagents/agent-*.jsonl, matched by its .meta.json toolUseId). Null when
+ * there is none (other CLIs, or an older Claude Code that kept no subagent files).
+ */
+export async function readSubagent(file: string, toolUseId: string): Promise<ChatItem[] | null> {
+  if (!TOOL_ID.test(toolUseId) || !file.endsWith('.jsonl')) return null;
+  const dir = path.join(file.slice(0, -'.jsonl'.length), 'subagents');
+  for (const name of await readdir(dir).catch(() => [] as string[])) {
+    if (!name.endsWith('.meta.json')) continue;
+    const meta = await readFile(path.join(dir, name), 'utf8').catch(() => '');
+    let id: unknown;
+    try {
+      id = (JSON.parse(meta) as { toolUseId?: unknown }).toolUseId;
+    } catch {
+      continue;
+    }
+    if (id !== toolUseId) continue;
+    const jsonl = path.join(dir, name.replace(/\.meta\.json$/, '.jsonl'));
+    const { items } = await readTranscript(jsonl, 'claude-subagent').catch(() => ({ items: [] }));
+    return items;
+  }
+  return null;
 }

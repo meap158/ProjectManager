@@ -774,3 +774,24 @@
 .chat-proposed-plan-body {
   overflow-wrap: anywhere;
 }
+
+/* A subagent's own steps inside its Agent step (PM-123). */
+.chat-subagent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.chat-subagent-text {
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.chat-subagent-text.is-user {
+  color: var(--text-3);
+}
+.chat-subagent-load {
+  margin: 4px 0 6px;
+}

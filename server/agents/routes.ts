@@ -19,7 +19,7 @@ import { providerStatuses } from './providers.js';
 import { getPermissions, PERMISSION_PROVIDERS, setPermissions } from './permissions.js';
 import { getCpuBudget, setCpuBudget, totalThreads } from './cpuBudget.js';
 import { slashCommands, suggestFiles } from './completions.js';
-import { findTranscript, readTranscript, transcriptSource } from './transcript.js';
+import { findTranscript, readSubagent, readTranscript, transcriptSource } from './transcript.js';
 import { readSensors } from './sensors.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
 import { removeSessionImages } from '../attachments.js';
@@ -256,6 +256,16 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     const file = source ? await findTranscript(source) : null;
     if (!file) return c.json({ supported: !!source, items: [], next: 0, reset: false });
     return c.json({ supported: true, ...(await readTranscript(file, resume.providerId, offset)) });
+  });
+
+  // A Claude subagent's own steps (PM-123), for the Agent/Task tool call that started it.
+  app.get('/agent-sessions/:id/subagent', async (c) => {
+    const resume = supervisor.sessionResume(parseId(c));
+    if (!resume) throw new AgentError(404, 'Session not found');
+    const source = transcriptSource(resume.providerId, resume.resumeJson);
+    const file = source?.providerId === 'claude' ? await findTranscript(source) : null;
+    const items = file ? await readSubagent(file, c.req.query('tool') ?? '') : null;
+    return c.json({ items });
   });
 
   // Composer suggestions (PM-117): the CLI's slash commands, and project files for @-mentions

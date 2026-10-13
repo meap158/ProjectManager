@@ -6,6 +6,7 @@ import {
   findTranscript,
   parseClaudeLine,
   parseCodexLine,
+  readSubagent,
   readTranscript,
   transcriptSource,
 } from './transcript.js';
@@ -194,5 +195,42 @@ describe('conversation markers (PM-123)', () => {
         at: null,
       },
     ]);
+  });
+});
+
+describe('readSubagent (PM-123)', () => {
+  it("reads the steps of the subagent a tool call started, from Claude's subagents folder", async () => {
+    const conv = path.join(home, 'sub', 'conv.jsonl');
+    const dir = path.join(home, 'sub', 'conv', 'subagents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(conv, '');
+    writeFileSync(path.join(dir, 'agent-a1.meta.json'), JSON.stringify({ toolUseId: 'toolu_1' }));
+    writeFileSync(
+      path.join(dir, 'agent-a1.jsonl'),
+      line({
+        type: 'user',
+        isSidechain: true,
+        uuid: 'u1',
+        message: { role: 'user', content: 'Find the sort code' },
+      }) +
+        line({
+          type: 'assistant',
+          isSidechain: true,
+          uuid: 'a1',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'tool_use', id: 'toolu_g', name: 'Grep', input: { pattern: 'sort' } },
+            ],
+          },
+        }),
+    );
+    const items = await readSubagent(conv, 'toolu_1');
+    expect(items?.map((i) => [i.kind, i.name ?? i.text])).toEqual([
+      ['user', 'Find the sort code'],
+      ['tool', 'Grep'],
+    ]);
+    expect(await readSubagent(conv, 'toolu_other')).toBeNull();
+    expect(await readSubagent(conv, '../../etc')).toBeNull();
   });
 });

@@ -20,6 +20,7 @@ import {
 vi.mock('../api', () => ({
   api: {
     sessionTranscript: vi.fn(),
+    sessionSubagent: vi.fn(),
     sessionScreen: vi.fn(async () => ({ text: 'Allow edit?\n❯ 1. Yes\n  2. No' })),
     sendSessionInput: vi.fn(async () => ({ queued: false })),
     uploadSessionImage: vi.fn(async () => ({ path: 'S:/data/attachments/shot.png' })),
@@ -653,5 +654,32 @@ describe('edits and plans (PM-123)', () => {
     render(<SessionChat session={session()} onError={() => {}} />);
     expect((await screen.findByText(/waiting for your approval/)).textContent).toContain('Plan');
     expect(screen.getByText('Rename the field')).toBeDefined();
+  });
+});
+
+describe('subagent steps (PM-123)', () => {
+  it("loads an Agent step's own steps when asked", async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(
+      transcript({
+        items: [
+          {
+            id: 't1',
+            kind: 'tool',
+            toolId: 'toolu_1',
+            name: 'Agent',
+            input: '{}',
+            summary: 'Find it',
+            at: null,
+          },
+        ],
+      }),
+    );
+    vi.mocked(api.sessionSubagent).mockResolvedValue({
+      items: [{ id: 'm1', kind: 'assistant', text: 'Found it in sort.ts', at: null }],
+    });
+    render(<SessionChat session={session()} onError={() => {}} />);
+    fireEvent.click(await screen.findByText('Show its steps'));
+    expect(await screen.findByText('Found it in sort.ts')).toBeDefined();
+    expect(api.sessionSubagent).toHaveBeenCalledWith(7, 'toolu_1');
   });
 });

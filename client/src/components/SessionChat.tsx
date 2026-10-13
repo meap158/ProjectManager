@@ -1,5 +1,7 @@
 import {
+  createContext,
   memo,
+  useContext,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -318,10 +320,53 @@ export function editDiff(name: string | undefined, input: string | undefined): D
     : out;
 }
 
+/** The session a chat shows, for parts that load more of it (a subagent's steps). */
+const SessionIdContext = createContext<number | null>(null);
+
+/**
+ * A Claude subagent's own steps and messages (PM-123), loaded when asked for: the parent
+ * transcript only records the prompt and the final report.
+ */
+function SubagentSteps({ toolId }: { toolId: string }) {
+  const sessionId = useContext(SessionIdContext);
+  const [items, setItems] = useState<ChatItem[] | null | undefined>(undefined);
+  const [loading, setLoading] = useState(false);
+  if (sessionId === null) return null;
+  const load = () => {
+    setLoading(true);
+    api
+      .sessionSubagent(sessionId, toolId)
+      .then((r) => setItems(r.items))
+      .catch(() => setItems(null))
+      .finally(() => setLoading(false));
+  };
+  if (items === undefined)
+    return (
+      <button type="button" className="btn chat-subagent-load" onClick={load} disabled={loading}>
+        {loading ? 'Loading…' : 'Show its steps'}
+      </button>
+    );
+  if (!items?.length) return <p className="faint chat-subagent-none">No steps recorded.</p>;
+  return (
+    <div className="chat-subagent">
+      {merge(items).map((e) =>
+        e.item.kind === 'tool' ? (
+          <ToolCall key={e.item.id} entry={e} />
+        ) : (
+          <div key={e.item.id} className={`chat-subagent-text is-${e.item.kind}`}>
+            {renderText(e.item.text ?? '')}
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
 const ToolCall = memo(function ToolCall({ entry }: { entry: Entry }) {
   const { item, result } = entry;
   const state = !result ? 'running' : result.isError ? 'error' : 'done';
   const diff = editDiff(item.name, item.input);
+  const subagent = (item.name === 'Agent' || item.name === 'Task') && item.toolId;
   return (
     <details className={`chat-tool is-${state}`}>
       <summary>
@@ -349,6 +394,12 @@ const ToolCall = memo(function ToolCall({ entry }: { entry: Entry }) {
             <pre className="chat-code">{item.input}</pre>
           </>
         )
+      )}
+      {subagent && (
+        <>
+          <div className="chat-tool-label">Steps</div>
+          <SubagentSteps toolId={subagent} />
+        </>
       )}
       {result && (
         <>
@@ -1106,314 +1157,321 @@ export function SessionChat({
 
   const entries = merge(items);
   return (
-    <div className="session-chat">
-      <div className="chat-list" ref={listRef} onScroll={onScroll} aria-live="polite">
-        {!loaded ? (
-          // Message-shaped placeholders while the transcript loads (PM-127).
-          <div className="chat-loading" role="status" aria-label="Loading messages">
-            {(['user', 'assistant', 'user', 'assistant'] as const).map((who, i) => (
-              <div key={i} className={`chat-msg is-${who}`}>
-                <div className={`skeleton chat-loading-bubble is-${who}`} />
-              </div>
-            ))}
-          </div>
-        ) : !supported ? (
-          <p className="chat-empty">This CLI has no readable transcript: use the terminal view.</p>
-        ) : !entries.length ? (
-          <p className="chat-empty">No messages yet. Send one below.</p>
-        ) : (
-          blocks(entries).map((b) =>
-            b.kind === 'steps' ? (
-              <Steps key={b.id} steps={b.steps} />
-            ) : b.entry.item.kind === 'tool' ? (
-              <SpeakingTool key={b.entry.item.id} entry={b.entry} />
-            ) : (
-              <Message key={b.entry.item.id} item={b.entry.item} />
-            ),
-          )
-        )}
-        {unrecorded.map((p) => (
-          <div key={p.id} className="chat-msg is-user is-pending">
-            <div className="chat-bubble">{renderText(p.label)}</div>
-            {working || asking ? (
-              // The CLI holds messages while it works (or asks something) and sends them after.
-              <span className="chat-pending-note">
-                {asking ? 'Waiting: answer the CLI first' : 'Queued, sends when the CLI is done'}
-              </span>
-            ) : p.due ? (
-              <span className="chat-pending-note">
-                Not sent yet{' '}
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => void send('\r').catch(() => undefined)}
-                >
-                  Send
-                </button>
-              </span>
-            ) : (
-              <span className="chat-pending-note">Sending…</span>
-            )}
-          </div>
-        ))}
-        {/* What the terminal shows live around its input (PM-122): status, mode, background. */}
-        {(working || status || shown.mode || shown.goal || shown.background.length > 0) && (
-          <div className="chat-live" role="status" aria-label="Session status">
-            {(working || status) && (
-              <div className={working ? 'chat-working is-working' : 'chat-working'}>
-                {working && (
-                  <span className="chat-dots" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                )}
-                <span className="chat-status-line">
-                  {status ? (
-                    <>
-                      <span className="chat-status-activity">{statusParts(status).activity}</span>
-                      {statusParts(status).details && (
-                        <span className="chat-status-details"> {statusParts(status).details}</span>
-                      )}
-                    </>
-                  ) : (
-                    'Working…'
-                  )}
+    <SessionIdContext.Provider value={session.id}>
+      <div className="session-chat">
+        <div className="chat-list" ref={listRef} onScroll={onScroll} aria-live="polite">
+          {!loaded ? (
+            // Message-shaped placeholders while the transcript loads (PM-127).
+            <div className="chat-loading" role="status" aria-label="Loading messages">
+              {(['user', 'assistant', 'user', 'assistant'] as const).map((who, i) => (
+                <div key={i} className={`chat-msg is-${who}`}>
+                  <div className={`skeleton chat-loading-bubble is-${who}`} />
+                </div>
+              ))}
+            </div>
+          ) : !supported ? (
+            <p className="chat-empty">
+              This CLI has no readable transcript: use the terminal view.
+            </p>
+          ) : !entries.length ? (
+            <p className="chat-empty">No messages yet. Send one below.</p>
+          ) : (
+            blocks(entries).map((b) =>
+              b.kind === 'steps' ? (
+                <Steps key={b.id} steps={b.steps} />
+              ) : b.entry.item.kind === 'tool' ? (
+                <SpeakingTool key={b.entry.item.id} entry={b.entry} />
+              ) : (
+                <Message key={b.entry.item.id} item={b.entry.item} />
+              ),
+            )
+          )}
+          {unrecorded.map((p) => (
+            <div key={p.id} className="chat-msg is-user is-pending">
+              <div className="chat-bubble">{renderText(p.label)}</div>
+              {working || asking ? (
+                // The CLI holds messages while it works (or asks something) and sends them after.
+                <span className="chat-pending-note">
+                  {asking ? 'Waiting: answer the CLI first' : 'Queued, sends when the CLI is done'}
                 </span>
-              </div>
-            )}
-            {shown.background.length > 0 && (
-              <ul className="chat-background" aria-label="Running in the background">
-                {shown.background.map((b, i) => (
-                  <li key={i}>{b}</li>
-                ))}
-              </ul>
-            )}
-            {shown.goal && <span className="chat-goal">◎ {shown.goal}</span>}
-            {shown.mode && (
-              <span className={`chat-mode is-${modeKind(shown.mode)}`}>
-                {modeKind(shown.mode) === 'plan' ? '⏸' : '⏵⏵'} {shown.mode}
-              </span>
-            )}
-          </div>
-        )}
-        {asking && (
-          <div className="chat-asking" role="status">
-            <div className="chat-tool-label">The CLI is asking:</div>
-            <pre className="chat-code">{screen || 'Reading the screen…'}</pre>
-          </div>
-        )}
-      </div>
-      {(unseen > 0 || scrolledUp) && (
-        <button
-          type="button"
-          className={`chat-new${unseen > 0 ? '' : ' is-plain'}`}
-          aria-label="Jump to the latest message"
-          onClick={jumpToLatest}
-        >
-          {unseen > 0 ? `${unseen} new message${unseen === 1 ? '' : 's'} ↓` : '↓'}
-        </button>
-      )}
-      <div className="chat-keys" role="group" aria-label="Terminal keys">
-        {/* First key (PM-121): Continue, the most common nudge. Enter is only needed while the
-            CLI asks something or a suggestion list is open, and then takes this place. */}
-        {asking || suggestions.length ? (
-          <button
-            key="enter"
-            type="button"
-            className="chat-key"
-            aria-label="Enter"
-            onClick={() => pressKey(KEYS.find((k) => k.aria === 'Enter')!)}
-          >
-            ⏎
-          </button>
-        ) : (
-          <button
-            key="continue"
-            type="button"
-            className="chat-key chat-key-continue"
-            title='Send "continue"'
-            onClick={() => void submit('continue')}
-          >
-            continue
-          </button>
-        )}
-        {KEYS.filter((k) => k.aria !== 'Enter').map((k) => (
-          <button
-            key={k.aria}
-            type="button"
-            className="chat-key"
-            aria-label={k.aria}
-            onClick={() => pressKey(k)}
-          >
-            {k.label}
-          </button>
-        ))}
-      </div>
-      {imageError && (
-        <p className="chat-image-error" role="alert">
-          {imageError}{' '}
-          <button type="button" className="link-button" onClick={() => setImageError('')}>
-            Dismiss
-          </button>
-        </p>
-      )}
-      {(attachments.length > 0 || uploading > 0) && (
-        <div className="chat-attachments" aria-label="Images to send">
-          {attachments.map((a) => (
-            <span key={a.path} className="chat-attachment" title={a.name}>
-              {a.preview ? <img src={a.preview} alt={a.name} /> : <span>{a.name}</span>}
-              <button
-                type="button"
-                aria-label={`Remove ${a.name}`}
-                onClick={() => removeAttachment(a.path)}
-              >
-                ×
-              </button>
-            </span>
+              ) : p.due ? (
+                <span className="chat-pending-note">
+                  Not sent yet{' '}
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => void send('\r').catch(() => undefined)}
+                  >
+                    Send
+                  </button>
+                </span>
+              ) : (
+                <span className="chat-pending-note">Sending…</span>
+              )}
+            </div>
           ))}
-          {uploading > 0 && (
-            <span className="chat-attachment is-uploading" role="status">
-              <span className="spinner" aria-hidden="true" /> Adding…
-            </span>
+          {/* What the terminal shows live around its input (PM-122): status, mode, background. */}
+          {(working || status || shown.mode || shown.goal || shown.background.length > 0) && (
+            <div className="chat-live" role="status" aria-label="Session status">
+              {(working || status) && (
+                <div className={working ? 'chat-working is-working' : 'chat-working'}>
+                  {working && (
+                    <span className="chat-dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  )}
+                  <span className="chat-status-line">
+                    {status ? (
+                      <>
+                        <span className="chat-status-activity">{statusParts(status).activity}</span>
+                        {statusParts(status).details && (
+                          <span className="chat-status-details">
+                            {' '}
+                            {statusParts(status).details}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      'Working…'
+                    )}
+                  </span>
+                </div>
+              )}
+              {shown.background.length > 0 && (
+                <ul className="chat-background" aria-label="Running in the background">
+                  {shown.background.map((b, i) => (
+                    <li key={i}>{b}</li>
+                  ))}
+                </ul>
+              )}
+              {shown.goal && <span className="chat-goal">◎ {shown.goal}</span>}
+              {shown.mode && (
+                <span className={`chat-mode is-${modeKind(shown.mode)}`}>
+                  {modeKind(shown.mode) === 'plan' ? '⏸' : '⏵⏵'} {shown.mode}
+                </span>
+              )}
+            </div>
+          )}
+          {asking && (
+            <div className="chat-asking" role="status">
+              <div className="chat-tool-label">The CLI is asking:</div>
+              <pre className="chat-code">{screen || 'Reading the screen…'}</pre>
+            </div>
           )}
         </div>
-      )}
-      <form
-        className="chat-composer"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-        onDragOver={(e) => {
-          if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault();
-        }}
-        onDrop={(e) => {
-          const files = droppedFiles(e.dataTransfer).filter(isImageFile);
-          if (!files.length) return;
-          e.preventDefault();
-          void addImages(files);
-        }}
-      >
-        <button
-          type="button"
-          className="chat-attach"
-          aria-label="Add images"
-          title="Add images (or paste / drop them into the message)"
-          onClick={() => picker.current?.click()}
-        >
-          <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true">
-            <rect
-              x="2"
-              y="3"
-              width="12"
-              height="10"
-              rx="1.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-            />
-            <circle cx="6" cy="6.5" r="1.2" fill="currentColor" />
-            <path
-              d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5L14 12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-            />
-          </svg>
-        </button>
-        <input
-          ref={picker}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => {
-            void addImages([...(e.target.files ?? [])]);
-            e.target.value = '';
+        {(unseen > 0 || scrolledUp) && (
+          <button
+            type="button"
+            className={`chat-new${unseen > 0 ? '' : ' is-plain'}`}
+            aria-label="Jump to the latest message"
+            onClick={jumpToLatest}
+          >
+            {unseen > 0 ? `${unseen} new message${unseen === 1 ? '' : 's'} ↓` : '↓'}
+          </button>
+        )}
+        <div className="chat-keys" role="group" aria-label="Terminal keys">
+          {/* First key (PM-121): Continue, the most common nudge. Enter is only needed while the
+            CLI asks something or a suggestion list is open, and then takes this place. */}
+          {asking || suggestions.length ? (
+            <button
+              key="enter"
+              type="button"
+              className="chat-key"
+              aria-label="Enter"
+              onClick={() => pressKey(KEYS.find((k) => k.aria === 'Enter')!)}
+            >
+              ⏎
+            </button>
+          ) : (
+            <button
+              key="continue"
+              type="button"
+              className="chat-key chat-key-continue"
+              title='Send "continue"'
+              onClick={() => void submit('continue')}
+            >
+              continue
+            </button>
+          )}
+          {KEYS.filter((k) => k.aria !== 'Enter').map((k) => (
+            <button
+              key={k.aria}
+              type="button"
+              className="chat-key"
+              aria-label={k.aria}
+              onClick={() => pressKey(k)}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+        {imageError && (
+          <p className="chat-image-error" role="alert">
+            {imageError}{' '}
+            <button type="button" className="link-button" onClick={() => setImageError('')}>
+              Dismiss
+            </button>
+          </p>
+        )}
+        {(attachments.length > 0 || uploading > 0) && (
+          <div className="chat-attachments" aria-label="Images to send">
+            {attachments.map((a) => (
+              <span key={a.path} className="chat-attachment" title={a.name}>
+                {a.preview ? <img src={a.preview} alt={a.name} /> : <span>{a.name}</span>}
+                <button
+                  type="button"
+                  aria-label={`Remove ${a.name}`}
+                  onClick={() => removeAttachment(a.path)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {uploading > 0 && (
+              <span className="chat-attachment is-uploading" role="status">
+                <span className="spinner" aria-hidden="true" /> Adding…
+              </span>
+            )}
+          </div>
+        )}
+        <form
+          className="chat-composer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
           }}
-        />
-        <textarea
-          ref={composer}
-          className="input chat-input"
-          value={draft}
-          rows={1}
-          enterKeyHint="send"
-          placeholder={
-            session.status === 'running' ? 'Message…' : 'Session is down: queues for relaunch'
-          }
-          aria-label="Message to the session"
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setRecall(null); // Editing a recalled message makes it your draft.
-            setSelected(0);
+          onDragOver={(e) => {
+            if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault();
           }}
-          onPaste={(e) => {
-            const files = droppedFiles(e.clipboardData).filter(isImageFile);
-            if (!files.length) return; // Text pastes as usual.
+          onDrop={(e) => {
+            const files = droppedFiles(e.dataTransfer).filter(isImageFile);
+            if (!files.length) return;
             e.preventDefault();
             void addImages(files);
           }}
-          onKeyDown={(e) => {
-            const listKey: Record<string, 'up' | 'down' | 'pick' | 'close'> = {
-              ArrowUp: 'up',
-              ArrowDown: 'down',
-              Enter: 'pick',
-              Tab: 'pick',
-              Escape: 'close',
-            };
-            if (
-              listKey[e.key] &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing &&
-              suggestionKey(listKey[e.key]!)
-            ) {
-              e.preventDefault();
-              return;
+        >
+          <button
+            type="button"
+            className="chat-attach"
+            aria-label="Add images"
+            title="Add images (or paste / drop them into the message)"
+            onClick={() => picker.current?.click()}
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true">
+              <rect
+                x="2"
+                y="3"
+                width="12"
+                height="10"
+                rx="1.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+              <circle cx="6" cy="6.5" r="1.2" fill="currentColor" />
+              <path
+                d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5L14 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+            </svg>
+          </button>
+          <input
+            ref={picker}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              void addImages([...(e.target.files ?? [])]);
+              e.target.value = '';
+            }}
+          />
+          <textarea
+            ref={composer}
+            className="input chat-input"
+            value={draft}
+            rows={1}
+            enterKeyHint="send"
+            placeholder={
+              session.status === 'running' ? 'Message…' : 'Session is down: queues for relaunch'
             }
-            // As in the CLI: Return sends, Shift+Return adds a line. Never mid-composition
-            // (IME input such as Vietnamese or emoji pickers use Return to confirm a word).
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            aria-label="Message to the session"
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setRecall(null); // Editing a recalled message makes it your draft.
+              setSelected(0);
+            }}
+            onPaste={(e) => {
+              const files = droppedFiles(e.clipboardData).filter(isImageFile);
+              if (!files.length) return; // Text pastes as usual.
               e.preventDefault();
-              void submit();
-              return;
-            }
-            // Physical keyboards: ↑ on the first line / ↓ on the last recall messages, as in a CLI.
-            const box = e.currentTarget;
-            const before = box.value.slice(0, box.selectionStart);
-            const after = box.value.slice(box.selectionEnd);
-            if (e.key === 'ArrowUp' && !before.includes('\n') && !e.shiftKey) {
-              e.preventDefault();
-              recallMessage(1);
-            } else if (e.key === 'ArrowDown' && !after.includes('\n') && recall && !e.shiftKey) {
-              e.preventDefault();
-              recallMessage(-1);
-            }
-          }}
-        />
-      </form>
-      {/* Below the message box, as the CLIs show their command list (PM-132). */}
-      {suggestions.length > 0 && (
-        <ul className="chat-suggest" role="listbox" aria-label="Suggestions">
-          {suggestions.map((s, i) => (
-            <li
-              key={s.value}
-              role="option"
-              aria-selected={i === selected}
-              className={i === selected ? 'is-selected' : undefined}
-              // Pointer down (not click) so the message box keeps focus and the keyboard stays.
-              onPointerDown={(e) => {
+              void addImages(files);
+            }}
+            onKeyDown={(e) => {
+              const listKey: Record<string, 'up' | 'down' | 'pick' | 'close'> = {
+                ArrowUp: 'up',
+                ArrowDown: 'down',
+                Enter: 'pick',
+                Tab: 'pick',
+                Escape: 'close',
+              };
+              if (
+                listKey[e.key] &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing &&
+                suggestionKey(listKey[e.key]!)
+              ) {
                 e.preventDefault();
-                applySuggestion(s);
-              }}
-            >
-              <span className="chat-suggest-label">{s.label}</span>
-              {s.detail && <span className="chat-suggest-detail">{s.detail}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+                return;
+              }
+              // As in the CLI: Return sends, Shift+Return adds a line. Never mid-composition
+              // (IME input such as Vietnamese or emoji pickers use Return to confirm a word).
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void submit();
+                return;
+              }
+              // Physical keyboards: ↑ on the first line / ↓ on the last recall messages, as in a CLI.
+              const box = e.currentTarget;
+              const before = box.value.slice(0, box.selectionStart);
+              const after = box.value.slice(box.selectionEnd);
+              if (e.key === 'ArrowUp' && !before.includes('\n') && !e.shiftKey) {
+                e.preventDefault();
+                recallMessage(1);
+              } else if (e.key === 'ArrowDown' && !after.includes('\n') && recall && !e.shiftKey) {
+                e.preventDefault();
+                recallMessage(-1);
+              }
+            }}
+          />
+        </form>
+        {/* Below the message box, as the CLIs show their command list (PM-132). */}
+        {suggestions.length > 0 && (
+          <ul className="chat-suggest" role="listbox" aria-label="Suggestions">
+            {suggestions.map((s, i) => (
+              <li
+                key={s.value}
+                role="option"
+                aria-selected={i === selected}
+                className={i === selected ? 'is-selected' : undefined}
+                // Pointer down (not click) so the message box keeps focus and the keyboard stays.
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  applySuggestion(s);
+                }}
+              >
+                <span className="chat-suggest-label">{s.label}</span>
+                {s.detail && <span className="chat-suggest-detail">{s.detail}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </SessionIdContext.Provider>
   );
 }
 
