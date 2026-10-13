@@ -97,6 +97,29 @@ describe('SessionProgress', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('text in its prompt');
     expect(api.continueSessionNow).toHaveBeenCalledWith(1);
   });
+
+  it('says under a minute when the reset is seconds away (PM-58)', () => {
+    const session = makeSession({
+      providerId: 'codex',
+      terminal: 'pty',
+      usageLimit: { resetsAt: new Date(Date.now() + 30_000).toISOString() },
+    });
+    render(<SessionProgress session={session} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    expect(screen.getByText(/in under a minute/)).toBeDefined();
+  });
+
+  it('marks the reset due when its time has passed but the notice lingers (PM-58)', () => {
+    const session = makeSession({
+      providerId: 'codex',
+      terminal: 'pty',
+      usageLimit: { resetsAt: new Date(Date.now() - 5_000).toISOString() },
+    });
+    render(<SessionProgress session={session} />);
+    expect(screen.getByRole('status').textContent).toMatch(/· due$/);
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    expect(screen.getByText(/clears on the next check/)).toBeDefined();
+  });
 });
 
 describe('SessionRestartStatus', () => {

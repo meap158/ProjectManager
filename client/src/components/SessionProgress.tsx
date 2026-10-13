@@ -63,7 +63,14 @@ export function SessionProgress({ session }: { session: AgentSession }) {
   }, [resetAt]);
 
   if (session.providerId !== 'codex' || session.terminal !== 'pty') return null;
-  const minutesLeft = resetAt ? Math.max(0, Math.ceil((Date.parse(resetAt) - clock) / 60_000)) : 0;
+  const msLeft = resetAt ? Date.parse(resetAt) - clock : null;
+  const due = msLeft !== null && msLeft <= 0;
+  const minutesLeft = msLeft !== null ? Math.max(0, Math.ceil(msLeft / 60_000)) : 0;
+  const waitText = due
+    ? 'due now'
+    : msLeft !== null && msLeft < 60_000
+      ? 'in under a minute'
+      : `in ${minutesLeft} min`;
   const act = async (kind: 'toggle' | 'retry', call: () => Promise<unknown>) => {
     setPending(kind);
     setError('');
@@ -89,11 +96,12 @@ export function SessionProgress({ session }: { session: AgentSession }) {
           title={resetAt ? fullTime(resetAt) : undefined}
         >
           Usage limit{resetAt && ` · resets ${shortTime(resetAt)}`}
+          {due && ' · due'}
         </span>
       ) : (
         resumesAt && (
           <span className="faint session-resume-time" title={fullTime(resumesAt)}>
-            Resumes {shortTime(resumesAt)} · {minutesLeft}m
+            Resumes {shortTime(resumesAt)} · {due ? 'due' : `${minutesLeft}m`}
           </span>
         )
       )}
@@ -144,7 +152,9 @@ export function SessionProgress({ session }: { session: AgentSession }) {
       {limit && details && (
         <span className="session-limit-details">
           {resetAt
-            ? `Codex's plan limit resets ${fullTime(resetAt)}, in ${minutesLeft} min.`
+            ? due
+              ? `Codex's plan limit should have reset by ${fullTime(resetAt)}; this notice clears on the next check.`
+              : `Codex's plan limit resets ${fullTime(resetAt)}, ${waitText}.`
             : "Codex hasn't reported when this limit resets."}{' '}
           {enabled
             ? 'Auto-continue then sends "Continue the interrupted task" once; typing in the terminal cancels it.'
