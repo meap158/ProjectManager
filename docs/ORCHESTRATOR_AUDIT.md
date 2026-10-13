@@ -389,3 +389,17 @@ retains live and all unreviewed runs while omitting latest historical runs used 
 context. Twenty-five focused tests pass, including scope isolation and history beyond 100k
 rows. The isolated benchmark's pending/full-situation equivalence assertions pass. Unfiltered
 pending lists still grow with unresolved work; SQL pagination and consistent cursors remain open.
+
+## Automatic refresh correctness gap, 2026-10-14
+
+Current OrchestratorPage refresh reads state, projects, all sessions, in-flight cards and
+`api.listAllRuns()` every settled five-second cycle. The latter calls `/agent-runs`, whose
+supervisor defaults to the newest 200 rows. The page derives owned run sections, activity
+counts and review ownership from this truncated list. Thus an older owned live/unreviewed
+run can disappear behind unrelated recent history even though inspection SQL retains it.
+This is code evidence, not a reproduced live incident. Pending inspection itself is explicit,
+not polled. Replace page refresh with a versioned scoped summary that retains all owned live
+and unreviewed runs plus bounded paginated history; test an old owned run beyond 200 unrelated
+rows and owner isolation. Keep explicit review actions and populated-view error behavior.
+The multi-master route measurements are now recorded in ORCHESTRATOR_BENCHMARK.md; dispatch,
+write costs, physical mobile checks and stable snapshot pagination remain outstanding.

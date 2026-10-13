@@ -91,3 +91,26 @@ Warm provider/quota caches, no worker launches, no live database writes. These e
 in-process measurements exclude network/browser/cold-provider latency; five samples and
 concurrent host load do not establish tail-latency guarantees. The 5.4 MB response remains
 an explicit summary/pagination gap. Multi-master and dispatch/write-cost measurements remain.
+
+## Multi-master read routes (2026-10-14)
+
+Reproduce: `node --import tsx scripts/benchmark-orchestrator-api.mjs --cards=1000,10000 --masters=1,5,20 --samples=5`.
+Raw results: [measurement artifact](orchestrator-api-benchmark-2026-10-14.json).
+Each sample issues requests sequentially for all masters; times below are batch totals,
+not per-master latency. One warmup and five samples, warm caches, isolated in-memory database.
+Read-only and pending/full-situation equivalence assertions passed.
+
+| 10k cards, global scope | Masters | Median batch ms | Maximum batch ms | Bytes per master |
+| ----------------------- | ------: | --------------: | ---------------: | ---------------: |
+| Preview                 |       1 |          122.76 |           161.79 |           41,397 |
+| Preview                 |      20 |        1,793.11 |         1,961.87 |           41,397 |
+| Full situation          |       1 |          377.00 |           480.85 |        5,409,189 |
+| Full situation          |      20 |        4,012.85 |         6,925.87 |        5,409,189 |
+| Pending page            |       1 |          203.73 |           213.46 |            4,562 |
+| Pending page            |      20 |        2,418.39 |         2,576.99 |            4,562 |
+
+For 20 project-scoped masters, median totals were 198.33 ms preview, 185.15 ms situation,
+and 212.82 ms pending. Separate runs and concurrent host load prevent treating these values
+as controlled speedups. Five samples do not establish p95; RSS is a process snapshot, not
+operation-specific peak memory. No network, mobile browser, dispatch ticks or index write
+cost is included. Global pending computation still repeats unresolved-work reads per master.
