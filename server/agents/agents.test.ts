@@ -179,6 +179,9 @@ describe('providers', () => {
       (await call('POST', `/agent-sessions/${session.id}/auto-continue`, { enabled: 'yes' }))
         .status,
     ).toBe(400);
+    // "Try again" (PM-58) is for Codex terminals only, too.
+    expect((await call('POST', `/agent-sessions/${session.id}/continue-now`)).status).toBe(400);
+    expect(session.usageLimit).toBeNull();
     await call('DELETE', `/agent-sessions/${session.id}`);
   });
   it('lists the catalog with availability', async () => {

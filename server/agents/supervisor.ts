@@ -74,7 +74,7 @@ import {
 } from './activity.js';
 import { readLimits } from './limits.js';
 import { applyCpuBudget, getCpuBudget } from './cpuBudget.js';
-import { allowanceReset, emptyCodexPrompt } from './continuation.js';
+import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
 import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
 import {
   antigravityConversationFor,
@@ -470,6 +470,8 @@ interface RunRow {
  * replays in a few milliseconds.
  */
 const SCREEN_TAIL_BYTES = 256 * 1024;
+/** What auto-continue and "Try again" send a Codex session after its usage limit (PM-58). */
+const CONTINUE_PROMPT = '\x1b[200~Continue the interrupted task from where you stopped.\x1b[201~\r';
 /** How far back a log is searched for its last recorded size. */
 const RECORDED_SIZE_SCAN_BYTES = 64 * 1024 * 1024;
 
@@ -499,6 +501,8 @@ export class AgentSupervisor {
   /** Sizes read back from session logs, for screens no viewer has sized yet (PM-129). */
   private recordedSizes = new Map<number, { cols: number; rows: number }>();
   private sizeSearched = new Set<number>();
+  /** Codex sessions whose screen shows the plan usage limit (PM-58), by id. */
+  private usageLimits = new Map<number, { resetsAt: string | null }>();
   private logs = new Map<string, OutputLog>();
   /** Keys whose spawn is in flight (argv resolution is async): guards double starts. */
   private starting = new Set<string>();
@@ -1156,6 +1160,23 @@ export class AgentSupervisor {
     return this.getSession(id)!;
   }
 
+  /**
+   * "Try again" on the usage-limit notice (PM-58): sends the continuation now, once, and only
+   * into an empty prompt so typed text is never overwritten. It counts as your own input, so
+   * it cancels a pending auto-continue (no second continuation at the reset).
+   */
+  continueNow(id: number): AgentSession {
+    const row = this.getSessionRow(id);
+    if (!row) throw new AgentError(404, 'Session not found');
+    if (row.provider_id !== 'codex' || row.terminal !== 'pty')
+      throw new AgentError(400, 'Try again supports Codex terminals.');
+    if (!this.live.has(`session:${id}`)) throw new AgentError(409, 'Session is not running');
+    if (!emptyCodexPrompt(this.logTail(row.log_path) ?? ''))
+      throw new AgentError(409, 'The terminal has text in its prompt: continue there');
+    this.sendInput(id, CONTINUE_PROMPT);
+    return this.getSession(id)!;
+  }
+
   private cancelContinuation(id: number, message: string): void {
     const key = `session-auto-continue:${id}`;
     const state = getSetting<{ enabled: boolean; resumesAt: string | null; message: string }>(
@@ -1187,6 +1208,15 @@ export class AgentSupervisor {
     const rows = this.db
       .prepare(`SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'`)
       .all() as unknown as SessionRow[];
+    // Whether each one is showing its usage limit, opted in or not, for the limit notice.
+    const windows = readLimits(this.dataDir).find((p) => p.providerId === 'codex')?.windows ?? [];
+    const running = new Set(rows.map((r) => r.id));
+    for (const id of this.usageLimits.keys()) if (!running.has(id)) this.usageLimits.delete(id);
+    for (const row of rows) {
+      const shown = usageLimitShown(this.sessionScreen(row.id, 4000) ?? '', windows, Date.now());
+      if (shown) this.usageLimits.set(row.id, shown);
+      else this.usageLimits.delete(row.id);
+    }
     for (const row of rows) {
       const key = `session-auto-continue:${row.id}`;
       let state = getSetting<{
@@ -1233,11 +1263,7 @@ export class AgentSupervisor {
       if (!live || this.queuedInputBytes(row.id)) continue;
       // Persist the claim before sending, so reconnect/restart cannot duplicate submission.
       this.cancelContinuation(row.id, 'Continuation sent; enable again for another reset');
-      if (
-        !live.proc.write(
-          '\x1b[200~Continue the interrupted task from where you stopped.\x1b[201~\r',
-        )
-      ) {
+      if (!live.proc.write(CONTINUE_PROMPT)) {
         setSetting(this.db, key, {
           ...state,
           enabled: false,
@@ -2583,6 +2609,7 @@ export class AgentSupervisor {
     return {
       restartProgress: this.restarting.get(row.id)?.phase ?? null,
       restartError: this.restarting.get(row.id)?.error ?? null,
+      usageLimit: this.usageLimits.get(row.id) ?? null,
       autoContinue: getSetting(this.db, `session-auto-continue:${row.id}`) ?? {
         enabled: false,
         resumesAt: null,

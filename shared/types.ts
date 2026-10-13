@@ -439,6 +439,11 @@ export interface AgentSession {
   restartProgress?: 'stopping' | 'starting' | 'restoring' | 'failed' | null;
   restartError?: string | null;
   autoContinue?: { enabled: boolean; resumesAt: string | null; message: string };
+  /**
+   * The CLI is showing its plan usage limit (Codex terminals, PM-58), with when the exhausted
+   * windows reset if known. Null once the message is off screen or the reset has passed.
+   */
+  usageLimit?: { resetsAt: string | null } | null;
   id: number;
   projectId: number;
   name: string;

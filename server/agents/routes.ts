@@ -421,6 +421,8 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     const body = await parseBody(c, z.object({ enabled: z.boolean() }));
     return c.json(supervisor.setAutoContinue(parseId(c), body.enabled));
   });
+  // "Try again" on the usage-limit notice (PM-58): continue once now, into an empty prompt.
+  app.post('/agent-sessions/:id/continue-now', (c) => c.json(supervisor.continueNow(parseId(c))));
 
   app.post('/agent-sessions/:id/stop', async (c) => {
     const session = await supervisor.stopSession(parseId(c));

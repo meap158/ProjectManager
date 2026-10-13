@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allowanceReset, emptyCodexPrompt } from './continuation.js';
+import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
 
 describe('allowance continuation', () => {
   const windows = [
@@ -37,5 +37,22 @@ describe('allowance continuation', () => {
       false,
     );
     expect(emptyCodexPrompt('permission required')).toBe(false);
+  });
+});
+
+describe('usage limit notice (PM-58)', () => {
+  const windows = [
+    { label: '5-hour', windowMinutes: 300, usedPercent: 100, resetsAt: '2026-10-10T12:00:00Z' },
+    { label: 'Weekly', windowMinutes: 10080, usedPercent: 40, resetsAt: '2026-10-15T00:00:00Z' },
+  ];
+  const now = Date.parse('2026-10-10T11:00:00Z');
+  const screen = '■ You’ve hit your usage limit. Upgrade to Pro…';
+  it('shows while the screen shows the limit, with when the exhausted window resets', () => {
+    expect(usageLimitShown(screen, windows, now)).toEqual({ resetsAt: '2026-10-10T12:00:00.000Z' });
+    expect(usageLimitShown('› Ask Codex to do anything', windows, now)).toBeUndefined();
+  });
+  it('has an unknown reset without usage numbers, and ends once the reset passes', () => {
+    expect(usageLimitShown(screen, [], now)).toEqual({ resetsAt: null });
+    expect(usageLimitShown(screen, windows, Date.parse('2026-10-10T12:01:00Z'))).toBeUndefined();
   });
 });

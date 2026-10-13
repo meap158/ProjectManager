@@ -283,6 +283,9 @@ export const api = {
   restartSession: (id: number) => request<AgentSession>('POST', `/agent-sessions/${id}/restart`),
   setAutoContinue: (id: number, enabled: boolean) =>
     request<AgentSession>('POST', `/agent-sessions/${id}/auto-continue`, { enabled }),
+  /** "Try again" after a usage limit (PM-58): sends the continuation once, now. */
+  continueSessionNow: (id: number) =>
+    request<AgentSession>('POST', `/agent-sessions/${id}/continue-now`),
   deleteSession: (id: number) => request<void>('DELETE', `/agent-sessions/${id}`),
 
   /** Newest runs across every project. */
