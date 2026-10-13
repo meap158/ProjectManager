@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { openDb } from '../db.js';
 import { workspaceRunIds } from './workspaceRuns.js';
 
@@ -68,6 +68,29 @@ it('retains owned live and review work after scope changes without retaining unr
       ids: [5],
       historyIds: [5],
     });
+  } finally {
+    db.close();
+  }
+});
+
+it('uses live and pending-review partial indexes rather than reading all scoped history', () => {
+  const db = openDb(':memory:');
+  try {
+    const prepare = vi.spyOn(db, 'prepare');
+    workspaceRunIds(db, 'owner', [1], 100, 20);
+    const queries = prepare.mock.calls.map(([sql]) => sql);
+    prepare.mockRestore();
+    const plan = db.prepare('EXPLAIN QUERY PLAN ' + queries[0]).all(1, 1, 'owner') as {
+      detail: string;
+    }[];
+    expect(plan.some((row) => row.detail.includes('agent_runs_live_projects'))).toBe(true);
+    expect(plan.some((row) => row.detail.includes('agent_runs_pending_review'))).toBe(true);
+    const historyPlan = db.prepare('EXPLAIN QUERY PLAN ' + queries[1]).all('owner', 100, 21) as {
+      detail: string;
+    }[];
+    expect(
+      historyPlan.some((row) => row.detail.includes('COVERING INDEX agent_runs_orchestrator')),
+    ).toBe(true);
   } finally {
     db.close();
   }
