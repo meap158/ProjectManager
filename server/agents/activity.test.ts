@@ -73,6 +73,22 @@ describe('tailState', () => {
     expect(tailState(grokTail)).toBe('idle');
   });
 
+  it('OpenCode mid-task with esc interrupt is running, and idle when prompt has no interrupt', () => {
+    const running = [
+      'Build · Claude Opus 5.5 Anthropic',
+      '■⬝⬝⬝⬝⬝⬝⬝  esc interrupt                                                     434.6K (43%) · $20.59  ctrl+p commands',
+    ].join('\n');
+    expect(tailState(running)).toBe('running');
+    expect(workingInTail(running)).toBe(true);
+
+    const idle = [
+      'S:\\Vibe Coding\\TiemNet',
+      '486.1K (49%) · $18.22  ctrl+p commands    • OpenCode 1.19.0',
+    ].join('\n');
+    expect(tailState(idle)).toBe('idle');
+    expect(workingInTail(idle)).toBe(false);
+  });
+
   it('busy phrases still match when redraws run the words together', () => {
     expect(tailState('✻ Zigzagging… (esctointerrupt)\n❯ ')).toBe('running');
     expect(tailState('✻ Worked for 3m ·1shellstill running\n❯ ')).toBe('running');
@@ -187,6 +203,9 @@ describe('busy animation in the newest output (PM-67)', () => {
       ),
     ).toBe(true);
     expect(animatingInTail('unter Strike | TiemNet•11◦•22◦33•◦44•')).toBe(true);
+    // OpenCode progress bar dots and braille spinners
+    expect(animatingInTail('⬝■■■■■⬝⬝⬝⬝■■■■⬝⬝⬝⬝⬝■■■⬝⬝⬝⬝⬝⬝■■')).toBe(true);
+    expect(animatingInTail('⠦⠧⠇⠏⠋⠙⠹⠸⠼⠴')).toBe(true);
   });
 
   it('typing in the input box, or a finished list, is not animation', () => {

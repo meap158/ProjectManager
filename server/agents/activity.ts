@@ -21,12 +21,14 @@ const PROMPT_PATTERNS = [
   /^[ \t│]*>[ \t│]*$/gm,
   // Antigravity input hint below the prompt line
   /esc\s*to\s*cancel/gi,
+  // OpenCode: footer commands shortcut in its status line
+  /ctrl\s*\+\s*p\s*commands/gi,
 ];
 
 /** The CLI is working on a turn right now. */
 // Spacing is optional throughout: full-screen CLIs redraw with cursor moves, so the log often
 // holds words run together ("esctointerrupt").
-const BUSY_PATTERNS = [/esc\s*to\s*interrupt/i, /working\s*\(\s*\d+[smh]/i];
+const BUSY_PATTERNS = [/esc\s*(?:to\s*)?interrupt/i, /working\s*\(\s*\d+[smh]/i];
 
 /**
  * A live "working" line: Claude Code's spinner word with its timer ("Tinkering… (3m 22s · ↓ 12k
@@ -164,7 +166,12 @@ export function animatingInTail(logTail: string): boolean {
   const end = stripTerminal(logTail).slice(-300);
   // Spinner words can be hyphenated or have apostrophes ("Fiddle-faddling…", "Rock'n'rolling…").
   const spinnerWords = end.match(/[✻✶✢✽✳·*]\s*\p{L}[\p{L}'’-]*…/gu)?.length ?? 0;
-  return spinnerWords >= 2 || /(?:\d{1,2}\s*[•◦]+\s*){3,}/.test(end);
+  return (
+    spinnerWords >= 2 ||
+    /(?:\d{1,2}\s*[•◦]+\s*){3,}/.test(end) ||
+    /[⠋-⠟]{3,}/.test(end) ||
+    /(?:[■⬝]{3,}\s*){2,}/.test(end)
+  );
 }
 
 /** Last busy-line timer seen per session, and when it last changed. */
