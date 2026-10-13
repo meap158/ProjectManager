@@ -376,6 +376,15 @@ export function TerminalView({
       term.attachCustomKeyEventHandler((e) => {
         if (
           e.type === 'keydown' &&
+          (e.ctrlKey || e.metaKey) &&
+          !e.shiftKey &&
+          !e.altKey &&
+          (e.key === 'ArrowDown' || e.key === 'ArrowUp')
+        ) {
+          return false;
+        }
+        if (
+          e.type === 'keydown' &&
           e.ctrlKey &&
           !e.shiftKey &&
           !e.altKey &&

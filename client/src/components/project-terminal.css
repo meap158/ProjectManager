@@ -25,6 +25,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* The path gives way before the session name when the actions grow (PM-58's notice). */
+  flex-shrink: 20;
+}
+.project-terminal-head > .pane-identity > .inline-rename {
+  flex-shrink: 0;
+  max-width: 50%;
 }
 .project-terminal-actions {
   display: flex;
@@ -167,19 +173,17 @@
   .project-terminal-actions .session-progress {
     margin: 0;
   }
+  /* Phones: the checkbox with a short "Auto" label in the tight header row. */
   .project-terminal-actions .session-auto-continue {
-    width: 44px;
-    min-width: 44px;
-    padding: 0;
+    min-height: 44px;
+    padding: 0 6px;
+  }
+  .project-terminal-actions .session-auto-continue-label {
     font-size: 0;
   }
-  .project-terminal-actions .session-auto-continue::before {
+  .project-terminal-actions .session-auto-continue-label::before {
     content: 'Auto';
     font-size: 11px;
-  }
-  .project-terminal-actions .session-auto-continue[aria-pressed='true'] {
-    color: var(--accent);
-    border-color: var(--accent);
   }
   .project-terminal-head > .project-terminal-close {
     flex: 0 0 44px;

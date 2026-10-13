@@ -744,3 +744,22 @@ Settings Agent CLI rows vertically center installation badges, install controls 
 Mobile terminal helpers include Paste and Ctrl+A. Paste opens a body-level native editable field for image/text clipboard events on HTTP LAN pages; Read clipboard is available when supported. Pasted text never submits Enter. Browser clipboard restrictions retain Add images as the fallback.
 
 Orchestrators alternate project task queues, preserving board order within each project and preferring least recently served projects. Preview capacity includes proposed workers as well as live workers.
+
+### Project Agents work navigation (PM-64)
+
+On wide desktops the project Agents page uses the available width: a 320px Sessions and runs
+pane sits beside All projects, with session creation and selected terminal/run in the main
+column. The work pane scrolls independently and keeps state, selection, rename and actions.
+At 1200px and below it becomes a collapsible section above the selected work, with bounded
+height and 44px phone actions. Only one terminal instance is mounted.
+Ctrl+Up/Down inside the project pane opens the adjacent visible project and retains keyboard
+focus there; editable controls keep their own shortcuts. Terminal shortcuts remain separate.
+
+Orchestrators use a compact chooser and one selected workspace. The chooser becomes a
+horizontal scrolling row on phones; Activity and counts follow the selected orchestrator.
+Dispatched runs remain available in its workspace with output, stop/retry and review controls.
+Status chips support Shift-click to add or remove statuses; normal clicks select one. The
+mobile Status menu supports the same selection without a modifier key.
+Project CLI uses a bounded workspace: resizing transfers space from the session list above,
+keeping the bottom edge anchored. Mobile header keeps the dot beside the name and hides
+path/process metadata to avoid wrapping the identity into separate rows.

@@ -35,3 +35,31 @@ it('keeps multi-select open, toggles choices, summarizes and clears them', () =>
   fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
   expect(screen.queryByRole('listbox')).toBeNull();
 });
+
+it('Ctrl+click selects only the clicked item in a multi-select dropdown', () => {
+  function Filter() {
+    const [values, setValues] = useState<string[]>(['claude', 'codex']);
+    return (
+      <Dropdown
+        label="Agent"
+        value="all"
+        onChange={() => {}}
+        multiple={{ values, allValue: 'all', onChange: setValues }}
+        options={[
+          { value: 'all', label: 'All agents' },
+          { value: 'claude', label: 'Claude' },
+          { value: 'codex', label: 'Codex' },
+          { value: 'opencode', label: 'OpenCode' },
+        ]}
+      />
+    );
+  }
+  render(<Filter />);
+  fireEvent.click(screen.getByRole('button', { name: 'Agent' }));
+  expect(screen.getAllByRole('option', { selected: true })).toHaveLength(2);
+  // Ctrl+click on OpenCode should exclusively select OpenCode only
+  fireEvent.click(screen.getByRole('button', { name: 'OpenCode' }), { ctrlKey: true });
+  expect(screen.getAllByRole('option', { selected: true })).toHaveLength(1);
+  expect(screen.getByRole('option', { name: /OpenCode/i }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Agent' }).textContent).toContain('OpenCode');
+});

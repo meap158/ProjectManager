@@ -44,6 +44,14 @@
   .workspace .pane-identity > .pane-meta {
     line-height: 20px;
   }
+  /* The project and card links give way before the session name (PM-58's notice is wide). */
+  .workspace .pane-identity > .pane-meta {
+    flex-shrink: 20;
+  }
+  .workspace .pane-identity > .inline-rename {
+    flex-shrink: 0;
+    max-width: 50%;
+  }
   .workspace .pane-meta > a {
     display: inline-flex;
     align-items: center;
@@ -167,14 +175,6 @@
 /* A phone status picker preserves access to every status without a clipped chip strip. */
 .work-status-picker {
   display: none;
-}
-.session-auto-continue {
-  white-space: nowrap;
-}
-.session-auto-continue[aria-pressed='true'] {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent);
 }
 @media (max-width: 768px) {
   .workspace .work-status-chips {

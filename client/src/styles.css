@@ -1857,8 +1857,36 @@ dialog::backdrop {
 .terminal-head {
   display: flex;
   gap: 10px;
-  align-items: baseline;
+  align-items: center;
   min-width: 0;
+  line-height: 1.4;
+}
+.terminal-head .inline-rename {
+  flex-shrink: 0;
+}
+.terminal-head .faint {
+  white-space: nowrap;
+}
+.terminal-head .faint.truncate {
+  display: block;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.terminal-head .icon-btn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  background: transparent;
+}
+.terminal-head .icon-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 .terminal {
   background: #121211;
@@ -4051,6 +4079,11 @@ span.path-link:hover .path-icon {
   .textarea {
     font-size: 16px;
   }
+  /* The rename field inherits its title's size elsewhere; under 16px iOS zooms in on focus
+     (PM-133). */
+  .input.inline-rename-input {
+    font-size: 16px;
+  }
   .pane-head {
     height: 36px;
   }
@@ -4079,11 +4112,6 @@ span.path-link:hover .path-icon {
   flex: none;
   width: 14px;
   height: 14px;
-  /* The rename field inherits its title's size elsewhere; under 16px iOS zooms in on focus
-     (PM-133). */
-  .input.inline-rename-input {
-    font-size: 16px;
-  }
   align-items: center;
   justify-content: center;
   margin-right: 6px;

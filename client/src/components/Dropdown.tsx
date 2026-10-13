@@ -93,10 +93,14 @@ export function Dropdown<T extends string | number>({
     if (refocus) triggerRef.current?.focus();
   }
 
-  function choose(index: number) {
+  function choose(index: number, exclusive = false) {
     const option = options[index];
     if (!option || option.disabled) return;
     if (multiple) {
+      if (exclusive) {
+        multiple.onChange(option.value === multiple.allValue ? [] : [option.value]);
+        return;
+      }
       multiple.onChange(
         option.value === multiple.allValue
           ? []
@@ -228,9 +232,17 @@ export function Dropdown<T extends string | number>({
                 }}
                 type="button"
                 disabled={option.disabled}
-                title={option.title}
+                title={
+                  option.title
+                    ? multiple
+                      ? `${option.title} · Ctrl+click to select only this`
+                      : option.title
+                    : multiple
+                      ? 'Ctrl+click to select only this'
+                      : undefined
+                }
                 tabIndex={i === focusIndex ? 0 : -1}
-                onClick={() => choose(i)}
+                onClick={(e) => choose(i, e.ctrlKey || e.metaKey)}
                 onMouseEnter={() => {
                   if (!option.disabled) setFocusIndex(i);
                 }}
@@ -249,7 +261,7 @@ export function Dropdown<T extends string | number>({
                     setFocusIndex(enabledIndexes().at(-1) ?? i);
                   } else if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    choose(i);
+                    choose(i, e.ctrlKey || e.metaKey);
                   } else if (e.key === 'Tab') {
                     setOpen(false);
                   }
