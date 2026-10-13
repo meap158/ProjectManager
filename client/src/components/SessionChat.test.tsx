@@ -683,3 +683,23 @@ describe('subagent steps (PM-123)', () => {
     expect(api.sessionSubagent).toHaveBeenCalledWith(7, 'toolu_1');
   });
 });
+
+describe('status shimmer (PM-134)', () => {
+  it("shimmers on the CLI's live activity line, not on a finished one", async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    vi.mocked(api.sessionScreen).mockResolvedValueOnce({
+      text: '✻ Recombobulating… (5s · ↓ 1.2k tokens)\n────\n>\n────',
+    });
+    const { container, unmount } = render(<SessionChat session={session()} onError={() => {}} />);
+    await screen.findByText('Recombobulating…');
+    expect(container.querySelector('.chat-working.is-working')).not.toBeNull();
+    unmount();
+    vi.mocked(api.sessionScreen).mockResolvedValueOnce({
+      text: '✻ Churned for 2m 3s\n────\n>\n────',
+    });
+    const calls = vi.mocked(api.sessionScreen).mock.calls.length;
+    const done = render(<SessionChat session={session()} onError={() => {}} />);
+    await waitFor(() => expect(vi.mocked(api.sessionScreen).mock.calls.length).toBe(calls + 1));
+    expect(done.container.querySelector('.chat-working.is-working')).toBeNull();
+  });
+});

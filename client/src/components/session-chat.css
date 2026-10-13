@@ -554,15 +554,16 @@
 .chat-status-activity {
   color: var(--brand-claude);
 }
-/* The CLI's shimmer: a lighter band sweeps across the activity word while it works. */
+/* The CLI's shimmer: a band sweeps across the activity word while it works, towards the text
+   colour so it reads on both themes (lighter on dark, darker on light). */
 .chat-working.is-working .chat-status-activity {
   background: linear-gradient(
       90deg,
-      var(--brand-claude) 0 40%,
-      color-mix(in srgb, var(--brand-claude) 45%, white) 50%,
-      var(--brand-claude) 60% 100%
+      var(--brand-claude) 0 43%,
+      color-mix(in srgb, var(--brand-claude) 35%, var(--text)) 50%,
+      var(--brand-claude) 57% 100%
     )
-    0 0 / 250% 100%;
+    0 0 / 300% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

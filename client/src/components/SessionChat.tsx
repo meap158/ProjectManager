@@ -1214,7 +1214,16 @@ export function SessionChat({
           {(working || status || shown.mode || shown.goal || shown.background.length > 0) && (
             <div className="chat-live" role="status" aria-label="Session status">
               {(working || status) && (
-                <div className={working ? 'chat-working is-working' : 'chat-working'}>
+                <div
+                  className={
+                    // Shimmer while the CLI shows live activity: its own present-tense line
+                    // ("Recombobulating…") counts even before the busy check catches up, while
+                    // a finished one ("Churned for 2h 9m") never shimmers.
+                    working || (status && statusParts(status).activity.endsWith('…'))
+                      ? 'chat-working is-working'
+                      : 'chat-working'
+                  }
+                >
                   {working && (
                     <span className="chat-dots" aria-hidden="true">
                       <i />
