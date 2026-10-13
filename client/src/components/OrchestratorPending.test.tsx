@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { api } from '../api';
@@ -159,4 +159,39 @@ it('keeps Previous available when pending work shrinks past the current page', a
   fireEvent.click(previous);
   await screen.findByText('Uncommitted files');
   expect(api.orchestratorPending).toHaveBeenLastCalledWith('master', 0, undefined);
+});
+
+it('resets scope and ignores an inspection response from the previous project', async () => {
+  let resolve!: (page: OrchestratorPendingPage) => void;
+  vi.mocked(api.orchestratorPending)
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    )
+    .mockResolvedValueOnce({
+      ...snapshot,
+      items: [{ ...snapshot.items[0]!, title: 'New project result', projectId: 2 }],
+    });
+  const view = (projectId: number) => (
+    <MemoryRouter>
+      <OrchestratorPending
+        masterId="master"
+        projectId={projectId}
+        busy={false}
+        canRun={false}
+        onFollowUp={vi.fn()}
+      />
+    </MemoryRouter>
+  );
+  const { rerender } = render(view(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect pending work' }));
+  rerender(view(2));
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect pending work' }));
+  await screen.findByText('New project result');
+  await act(async () => resolve(snapshot));
+  expect(screen.queryByText('Uncommitted files')).toBeNull();
+  expect(screen.getByText('New project result')).toBeDefined();
+  expect(api.orchestratorPending).toHaveBeenLastCalledWith('master', 0, 2);
 });

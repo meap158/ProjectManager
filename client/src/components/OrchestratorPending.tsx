@@ -4,7 +4,11 @@ import { api } from '../api';
 import type { OrchestratorPendingPage } from '../../../shared/orchestrator';
 
 /** Explicit inspection avoids adding a large history request to every dashboard poll. */
-export function OrchestratorPending({
+export function OrchestratorPending(props: Parameters<typeof PendingScope>[0]) {
+  return <PendingScope key={`${props.masterId}:${props.projectId ?? 'all'}`} {...props} />;
+}
+
+function PendingScope({
   masterId,
   projectId,
   busy,
