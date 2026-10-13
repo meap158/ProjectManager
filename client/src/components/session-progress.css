@@ -1,0 +1,51 @@
+/* SessionProgress (PM-58): Codex terminals' auto-continue checkbox and usage-limit notice.
+   Imported by the component itself, so it is styled wherever it appears (the Agents page,
+   a project's Agents tab), whichever page loaded first. */
+.session-auto-continue {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text-2);
+}
+.session-auto-continue input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.session-auto-continue.is-on {
+  color: var(--accent);
+}
+/* The CLI is showing its plan usage limit: the notice reads like Claude desktop's. */
+.session-limit {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* View details: a small popover under the notice, so opening it never reflows the header. */
+.session-progress.is-limited {
+  position: relative;
+}
+.session-limit-details {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: min(340px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+.session-progress-error {
+  color: var(--danger);
+}

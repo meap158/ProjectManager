@@ -197,6 +197,7 @@ export function stateLabel(
         tone: s.restartProgress === 'failed' ? 'bad' : 'attention',
       };
     if (s.autoContinue?.resumesAt) return { text: 'Awaiting reset', tone: 'attention' };
+    if (s.usageLimit) return { text: 'Usage limit', tone: 'attention' };
     const activity = sessionActivity(s, now);
     if (activity === 'input') return { text: ACTIVITY_LABEL.input, tone: 'attention', activity };
     if (activity !== 'stopped') return { text: ACTIVITY_LABEL[activity], tone: 'good', activity };
