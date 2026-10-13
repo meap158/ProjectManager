@@ -702,6 +702,15 @@ export function SessionChat({
   // Keep the draft as you type; switching to the terminal hands it over (handOffDraft).
   useEffect(() => saveDraft(id, draft), [id, draft]);
   const composer = useRef<HTMLTextAreaElement>(null);
+  // The box fits its text whenever the text changes, however it changed (PM-128): typing, a
+  // draft carried over from the terminal view, a recalled message, cleared after sending. One
+  // line when empty, up to about six, then it scrolls.
+  useLayoutEffect(() => {
+    const box = composer.current;
+    if (!box) return;
+    box.style.height = '';
+    if (draft) box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
+  }, [draft]);
 
   // Images (PM-116): pasted, dropped or picked into the composer, uploaded at once, and sent
   // with the message as their paths, which Claude Code and Codex attach as images.
@@ -760,8 +769,6 @@ export function SessionChat({
     ]);
     if (!quick) {
       setDraft('');
-      // Back to one line: the box had grown with the message.
-      if (composer.current) composer.current.style.height = '';
       setAttachments([]);
       setRecall(null);
     }
@@ -834,8 +841,6 @@ export function SessionChat({
     requestAnimationFrame(() => {
       const box = composer.current;
       if (!box) return;
-      box.style.height = 'auto';
-      box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
       box.setSelectionRange(text.length, text.length);
     });
   };
@@ -1173,9 +1178,6 @@ export function SessionChat({
             setDraft(e.target.value);
             setRecall(null); // Editing a recalled message makes it your draft.
             setSelected(0);
-            // Grow with the text, up to about six lines.
-            e.target.style.height = 'auto';
-            e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
           }}
           onPaste={(e) => {
             const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'));

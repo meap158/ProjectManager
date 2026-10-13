@@ -507,3 +507,29 @@ describe('only the typed message is sent (PM-125)', () => {
     expect(edit('', CLEAR_INPUT)).toBe(''); // Harmless on an empty input.
   });
 });
+
+describe('message box size (PM-128)', () => {
+  it('fits a draft carried over from the terminal view, not only typed text', async () => {
+    sessionStorage.setItem('pm.chatDraft.7', 'line one\nline two\nline three');
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+    Object.defineProperty(HTMLTextAreaElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get() {
+        return (this as HTMLTextAreaElement).value ? 72 : 20;
+      },
+    });
+    try {
+      vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+      render(<SessionChat session={session()} onError={() => {}} />);
+      const input = (await screen.findByLabelText('Message to the session')) as HTMLTextAreaElement;
+      expect(input.value).toBe('line one\nline two\nline three');
+      expect(input.style.height).toBe('72px'); // Sized to the restored text at once.
+      fireEvent.change(input, { target: { value: '' } });
+      expect(input.style.height).toBe(''); // Empty: back to one line.
+    } finally {
+      delete (HTMLTextAreaElement.prototype as { scrollHeight?: number }).scrollHeight;
+      if (height) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', height);
+      sessionStorage.clear();
+    }
+  });
+});
