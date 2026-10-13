@@ -725,3 +725,30 @@
   text-decoration: none;
   display: inline-block;
 }
+
+/* Markers in the conversation (interrupted, compacted): small and centred, not a bubble. */
+.chat-note {
+  align-self: center;
+  max-width: 100%;
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
+}
+.chat-note > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.chat-note > summary::-webkit-details-marker {
+  display: none;
+}
+.chat-note-detail {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

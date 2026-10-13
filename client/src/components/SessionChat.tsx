@@ -233,6 +233,16 @@ function renderText(text: string): ReactNode[] {
 }
 
 const Message = memo(function Message({ item }: { item: ChatItem }) {
+  // A marker (interrupted, compacted): a small centred line; a compaction keeps its summary.
+  if (item.kind === 'note')
+    return item.input ? (
+      <details className="chat-note">
+        <summary>{item.text} · summary</summary>
+        <div className="chat-note-detail">{renderText(item.input)}</div>
+      </details>
+    ) : (
+      <div className="chat-note">{item.text}</div>
+    );
   return (
     <div className={`chat-msg is-${item.kind}`}>
       <div className="chat-bubble">{renderText(item.text ?? '')}</div>

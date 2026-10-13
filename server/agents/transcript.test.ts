@@ -175,3 +175,24 @@ describe('messages sent while Claude works (PM-118)', () => {
     expect(queued('<cross-session-message from="x">relayed</cross-session-message>')).toEqual([]);
   });
 });
+
+describe('conversation markers (PM-123)', () => {
+  it('turns an interruption and a compaction into notes, not your messages', () => {
+    const user = (o: object) =>
+      parseClaudeLine(`${JSON.stringify({ type: 'user', uuid: 'm', ...o })}\n`);
+    expect(
+      user({ message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } }),
+    ).toEqual([{ id: 'm', kind: 'note', text: 'Interrupted', at: null }]);
+    expect(
+      user({ isCompactSummary: true, message: { content: 'Summary: we fixed tables.' } }),
+    ).toEqual([
+      {
+        id: 'm',
+        kind: 'note',
+        text: 'Conversation compacted',
+        input: 'Summary: we fixed tables.',
+        at: null,
+      },
+    ]);
+  });
+});

@@ -117,6 +117,7 @@ export function parseClaudeLine(line: string): ChatItem[] {
     timestamp?: string;
     isSidechain?: boolean;
     isMeta?: boolean;
+    isCompactSummary?: boolean;
     message?: { role?: string; content?: unknown };
     attachment?: { type?: string; prompt?: unknown };
   };
@@ -137,6 +138,14 @@ export function parseClaudeLine(line: string): ChatItem[] {
   const at = o.timestamp ?? null;
   const base = o.uuid ?? `${o.type}-${at}`;
   const content = o.message?.content;
+  // Markers, not messages (PM-123): the summary Claude writes when it compacts the conversation
+  // (kept, one tap away), and the "[Request interrupted by user]" note after an Esc.
+  if (o.type === 'user' && o.isCompactSummary)
+    return [
+      { id: base, kind: 'note', text: 'Conversation compacted', input: clip(textOf(content)), at },
+    ];
+  const marker = /^\s*\[Request interrupted by user[^\]]*\]\s*$/.exec(textOf(content));
+  if (o.type === 'user' && marker) return [{ id: base, kind: 'note', text: 'Interrupted', at }];
   if (typeof content === 'string') {
     return o.type === 'user' && !isNoise(content)
       ? [{ id: base, kind: 'user', text: content, at }]

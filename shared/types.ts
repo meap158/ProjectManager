@@ -291,7 +291,8 @@ export interface CpuBudget {
 /** One entry of a session's chat view (mobile): a message, a tool call or its result. */
 export interface ChatItem {
   id: string;
-  kind: 'user' | 'assistant' | 'tool' | 'result';
+  /** `note`: a marker in the conversation, not a message (interrupted, compacted). */
+  kind: 'user' | 'assistant' | 'tool' | 'result' | 'note';
   text?: string;
   /** Tool calls and results pair up by this id. */
   toolId?: string;
