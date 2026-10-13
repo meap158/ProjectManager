@@ -29,6 +29,25 @@
 .chat-msg {
   display: flex;
 }
+/* Loading placeholders (PM-127): bubbles where messages will be, on the app's skeleton pulse. */
+.chat-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-loading-bubble {
+  height: 36px;
+  border-radius: 14px;
+}
+.chat-loading-bubble.is-user {
+  width: 42%;
+  border-bottom-right-radius: 4px;
+}
+.chat-loading-bubble.is-assistant {
+  width: 76%;
+  height: 72px;
+  border-bottom-left-radius: 4px;
+}
 .chat-msg.is-user {
   justify-content: flex-end;
 }

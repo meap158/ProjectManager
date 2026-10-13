@@ -595,3 +595,16 @@ describe('images on phones (PM-130)', () => {
     );
   });
 });
+
+describe('loading (PM-127)', () => {
+  it('shows message-shaped placeholders until the transcript arrives', async () => {
+    let resolve: (t: ReturnType<typeof transcript>) => void = () => {};
+    vi.mocked(api.sessionTranscript).mockReturnValue(new Promise((r) => (resolve = r)));
+    render(<SessionChat session={session()} onError={() => {}} />);
+    const loading = screen.getByRole('status', { name: 'Loading messages' });
+    expect(loading.querySelectorAll('.chat-loading-bubble')).toHaveLength(4);
+    resolve(transcript({}));
+    expect(await screen.findByText('No messages yet. Send one below.')).toBeDefined();
+    expect(screen.queryByRole('status', { name: 'Loading messages' })).toBeNull();
+  });
+});

@@ -1012,7 +1012,14 @@ export function SessionChat({
     <div className="session-chat">
       <div className="chat-list" ref={listRef} onScroll={onScroll} aria-live="polite">
         {!loaded ? (
-          <div className="skeleton" style={{ height: 120, margin: 12 }} />
+          // Message-shaped placeholders while the transcript loads (PM-127).
+          <div className="chat-loading" role="status" aria-label="Loading messages">
+            {(['user', 'assistant', 'user', 'assistant'] as const).map((who, i) => (
+              <div key={i} className={`chat-msg is-${who}`}>
+                <div className={`skeleton chat-loading-bubble is-${who}`} />
+              </div>
+            ))}
+          </div>
         ) : !supported ? (
           <p className="chat-empty">This CLI has no readable transcript: use the terminal view.</p>
         ) : !entries.length ? (
