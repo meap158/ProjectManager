@@ -61,23 +61,26 @@ export class OrchestratorService {
    * What this orchestrator sees of Home (PM-70): needs attention and being worked on, with the
    * identity to trace each item back. Limited to one master's projects when given.
    */
-  situation(instanceId?: string): OrchestratorSituation | null {
+  situation(instanceId?: string, includeWork = true): OrchestratorSituation | null {
     const instance = instanceId ? this.state().instances.find((i) => i.id === instanceId) : null;
     if (instanceId && !instance) return null;
-    return buildSituation({
-      projects: this.attentionProjects?.() ?? [],
-      cards: listCardsInFlight(this.db, instance?.projectIds),
-      sessions: this.supervisor.listAllSessions(),
-      runs: listSituationRuns(this.db, instance?.projectIds),
-      dismissed: (projectId) => getDismissedAttention(this.db, projectId),
-      screen: (sessionId) => this.supervisor.sessionScreen(sessionId),
-      projectIds: instance?.projectIds,
-    });
+    return buildSituation(
+      {
+        projects: this.attentionProjects?.() ?? [],
+        cards: listCardsInFlight(this.db, instance?.projectIds),
+        sessions: this.supervisor.listAllSessions(),
+        runs: listSituationRuns(this.db, instance?.projectIds),
+        dismissed: (projectId) => getDismissedAttention(this.db, projectId),
+        screen: (sessionId) => this.supervisor.sessionScreen(sessionId),
+        projectIds: instance?.projectIds,
+      },
+      includeWork,
+    );
   }
 
   /** Bounded transport for pending-work inspection; internal planning keeps the full situation. */
   pending(id: string, offset = 0, limit = 20, projectId?: number) {
-    const situation = this.situation(id);
+    const situation = this.situation(id, false);
     if (!situation) return null;
     const items = situation.needsAttention.filter(
       (item) => !projectId || item.projectId === projectId,

@@ -366,3 +366,16 @@ refresh failures preserve its populated page. Eighteen service/HTTP/UI tests pas
 bytes for full inspection. Server still computes the complete situation before slicing;
 this bounds transport/rendering, not computation or snapshot consistency across changes.
 SQL-level paging, versioned snapshot cursors, mobile browser verification remain open.
+
+## Pending computation follow-up, 2026-10-13
+
+Pending inspection now skips the latest-run index and work-card summaries used only by the
+full situation view. It still checks live workers before identifying stalled cards. An
+explicit equivalence regression covers project alerts, input requests, reviews and stalled
+cards; 22 focused service/route/situation tests and typechecking passed. This is allocation
+reduction, not SQL pagination: run/card reads and the complete pending list remain unbounded.
+A subsequent five-sample 10k-card/100k-history local benchmark measured pending inspection
+at 6.76 ms median for project scope and 148.41 ms for global scope; maximums were 8.95 and
+173.44 ms. Responses remained 4,534/4,562 bytes. These are warm-cache in-process measurements,
+not LAN/mobile latency or a controlled before/after speedup. The benchmark additionally
+asserts that pending totals and the returned first page equal the full situation projection.

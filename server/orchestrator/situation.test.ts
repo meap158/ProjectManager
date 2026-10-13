@@ -148,3 +148,30 @@ describe('cardContext (worker prompt)', () => {
     expect(cardContext(buildSituation({ ...input(), projects: [] }), 999)).toBe('');
   });
 });
+
+it('preserves all pending signals without constructing work summaries', () => {
+  const input = {
+    now: NOW,
+    projects: [project(1, 'web', { dirtyFiles: 2 }), project(2, 'api')],
+    cards: [
+      card(1, 1, 'in_progress', STALLED_MS + 1),
+      card(2, 1, 'review', 1000),
+      card(3, 1, 'in_progress', STALLED_MS + 1),
+    ],
+    sessions: [session(1, 1, 3, 'input')],
+    runs: [run(1, 1, 2, 'succeeded'), run(2, 1, 3, 'running')],
+    screen: () => 'Choose a plan',
+  };
+  const full = buildSituation(input);
+  const pending = buildSituation(input, false);
+  expect(pending.needsAttention).toEqual(full.needsAttention);
+  expect(pending.generatedAt).toBe(full.generatedAt);
+  expect(pending.beingWorkedOn).toEqual([]);
+  expect(full.beingWorkedOn).toHaveLength(3);
+  expect(pending.needsAttention.map((item) => item.kind)).toEqual(
+    expect.arrayContaining(['project-alert', 'needs-input', 'awaiting-review', 'stalled']),
+  );
+  expect(
+    pending.needsAttention.filter((item) => item.kind === 'stalled').map((item) => item.cardId),
+  ).toEqual([1]);
+});

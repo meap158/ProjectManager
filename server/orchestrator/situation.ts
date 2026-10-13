@@ -48,7 +48,7 @@ export interface SituationInput {
   now?: number;
 }
 
-export function buildSituation(input: SituationInput): OrchestratorSituation {
+export function buildSituation(input: SituationInput, includeWork = true): OrchestratorSituation {
   const now = input.now ?? Date.now();
   const inScope = (id: number) => !input.projectIds?.length || input.projectIds.includes(id);
   const names = new Map(input.projects.map((p) => [p.id, p.name]));
@@ -85,7 +85,7 @@ export function buildSituation(input: SituationInput): OrchestratorSituation {
   }
 
   const latestRun = new Map<number, SituationRun>();
-  for (const r of input.runs) {
+  for (const r of includeWork ? input.runs : []) {
     if (r.cardId != null && r.id > (latestRun.get(r.cardId)?.id ?? -1)) latestRun.set(r.cardId, r);
   }
   const cardKeys = new Map(input.cards.map((c) => [c.id, c.key]));
@@ -140,7 +140,7 @@ export function buildSituation(input: SituationInput): OrchestratorSituation {
 
   const beingWorkedOn: SituationCard[] = input.cards
     .filter((c) => (c.status === 'in_progress' || c.status === 'review') && inScope(c.projectId))
-    .map((c) => {
+    .flatMap((c) => {
       const run = latestRun.get(c.id) ?? null;
       const workers = workersByCard.get(c.id) ?? [];
       if (
@@ -159,29 +159,32 @@ export function buildSituation(input: SituationInput): OrchestratorSituation {
           since: c.updatedAt,
         });
       }
-      return {
-        cardId: c.id,
-        cardKey: c.key,
-        projectId: c.projectId,
-        projectName: c.projectName,
-        title: c.title,
-        status: c.status as 'in_progress' | 'review',
-        updatedAt: c.updatedAt,
-        summary: c.description.trim().slice(0, SUMMARY_CHARS),
-        movedBy: c.linkedCommit,
-        workers,
-        latestRun: run
-          ? {
-              id: run.id,
-              status: run.status,
-              validation: run.validation,
-              filesChanged: run.changes?.files.length ?? 0,
-              commits: run.changes?.commits ?? 0,
-              endedAt: run.endedAt,
-            }
-          : null,
-        flags: [],
-      };
+      if (!includeWork) return [];
+      return [
+        {
+          cardId: c.id,
+          cardKey: c.key,
+          projectId: c.projectId,
+          projectName: c.projectName,
+          title: c.title,
+          status: c.status as 'in_progress' | 'review',
+          updatedAt: c.updatedAt,
+          summary: c.description.trim().slice(0, SUMMARY_CHARS),
+          movedBy: c.linkedCommit,
+          workers,
+          latestRun: run
+            ? {
+                id: run.id,
+                status: run.status,
+                validation: run.validation,
+                filesChanged: run.changes?.files.length ?? 0,
+                commits: run.changes?.commits ?? 0,
+                endedAt: run.endedAt,
+              }
+            : null,
+          flags: [],
+        },
+      ];
     });
 
   // Tie card-level attention back to cards without a cards-by-attention cross product.

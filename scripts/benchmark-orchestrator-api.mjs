@@ -78,6 +78,13 @@ for (const cards of cardCounts) {
         delete expected.generatedAt;
         delete actual.generatedAt;
         assert.deepEqual(actual, expected, 'Projected inspection changed visible data');
+        const pending = service.pending(ids[0]);
+        assert.equal(pending.total, expected.needsAttention.length);
+        assert.deepEqual(
+          pending.items,
+          expected.needsAttention.slice(0, 20),
+          'Pending inspection changed visible data',
+        );
         for (const operation of ['preview', 'situation', 'pending']) {
           const run = async () => {
             let bytes = 0;
