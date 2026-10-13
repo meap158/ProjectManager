@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   animatingInTail,
+  backgroundInTail,
   elapsedTimer,
   stripTerminal,
   tailState,
@@ -194,5 +195,30 @@ describe('busy animation in the newest output (PM-67)', () => {
       false,
     );
     expect(animatingInTail('✻ Worked for 3m 12s\n❯ ')).toBe(false);
+  });
+});
+
+describe('background work on screen (PM-104)', () => {
+  it("counts Claude's background agents and shells, even after the main turn ended", () => {
+    // The owner's screenshot: the main turn is done (prompt shown), two agents still run.
+    const screen = [
+      '* Waiting for 2 background agents to',
+      '  finish',
+      '────────────────────────────────',
+      '> ',
+      '────────────────────────────────',
+      '  ▸▸ auto mode on (shift+tab to cycle)',
+      '  ● main',
+      '  ( ) general-purpose 6m 16s · ↓ 113.8k',
+      '  ( ) general-purpose t6m 16s · ↓ 96.9k',
+    ].join('\n');
+    expect(backgroundInTail(screen)).toBe(true);
+    // Only the agent list, no "waiting" line.
+    expect(backgroundInTail('> \n  ● main\n  ( ) general-purpose 2m 03s · ↓ 12.1k')).toBe(true);
+    expect(backgroundInTail('✻ Worked for 3m 12s · 1 shell still running\n❯ ')).toBe(true);
+    // A finished turn with nothing in the background.
+    expect(backgroundInTail('✻ Churned for 54m 43s · done\n❯ \n⏵⏵ auto mode on · ← 1 agent')).toBe(
+      false,
+    );
   });
 });

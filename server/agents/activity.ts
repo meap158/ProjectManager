@@ -200,3 +200,18 @@ export function timerTicking(
 export function isAwaitingInput(logTail: string): boolean {
   return tailState(logTail) === 'idle';
 }
+
+/**
+ * Background work on the CLI's current screen (PM-104): "Waiting for 2 background agents to
+ * finish", Claude Code's agent list ("( ) general-purpose 6m 16s · ↓ 113.8k"), running shells.
+ * Claude fires its Stop hook when the main turn ends even though these keep working, so callers
+ * let this win over the hooks, but only with fresh output: the agents' timers tick on screen
+ * while they run, and stop when they finish.
+ */
+export function backgroundInTail(logTail: string): boolean {
+  const end = stripTerminal(logTail).slice(-1200);
+  return (
+    BACKGROUND_PATTERNS.some((p) => p.test(end)) ||
+    /\(\s*\)\s*[\w-]+\s+t?\d+[hms]\b[^\n]*↓/.test(end)
+  );
+}

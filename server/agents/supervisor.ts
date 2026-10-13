@@ -63,6 +63,7 @@ import {
 import { diffSince, snapshotTree } from './gitChanges.js';
 import {
   animatingInTail,
+  backgroundInTail,
   stripTerminal,
   elapsedTimer,
   tailState,
@@ -2634,6 +2635,9 @@ export class AgentSupervisor {
     // 1. Busy CLIs rewrite only the changing bits (spinner frames, timer digits): fresh output
     //    that is that animation means working (PM-67, PM-78).
     if (fresh && tail && animatingInTail(tail)) return 'running';
+    // Background agents / shells still working after the main turn ended (PM-104): Claude's
+    // Stop hook would say idle, but their timers keep ticking on screen.
+    if (fresh && tail && backgroundInTail(tail)) return 'running';
     // 2. Output right after your own keystrokes is their echo in the input box, not work.
     const key = this.lastKeystroke.get(row.id);
     const out = lastOutputAt ? Date.parse(lastOutputAt) : 0;
