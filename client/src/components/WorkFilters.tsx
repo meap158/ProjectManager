@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { WORK_STATUS_LABELS, workStatus, type WorkItem, type WorkStatus } from './AgentWorkList';
 import { Dropdown } from './Dropdown';
 import { PROVIDER_LABELS, ProviderIcon } from './icons';
@@ -108,6 +108,8 @@ export function applyWorkFilters(
   );
 }
 
+const STATUSES: FilterStatus[] = ['all', 'attention', 'running', 'idle', 'ended'];
+
 export function WorkFilters({
   items,
   filters,
@@ -130,6 +132,21 @@ export function WorkFilters({
   );
   const set = (patch: Partial<WorkFilterState>) => onChange({ ...filters, ...patch });
   const [expanded, setExpanded] = useState(false);
+  // The phone status menu: tap picks one, long press adds / removes (PM-124).
+  const picker = useRef<HTMLDivElement>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const held = useRef(false);
+  const optionIndex = (target: EventTarget): number => {
+    const option = (target as Element).closest?.('[role="option"]');
+    if (!option || !picker.current?.contains(option)) return -1;
+    return [...picker.current.querySelectorAll('[role="option"]')].indexOf(option);
+  };
+  const toggleStatus = (s: FilterStatus) => {
+    if (s === 'all') return set({ status: 'all' });
+    const current = selectedFilters(filters.status, 'all');
+    const next = current.includes(s) ? current.filter((x) => x !== s) : [...current, s];
+    set({ status: next.length === 1 ? next[0]! : next.length ? next : 'all' });
+  };
   const extraCount =
     Number(selectedFilters(filters.agent, 'all').length > 0) +
     Number(selectedFilters(filters.project, 0).length > 0) +
@@ -142,7 +159,41 @@ export function WorkFilters({
       role="search"
       aria-label="Filter agent work"
     >
-      <div className="work-status-picker">
+      <div
+        className="work-status-picker"
+        ref={picker}
+        // Phones (PM-124): a tap picks one status and closes the menu, like a single choice; a
+        // long press adds or removes it and keeps the menu open, for a deliberate multi-select.
+        // (Desktop chips: click picks one, Shift+click adds.)
+        onPointerDown={(e) => {
+          const index = optionIndex(e.target);
+          if (index < 0) return;
+          held.current = false;
+          clearTimeout(holdTimer.current);
+          holdTimer.current = setTimeout(() => {
+            held.current = true;
+            navigator.vibrate?.(10);
+            toggleStatus(STATUSES[index]!);
+          }, 450);
+        }}
+        onPointerUp={() => clearTimeout(holdTimer.current)}
+        onPointerLeave={() => clearTimeout(holdTimer.current)}
+        onPointerCancel={() => clearTimeout(holdTimer.current)}
+        onContextMenu={(e) => {
+          if (optionIndex(e.target) >= 0) e.preventDefault(); // No long-press menu over it.
+        }}
+        onClickCapture={(e) => {
+          const index = optionIndex(e.target);
+          if (index < 0) return;
+          e.stopPropagation(); // Handled here instead of the menu's own toggle.
+          if (held.current) {
+            held.current = false;
+            return;
+          }
+          set({ status: STATUSES[index]! });
+          picker.current?.querySelector<HTMLButtonElement>('.dropdown-trigger')?.click(); // Close.
+        }}
+      >
         <Dropdown
           label="Status"
           value={'all'}
