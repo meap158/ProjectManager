@@ -189,3 +189,82 @@
     width: 44px;
   }
 }
+
+/* Moved here from session-chat.css (PM-126): these override rules above in this file, so they
+   must load after them. In another stylesheet their order depended on which page loaded
+   first (visiting Agents first loaded the chat CSS earlier), and the phone actions row then
+   showed inline, squeezed, with the ⋯ button seemingly doing nothing. */
+/* The project tab's docked header on phones: the title comes first. Session actions (auto,
+   restart, stop, maximise) open from ⋯ in a row below; the switch and close stay. */
+.project-actions-toggle {
+  display: none;
+}
+@media (max-width: 600px) {
+  .project-cli-dock > .pane .project-terminal-head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .project-terminal-head > .pane-identity {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .project-terminal-head > .pane-identity .inline-rename,
+  .project-terminal-head > .pane-identity b {
+    font-size: 14px;
+  }
+  .project-actions-toggle {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 40px;
+    width: 40px;
+    min-height: 40px;
+    font-size: 18px;
+  }
+  .project-terminal-head > .project-terminal-close {
+    flex: 0 0 40px;
+    width: 40px;
+  }
+  .project-terminal-actions {
+    display: none;
+  }
+  .project-terminal-actions.is-open {
+    display: flex;
+    order: 99;
+    flex: 1 0 100%;
+    justify-content: flex-end;
+    gap: 4px;
+    padding: 2px 0 4px;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* Phones: full screen means the whole screen. The maximised pane covers the page, its header,
+   tabs and the bottom tab bar, inside the safe areas (notch, home indicator); the page under
+   it doesn't scroll. The restore button stays in the header. */
+@media (max-width: 768px) {
+  .project-terminal-head > .project-terminal-max {
+    flex: 0 0 40px;
+    width: 40px;
+  }
+  .project-agents.has-terminal > .project-cli-dock.is-dock-max {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    height: 100dvh !important;
+    min-height: 0;
+    margin: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    background: var(--bg);
+  }
+  .project-cli-dock.is-dock-max > .project-dock-resizer {
+    display: none;
+  }
+  .project-cli-dock.is-dock-max > .pane {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  html:has(.project-cli-dock.is-dock-max) .app-main {
+    overflow: hidden;
+  }
+}
