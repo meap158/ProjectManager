@@ -443,7 +443,7 @@
 /* Suggestions above the composer: slash commands and @-files (PM-117). */
 .chat-suggest {
   flex: none;
-  margin: 0 12px;
+  margin: 0 12px calc(8px + env(safe-area-inset-bottom));
   padding: 4px;
   max-height: 40vh;
   overflow-y: auto;

@@ -561,7 +561,7 @@ export function rankCommands(commands: SlashCommand[], query: string, limit = 8)
       ? 0
       : name.includes(q)
         ? 1
-        : c.description.toLowerCase().includes(q)
+        : q.length >= 3 && c.description.toLowerCase().includes(q) // 1-2 letters: names only.
           ? 2
           : -1;
   };
@@ -1058,26 +1058,6 @@ export function SessionChat({
           {unseen > 0 ? `${unseen} new message${unseen === 1 ? '' : 's'} ↓` : '↓'}
         </button>
       )}
-      {suggestions.length > 0 && (
-        <ul className="chat-suggest" role="listbox" aria-label="Suggestions">
-          {suggestions.map((s, i) => (
-            <li
-              key={s.value}
-              role="option"
-              aria-selected={i === selected}
-              className={i === selected ? 'is-selected' : undefined}
-              // Pointer down (not click) so the message box keeps focus and the keyboard stays.
-              onPointerDown={(e) => {
-                e.preventDefault();
-                applySuggestion(s);
-              }}
-            >
-              <span className="chat-suggest-label">{s.label}</span>
-              {s.detail && <span className="chat-suggest-detail">{s.detail}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
       <div className="chat-keys" role="group" aria-label="Terminal keys">
         {/* First key (PM-121): Continue, the most common nudge. Enter is only needed while the
             CLI asks something or a suggestion list is open, and then takes this place. */}
@@ -1256,6 +1236,27 @@ export function SessionChat({
           }}
         />
       </form>
+      {/* Below the message box, as the CLIs show their command list (PM-132). */}
+      {suggestions.length > 0 && (
+        <ul className="chat-suggest" role="listbox" aria-label="Suggestions">
+          {suggestions.map((s, i) => (
+            <li
+              key={s.value}
+              role="option"
+              aria-selected={i === selected}
+              className={i === selected ? 'is-selected' : undefined}
+              // Pointer down (not click) so the message box keeps focus and the keyboard stays.
+              onPointerDown={(e) => {
+                e.preventDefault();
+                applySuggestion(s);
+              }}
+            >
+              <span className="chat-suggest-label">{s.label}</span>
+              {s.detail && <span className="chat-suggest-detail">{s.detail}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
