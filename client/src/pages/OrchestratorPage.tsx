@@ -103,6 +103,15 @@ export function OrchestratorPage() {
     runRefresh,
     busy,
     Number.isSafeInteger(linkedRun) && linkedRun > 0 ? linkedRun : undefined,
+    'history',
+  );
+  const liveFeed = useOrchestratorRuns(selectedInstance?.id, runRefresh, busy, undefined, 'live');
+  const reviewFeed = useOrchestratorRuns(
+    selectedInstance?.id,
+    runRefresh,
+    busy,
+    undefined,
+    'review',
   );
   const runs = runFeed.runs;
   const [preview, setPreview] = useState<{
@@ -441,13 +450,15 @@ export function OrchestratorPage() {
                   const donePercent =
                     totalCards > 0 ? Math.round((doneCount / totalCards) * 100) : 0;
 
-                  const activeRuns = runs.filter(
+                  const activeRuns = liveFeed.runs.filter(
                     (r) =>
-                      scopedProjectIds.has(r.projectId) &&
+                      (scopedProjectIds.has(r.projectId) || r.orchestratorId === instance.id) &&
                       (r.status === 'running' || r.status === 'queued'),
                   );
                   const activeRunCards = new Set(
-                    activeRuns.map((run) => run.cardId).filter((id) => id != null),
+                    (liveFeed.liveAssignments ?? activeRuns)
+                      .map((run) => run.cardId)
+                      .filter((id) => id != null),
                   );
                   const activeSessions = sessions.filter(
                     (s) =>
@@ -470,25 +481,28 @@ export function OrchestratorPage() {
                   const scopedInFlightCards = inFlightCards.filter((c) =>
                     scopedProjectIds.has(c.projectId),
                   );
-                  const liveWorkersCount = activeRuns.length + activeSessions.length;
+                  const liveAssignments = liveFeed.liveAssignments ?? activeRuns;
+                  const liveWorkersCount =
+                    (liveFeed.summary?.live ?? activeRuns.length) + activeSessions.length;
                   const totalBeingWorkedOnCount = liveWorkersCount + scopedInFlightCards.length;
 
                   const scopedProjectAttention = scopedProjects.flatMap((p) =>
                     projectAttention(p).map((item) => ({ project: p, ...item })),
                   );
-                  const reviewRunsInScope = runs.filter(
+                  const reviewRunsInScope = reviewFeed.runs.filter(
                     (r) =>
-                      scopedProjectIds.has(r.projectId) &&
+                      (scopedProjectIds.has(r.projectId) || r.orchestratorId === instance.id) &&
                       (r.status === 'failed' || r.status === 'succeeded') &&
                       !r.validation,
                   );
                   const totalAttentionCount =
-                    scopedProjectAttention.length + reviewRunsInScope.length;
+                    scopedProjectAttention.length +
+                    (reviewFeed.summary?.awaitingReview ?? reviewRunsInScope.length);
 
                   const beingWorkedOnAttentionCount = scopedProjectAttention.filter(
                     ({ project: p }) => {
                       return (
-                        activeRuns.some((r) => r.projectId === p.id) ||
+                        liveAssignments.some((r) => r.projectId === p.id) ||
                         activeSessions.some((s) => s.projectId === p.id) ||
                         scopedInFlightCards.some(
                           (c) =>
@@ -762,7 +776,7 @@ export function OrchestratorPage() {
                         ) : (
                           <div className="orchestrator-attention-grid">
                             {scopedProjectAttention.map(({ project: p, kind, detail }) => {
-                              const runningRun = activeRuns.find((r) => r.projectId === p.id);
+                              const runningRun = liveAssignments.find((r) => r.projectId === p.id);
                               const runningSession = activeSessions.find(
                                 (s) => s.projectId === p.id,
                               );
@@ -815,8 +829,9 @@ export function OrchestratorPage() {
                                         {runningRun && (
                                           <Link
                                             to={
-                                              runningRun.orchestratorId
-                                                ? `/orchestrators?orchestrator=${runningRun.orchestratorId}&run=${runningRun.id}#orchestrator-runs-${runningRun.orchestratorId}`
+                                              activeRuns.find((r) => r.id === runningRun.id)
+                                                ?.orchestratorId
+                                                ? `/orchestrators?orchestrator=${activeRuns.find((r) => r.id === runningRun.id)?.orchestratorId}&run=${runningRun.id}#orchestrator-runs-${activeRuns.find((r) => r.id === runningRun.id)?.orchestratorId}`
                                                 : '/workspace'
                                             }
                                             className="worker-action-link"
@@ -869,6 +884,7 @@ export function OrchestratorPage() {
                                 </div>
                               );
                             })}
+                            <RunFeedPages feed={reviewFeed} label="Review" />
                             {reviewRunsInScope.map((run) => {
                               const proj = projects.find((p) => p.id === run.projectId);
                               return (
@@ -1243,6 +1259,7 @@ export function OrchestratorPage() {
                           </p>
                         ) : (
                           <div className="orchestrator-workers-grid">
+                            <RunFeedPages feed={liveFeed} label="Live workers" />
                             {activeRuns.map((run) => {
                               const proj = projects.find((p) => p.id === run.projectId);
                               return (
@@ -1332,7 +1349,7 @@ export function OrchestratorPage() {
                             {scopedInFlightCards
                               .filter(
                                 (c) =>
-                                  !activeRuns.some((r) => r.cardId === c.id) &&
+                                  !activeRunCards.has(c.id) &&
                                   !activeSessions.some((s) => s.cardId === c.id),
                               )
                               .map((card) => (
@@ -1780,5 +1797,44 @@ function OrchestratorFormShell({
     <dialog ref={ref} className="orchestrator-form-dialog" aria-label={title} onClose={onClose}>
       {children}
     </dialog>
+  );
+}
+
+function RunFeedPages({
+  feed,
+  label,
+}: {
+  feed: ReturnType<typeof useOrchestratorRuns>;
+  label: string;
+}) {
+  return (
+    <div>
+      {feed.error && (
+        <p role="alert" className="error-banner">
+          {feed.error}
+        </p>
+      )}
+      <nav className="orchestrator-result-links" aria-label={`${label} pages`}>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={feed.loading || !feed.previous}
+          onClick={feed.previous}
+        >
+          Previous
+        </button>
+        <span>
+          {label} page {feed.page}
+        </span>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={feed.loading || !feed.next}
+          onClick={feed.next}
+        >
+          Next
+        </button>
+      </nav>
+    </div>
   );
 }

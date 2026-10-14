@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
+import type { AgentRun } from '../../../shared/types';
 import { api } from '../api';
 import { OrchestratorPage } from './OrchestratorPage';
 const runFixture = vi.hoisted(() => vi.fn(async () => []));
@@ -27,13 +28,25 @@ vi.mock('../api', () => ({
       state: { instances: [], events: [] },
     })),
     listAllRuns: runFixture,
-    orchestratorRuns: vi.fn(async () => ({
+    orchestratorHistory: vi.fn(async () => ({
       version: 1,
       generatedAt: 'now',
       runs: await runFixture(),
       historyIds: [],
       nextBefore: null,
     })),
+    orchestratorActionable: vi.fn(
+      async (_id: string, _before: number | undefined, kind: string) => ({
+        version: 1,
+        generatedAt: 'now',
+        runs: ((await runFixture()) as AgentRun[]).filter((run) =>
+          kind === 'live'
+            ? ['running', 'queued'].includes(run.status)
+            : ['failed', 'succeeded'].includes(run.status) && !run.validation,
+        ),
+        nextBefore: null,
+      }),
+    ),
     listAllSessions: vi.fn(async () => []),
     listCardsInFlight: vi.fn(async () => []),
     previewOrchestrator: vi.fn(),
@@ -283,7 +296,7 @@ it('renders scope board progress summary and live workers with direct links', as
       cardCounts: { todo: 3, in_progress: 2, review: 1, done: 5, backlog: 0 },
     },
   ]);
-  vi.mocked(api.listAllRuns).mockResolvedValueOnce([
+  vi.mocked(api.listAllRuns).mockResolvedValue([
     {
       id: 101,
       projectId: 1,
@@ -1065,4 +1078,74 @@ it('preserves project counts during a failed poll and clears the warning on reco
     cleanup();
     vi.useRealTimers();
   }
+});
+
+it('retains complete review totals while navigating bounded detail pages', async () => {
+  vi.mocked(api.orchestrators).mockResolvedValue({
+    instances: [
+      {
+        id: 'paged',
+        name: 'Paged master',
+        enabled: false,
+        projectIds: [1],
+        providers: ['codex'],
+        maxWorkers: 2,
+        maxWorkersPerProject: 1,
+        maxWorkersPerProvider: 1,
+        reservePercent: 10,
+        allowUnknownQuota: false,
+        quotaMaxAgeMs: 60000,
+      },
+    ],
+    events: [],
+  });
+  vi.mocked(api.listProjects).mockResolvedValue([
+    { id: 1, name: 'One', git: null, missing: false, scan: { status: 'idle', error: null } },
+  ] as Awaited<ReturnType<typeof api.listProjects>>);
+  vi.mocked(api.listAllRuns).mockResolvedValue([]);
+  vi.mocked(api.listAllSessions).mockResolvedValue([]);
+  vi.mocked(api.listCardsInFlight).mockResolvedValue([]);
+  const summary = {
+    total: 25,
+    live: 0,
+    awaitingReview: 25,
+    failedReview: 0,
+    ownedLive: 0,
+    ownedReview: 0,
+  };
+  vi.mocked(api.orchestratorActionable).mockImplementation(async (_owner, before, kind) => ({
+    version: 1,
+    generatedAt: 'now',
+    summary,
+    runs:
+      kind === 'live'
+        ? []
+        : ([
+            {
+              id: before ? 2 : 90,
+              projectId: 1,
+              name: before ? 'Older review' : 'Recent review',
+              status: 'succeeded',
+              validation: null,
+              orchestratorId: null,
+            },
+          ] as AgentRun[]),
+    nextBefore: kind === 'review' && !before ? 90 : null,
+  }));
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  await screen.findByText(/Recent review:/);
+  expect(screen.getByText('25 issues')).toBeDefined();
+  fireEvent.click(
+    within(screen.getByRole('navigation', { name: 'Review pages' })).getByRole('button', {
+      name: 'Next',
+    }),
+  );
+  await screen.findByText(/Older review:/);
+  expect(screen.queryByText(/Recent review:/)).toBeNull();
+  expect(screen.getByText('25 issues')).toBeDefined();
+  expect(api.orchestratorActionable).toHaveBeenCalledWith('paged', 90, 'review');
 });
