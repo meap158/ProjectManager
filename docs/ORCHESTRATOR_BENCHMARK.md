@@ -114,3 +114,24 @@ and 212.82 ms pending. Separate runs and concurrent host load prevent treating t
 as controlled speedups. Five samples do not establish p95; RSS is a process snapshot, not
 operation-specific peak memory. No network, mobile browser, dispatch ticks or index write
 cost is included. Global pending computation still repeats unresolved-work reads per master.
+
+## Workspace run feed and SQL preparation counts (2026-10-14)
+
+Reproduce: `node --import tsx scripts/benchmark-orchestrator-api.mjs --cards=1000,10000 --masters=1 --samples=5 --operations=runs`.
+The harness now supports operation selection and records prepared SQL statement counts per
+batch (not rows visited, quota IO or filesystem log-stat counts). Counts are stable across
+samples and timed routes assert no database writes. This fixture has 100k runs, many
+unreviewed runs, and no owned history; it measures actionable-feed growth, not history paging.
+
+|  Cards | Scope   | Median ms | Maximum ms | Response bytes | SQL preparations |
+| -----: | ------- | --------: | ---------: | -------------: | ---------------: |
+|  1,000 | Project |      2.24 |       4.04 |         21,403 |                4 |
+|  1,000 | Global  |     41.13 |      50.12 |        426,698 |                4 |
+| 10,000 | Project |     14.83 |      17.02 |        210,403 |                4 |
+| 10,000 | Global  |    324.46 |     361.61 |      4,211,650 |                4 |
+
+Node 22.21.0, one warmup/five samples, isolated in-process Hono/SQLite/serialization. No
+network/mobile latency claim; five samples do not establish p95. Batching bounds SQL
+preparations but not unresolved rows, hydration/log stats, JSON or response bytes. The global
+4.21 MB run feed remains a measured summary/actionable-pagination gap. Keep all pending
+reviews discoverable through counts and pages; a fixed newest-run cutoff would regress it.

@@ -19,6 +19,13 @@ const numbers = (name, fallback) =>
 const cardCounts = numbers('cards', '1000,10000');
 const masterCounts = numbers('masters', '1,5,20');
 const samples = numbers('samples', '5')[0];
+const operations = (
+  process.argv.find((arg) => arg.startsWith('--operations='))?.split('=')[1] ??
+  'preview,situation,pending,runs'
+).split(',');
+assert(
+  operations.every((operation) => ['preview', 'situation', 'pending', 'runs'].includes(operation)),
+);
 assert(cardCounts.every((n) => Number.isInteger(n) && n > 0));
 assert(masterCounts.every((n) => Number.isInteger(n) && n > 0 && n <= 20));
 assert(Number.isInteger(samples) && samples >= 2);
@@ -26,6 +33,12 @@ const results = [];
 for (const cards of cardCounts) {
   const dir = mkdtempSync(path.join(tmpdir(), 'pm-orch-api-bench-'));
   const db = openDb(':memory:');
+  let preparedStatements = 0;
+  const prepare = db.prepare.bind(db);
+  db.prepare = (...args) => {
+    preparedStatements++;
+    return prepare(...args);
+  };
   try {
     // Construct against an empty isolated database, then stop every supervisor timer before seeding.
     const supervisor = new AgentSupervisor(db, path.join(dir, 'logs'));
@@ -85,7 +98,7 @@ for (const cards of cardCounts) {
           expected.needsAttention.slice(0, 20),
           'Pending inspection changed visible data',
         );
-        for (const operation of ['preview', 'situation', 'pending']) {
+        for (const operation of operations) {
           const run = async () => {
             let bytes = 0;
             for (const id of ids) {
@@ -98,7 +111,9 @@ for (const cards of cardCounts) {
                   ? data.decisions.length <= 100
                   : operation === 'pending'
                     ? data.items.length <= 20
-                    : Array.isArray(data.needsAttention),
+                    : operation === 'runs'
+                      ? Array.isArray(data.runs) && data.historyIds.length <= 20
+                      : Array.isArray(data.needsAttention),
               );
               bytes += Buffer.byteLength(body);
             }
@@ -108,10 +123,16 @@ for (const cards of cardCounts) {
           const before = db.prepare('SELECT total_changes() AS count').get().count;
           const times = [];
           let bytes;
+          let statements;
           for (let sample = 0; sample < samples; sample++) {
+            const preparedBefore = preparedStatements;
             const start = performance.now();
             bytes = await run();
             times.push(performance.now() - start);
+            const count = preparedStatements - preparedBefore;
+            if (statements !== undefined)
+              assert.equal(count, statements, 'SQL preparation count changed across samples');
+            statements = count;
           }
           assert.equal(
             db.prepare('SELECT total_changes() AS count').get().count,
@@ -128,6 +149,7 @@ for (const cards of cardCounts) {
             samples,
             p50Ms: +times[Math.floor(times.length / 2)].toFixed(2),
             maxMs: +times.at(-1).toFixed(2),
+            preparedStatementsPerBatch: statements,
             bytesPerMaster: Math.round(bytes / masters),
             rssMB: +(process.memoryUsage().rss / 1024 / 1024).toFixed(1),
           });
