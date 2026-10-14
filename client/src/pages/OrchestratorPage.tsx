@@ -698,8 +698,12 @@ export function OrchestratorPage() {
                             <button
                               type="button"
                               className="btn btn-sm btn-primary"
-                              disabled={busy || totalAttentionCount === 0}
-                              title="Create follow-up tasks for these issues and let this orchestrator start workers on them (within its limits)"
+                              disabled={busy || scopedProjectAttention.length === 0}
+                              title={
+                                scopedProjectAttention.length
+                                  ? 'Create follow-up tasks for project issues within this orchestrator?s limits'
+                                  : 'No project issues to fix; review run results individually'
+                              }
                               onClick={() => void resolvePending(instance)}
                             >
                               Fix all
@@ -707,7 +711,7 @@ export function OrchestratorPage() {
                             <button
                               type="button"
                               className="btn btn-sm"
-                              disabled={busy || totalAttentionCount === 0}
+                              disabled={busy}
                               title="Remove follow-up tasks whose issue is already resolved"
                               onClick={() =>
                                 void perform(() => api.pruneOrchestratorAttention(instance.id))

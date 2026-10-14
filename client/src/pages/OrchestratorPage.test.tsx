@@ -924,6 +924,12 @@ it('shows successful unreviewed work in Needs you with a review link and no Retr
   await screen.findByText('Needs review');
   expect(screen.queryByText('Clean')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  expect((screen.getByRole('button', { name: 'Fix all' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect(
+    (screen.getByRole('button', { name: 'Clear resolved' }) as HTMLButtonElement).disabled,
+  ).toBe(false);
   expect(screen.getByRole('link', { name: 'Review \u2192' }).getAttribute('href')).toBe(
     '/projects/1?tab=agents',
   );
