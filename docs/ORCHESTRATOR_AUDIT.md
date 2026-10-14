@@ -3,13 +3,13 @@
 Implementation status, revalidated 2026-10-14. This table is the current assessment;
 chronological findings later in this document preserve earlier implementation evidence.
 
-| Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                                                     |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Durable execution        | Keyed reservations/reconciliation, lease epochs, heartbeats, insertion fences, revision checks, superseded-attempt refunds and manual request replay                                                        | Scheduler request identity, durable task generations, full supervisor process crash matrix                                                                    |
-| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated cursor history and run links, scoped chat selector, startup guard and immediate lifecycle responses                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                                          |
+| Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Durable execution        | Keyed reservations/reconciliation, lease epochs, heartbeats, insertion fences, revision checks, superseded-attempt refunds and manual request replay                                                        | Scheduler request identity, durable task generations, full supervisor process crash matrix                                                                                                  |
+| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated cursor history and run links, scoped chat selector, startup guard and immediate lifecycle responses                                      | Physical mobile/browser checks, clearer recovery and review evidence                                                                                                                        |
 | Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Multi-master read routes measured; cursor-paged workspace history and batched hydration verified. Remaining: dispatch/write-cost measurements, consolidated summary, SQL pending pagination |
-| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                              |
-| Evaluation               | Earlier full regression: 566 tests / 111 files passed; latest resource-constrained rerun failed (details below). Focused Orchestrator checks passed                                                         | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                         |
+| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                                                            |
+| Evaluation               | Earlier full regression: 566 tests / 111 files passed; latest resource-constrained rerun failed (details below). Focused Orchestrator checks passed                                                         | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                                                       |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -494,7 +494,6 @@ this switch flow; historical duplicate sessions and physical mobile behavior rem
 Cross-provider conversation transfer is not implemented, and the full regression gate is
 still failing as recorded above.
 
-
 ## Consolidated acceptance update, 2026-10-14
 
 Recent verified fixes include shrinking-queue navigation, pending scope response isolation,
@@ -512,3 +511,18 @@ consolidated summary and consistent SQL pending pagination, review evidence/depe
 and physical desktop/mobile verification. Recovery must wait for corrected configuration
 rather than spending attempts on authentication failures; a future change needs typed worker
 failure evidence and integration coverage across dispatch, retry, preview and review.
+
+## Server regression gate, 2026-10-14
+
+`vitest run server/orchestrator --pool=threads --maxWorkers=1` completed successfully:
+88 tests across 16 files, 5.01 seconds, using workspace TEMP/TMP. This verifies the current
+server planner, assignments, dispatch replay, ownership, query projections, routes and chat
+guards as covered by those tests. It replaces the prior grouped-run memory failure as the
+latest evidence for this server subset. It does not replace the failed whole-repository
+regression or prove actual supervisor-spawn crash recovery, mobile behavior or dispatch costs.
+
+Review evidence already exists in RunCard through RunChangesSummary (changed files and
+commits). The page now includes succeeded/failed unvalidated runs in Needs you and excludes
+accepted/rejected history; 17 page tests passed in the preceding change. Evidence-linked
+acceptance still needs current-worktree/runtime verification rather than assuming stored
+change summaries prove a task complete. Keep the full goal active until remaining gates pass.
