@@ -997,3 +997,62 @@ it('reports supporting refresh failures instead of silently showing fresh-lookin
   );
   expect((await screen.findByRole('alert')).textContent).toContain('Could not refresh projects');
 });
+
+it('preserves project counts during a failed poll and clears the warning on recovery', async () => {
+  vi.useFakeTimers();
+  try {
+    const master = {
+      id: 'freshness-master',
+      name: 'Freshness master',
+      enabled: false,
+      projectIds: [1],
+      providers: ['codex'],
+      maxWorkers: 2,
+      maxWorkersPerProject: 1,
+      maxWorkersPerProvider: 1,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
+    };
+    const project = (todo: number) =>
+      [
+        {
+          id: 1,
+          name: 'One',
+          git: null,
+          missing: false,
+          scan: { status: 'idle', error: null },
+          cardCounts: { backlog: 0, todo, in_progress: 0, review: 0, done: 0 },
+        },
+      ] as Awaited<ReturnType<typeof api.listProjects>>;
+    vi.mocked(api.orchestrators).mockResolvedValue({ instances: [master], events: [] });
+    vi.mocked(api.listProjects)
+      .mockResolvedValue(project(24))
+      .mockResolvedValueOnce(project(23))
+      .mockRejectedValueOnce(new Error('Offline'));
+    vi.mocked(api.listAllSessions).mockResolvedValue([]);
+    vi.mocked(api.listCardsInFlight).mockResolvedValue([]);
+    vi.mocked(api.listAllRuns).mockResolvedValue([]);
+    await act(async () => {
+      render(
+        <MemoryRouter>
+          <OrchestratorPage />
+        </MemoryRouter>,
+      );
+    });
+    expect(screen.getByText('23')).toBeDefined();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.getByRole('alert').textContent).toContain('Could not refresh projects');
+    expect(screen.getByText('23')).toBeDefined();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('24')).toBeDefined();
+  } finally {
+    cleanup();
+    vi.useRealTimers();
+  }
+});
