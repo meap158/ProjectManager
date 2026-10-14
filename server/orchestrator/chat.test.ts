@@ -459,6 +459,27 @@ it('recovers the completed run after a lost response without dispatching a done 
   }
 });
 
+it('rechecks provider policy after waiting for a restarted chat', async () => {
+  const { chat, db, instance, sessions, supervisor } = setup();
+  try {
+    const stopped = { id: 10, providerId: 'codex', status: 'killed' } as AgentSession;
+    const live = { ...stopped, status: 'running' } as AgentSession;
+    sessions.push(live);
+    vi.spyOn(chat, 'session').mockReturnValue(stopped);
+    vi.spyOn(chat, 'open').mockResolvedValue(live);
+    vi.spyOn(
+      chat as unknown as { waitUntilReady: (id: number) => Promise<void> },
+      'waitUntilReady',
+    ).mockImplementation(async () => {
+      instance.providers = ['claude'];
+    });
+    await expect(chat.check(instance.id, 'review')).rejects.toThrow(/agent was removed/);
+    expect(supervisor.sendInput).not.toHaveBeenCalled();
+  } finally {
+    db.close();
+  }
+});
+
 it('does not send checks to a chat provider removed from configuration', async () => {
   const { chat, db, supervisor, instance } = setup();
   try {

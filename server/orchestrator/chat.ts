@@ -289,6 +289,12 @@ export class OrchestratorChat implements OrchestratorToolHost {
     const live = this.supervisor.getSession(existing.id);
     if (!live || live.status !== 'running')
       throw new AgentError(409, 'The orchestrator chat is stopped; reopen it before checking');
+    const currentInstance = this.instance(id);
+    if (!currentInstance.providers.includes(live.providerId))
+      throw new AgentError(
+        409,
+        'The chat agent was removed from this orchestrator; stop it and choose a configured agent',
+      );
     if (live.tailState === 'running' || live.tailState === 'input')
       throw new AgentError(
         409,
@@ -296,8 +302,12 @@ export class OrchestratorChat implements OrchestratorToolHost {
           ? 'The orchestrator chat is asking you something; answer it first'
           : 'The orchestrator chat is busy; wait for it or open it to steer',
       );
-    this.writeBriefing(instance);
-    this.supervisor.sendInput(live.id, `\x1b[200~${request}\x1b[201~\r`, false);
+    this.writeBriefing(currentInstance);
+    this.supervisor.sendInput(
+      live.id,
+      `\x1b[200~${checkPrompt(currentInstance, focus)}\x1b[201~\r`,
+      false,
+    );
     this.record(id, 'check', `Asked the chat to check pending work (${focus})`);
     return this.supervisor.getSession(live.id)!;
   }
