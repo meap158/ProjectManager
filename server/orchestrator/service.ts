@@ -21,6 +21,7 @@ import {
 } from './workspaceRuns.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
+import { pendingDatabasePage } from './pendingPage.js';
 import { liveRunProjects } from './liveProjects.js';
 import { attentionRunIds } from './attentionRuns.js';
 import {
@@ -94,22 +95,54 @@ export class OrchestratorService {
     );
   }
 
-  /** Bounded transport for pending-work inspection; internal planning keeps the full situation. */
+  /** Database-backed attention is counted and hydrated only for the requested page. */
   pending(id: string, offset = 0, limit = 20, projectId?: number) {
-    const situation = this.situation(id, false, projectId);
-    if (!situation) return null;
-    const items = situation.needsAttention.filter(
-      (item) => !projectId || item.projectId === projectId,
-    );
-    return {
-      version: 1 as const,
-      generatedAt: situation.generatedAt,
-      total: items.length,
+    const instance = this.state().instances.find((item) => item.id === id);
+    if (!instance) return null;
+    const now = Date.now();
+    if (projectId && instance.projectIds.length && !instance.projectIds.includes(projectId)) {
+      return {
+        version: 1 as const,
+        generatedAt: new Date(now).toISOString(),
+        total: 0,
+        offset,
+        limit,
+        items: [],
+        nextOffset: null,
+      };
+    }
+    const projectIds = projectId ? [projectId] : instance.projectIds;
+    const projects = this.attentionProjects?.() ?? [];
+    const sessions = this.supervisor
+      .listAllSessions()
+      .filter(
+        (session) =>
+          session.status === 'running' &&
+          (!projectIds.length || projectIds.includes(session.projectId)),
+      );
+    const prefix = buildSituation(
+      {
+        projects,
+        sessions,
+        cards: [],
+        runs: [],
+        projectIds,
+        now,
+        dismissed: (projectId) => getDismissedAttention(this.db, projectId),
+        screen: (sessionId) => this.supervisor.sessionScreen(sessionId),
+      },
+      false,
+    ).needsAttention;
+    return pendingDatabasePage(
+      this.db,
+      projectIds,
+      sessions.flatMap((session) => (session.cardId == null ? [] : [session.cardId])),
+      new Map(projects.map((project) => [project.id, project.name])),
+      prefix,
       offset,
       limit,
-      items: items.slice(offset, offset + limit),
-      nextOffset: offset + limit < items.length ? offset + limit : null,
-    };
+      now,
+    );
   }
 
   workspaceSummary(id: string) {

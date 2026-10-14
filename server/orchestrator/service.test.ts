@@ -643,44 +643,42 @@ it('includes the actual run owner in a paged review decision', async () => {
   }
 });
 
-it('bounds pending transport and filters scope before paging without truncating totals', () => {
+it('bounds pending SQL detail reads and filters scope before paging without truncating totals', () => {
   const db = openDb(':memory:');
   try {
-    const service = new OrchestratorService(db, {} as AgentSupervisor, null);
-    const items = Array.from({ length: 25 }, (_, i) => ({
-      kind: 'awaiting-review' as const,
-      projectId: (i % 2) + 1,
-      projectName: 'Project',
-      title: 'Review',
-      detail: 'Pending',
-      runId: i + 1,
-    }));
-    vi.spyOn(service, 'situation').mockReturnValue({
-      generatedAt: 'now',
-      needsAttention: items,
-      beingWorkedOn: [],
+    const service = new OrchestratorService(
+      db,
+      { listAllSessions: () => [] } as unknown as AgentSupervisor,
+      null,
+    );
+    db.exec(`INSERT INTO projects(id,name,path,created_at) VALUES (1,'One','/one','now'),(2,'Two','/two','now');
+      WITH RECURSIVE n(id) AS (SELECT 1 UNION ALL SELECT id+1 FROM n WHERE id<25)
+      INSERT INTO agent_runs(id,project_id,name,command_json,status,created_at,log_path)
+      SELECT id,(id%2)+1,'Worker','[]','succeeded','now','' FROM n;`);
+    const master = service.save({
+      name: 'Master',
+      enabled: false,
+      projectIds: [],
+      providers: ['codex'],
+      maxWorkers: 2,
+      maxWorkersPerProject: 1,
+      maxWorkersPerProvider: 1,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
     });
-    expect(service.pending('master', 0, 10)).toMatchObject({
-      version: 1,
-      total: 25,
-      nextOffset: 10,
-      items: items.slice(0, 10),
+    const expected = service.situation(master.id, false)!.needsAttention;
+    for (const offset of [0, 10, 20, 30]) {
+      expect(service.pending(master.id, offset, 10)).toMatchObject({
+        total: 25,
+        items: expected.slice(offset, offset + 10),
+        nextOffset: offset + 10 < 25 ? offset + 10 : null,
+      });
+    }
+    expect(service.pending(master.id, 0, 10, 1)).toMatchObject({
+      total: 12,
+      items: expected.filter((item) => item.projectId === 1).slice(0, 10),
     });
-    expect(service.pending('master', 20, 10)).toMatchObject({
-      total: 25,
-      nextOffset: null,
-      items: items.slice(20),
-    });
-    expect(service.pending('master', 0, 10, 1)).toMatchObject({
-      total: 13,
-      items: items.filter((i) => i.projectId === 1).slice(0, 10),
-    });
-    expect(service.pending('master', 30, 10)).toMatchObject({
-      total: 25,
-      items: [],
-      nextOffset: null,
-    });
-    vi.mocked(service.situation).mockReturnValue(null);
     expect(service.pending('missing')).toBeNull();
   } finally {
     db.close();

@@ -565,3 +565,24 @@ outside these commits. The remaining acceptance gates in the table and upgrade p
 open, especially actual supervisor spawning under process crashes, scheduler replay/task
 generations, classified auth recovery, dispatch/write costs, SQL pending pagination,
 consolidated summary transport and current-worktree review evidence.
+
+## SQL pending queue pagination, 2026-10-15
+
+Pending inspection no longer builds all review/stalled-card details before slicing. It counts
+those sources in SQL, then hydrates only the requested detail rows. Project alerts and live
+session prompts remain an ordered in-memory prefix from runtime state. Review order remains
+descending run identity; stalled cards retain updated-time order with an explicit identity
+tie-breaker. Live run/session exclusions and the strict 24-hour stalled threshold are tested.
+Counts and detail reads execute synchronously on the same connection; offset pages are fresh
+views, not a snapshot pinned across separate requests. Queue mutation can move offset entries.
+
+The replacement service test uses real database rows rather than mocking the full situation.
+Mixed-source tests compare each page boundary against the existing situation projection.
+All 93 server Orchestrator tests across 17 files passed, along with server typechecking and
+scoped lint. Isolated Hono pending benchmark command:
+`node --import tsx scripts/benchmark-orchestrator-api.mjs --cards=1000,10000 --masters=1 --samples=3 --operations=pending`.
+With 100k history, 10k cards: project median 1.11ms/max 1.17ms/4,534 bytes; global median
+1.26ms/max 1.28ms/4,562 bytes. Five prepared statements per batch. Three samples establish
+neither p95 nor physical mobile/LAN behavior. The benchmark also checks full-situation output
+and pending totals/page equivalence. Multi-master dispatch/write costs and the other durable
+execution, recovery, review-evidence and physical verification gates remain open.
