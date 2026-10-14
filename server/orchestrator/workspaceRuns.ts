@@ -117,3 +117,22 @@ export function workspaceRunIds(
     nextBefore: history.length > limit ? page.at(-1)!.id : null,
   };
 }
+
+/** Live task identity stays complete across detail pages without hydrating logs or commands. */
+export function workspaceLiveAssignments(
+  db: Db,
+  owner: string,
+  projectIds: readonly number[] = [],
+) {
+  return db
+    .prepare(
+      `SELECT id, project_id AS projectId, card_id AS cardId
+    FROM agent_runs WHERE id IN (${actionableSelection(projectIds)})
+    AND status IN ('running', 'queued') ORDER BY id DESC`,
+    )
+    .all(...actionableParameters(owner, projectIds)) as {
+    id: number;
+    projectId: number;
+    cardId: number | null;
+  }[];
+}

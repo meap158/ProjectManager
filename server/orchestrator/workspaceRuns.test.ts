@@ -1,6 +1,11 @@
 import { expect, it, vi } from 'vitest';
 import { openDb } from '../db.js';
-import { workspaceRunIds, workspaceRunCounts, workspaceActionablePage } from './workspaceRuns.js';
+import {
+  workspaceRunIds,
+  workspaceRunCounts,
+  workspaceActionablePage,
+  workspaceLiveAssignments,
+} from './workspaceRuns.js';
 
 it('retains old actionable work and pages owned history without unrelated newest-run cutoff', () => {
   const db = openDb(':memory:');
@@ -13,6 +18,11 @@ it('retains old actionable work and pages owned history without unrelated newest
         CASE WHEN id=1 THEN 'running' WHEN id=2 THEN 'failed' WHEN id=4 THEN 'queued' ELSE 'succeeded' END,
         CASE WHEN id IN (1,2,4) THEN NULL ELSE 'accepted' END,'now','',
         CASE WHEN id<=5 THEN 'owner' ELSE 'other' END FROM n;`);
+    expect(workspaceLiveAssignments(db, 'owner', [1])).toEqual([
+      { id: 4, projectId: 2, cardId: null },
+      { id: 1, projectId: 1, cardId: null },
+    ]);
+    expect(workspaceLiveAssignments(db, 'missing', [99])).toEqual([]);
     expect(workspaceRunCounts(db, 'owner', [1])).toEqual({
       total: 3,
       live: 2,

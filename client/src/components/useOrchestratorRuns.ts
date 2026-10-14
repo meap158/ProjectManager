@@ -82,6 +82,7 @@ export function useOrchestratorRuns(
   return {
     runs: data?.runs ?? [],
     summary: data?.summary,
+    liveAssignments: data?.liveAssignments,
     error:
       error ||
       (focus !== undefined && data?.focusFound === false

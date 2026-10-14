@@ -56,6 +56,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export interface OrchestratorRunPage {
+  liveAssignments?: { id: number; projectId: number; cardId: number | null }[];
   version: 1;
   generatedAt: string;
   runs: AgentRun[];

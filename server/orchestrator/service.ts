@@ -13,7 +13,12 @@ import type {
 } from '../../shared/orchestrator.js';
 import { buildSituation, cardContext } from './situation.js';
 import { listSituationRuns } from './situationRuns.js';
-import { workspaceRunIds, workspaceRunCounts, workspaceActionablePage } from './workspaceRuns.js';
+import {
+  workspaceRunIds,
+  workspaceRunCounts,
+  workspaceActionablePage,
+  workspaceLiveAssignments,
+} from './workspaceRuns.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
 import { liveRunProjects } from './liveProjects.js';
@@ -131,6 +136,9 @@ export class OrchestratorService {
       generatedAt: new Date().toISOString(),
       ...page,
       summary: workspaceRunCounts(this.db, id, instance.projectIds),
+      ...(kind === 'live'
+        ? { liveAssignments: workspaceLiveAssignments(this.db, id, instance.projectIds) }
+        : {}),
       runs: this.supervisor.getRunsByIds(page.ids),
     };
   }
