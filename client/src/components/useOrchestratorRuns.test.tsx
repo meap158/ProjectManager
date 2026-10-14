@@ -3,7 +3,9 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { api } from '../api';
 import { useOrchestratorRuns } from './useOrchestratorRuns';
-vi.mock('../api', () => ({ api: { orchestratorRuns: vi.fn() } }));
+vi.mock('../api', () => ({
+  api: { orchestratorRuns: vi.fn(), orchestratorHistory: vi.fn(), orchestratorActionable: vi.fn() },
+}));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
@@ -93,4 +95,43 @@ it('passes a historical link identity and reports a missing owned run', async ()
     expect(result.current.error).toBe('Linked run was not found in this Orchestrator.'),
   );
   expect(api.orchestratorRuns).toHaveBeenLastCalledWith('one', undefined, 99);
+});
+
+it('keeps complete actionable counts across pages and fences a changed feed kind', async () => {
+  const summary = {
+    total: 50,
+    live: 25,
+    awaitingReview: 25,
+    failedReview: 3,
+    ownedLive: 2,
+    ownedReview: 1,
+  };
+  let resolve!: (value: ReturnType<typeof page>) => void;
+  vi.mocked(api.orchestratorActionable)
+    .mockResolvedValueOnce({ ...page(40, 40), summary })
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    )
+    .mockResolvedValueOnce({ ...page(90), summary });
+  const { result, rerender } = renderHook(
+    ({ kind }: { kind: 'live' | 'review' }) =>
+      useOrchestratorRuns('one', 0, false, undefined, kind),
+    { initialProps: { kind: 'live' as 'live' | 'review' } },
+  );
+  await waitFor(() => expect(result.current.next).toBeDefined());
+  expect(result.current.summary?.live).toBe(25);
+  act(() => result.current.next!());
+  expect(api.orchestratorActionable).toHaveBeenLastCalledWith('one', 40, 'live');
+  rerender({ kind: 'review' });
+  await waitFor(() => expect(result.current.runs[0]?.id).toBe(90));
+  expect(result.current.page).toBe(1);
+  expect(result.current.summary?.awaitingReview).toBe(25);
+  await act(async () => {
+    resolve(page(20));
+  });
+  expect(result.current.runs[0]?.id).toBe(90);
+  expect(api.orchestratorActionable).toHaveBeenLastCalledWith('one', undefined, 'review');
 });

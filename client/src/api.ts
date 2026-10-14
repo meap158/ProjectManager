@@ -55,7 +55,35 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
+export interface OrchestratorRunPage {
+  version: 1;
+  generatedAt: string;
+  runs: AgentRun[];
+  historyIds?: number[];
+  focusFound?: boolean;
+  nextBefore: number | null;
+  summary?: {
+    total: number;
+    live: number;
+    awaitingReview: number;
+    failedReview: number;
+    ownedLive: number;
+    ownedReview: number;
+  };
+}
+
 export const api = {
+  orchestratorHistory: (id: string, before?: number, focus?: number) =>
+    request<OrchestratorRunPage>(
+      'GET',
+      `/orchestrators/${encodeURIComponent(id)}/history-runs?limit=20${before === undefined ? '' : `&before=${before}`}${focus === undefined ? '' : `&focus=${focus}`}`,
+    ),
+  orchestratorActionable: (id: string, before: number | undefined, kind: 'live' | 'review') =>
+    request<OrchestratorRunPage>(
+      'GET',
+      `/orchestrators/${encodeURIComponent(id)}/actionable-runs?limit=20&kind=${kind}${before === undefined ? '' : `&before=${before}`}`,
+    ),
+
   orchestratorRuns: (id: string, before?: number, focus?: number) =>
     request<{
       version: 1;

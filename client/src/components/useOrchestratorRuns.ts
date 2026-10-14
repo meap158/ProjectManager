@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, type OrchestratorRunPage } from '../api';
 import { serialPoll } from '../lib/serialPoll';
 
 /** Owner and cursor travel with results so a late response cannot populate another workspace. */
@@ -8,21 +8,30 @@ export function useOrchestratorRuns(
   refresh: number,
   paused: boolean,
   focus?: number,
+  kind: 'legacy' | 'history' | 'live' | 'review' = 'legacy',
 ) {
-  const [selection, setSelection] = useState<{ owner: string; cursors: (number | undefined)[] }>({
+  const [selection, setSelection] = useState<{
+    owner: string;
+    kind: string;
+    cursors: (number | undefined)[];
+  }>({
     owner: '',
+    kind: 'legacy',
     cursors: [undefined],
   });
-  const cursors = selection.owner === owner ? selection.cursors : [undefined];
+  const cursors =
+    selection.owner === owner && selection.kind === kind ? selection.cursors : [undefined];
   const before = cursors.at(-1);
   const [result, setResult] = useState<{
     owner: string;
+    kind: string;
     before?: number;
     focus?: number;
-    data: Awaited<ReturnType<typeof api.orchestratorRuns>>;
+    data: OrchestratorRunPage;
   } | null>(null);
   const [failure, setFailure] = useState<{
     owner: string;
+    kind: string;
     before?: number;
     focus?: number;
     message: string;
@@ -34,13 +43,17 @@ export function useOrchestratorRuns(
     const stop = serialPoll(async () => {
       if (active) setPending(true);
       try {
-        const data = await api.orchestratorRuns(owner, before, focus);
+        const data = await (kind === 'legacy'
+          ? api.orchestratorRuns(owner, before, focus)
+          : kind === 'history'
+            ? api.orchestratorHistory(owner, before, focus)
+            : api.orchestratorActionable(owner, before, kind));
         if (active) {
-          setResult({ owner, before, focus, data });
+          setResult({ owner, kind, before, focus, data });
           setFailure(null);
         }
       } catch (error) {
-        if (active) setFailure({ owner, before, focus, message: (error as Error).message });
+        if (active) setFailure({ owner, kind, before, focus, message: (error as Error).message });
       } finally {
         if (active) setPending(false);
       }
@@ -49,17 +62,26 @@ export function useOrchestratorRuns(
       active = false;
       stop();
     };
-  }, [owner, before, refresh, paused, focus]);
+  }, [owner, before, refresh, paused, focus, kind]);
   const data =
-    result && result.owner === owner && result.before === before && result.focus === focus
+    result &&
+    result.owner === owner &&
+    result.kind === kind &&
+    result.before === before &&
+    result.focus === focus
       ? result.data
       : null;
   const error =
-    failure && failure.owner === owner && failure.before === before && failure.focus === focus
+    failure &&
+    failure.owner === owner &&
+    failure.kind === kind &&
+    failure.before === before &&
+    failure.focus === focus
       ? failure.message
       : '';
   return {
     runs: data?.runs ?? [],
+    summary: data?.summary,
     error:
       error ||
       (focus !== undefined && data?.focusFound === false
@@ -69,11 +91,11 @@ export function useOrchestratorRuns(
     next:
       data?.nextBefore == null
         ? undefined
-        : () => setSelection({ owner: owner!, cursors: [...cursors, data.nextBefore!] }),
+        : () => setSelection({ owner: owner!, kind, cursors: [...cursors, data.nextBefore!] }),
     previous:
       cursors.length < 2
         ? undefined
-        : () => setSelection({ owner: owner!, cursors: cursors.slice(0, -1) }),
+        : () => setSelection({ owner: owner!, kind, cursors: cursors.slice(0, -1) }),
     page: cursors.length,
   };
 }
