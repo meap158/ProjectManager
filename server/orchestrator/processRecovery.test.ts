@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -6,7 +6,7 @@ import { expect, it } from 'vitest';
 import { openDb } from '../db.js';
 import { OrchestratorAssignments } from './assignments.js';
 import { ChatDispatchIntent } from './chatIntent.js';
-import { AgentSupervisor } from '../agents/supervisor.js';
+import { AgentSupervisor, killTree } from '../agents/supervisor.js';
 
 it.each(['before-claim', 'after-claim', 'after-insertion', 'after-acknowledgement'])(
   'recovers persisted chat dispatch after process exit %s',
@@ -185,3 +185,77 @@ it.each(['before-worker-launch', 'after-worker-completion'])(
   },
   30000,
 );
+
+it('does not relaunch a one-attempt worker still alive after its supervisor exits', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pm-orch-live-crash-'));
+  const marker = path.join(dir, 'live-worker.pid');
+  const command = [
+    process.execPath,
+    '-e',
+    `require('node:fs').appendFileSync(${JSON.stringify(marker)}, String(process.pid)+'\\n'); setTimeout(()=>process.exit(0),15000)`,
+  ];
+  const source = `
+    import { openDb } from ${JSON.stringify(new URL('../db.ts', import.meta.url).href)};
+    import { AgentSupervisor } from ${JSON.stringify(new URL('../agents/supervisor.ts', import.meta.url).href)};
+    import { ChatDispatchIntent } from ${JSON.stringify(new URL('./chatIntent.ts', import.meta.url).href)};
+    import { existsSync } from 'node:fs';
+    const dir=process.argv[1]; const db=openDb(dir);
+    const supervisor=new AgentSupervisor(db,dir+'/logs'); await supervisor.ready;
+    db.prepare("INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture',?,'now')").run(dir);
+    db.exec("INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(1,1,'Task','todo',0,'now','now')");
+    const intent=new ChatDispatchIntent(db,1,'owner',Date.now(),{id:'live-request',fingerprint:'args',revision:'rev'});
+    const run=await supervisor.dispatchCard(1,1,{command:${JSON.stringify(command)},maxAttempts:1,dispatchKey:intent.key,orchestratorId:'owner'});
+    const deadline=Date.now()+10000;
+    while(!existsSync(${JSON.stringify(marker)}) || supervisor.getRun(run.id)?.status!=='running') {
+      if(Date.now()>deadline) throw new Error('Fixture worker did not start');
+      await new Promise(resolve=>setTimeout(resolve,20));
+    }
+    process.exit(86);
+  `;
+  try {
+    const child = spawnSync(
+      process.execPath,
+      ['--import', import.meta.resolve('tsx'), '--input-type=module', '--eval', source, dir],
+      { cwd: dir, encoding: 'utf8', timeout: 20000, windowsHide: true },
+    );
+    expect(child.error, child.stderr).toBeUndefined();
+    expect(child.status, child.stderr).toBe(86);
+    const pid = Number(readFileSync(marker, 'utf8').trim());
+    expect(Number.isSafeInteger(pid) && pid > 0).toBe(true);
+    // This process was created by this fixture and is confirmed alive, not inferred from a row.
+    expect(() => process.kill(pid, 0)).not.toThrow();
+    const db = openDb(dir);
+    const supervisor = new AgentSupervisor(db, path.join(dir, 'recovery-logs'));
+    try {
+      await supervisor.ready;
+      expect(supervisor.getRun(1)).toMatchObject({
+        status: 'failed',
+        attempts: 1,
+        validation: null,
+        error:
+          'Server restarted before completion (attempts exhausted). The previous worker may still be running; inspect it before retrying.',
+      });
+      const assignments = new OrchestratorAssignments(db);
+      assignments.reconcile();
+      expect(ChatDispatchIntent.replay(db, 'owner', 'live-request', 'args')).toMatchObject({
+        runId: 1,
+        status: 'failed',
+      });
+      expect(assignments.claim(1, 'duplicate')).toBe(false);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM agent_runs').get()).toMatchObject({ n: 1 });
+      expect(readFileSync(marker, 'utf8').trim().split('\n')).toEqual([String(pid)]);
+    } finally {
+      await supervisor.shutdown();
+      db.close();
+    }
+  } finally {
+    // The orphan cannot be owned by the recovery supervisor; terminate only this fixture PID.
+    if (existsSync(marker)) {
+      for (const line of readFileSync(marker, 'utf8').trim().split('\n')) {
+        const pid = Number(line);
+        if (Number.isSafeInteger(pid) && pid > 0) await killTree(pid).catch(() => undefined);
+      }
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 30000);

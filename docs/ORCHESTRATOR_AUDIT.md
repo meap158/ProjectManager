@@ -621,3 +621,21 @@ recovery uses the real launch path. Abrupt exit while an actual worker is still 
 launch/attempt-persistence races, scheduler request replay across attempts, task generations,
 and pending-review behavior after those races remain unverified. No exactly-once external
 side-effect guarantee is claimed for an in-flight worker crash.
+
+## Surviving worker after supervisor crash, 2026-10-15
+
+A new real process fixture waits for a fake worker's PID marker and persisted running status,
+then exits its supervisor abruptly. The recovery supervisor does not start another worker for
+maxAttempts=1, reports the original run as failed/unvalidated and keeps the assignment reserved.
+Request replay points at that same run; one launch marker and one run row remain. The test
+confirms the original fixture PID is alive independently of database state, then terminates
+only that PID during cleanup. Nine process-recovery/manual-retry tests passed, plus server
+TypeScript and scoped lint.
+
+This proves a surviving-orphan limitation, not complete lifecycle recovery. The production
+error now explicitly states that the previous worker may still be running and must be inspected
+before retry. Automatic scheduler dispatch uses one attempt and remains review-blocked, but
+manual retry or generic runs with additional attempts still need durable process ownership,
+identity-safe reconciliation and an explicit orphan policy. A stored PID alone is insufficient
+because of PID reuse. Do not treat failed status after restart as proof that external work has
+stopped, and do not claim exactly-once side effects from the current dispatch key.

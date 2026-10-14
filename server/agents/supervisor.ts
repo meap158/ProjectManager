@@ -735,7 +735,11 @@ export class AgentSupervisor {
       } else {
         this.db
           .prepare(`UPDATE agent_runs SET status = 'failed', error = ?, ended_at = ? WHERE id = ?`)
-          .run('Server shut down before completion (attempts exhausted)', now(), row.id);
+          .run(
+            'Server restarted before completion (attempts exhausted). The previous worker may still be running; inspect it before retrying.',
+            now(),
+            row.id,
+          );
       }
     }
     // Installs never relaunch: they are quick and idempotent enough to retry by hand.
