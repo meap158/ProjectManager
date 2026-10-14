@@ -89,6 +89,7 @@ export function OrchestratorPage() {
   const [draft, setDraft] = useState<Omit<OrchestratorConfig, 'id'> & { id?: string }>(defaults);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
+  const [refreshWarning, setRefreshWarning] = useState('');
   const [actionResult, setActionResult] = useState<{
     message: string;
     cards: number[];
@@ -121,6 +122,7 @@ export function OrchestratorPage() {
       if (performing.current) return;
       const epoch = ++refreshEpoch.current;
       const current = () => active && epoch === refreshEpoch.current && !performing.current;
+      const failures: string[] = [];
       await Promise.all([
         api.orchestrators().then(
           (next) => {
@@ -137,21 +139,33 @@ export function OrchestratorPage() {
           (next) => {
             if (current()) setProjects(next);
           },
-          () => {},
+          () => {
+            failures.push('projects');
+          },
         ),
         api.listAllSessions().then(
           (next) => {
             if (current()) setSessions(next);
           },
-          () => {},
+          () => {
+            failures.push('sessions');
+          },
         ),
         api.listCardsInFlight().then(
           (next) => {
             if (current()) setInFlightCards(next);
           },
-          () => {},
+          () => {
+            failures.push('cards');
+          },
         ),
       ]);
+      if (current())
+        setRefreshWarning(
+          failures.length
+            ? `Could not refresh ${failures.join(', ')}. Displayed data may be out of date; retrying automatically.`
+            : '',
+        );
     };
     const stop = serialPoll(load, 5000);
     return () => {
@@ -259,6 +273,11 @@ export function OrchestratorPage() {
         </div>
       )}
 
+      {refreshWarning && (
+        <p className="error-banner" role="alert">
+          {refreshWarning}
+        </p>
+      )}
       {actionResult && (
         <section className="panel orchestrator-action-result" aria-label="Action result">
           <p role="status">{actionResult.message}</p>

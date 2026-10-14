@@ -984,3 +984,16 @@ it('disables Retry when the same task already has an active run', async () => {
   expect((retry as HTMLButtonElement).disabled).toBe(true);
   expect(retry.getAttribute('title')).toContain('already has an active worker');
 });
+
+it('reports supporting refresh failures instead of silently showing fresh-looking counts', async () => {
+  vi.mocked(api.orchestrators).mockResolvedValue({ instances: [], events: [] });
+  vi.mocked(api.listProjects).mockRejectedValueOnce(new Error('Offline'));
+  vi.mocked(api.listAllSessions).mockResolvedValue([]);
+  vi.mocked(api.listCardsInFlight).mockResolvedValue([]);
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  expect((await screen.findByRole('alert')).textContent).toContain('Could not refresh projects');
+});
