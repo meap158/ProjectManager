@@ -639,3 +639,10 @@ manual retry or generic runs with additional attempts still need durable process
 identity-safe reconciliation and an explicit orphan policy. A stored PID alone is insufficient
 because of PID reuse. Do not treat failed status after restart as proof that external work has
 stopped, and do not claim exactly-once side effects from the current dispatch key.
+
+The concrete next ownership upgrade is specified in
+[One-shot worker ownership and crash recovery](ORCHESTRATOR_RUN_OWNERSHIP.md), based on the
+current pipe adapter, authenticated session host, host generation/orphan policy and real
+surviving-worker regression. It defines protocol/schema compatibility, unknown-execution
+handling, attempt/request identity separation and a real-process acceptance matrix. It is an
+implementation plan; none of its proposed host/journal/typed-state behavior is claimed shipped.
