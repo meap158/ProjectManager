@@ -199,6 +199,20 @@ export const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL,
     PRIMARY KEY (orchestrator_id, request_id)
   );`,
+  // Immutable execution identity bridge; legacy runs remain explicitly unowned (PM-64).
+  `CREATE TABLE agent_run_executions (
+    nonce TEXT PRIMARY KEY,
+    run_id INTEGER REFERENCES agent_runs(id) ON DELETE SET NULL,
+    run_log_path TEXT NOT NULL,
+    attempt INTEGER NOT NULL CHECK(attempt > 0),
+    fingerprint TEXT NOT NULL,
+    host_instance TEXT NOT NULL,
+    host_generation INTEGER NOT NULL CHECK(host_generation > 0),
+    dispatch_key TEXT,
+    orchestrator_id TEXT,
+    created_at INTEGER NOT NULL,
+    UNIQUE(run_id, run_log_path, attempt)
+  );`,
 ];
 
 export function openDb(dataDir: string): Db {

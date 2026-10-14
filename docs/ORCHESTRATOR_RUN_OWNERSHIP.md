@@ -81,3 +81,16 @@ English error strings. Preserve old logs and review evidence when recovering a f
 Scheduler durable request identity and task generations remain separate requirements: request
 identity survives retries, while every permitted attempt receives its own execution nonce.
 The current random assignment dispatch key supplies neither relationship by itself.
+
+## Implemented foundation, 2026-10-15
+
+The append-only agent_run_executions migration and reserveRunExecution persistence bridge now
+record an immutable nonce per run/log identity and attempt, command/prompt/provider/autonomy/
+working-directory fingerprint, host instance/generation and dispatch/master linkage. Replaying
+the same reservation returns the original identity. Changed launch arguments or host identity
+reject within a write transaction. Deleting a run preserves the historical nonce with a null
+run reference; a reused SQLite ID receives a distinct identity. Legacy runs are not backfilled
+with invented owners. Existing-database upgrade/reopen, conflicting reservation rollback and
+retry identity are covered by tests. The bridge is not yet used by production launch code:
+host capability negotiation, durable host launch journal, typed lifecycle state and recovery
+integration remain required before it can provide process ownership guarantees.
