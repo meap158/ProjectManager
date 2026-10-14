@@ -3,13 +3,13 @@
 Implementation status, revalidated 2026-10-15. This table is the current assessment;
 chronological findings later in this document preserve earlier implementation evidence.
 
-| Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                                                                                   |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Durable execution        | Keyed reservations/reconciliation, lease epochs, heartbeats, insertion fences, revision checks, superseded-attempt refunds and manual request replay                                                        | Scheduler request identity, durable task generations, full supervisor process crash matrix                                                                                                  |
-| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated cursor history and run links, scoped chat selector, startup guard and immediate lifecycle responses                                      | Physical mobile/browser checks, clearer recovery and review evidence                                                                                                                        |
-| Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Multi-master read routes measured; cursor-paged workspace history and batched hydration verified. Remaining: dispatch/write-cost measurements, consolidated summary, SQL pending pagination |
-| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                                                            |
-| Evaluation               | Earlier full regression: 566 tests / 111 files passed; latest resource-constrained rerun failed (details below). Focused Orchestrator checks passed                                                         | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                                                       |
+| Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Durable execution        | Keyed reservations/reconciliation, lease epochs, heartbeats, insertion fences, revision checks, superseded-attempt refunds and manual request replay                                                        | Scheduler request identity, durable task generations, full supervisor process crash matrix                                                                                                                 |
+| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated cursor history and run links, scoped chat selector, startup guard and immediate lifecycle responses                                      | Physical mobile/browser checks, clearer recovery and review evidence                                                                                                                                       |
+| Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Multi-master read routes measured; cursor-paged workspace history and batched hydration verified. SQL pending detail paging verified. Remaining: dispatch/write-cost measurements and consolidated summary |
+| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                                                                           |
+| Evaluation               | Earlier full regression: 566 tests / 111 files passed; latest resource-constrained rerun failed (details below). Focused Orchestrator checks passed                                                         | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                                                                      |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -586,3 +586,19 @@ With 100k history, 10k cards: project median 1.11ms/max 1.17ms/4,534 bytes; glob
 neither p95 nor physical mobile/LAN behavior. The benchmark also checks full-situation output
 and pending totals/page equivalence. Multi-master dispatch/write costs and the other durable
 execution, recovery, review-evidence and physical verification gates remain open.
+
+## Repository gate and scheduler replay recheck, 2026-10-15
+
+Latest `npm run check` passed both TypeScript projects and repository ESLint. It exited 1 at
+Prettier in five shared UI files: AgentWorkList.interactions.test.tsx, Dropdown.test.tsx,
+project-agents.css, WorkspacePage.tsx and styles.css. Consequently npm test was not reached.
+This result does not invalidate the separately passing 93-test server gate, but does not
+establish a whole-repository pass. Shared edits were not reformatted or committed here.
+
+Scheduler replay remains incomplete: service execution claims an assignment, then passes its
+random dispatch_key to dispatchCard. Assignment retry replaces that key and increments the
+attempt count. Recovery reconciles a matching inserted run, while orphan dispatch claims move
+to cooldown after 120 seconds. That is attempt-level deduplication, not a durable scheduling
+request identity across retries. Any extension must distinguish task revision/generation from
+attempt identity, preserve the fresh insertion fence and review policy, and test actual
+supervisor process-crash boundaries rather than treating persisted fixture rows as workers.
