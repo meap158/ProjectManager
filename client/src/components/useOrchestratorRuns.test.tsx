@@ -124,6 +124,7 @@ it('keeps complete actionable counts across pages and fences a changed feed kind
   await waitFor(() => expect(result.current.next).toBeDefined());
   expect(result.current.summary?.live).toBe(25);
   act(() => result.current.next!());
+  expect(result.current.summary?.live).toBe(25);
   expect(api.orchestratorActionable).toHaveBeenLastCalledWith('one', 40, 'live');
   rerender({ kind: 'review' });
   await waitFor(() => expect(result.current.runs[0]?.id).toBe(90));

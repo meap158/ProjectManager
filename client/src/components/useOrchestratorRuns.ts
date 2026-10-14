@@ -81,8 +81,13 @@ export function useOrchestratorRuns(
       : '';
   return {
     runs: data?.runs ?? [],
-    summary: data?.summary,
-    liveAssignments: data?.liveAssignments,
+    // Complete metadata is independent of the detail cursor; retain it during navigation.
+    summary:
+      result && result.owner === owner && result.kind === kind ? result.data.summary : undefined,
+    liveAssignments:
+      result && result.owner === owner && result.kind === kind
+        ? result.data.liveAssignments
+        : undefined,
     error:
       error ||
       (focus !== undefined && data?.focusFound === false

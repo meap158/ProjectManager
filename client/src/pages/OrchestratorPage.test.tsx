@@ -1149,3 +1149,35 @@ it('retains complete review totals while navigating bounded detail pages', async
   expect(screen.getByText('25 issues')).toBeDefined();
   expect(api.orchestratorActionable).toHaveBeenCalledWith('paged', 90, 'review');
 });
+
+it('shows a failed initial review load instead of claiming nothing needs attention', async () => {
+  vi.mocked(api.orchestrators).mockResolvedValue({
+    instances: [
+      {
+        id: 'offline',
+        name: 'Offline master',
+        enabled: false,
+        projectIds: [1],
+        providers: ['codex'],
+        maxWorkers: 2,
+        maxWorkersPerProject: 1,
+        maxWorkersPerProvider: 1,
+        reservePercent: 10,
+        allowUnknownQuota: false,
+        quotaMaxAgeMs: 60000,
+      },
+    ],
+    events: [],
+  });
+  vi.mocked(api.listAllRuns).mockResolvedValue([]);
+  vi.mocked(api.orchestratorActionable).mockRejectedValue(new Error('Review feed offline'));
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(screen.getAllByText('Review feed offline').length).toBe(2));
+  expect(screen.queryByText('Nothing needs you right now.', { exact: false })).toBeNull();
+  expect(screen.getByRole('navigation', { name: 'Review pages' })).toBeDefined();
+  expect(screen.getByRole('navigation', { name: 'Live workers pages' })).toBeDefined();
+});

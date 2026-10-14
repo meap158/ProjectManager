@@ -731,7 +731,11 @@ export function OrchestratorPage() {
                             >
                               {totalAttentionCount > 0
                                 ? `${totalAttentionCount} issue${totalAttentionCount === 1 ? '' : 's'}`
-                                : 'Clean'}
+                                : reviewFeed.error
+                                  ? 'Unavailable'
+                                  : reviewFeed.loading
+                                    ? 'Checking'
+                                    : 'Clean'}
                             </span>
                             {beingWorkedOnAttentionCount > 0 && (
                               <span
@@ -769,7 +773,8 @@ export function OrchestratorPage() {
                             </button>
                           </div>
                         </div>
-                        {totalAttentionCount === 0 ? (
+                        <RunFeedPages feed={reviewFeed} label="Review" />
+                        {totalAttentionCount === 0 && !reviewFeed.loading && !reviewFeed.error ? (
                           <p className="faint orchestrator-attention-clean">
                             ✓ Nothing needs you right now.
                           </p>
@@ -884,7 +889,6 @@ export function OrchestratorPage() {
                                 </div>
                               );
                             })}
-                            <RunFeedPages feed={reviewFeed} label="Review" />
                             {reviewRunsInScope.map((run) => {
                               const proj = projects.find((p) => p.id === run.projectId);
                               return (
@@ -1253,13 +1257,13 @@ export function OrchestratorPage() {
                             All terminals →
                           </Link>
                         </div>
-                        {totalBeingWorkedOnCount === 0 ? (
+                        <RunFeedPages feed={liveFeed} label="Live workers" />
+                        {totalBeingWorkedOnCount === 0 && !liveFeed.loading && !liveFeed.error ? (
                           <p className="faint orchestrator-workers-empty">
                             Nothing is being worked on right now.
                           </p>
                         ) : (
                           <div className="orchestrator-workers-grid">
-                            <RunFeedPages feed={liveFeed} label="Live workers" />
                             {activeRuns.map((run) => {
                               const proj = projects.find((p) => p.id === run.projectId);
                               return (
