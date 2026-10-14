@@ -86,6 +86,22 @@ export function registerOrchestratorRoutes(
     const summary = service.workspaceSummary(c.req.param('id'));
     return summary ? c.json(summary) : c.json({ error: 'Orchestrator not found' }, 404);
   });
+  app.get('/orchestrators/:id/actionable-runs', (c) => {
+    const parsed = z
+      .object({
+        before: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+      })
+      .strict()
+      .safeParse(c.req.query());
+    if (!parsed.success) return c.json({ error: 'Invalid actionable run page' }, 400);
+    const page = service.workspaceActionable(
+      c.req.param('id'),
+      parsed.data.before,
+      parsed.data.limit,
+    );
+    return page ? c.json(page) : c.json({ error: 'Orchestrator not found' }, 404);
+  });
   app.get('/orchestrators/:id/runs', (c) => {
     const parsed = z
       .object({

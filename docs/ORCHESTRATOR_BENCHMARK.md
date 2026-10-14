@@ -135,3 +135,13 @@ network/mobile latency claim; five samples do not establish p95. Batching bounds
 preparations but not unresolved rows, hydration/log stats, JSON or response bytes. The global
 4.21 MB run feed remains a measured summary/actionable-pagination gap. Keep all pending
 reviews discoverable through counts and pages; a fixed newest-run cutoff would regress it.
+
+## Bounded actionable-run details (2026-10-14)
+
+`--cards=10000 --masters=1 --samples=5 --operations=actionable-runs` measured a 20-row
+SQL page with complete scalar counts. Project scope: 2.04 ms median, 2.50 ms maximum,
+8,591 response bytes; global scope: 24.93 ms median, 27.33 ms maximum, 8,611 bytes.
+Both used four prepared SQL statements. This is the same isolated read-only fixture scope,
+not controlled LAN/mobile latency or p95. Earlier unbounded global feed was 4,211,650 bytes.
+The page endpoint bounds hydration/transport but still aggregates unresolved rows for counts.
+Client integration is still required before the polling page benefits from this reduction.

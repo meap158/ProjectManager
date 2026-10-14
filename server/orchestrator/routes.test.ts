@@ -167,3 +167,18 @@ it('returns versioned scalar workspace summary and 404 for a missing master', as
   workspaceSummary.mockReturnValueOnce(null);
   expect((await app.request('/orchestrators/missing/summary')).status).toBe(404);
 });
+
+it('validates actionable pages before reading and preserves complete summary counts', async () => {
+  const data = { version: 1, runs: [], nextBefore: null, summary: { awaitingReview: 500 } };
+  const workspaceActionable = vi.fn(() => data as typeof data | null);
+  const app = new Hono();
+  registerOrchestratorRoutes(app, { workspaceActionable } as unknown as OrchestratorService);
+  for (const query of ['before=0', 'before=no', 'limit=0', 'limit=101', 'extra=1'])
+    expect((await app.request(`/orchestrators/owner/actionable-runs?${query}`)).status).toBe(400);
+  expect(workspaceActionable).not.toHaveBeenCalled();
+  const response = await app.request('/orchestrators/owner/actionable-runs?before=50&limit=10');
+  expect(await response.json()).toEqual(data);
+  expect(workspaceActionable).toHaveBeenCalledExactlyOnceWith('owner', 50, 10);
+  workspaceActionable.mockReturnValueOnce(null);
+  expect((await app.request('/orchestrators/missing/actionable-runs')).status).toBe(404);
+});

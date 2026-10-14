@@ -24,7 +24,9 @@ const operations = (
   'preview,situation,pending,runs'
 ).split(',');
 assert(
-  operations.every((operation) => ['preview', 'situation', 'pending', 'runs'].includes(operation)),
+  operations.every((operation) =>
+    ['preview', 'situation', 'pending', 'runs', 'actionable-runs'].includes(operation),
+  ),
 );
 assert(cardCounts.every((n) => Number.isInteger(n) && n > 0));
 assert(masterCounts.every((n) => Number.isInteger(n) && n > 0 && n <= 20));
@@ -111,9 +113,11 @@ for (const cards of cardCounts) {
                   ? data.decisions.length <= 100
                   : operation === 'pending'
                     ? data.items.length <= 20
-                    : operation === 'runs'
-                      ? Array.isArray(data.runs) && data.historyIds.length <= 20
-                      : Array.isArray(data.needsAttention),
+                    : operation === 'actionable-runs'
+                      ? data.runs.length <= 20 && data.summary.total >= data.runs.length
+                      : operation === 'runs'
+                        ? Array.isArray(data.runs) && data.historyIds.length <= 20
+                        : Array.isArray(data.needsAttention),
               );
               bytes += Buffer.byteLength(body);
             }
