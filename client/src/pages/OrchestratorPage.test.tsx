@@ -1051,6 +1051,16 @@ it('preserves project counts during a failed poll and clears the warning on reco
     });
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText('24')).toBeDefined();
+    vi.mocked(api.listProjects).mockRejectedValueOnce(new Error('Action refresh offline'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Clear resolved' }));
+    });
+    expect(screen.getByRole('alert').textContent).toContain('Could not refresh projects');
+    expect(screen.getByText('24')).toBeDefined();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Clear resolved' }));
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
   } finally {
     cleanup();
     vi.useRealTimers();

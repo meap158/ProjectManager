@@ -183,17 +183,32 @@ export function OrchestratorPage() {
     setActionResult(null);
     try {
       await action();
+      const failures: string[] = [];
       const [nextState, nextProjects, nextSessions, nextInFlight] = await Promise.all([
         api.orchestrators(),
-        api.listProjects().catch(() => projects),
-        api.listAllSessions().catch(() => sessions),
-        api.listCardsInFlight().catch(() => inFlightCards),
+        api.listProjects().catch(() => {
+          failures.push('projects');
+          return projects;
+        }),
+        api.listAllSessions().catch(() => {
+          failures.push('sessions');
+          return sessions;
+        }),
+        api.listCardsInFlight().catch(() => {
+          failures.push('cards');
+          return inFlightCards;
+        }),
       ]);
       setState(nextState);
       setProjects(nextProjects);
       setRunRefresh((value) => value + 1);
       setSessions(nextSessions);
       setInFlightCards(nextInFlight);
+      setRefreshWarning(
+        failures.length
+          ? `Could not refresh ${failures.join(', ')}. Displayed data may be out of date; retrying automatically.`
+          : '',
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
