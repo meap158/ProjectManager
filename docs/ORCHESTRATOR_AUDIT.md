@@ -6,8 +6,8 @@ chronological findings later in this document preserve earlier implementation ev
 | Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                                                     |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Durable execution        | Keyed reservations/reconciliation, lease epochs, heartbeats, insertion fences, revision checks, superseded-attempt refunds and manual request replay                                                        | Scheduler request identity, durable task generations, full supervisor process crash matrix                                                                    |
-| Controls and convenience | Scoped Check now, paged read-only preview, pending-work queue/run actions, card/worker links, Pause/Observe/Autonomous modes, manual chat tools                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                                          |
-| Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Partial-index migration committed with upgrade/query-plan regression; measure whole API/tick and index write cost; versioned summary and situation pagination |
+| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated cursor history and run links, scoped chat selector, startup guard and immediate lifecycle responses                                                             | Physical mobile/browser checks, clearer recovery and review evidence                                                                                          |
+| Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Multi-master read routes measured; cursor-paged workspace history and batched hydration verified. Remaining: dispatch/write-cost measurements, consolidated summary, SQL pending pagination |
 | Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                              |
 | Evaluation               | Earlier full regression: 566 tests / 111 files passed; latest resource-constrained rerun failed (details below). Focused Orchestrator checks passed                                                         | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                         |
 
@@ -493,3 +493,22 @@ and server typechecking and scoped lint. This prevents newly hidden running chat
 this switch flow; historical duplicate sessions and physical mobile behavior remain open.
 Cross-provider conversation transfer is not implemented, and the full regression gate is
 still failing as recorded above.
+
+
+## Consolidated acceptance update, 2026-10-14
+
+Recent verified fixes include shrinking-queue navigation, pending scope response isolation,
+scoped provider selection, concurrent chat-start rejection, post-discovery scope checks,
+running-chat switch guard and immediate successful lifecycle response display. These extend
+the existing ownership/cursor and SQL projection work. The latest five pending-inspection
+tests and six chat/terminal lifecycle tests passed independently; applicable client types and
+scoped lint passed. A subsequent combined Orchestrator regression command with one thread
+worker exited 1 on V8 memory allocation failure before reporting test results. It is not a
+regression pass or evidence of policy correctness.
+
+Next substantive gates remain scheduler request identity/task generations and actual worker
+crash recovery, classified auth/configuration failures, measured dispatch/write costs,
+consolidated summary and consistent SQL pending pagination, review evidence/dependencies,
+and physical desktop/mobile verification. Recovery must wait for corrected configuration
+rather than spending attempts on authentication failures; a future change needs typed worker
+failure evidence and integration coverage across dispatch, retry, preview and review.
