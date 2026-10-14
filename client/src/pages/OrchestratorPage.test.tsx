@@ -928,3 +928,53 @@ it('shows successful unreviewed work in Needs you with a review link and no Retr
     '/projects/1?tab=agents',
   );
 });
+
+it('disables Retry when the same task already has an active run', async () => {
+  const master = {
+    id: 'retry-master',
+    name: 'Retry master',
+    enabled: false,
+    projectIds: [1],
+    providers: ['codex'],
+    maxWorkers: 2,
+    maxWorkersPerProject: 1,
+    maxWorkersPerProvider: 1,
+    reservePercent: 10,
+    allowUnknownQuota: false,
+    quotaMaxAgeMs: 60000,
+  };
+  vi.mocked(api.orchestrators).mockResolvedValue({ instances: [master], events: [] });
+  vi.mocked(api.listProjects).mockResolvedValue([
+    { id: 1, name: 'One', git: null, missing: false, scan: { status: 'idle', error: null } },
+  ] as Awaited<ReturnType<typeof api.listProjects>>);
+  vi.mocked(api.listAllRuns).mockResolvedValue([
+    {
+      id: 91,
+      projectId: 1,
+      cardId: 42,
+      name: 'Failed worker',
+      status: 'failed',
+      validation: null,
+      orchestratorId: null,
+    },
+    {
+      id: 92,
+      projectId: 1,
+      cardId: 42,
+      name: 'Active worker',
+      status: 'running',
+      validation: null,
+      orchestratorId: null,
+    },
+  ] as Awaited<ReturnType<typeof api.listAllRuns>>);
+  vi.mocked(api.listAllSessions).mockResolvedValue([]);
+  vi.mocked(api.listCardsInFlight).mockResolvedValue([]);
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  const retry = await screen.findByRole('button', { name: 'Retry' });
+  expect((retry as HTMLButtonElement).disabled).toBe(true);
+  expect(retry.getAttribute('title')).toContain('already has an active worker');
+});

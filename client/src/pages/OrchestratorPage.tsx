@@ -412,6 +412,9 @@ export function OrchestratorPage() {
                       scopedProjectIds.has(r.projectId) &&
                       (r.status === 'running' || r.status === 'queued'),
                   );
+                  const activeRunCards = new Set(
+                    activeRuns.map((run) => run.cardId).filter((id) => id != null),
+                  );
                   const activeSessions = sessions.filter(
                     (s) =>
                       scopedProjectIds.has(s.projectId) &&
@@ -861,8 +864,15 @@ export function OrchestratorPage() {
                                       <button
                                         type="button"
                                         className="btn btn-xs btn-primary attention-resolve-btn"
-                                        disabled={busy}
-                                        title="Retry failed run"
+                                        disabled={
+                                          busy ||
+                                          (run.cardId != null && activeRunCards.has(run.cardId))
+                                        }
+                                        title={
+                                          run.cardId != null && activeRunCards.has(run.cardId)
+                                            ? 'This task already has an active worker; stop it before retrying'
+                                            : 'Retry failed run'
+                                        }
                                         onClick={() => void perform(() => api.retryRun(run.id))}
                                       >
                                         Retry
