@@ -1591,6 +1591,15 @@ export class AgentSupervisor {
     if (row.status === 'queued' || row.status === 'running') {
       throw new AgentError(409, 'Run is still active; stop it before retrying');
     }
+    if (
+      row.card_id != null &&
+      this.db
+        .prepare(
+          "SELECT id FROM agent_runs WHERE card_id = ? AND status IN ('queued', 'running') LIMIT 1",
+        )
+        .get(row.card_id)
+    )
+      throw new AgentError(409, 'This task already has an active worker; stop it before retrying');
     const ts = now();
     const logPath = path.join(
       this.logDir,

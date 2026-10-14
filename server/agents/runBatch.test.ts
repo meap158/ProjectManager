@@ -29,3 +29,26 @@ it('batch hydration matches individual runs with one SQL read and preserves requ
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it('refuses retry when another worker is active on the linked task without inserting a run', async () => {
+  const db = openDb(':memory:');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'pm-retry-guard-'));
+  const supervisor = new AgentSupervisor(db, dir);
+  try {
+    await supervisor.ready;
+    await supervisor.shutdown();
+    db.exec(`INSERT INTO projects(id,name,path,created_at) VALUES (1,'One','/one','now');
+      INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES (1,1,'Task','review',0,'now','now');
+      INSERT INTO agent_runs(id,project_id,card_id,name,command_json,status,created_at,log_path,orchestrator_id) VALUES
+      (1,1,1,'Failed','{"command":[]}','failed','now','','owner'),
+      (2,1,1,'Retry','{"command":[]}','queued','now','','owner');`);
+    for (const status of ['queued', 'running']) {
+      db.prepare('UPDATE agent_runs SET status=? WHERE id=2').run(status);
+      expect(() => supervisor.retryRun(1)).toThrow(/already has an active worker/);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM agent_runs').get()!.n).toBe(2);
+    }
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
