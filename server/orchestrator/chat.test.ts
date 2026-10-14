@@ -562,3 +562,32 @@ it('rejects chat providers outside configured scope and does not fall back to un
     db.close();
   }
 });
+
+it('creates one chat on overlapping opens and reuses it after successful startup', async () => {
+  const { chat, db, instance, supervisor } = setup();
+  try {
+    let current: AgentSession | null = null;
+    vi.spyOn(chat, 'session').mockImplementation(() => current);
+    const created = { id: 10, providerId: 'codex', status: 'running' } as AgentSession;
+    const createSession = vi.fn(async () => {
+      current = created;
+      return created;
+    });
+    Object.assign(supervisor, { createSession });
+    let release!: () => void;
+    vi.mocked(providerStatuses).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return [{ id: 'codex', available: true }] as Awaited<ReturnType<typeof providerStatuses>>;
+    });
+    const first = chat.open(instance.id, 'codex');
+    await expect(chat.open(instance.id, 'codex')).rejects.toThrow(/chat is opening/);
+    release();
+    expect(await first).toBe(created);
+    expect(await chat.open(instance.id, 'codex')).toBe(created);
+    expect(createSession).toHaveBeenCalledTimes(1);
+  } finally {
+    db.close();
+  }
+});
