@@ -90,6 +90,7 @@ export function registerOrchestratorRoutes(
     const parsed = z
       .object({
         before: z.coerce.number().int().positive().optional(),
+        kind: z.enum(['all', 'live', 'review']).default('all'),
         limit: z.coerce.number().int().min(1).max(100).default(20),
       })
       .strict()
@@ -99,6 +100,7 @@ export function registerOrchestratorRoutes(
       c.req.param('id'),
       parsed.data.before,
       parsed.data.limit,
+      parsed.data.kind,
     );
     return page ? c.json(page) : c.json({ error: 'Orchestrator not found' }, 404);
   });
@@ -117,6 +119,25 @@ export function registerOrchestratorRoutes(
       parsed.data.before,
       parsed.data.limit,
       parsed.data.focus,
+    );
+    return page ? c.json(page) : c.json({ error: 'Orchestrator not found' }, 404);
+  });
+  app.get('/orchestrators/:id/history-runs', (c) => {
+    const parsed = z
+      .object({
+        before: z.coerce.number().int().positive().optional(),
+        focus: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+      })
+      .strict()
+      .safeParse(c.req.query());
+    if (!parsed.success) return c.json({ error: 'Invalid run page' }, 400);
+    const page = service.workspaceRuns(
+      c.req.param('id'),
+      parsed.data.before,
+      parsed.data.limit,
+      parsed.data.focus,
+      true,
     );
     return page ? c.json(page) : c.json({ error: 'Orchestrator not found' }, 404);
   });

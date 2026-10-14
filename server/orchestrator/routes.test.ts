@@ -178,7 +178,25 @@ it('validates actionable pages before reading and preserves complete summary cou
   expect(workspaceActionable).not.toHaveBeenCalled();
   const response = await app.request('/orchestrators/owner/actionable-runs?before=50&limit=10');
   expect(await response.json()).toEqual(data);
-  expect(workspaceActionable).toHaveBeenCalledExactlyOnceWith('owner', 50, 10);
+  expect(workspaceActionable).toHaveBeenCalledExactlyOnceWith('owner', 50, 10, 'all');
   workspaceActionable.mockReturnValueOnce(null);
   expect((await app.request('/orchestrators/missing/actionable-runs')).status).toBe(404);
+});
+
+it('separates live detail pages from bounded owned history requests', async () => {
+  const workspaceActionable = vi.fn(() => ({ runs: [], summary: { live: 20 } }));
+  const workspaceRuns = vi.fn(() => ({ runs: [], historyIds: [], nextBefore: null }));
+  const app = new Hono();
+  registerOrchestratorRoutes(app, {
+    workspaceActionable,
+    workspaceRuns,
+  } as unknown as OrchestratorService);
+  expect((await app.request('/orchestrators/owner/actionable-runs?kind=invalid')).status).toBe(400);
+  expect(workspaceActionable).not.toHaveBeenCalled();
+  expect((await app.request('/orchestrators/owner/actionable-runs?kind=live')).status).toBe(200);
+  expect(workspaceActionable).toHaveBeenCalledExactlyOnceWith('owner', undefined, 20, 'live');
+  expect((await app.request('/orchestrators/owner/history-runs?before=90&focus=10')).status).toBe(
+    200,
+  );
+  expect(workspaceRuns).toHaveBeenCalledExactlyOnceWith('owner', 90, 20, 10, true);
 });

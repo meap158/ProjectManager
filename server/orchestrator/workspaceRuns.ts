@@ -47,11 +47,18 @@ export function workspaceActionablePage(
   projectIds: readonly number[] = [],
   before?: number,
   limit = 20,
+  kind: 'all' | 'live' | 'review' = 'all',
 ) {
+  const kindClause =
+    kind === 'live'
+      ? " AND status IN ('running','queued')"
+      : kind === 'review'
+        ? " AND status IN ('succeeded','failed') AND validation IS NULL"
+        : '';
   const rows = db
     .prepare(
-      `SELECT id FROM (${actionableSelection(projectIds)})
-    ${before === undefined ? '' : 'WHERE id < ?'} ORDER BY id DESC LIMIT ?`,
+      `SELECT id FROM agent_runs WHERE id IN (${actionableSelection(projectIds)})
+    ${before === undefined ? '' : 'AND id < ?'}${kindClause} ORDER BY id DESC LIMIT ?`,
     )
     .all(
       ...actionableParameters(owner, projectIds),
@@ -75,10 +82,13 @@ export function workspaceRunIds(
   before?: number,
   limit = 20,
   focus?: number,
+  includeActionable = true,
 ) {
-  const actionable = db
-    .prepare(`${actionableSelection(projectIds)} ORDER BY id DESC`)
-    .all(...actionableParameters(owner, projectIds)) as { id: number }[];
+  const actionable = includeActionable
+    ? (db
+        .prepare(`${actionableSelection(projectIds)} ORDER BY id DESC`)
+        .all(...actionableParameters(owner, projectIds)) as { id: number }[])
+    : [];
   // Persisted ownership is authoritative even if a master's project scope changes.
   const history = db
     .prepare(

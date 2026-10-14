@@ -117,10 +117,15 @@ export class OrchestratorService {
     };
   }
 
-  workspaceActionable(id: string, before?: number, limit = 20) {
+  workspaceActionable(
+    id: string,
+    before?: number,
+    limit = 20,
+    kind: 'all' | 'live' | 'review' = 'all',
+  ) {
     const instance = this.state().instances.find((item) => item.id === id);
     if (!instance) return null;
-    const page = workspaceActionablePage(this.db, id, instance.projectIds, before, limit);
+    const page = workspaceActionablePage(this.db, id, instance.projectIds, before, limit, kind);
     return {
       version: 1 as const,
       generatedAt: new Date().toISOString(),
@@ -131,10 +136,18 @@ export class OrchestratorService {
   }
 
   /** Selected workspace run feed; old actionable work survives the history page limit. */
-  workspaceRuns(id: string, before?: number, limit = 20, focus?: number) {
+  workspaceRuns(id: string, before?: number, limit = 20, focus?: number, historyOnly = false) {
     const instance = this.state().instances.find((item) => item.id === id);
     if (!instance) return null;
-    const page = workspaceRunIds(this.db, id, instance.projectIds, before, limit, focus);
+    const page = workspaceRunIds(
+      this.db,
+      id,
+      instance.projectIds,
+      before,
+      limit,
+      focus,
+      !historyOnly,
+    );
     return {
       version: 1 as const,
       generatedAt: new Date().toISOString(),

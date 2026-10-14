@@ -36,6 +36,19 @@ it('retains old actionable work and pages owned history without unrelated newest
     expect(workspaceActionablePage(db, 'owner', [1], 4, 1)).toEqual({ ids: [2], nextBefore: 2 });
     expect(workspaceActionablePage(db, 'owner', [1], 2, 1)).toEqual({ ids: [1], nextBefore: null });
     expect(workspaceActionablePage(db, 'missing', [99])).toEqual({ ids: [], nextBefore: null });
+    expect(workspaceActionablePage(db, 'owner', [1], undefined, 2, 'live')).toEqual({
+      ids: [4, 1],
+      nextBefore: null,
+    });
+    expect(workspaceActionablePage(db, 'owner', [1], undefined, 2, 'review')).toEqual({
+      ids: [2],
+      nextBefore: null,
+    });
+    expect(workspaceRunIds(db, 'owner', [1], undefined, 1, undefined, false)).toEqual({
+      ids: [5],
+      historyIds: [5],
+      nextBefore: 5,
+    });
     const first = workspaceRunIds(db, 'owner', [1], undefined, 2);
     expect(first).toEqual({ ids: [5, 4, 2, 1], historyIds: [5, 4], nextBefore: 4 });
     // Actionable runs are retained on every page, even behind hundreds of unrelated rows.
