@@ -1,6 +1,6 @@
 # Orchestrator audit and upgrade plan
 
-Implementation status, revalidated 2026-10-14. This table is the current assessment;
+Implementation status, revalidated 2026-10-15. This table is the current assessment;
 chronological findings later in this document preserve earlier implementation evidence.
 
 | Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                                                                                   |
@@ -540,3 +540,28 @@ remains a distinct gate, alongside scheduler request identity/task generations, 
 recovery, dispatch/write-cost measurements, consistent SQL pending paging, consolidated
 summary transport and physical desktop/mobile verification. Whole-repository validation is
 still not established by this subset.
+
+## Integrated bounded workspace feeds, 2026-10-15
+
+The page now polls independent 20-row history, live-worker and review feeds instead of the
+legacy unbounded actionable run feed. Each detail feed has its own identity cursor and
+navigation. SQL counts include all unresolved scoped work and owned unresolved work retained
+after scope changes. A narrow live assignment projection preserves task/project worker
+indicators and Retry guards across detail pages, without hydrating commands or log metadata
+for the remaining live runs. This identity projection scales with live workers; it is not a
+constant-size summary and still needs measured transport evidence at large live occupancy.
+
+Complete counts and live assignments remain visible during cursor changes. Failed initial
+loads show their errors instead of the empty-state success message; navigation remains
+available on empty/failed pages. Tests cover review totals across pages, stale feed responses,
+owner changes and initial review-load failures. Synthetic read-route measurements predating
+the live-assignment projection do not establish the latest endpoint payload or mobile latency.
+
+The combined regression command documented above passed 139 tests across 23 files in
+52.55 seconds with one thread worker and workspace TEMP/TMP. Client typechecking and targeted
+lint passed in the preceding implementation turns. This is a focused regression gate, not
+whole-repository or physical-browser verification. Shared Terminal/Workspace/CSS edits remain
+outside these commits. The remaining acceptance gates in the table and upgrade plan are still
+open, especially actual supervisor spawning under process crashes, scheduler replay/task
+generations, classified auth recovery, dispatch/write costs, SQL pending pagination,
+consolidated summary transport and current-worktree review evidence.
