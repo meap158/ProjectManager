@@ -31,7 +31,7 @@ export type SituationRun = Pick<
   | 'validation'
   | 'changes'
   | 'endedAt'
->;
+> & { changeSummary?: { files: number; commits: number } };
 
 export interface SituationInput {
   projects: ProjectSummary[];
@@ -91,13 +91,13 @@ export function buildSituation(input: SituationInput, includeWork = true): Orche
   const cardKeys = new Map(input.cards.map((c) => [c.id, c.key]));
   const finished = (r: SituationRun) => r.status === 'succeeded' || r.status === 'failed';
   for (const r of input.runs.filter((x) => finished(x) && !x.validation && inScope(x.projectId))) {
-    const files = r.changes?.files.length ?? 0;
+    const files = r.changeSummary?.files ?? r.changes?.files.length ?? 0;
     needsAttention.push({
       kind: 'awaiting-review',
       projectId: r.projectId,
       projectName: name(r.projectId),
       title: `Review run ${r.id}: ${r.name}`,
-      detail: `${r.status === 'failed' ? 'Failed' : 'Finished'}; ${files} file${files === 1 ? '' : 's'} changed, ${r.changes?.commits ?? 0} commit(s). Accept or reject it.`,
+      detail: `${r.status === 'failed' ? 'Failed' : 'Finished'}; ${files} file${files === 1 ? '' : 's'} changed, ${r.changeSummary?.commits ?? r.changes?.commits ?? 0} commit(s). Accept or reject it.`,
       runId: r.id,
       cardId: r.cardId ?? undefined,
       cardKey: (r.cardId != null && cardKeys.get(r.cardId)) || undefined,

@@ -38,17 +38,30 @@ export function listSituationRuns(
   const rows = db
     .prepare(
       `SELECT id, project_id AS projectId, card_id AS cardId, name,
-    provider_id AS providerId, status, validation, changes_json, ended_at AS endedAt
+    provider_id AS providerId, status, validation,
+    ${
+      includeLatest
+        ? 'changes_json'
+        : `NULL AS changes_json,
+      COALESCE(json_array_length(changes_json, '$.files'), 0) AS filesChanged,
+      COALESCE(json_extract(changes_json, '$.commits'), 0) AS commits`
+    },
+    ended_at AS endedAt
     FROM agent_runs WHERE id IN (${selection(projectIds, includeLatest)}) ORDER BY id DESC`,
     )
     .all(...projectIds, ...projectIds, ...(includeLatest ? projectIds : [])) as (Omit<
     SituationRun,
-    'changes'
+    'changes' | 'changeSummary'
   > & {
     changes_json: string | null;
+    filesChanged?: number;
+    commits?: number;
   })[];
-  return rows.map(({ changes_json, ...run }) => ({
+  return rows.map(({ changes_json, filesChanged, commits, ...run }) => ({
     ...run,
+    ...(!includeLatest
+      ? { changeSummary: { files: filesChanged ?? 0, commits: commits ?? 0 } }
+      : {}),
     changes: changes_json ? (JSON.parse(changes_json) as SituationRun['changes']) : null,
   }));
 }

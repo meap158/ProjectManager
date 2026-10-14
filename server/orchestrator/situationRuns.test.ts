@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest';
 import type { AgentSupervisor } from '../agents/supervisor.js';
 import { OrchestratorService } from './service.js';
 import { openDb } from '../db.js';
+import { buildSituation } from './situation.js';
 import { situationRunIds, listSituationRuns } from './situationRuns.js';
 
 it('keeps live, all unreviewed and latest active-card runs without unrelated history', () => {
@@ -53,6 +54,15 @@ it('keeps live, all unreviewed and latest active-card runs without unrelated his
       status: 'failed',
       validation: null,
     });
+    const pendingRuns = listSituationRuns(db, [1], false);
+    expect(pendingRuns.find((run) => run.id === 6)).toMatchObject({
+      changes: null,
+      changeSummary: { files: 1, commits: 2 },
+    });
+    const input = { projects: [], cards: [], sessions: [], now: Date.parse(now) };
+    expect(buildSituation({ ...input, runs: pendingRuns }, false)).toEqual(
+      buildSituation({ ...input, runs: listSituationRuns(db, [1]) }, false),
+    );
     expect(listSituationRuns(db, [99])).toEqual([]);
 
     expect(situationRunIds(db, [2])).toEqual([9, 8]);
