@@ -440,7 +440,8 @@ export function OrchestratorPage() {
                     projectAttention(p).map((item) => ({ project: p, ...item })),
                   );
                   const failedRunsInScope = runs.filter(
-                    (r) => scopedProjectIds.has(r.projectId) && r.status === 'failed',
+                    (r) =>
+                      scopedProjectIds.has(r.projectId) && r.status === 'failed' && !r.validation,
                   );
                   const totalAttentionCount =
                     scopedProjectAttention.length + failedRunsInScope.length;

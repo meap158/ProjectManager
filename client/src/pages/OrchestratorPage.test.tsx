@@ -839,3 +839,49 @@ it('separates created orchestrators into selectable workspaces', async () => {
       .getAttribute('aria-pressed'),
   ).toBe('true');
 });
+
+it.each(['accepted', 'rejected'] as const)(
+  'keeps %s failures out of Needs you while history remains available',
+  async (validation) => {
+    const master = {
+      id: 'reviewed-master',
+      name: 'Reviewed master',
+      enabled: false,
+      projectIds: [1],
+      providers: ['codex'],
+      maxWorkers: 2,
+      maxWorkersPerProject: 1,
+      maxWorkersPerProvider: 1,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
+    };
+    vi.mocked(api.orchestrators).mockResolvedValue({ instances: [master], events: [] });
+    vi.mocked(api.listProjects).mockResolvedValue([
+      { id: 1, name: 'One', git: null, missing: false, scan: { status: 'idle', error: null } },
+    ] as Awaited<ReturnType<typeof api.listProjects>>);
+    vi.mocked(api.listAllRuns).mockResolvedValue([
+      {
+        id: 91,
+        projectId: 1,
+        name: 'Reviewed failure',
+        status: 'failed',
+        validation,
+        orchestratorId: null,
+      },
+    ] as Awaited<ReturnType<typeof api.listAllRuns>>);
+    vi.mocked(api.listAllSessions).mockResolvedValue([]);
+    vi.mocked(api.listCardsInFlight).mockResolvedValue([]);
+    render(
+      <MemoryRouter>
+        <OrchestratorPage />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Reviewed master', { selector: 'h3' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Failed run')).toBeNull();
+    expect(screen.getByText('Clean')).toBeDefined();
+  },
+);
