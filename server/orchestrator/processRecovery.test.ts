@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -6,6 +6,7 @@ import { expect, it } from 'vitest';
 import { openDb } from '../db.js';
 import { OrchestratorAssignments } from './assignments.js';
 import { ChatDispatchIntent } from './chatIntent.js';
+import { AgentSupervisor } from '../agents/supervisor.js';
 
 it.each(['before-claim', 'after-claim', 'after-insertion', 'after-acknowledgement'])(
   'recovers persisted chat dispatch after process exit %s',
@@ -101,4 +102,86 @@ it.each(['before-claim', 'after-claim', 'after-insertion', 'after-acknowledgemen
     }
   },
   20000,
+);
+
+it.each(['before-worker-launch', 'after-worker-completion'])(
+  'recovers a real supervisor dispatch after process exit %s without duplicate work',
+  async (boundary) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'pm-orch-supervisor-process-'));
+    const marker = path.join(dir, 'worker-launches.txt');
+    const command = [
+      process.execPath,
+      '-e',
+      `require('node:fs').appendFileSync(${JSON.stringify(marker)}, 'launched\\n')`,
+    ];
+    const source = `
+      import { openDb } from ${JSON.stringify(new URL('../db.ts', import.meta.url).href)};
+      import { AgentSupervisor } from ${JSON.stringify(new URL('../agents/supervisor.ts', import.meta.url).href)};
+      import { ChatDispatchIntent } from ${JSON.stringify(new URL('./chatIntent.ts', import.meta.url).href)};
+      const dir = process.argv[1];
+      const db = openDb(dir);
+      const supervisor = new AgentSupervisor(db, dir + '/logs');
+      await supervisor.ready;
+      db.prepare("INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture',?,'now')").run(dir);
+      db.exec("INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(1,1,'Fixture task','todo',0,'now','now')");
+      const intent = new ChatDispatchIntent(db,1,'fixture-master',Date.now(),{ id:'real-request', fingerprint:'real-args', revision:'real-revision' });
+      // Exit at the supervisor's actual launch call, after its production insertion/card update.
+      if (process.argv[2] === 'before-worker-launch') supervisor.spawnRun = () => process.exit(86);
+      const run = await supervisor.dispatchCard(1,1,{ command:${JSON.stringify(command)}, maxAttempts:1, dispatchKey:intent.key, orchestratorId:'fixture-master' });
+      const deadline = Date.now()+10000;
+      while(supervisor.getRun(run.id)?.status !== 'succeeded') {
+        if(Date.now()>deadline) throw new Error('Fake worker did not complete');
+        await new Promise(resolve => setTimeout(resolve,20));
+      }
+      // Leave the assignment unacknowledged despite actual worker completion.
+      process.exit(86);
+    `;
+    let supervisor: AgentSupervisor | undefined;
+    const dbPath = dir;
+    try {
+      const child = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          import.meta.resolve('tsx'),
+          '--input-type=module',
+          '--eval',
+          source,
+          dir,
+          boundary,
+        ],
+        { cwd: dir, encoding: 'utf8', timeout: 20000, windowsHide: true },
+      );
+      expect(child.error, child.stderr).toBeUndefined();
+      expect(child.status, child.stderr).toBe(86);
+      const db = openDb(dbPath);
+      try {
+        expect(db.prepare('SELECT COUNT(*) AS n FROM agent_runs').get()).toMatchObject({ n: 1 });
+        supervisor = new AgentSupervisor(db, path.join(dir, 'recovery-logs'));
+        await supervisor.ready;
+        await expect
+          .poll(() => supervisor!.getRun(1)?.status, { timeout: 10000 })
+          .toBe('succeeded');
+        const assignments = new OrchestratorAssignments(db);
+        assignments.reconcile();
+        expect(
+          ChatDispatchIntent.replay(db, 'fixture-master', 'real-request', 'real-args'),
+        ).toMatchObject({ runId: 1, status: 'succeeded' });
+        expect(
+          db
+            .prepare('SELECT state,attempts,run_id FROM orchestrator_assignments WHERE card_id=1')
+            .get(),
+        ).toMatchObject({ state: 'assigned', attempts: 1, run_id: 1 });
+        expect(db.prepare('SELECT COUNT(*) AS n FROM agent_runs').get()).toMatchObject({ n: 1 });
+        expect(readFileSync(marker, 'utf8')).toBe('launched\n');
+        expect(assignments.claim(1, 'duplicate')).toBe(false);
+      } finally {
+        await supervisor?.shutdown();
+        db.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+  30000,
 );

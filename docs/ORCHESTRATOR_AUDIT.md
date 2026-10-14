@@ -602,3 +602,22 @@ to cooldown after 120 seconds. That is attempt-level deduplication, not a durabl
 request identity across retries. Any extension must distinguish task revision/generation from
 attempt identity, preserve the fresh insertion fence and review policy, and test actual
 supervisor process-crash boundaries rather than treating persisted fixture rows as workers.
+
+## Production supervisor recovery evidence, 2026-10-15
+
+processRecovery.test.ts now adds two child-process cases through AgentSupervisor.dispatchCard
+with an actual isolated Node fake-worker command. One exits at the production launch-call
+boundary after real run insertion/card update; restarting the supervisor launches the queued
+run. The other lets that worker finish and exits before assignment acknowledgement; restart
+reuses the completed run. Both assert one marker append (one actual worker launch), one run
+row, preserved request replay, one charged assignment attempt and a blocked duplicate claim.
+The worker only appends to a temporary fixture file, uses no installed AI provider, and the
+recovery supervisor is shut down before closing/removing the isolated database directory.
+All six process recovery tests passed; server types and scoped lint passed.
+
+This improves the earlier row-seeding-only evidence, but does not prove the full crash matrix.
+The pre-launch case substitutes the launch method solely to terminate the dispatching child;
+recovery uses the real launch path. Abrupt exit while an actual worker is still running,
+launch/attempt-persistence races, scheduler request replay across attempts, task generations,
+and pending-review behavior after those races remain unverified. No exactly-once external
+side-effect guarantee is claimed for an in-flight worker crash.
