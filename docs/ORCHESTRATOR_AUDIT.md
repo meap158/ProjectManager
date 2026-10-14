@@ -526,3 +526,17 @@ commits). The page now includes succeeded/failed unvalidated runs in Needs you a
 accepted/rejected history; 17 page tests passed in the preceding change. Evidence-linked
 acceptance still needs current-worktree/runtime verification rather than assuming stored
 change summaries prove a task complete. Keep the full goal active until remaining gates pass.
+
+## Combined Orchestrator regression gate, 2026-10-14
+
+The combined server/UI selection passed 131 tests across 23 files in 17.12 seconds:
+`vitest run server/orchestrator server/agents/runBatch.test.ts client/src/components/Orchestrator client/src/components/useOrchestratorRuns.test.tsx client/src/pages/OrchestratorPage.test.tsx --pool=threads --maxWorkers=1`.
+TEMP/TMP pointed to workspace test-tmp. This covers the current planner/reservations/replay,
+scoped inspection and cursor feed, chat startup/policy/lifecycle, queue review controls and
+atomic manual retry guard. No live worker was launched by the manual-retry regression;
+its spawn boundary is mocked. The process recovery fixtures persist database rows before
+exit rather than launching an actual supervisor worker. Thus actual spawn crash recovery
+remains a distinct gate, alongside scheduler request identity/task generations, typed auth
+recovery, dispatch/write-cost measurements, consistent SQL pending paging, consolidated
+summary transport and physical desktop/mobile verification. Whole-repository validation is
+still not established by this subset.
