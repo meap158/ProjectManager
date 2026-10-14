@@ -154,3 +154,16 @@ it('validates and forwards a linked workspace run identity', async () => {
   expect((await app.request('/orchestrators/owner/runs?focus=3')).status).toBe(200);
   expect(workspaceRuns).toHaveBeenCalledExactlyOnceWith('owner', undefined, 20, 3);
 });
+
+it('returns versioned scalar workspace summary and 404 for a missing master', async () => {
+  const data = { version: 1, generatedAt: 'now', runs: { live: 2, awaitingReview: 500 } };
+  const workspaceSummary = vi.fn(() => data as typeof data | null);
+  const app = new Hono();
+  registerOrchestratorRoutes(app, { workspaceSummary } as unknown as OrchestratorService);
+  const response = await app.request('/orchestrators/owner/summary');
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(data);
+  expect(workspaceSummary).toHaveBeenCalledExactlyOnceWith('owner');
+  workspaceSummary.mockReturnValueOnce(null);
+  expect((await app.request('/orchestrators/missing/summary')).status).toBe(404);
+});

@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { openDb } from '../db.js';
-import { workspaceRunIds } from './workspaceRuns.js';
+import { workspaceRunIds, workspaceRunCounts } from './workspaceRuns.js';
 
 it('retains old actionable work and pages owned history without unrelated newest-run cutoff', () => {
   const db = openDb(':memory:');
@@ -13,6 +13,22 @@ it('retains old actionable work and pages owned history without unrelated newest
         CASE WHEN id=1 THEN 'running' WHEN id=2 THEN 'failed' WHEN id=4 THEN 'queued' ELSE 'succeeded' END,
         CASE WHEN id IN (1,2,4) THEN NULL ELSE 'accepted' END,'now','',
         CASE WHEN id<=5 THEN 'owner' ELSE 'other' END FROM n;`);
+    expect(workspaceRunCounts(db, 'owner', [1])).toEqual({
+      total: 3,
+      live: 2,
+      awaitingReview: 1,
+      failedReview: 1,
+      ownedLive: 2,
+      ownedReview: 1,
+    });
+    expect(workspaceRunCounts(db, 'missing', [99])).toEqual({
+      total: 0,
+      live: 0,
+      awaitingReview: 0,
+      failedReview: 0,
+      ownedLive: 0,
+      ownedReview: 0,
+    });
     const first = workspaceRunIds(db, 'owner', [1], undefined, 2);
     expect(first).toEqual({ ids: [5, 4, 2, 1], historyIds: [5, 4], nextBefore: 4 });
     // Actionable runs are retained on every page, even behind hundreds of unrelated rows.

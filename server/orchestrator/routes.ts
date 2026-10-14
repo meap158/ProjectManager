@@ -82,6 +82,10 @@ export function registerOrchestratorRoutes(
     );
     return result ? c.json(result) : c.json({ error: 'Orchestrator not found' }, 404);
   });
+  app.get('/orchestrators/:id/summary', (c) => {
+    const summary = service.workspaceSummary(c.req.param('id'));
+    return summary ? c.json(summary) : c.json({ error: 'Orchestrator not found' }, 404);
+  });
   app.get('/orchestrators/:id/runs', (c) => {
     const parsed = z
       .object({

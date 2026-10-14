@@ -13,7 +13,7 @@ import type {
 } from '../../shared/orchestrator.js';
 import { buildSituation, cardContext } from './situation.js';
 import { listSituationRuns } from './situationRuns.js';
-import { workspaceRunIds } from './workspaceRuns.js';
+import { workspaceRunIds, workspaceRunCounts } from './workspaceRuns.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
 import { liveRunProjects } from './liveProjects.js';
@@ -104,6 +104,16 @@ export class OrchestratorService {
       limit,
       items: items.slice(offset, offset + limit),
       nextOffset: offset + limit < items.length ? offset + limit : null,
+    };
+  }
+
+  workspaceSummary(id: string) {
+    const instance = this.state().instances.find((item) => item.id === id);
+    if (!instance) return null;
+    return {
+      version: 1 as const,
+      generatedAt: new Date().toISOString(),
+      runs: workspaceRunCounts(this.db, id, instance.projectIds),
     };
   }
 

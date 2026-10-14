@@ -1,5 +1,45 @@
 import type { Db } from '../db.js';
 
+function actionableSelection(projectIds: readonly number[]) {
+  const marks = projectIds.map(() => '?').join(',');
+  const scope = projectIds.length ? ` AND project_id IN (${marks})` : '';
+  return `SELECT id FROM agent_runs WHERE status IN ('running', 'queued')${scope}
+      UNION
+      SELECT id FROM agent_runs WHERE status IN ('succeeded', 'failed') AND validation IS NULL${scope}
+      ${
+        projectIds.length
+          ? `UNION SELECT id FROM agent_runs WHERE orchestrator_id = ?
+        AND (status IN ('running', 'queued') OR (status IN ('succeeded', 'failed') AND validation IS NULL))`
+          : ''
+      }
+`;
+}
+function actionableParameters(owner: string, projectIds: readonly number[]) {
+  return [...projectIds, ...projectIds, ...(projectIds.length ? [owner] : [])];
+}
+
+/** Complete scalar counts: no run JSON, card lookup or filesystem hydration. */
+export function workspaceRunCounts(db: Db, owner: string, projectIds: readonly number[] = []) {
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+    COALESCE(SUM(status IN ('queued', 'running')), 0) AS live,
+    COALESCE(SUM(status IN ('succeeded', 'failed') AND validation IS NULL), 0) AS awaitingReview,
+    COALESCE(SUM(status = 'failed' AND validation IS NULL), 0) AS failedReview,
+    COALESCE(SUM(orchestrator_id = ? AND status IN ('queued', 'running')), 0) AS ownedLive,
+    COALESCE(SUM(orchestrator_id = ? AND status IN ('succeeded', 'failed') AND validation IS NULL), 0) AS ownedReview
+    FROM agent_runs WHERE id IN (${actionableSelection(projectIds)})`,
+    )
+    .get(owner, owner, ...actionableParameters(owner, projectIds)) as {
+    total: number;
+    live: number;
+    awaitingReview: number;
+    failedReview: number;
+    ownedLive: number;
+    ownedReview: number;
+  };
+}
+
 /** Run identities for one workspace: scoped actionable work and owned history.
  * History uses an id cursor; actionable work is never hidden by the history cap.
  */
@@ -11,22 +51,9 @@ export function workspaceRunIds(
   limit = 20,
   focus?: number,
 ) {
-  const marks = projectIds.map(() => '?').join(',');
-  const scope = projectIds.length ? ` AND project_id IN (${marks})` : '';
   const actionable = db
-    .prepare(
-      `SELECT id FROM agent_runs WHERE status IN ('running', 'queued')${scope}
-      UNION
-      SELECT id FROM agent_runs WHERE status IN ('succeeded', 'failed') AND validation IS NULL${scope}
-      ${
-        projectIds.length
-          ? `UNION SELECT id FROM agent_runs WHERE orchestrator_id = ?
-        AND (status IN ('running', 'queued') OR (status IN ('succeeded', 'failed') AND validation IS NULL))`
-          : ''
-      }
-      ORDER BY id DESC`,
-    )
-    .all(...projectIds, ...projectIds, ...(projectIds.length ? [owner] : [])) as { id: number }[];
+    .prepare(`${actionableSelection(projectIds)} ORDER BY id DESC`)
+    .all(...actionableParameters(owner, projectIds)) as { id: number }[];
   // Persisted ownership is authoritative even if a master's project scope changes.
   const history = db
     .prepare(
