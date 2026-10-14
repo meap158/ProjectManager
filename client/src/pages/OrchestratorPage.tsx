@@ -439,12 +439,14 @@ export function OrchestratorPage() {
                   const scopedProjectAttention = scopedProjects.flatMap((p) =>
                     projectAttention(p).map((item) => ({ project: p, ...item })),
                   );
-                  const failedRunsInScope = runs.filter(
+                  const reviewRunsInScope = runs.filter(
                     (r) =>
-                      scopedProjectIds.has(r.projectId) && r.status === 'failed' && !r.validation,
+                      scopedProjectIds.has(r.projectId) &&
+                      (r.status === 'failed' || r.status === 'succeeded') &&
+                      !r.validation,
                   );
                   const totalAttentionCount =
-                    scopedProjectAttention.length + failedRunsInScope.length;
+                    scopedProjectAttention.length + reviewRunsInScope.length;
 
                   const beingWorkedOnAttentionCount = scopedProjectAttention.filter(
                     ({ project: p }) => {
@@ -826,11 +828,19 @@ export function OrchestratorPage() {
                                 </div>
                               );
                             })}
-                            {failedRunsInScope.map((run) => {
+                            {reviewRunsInScope.map((run) => {
                               const proj = projects.find((p) => p.id === run.projectId);
                               return (
                                 <div key={`fail-${run.id}`} className="orchestrator-attention-item">
-                                  <span className="badge badge-danger">Failed run</span>
+                                  <span
+                                    className={
+                                      run.status === 'failed'
+                                        ? 'badge badge-danger'
+                                        : 'badge badge-attention'
+                                    }
+                                  >
+                                    {run.status === 'failed' ? 'Failed run' : 'Needs review'}
+                                  </span>
                                   <div className="attention-item-info">
                                     <span className="attention-proj truncate">
                                       {proj?.name ?? `Project ${run.projectId}`}
@@ -839,29 +849,35 @@ export function OrchestratorPage() {
                                       className="attention-detail faint truncate"
                                       title={run.error ?? run.name}
                                     >
-                                      {run.name}: {run.error ?? 'Execution failed'}
+                                      {run.name}:{' '}
+                                      {run.error ??
+                                        (run.status === 'failed'
+                                          ? 'Execution failed'
+                                          : 'Finished; review before accepting')}
                                     </span>
                                   </div>
                                   <div className="attention-item-actions">
-                                    <button
-                                      type="button"
-                                      className="btn btn-xs btn-primary attention-resolve-btn"
-                                      disabled={busy}
-                                      title="Retry failed run"
-                                      onClick={() => void perform(() => api.retryRun(run.id))}
-                                    >
-                                      Retry
-                                    </button>
+                                    {run.status === 'failed' && (
+                                      <button
+                                        type="button"
+                                        className="btn btn-xs btn-primary attention-resolve-btn"
+                                        disabled={busy}
+                                        title="Retry failed run"
+                                        onClick={() => void perform(() => api.retryRun(run.id))}
+                                      >
+                                        Retry
+                                      </button>
+                                    )}
                                     <Link
                                       to={
                                         run.orchestratorId
                                           ? `/orchestrators?orchestrator=${run.orchestratorId}&run=${run.id}#orchestrator-runs-${run.orchestratorId}`
-                                          : '/workspace'
+                                          : `/projects/${run.projectId}?tab=agents`
                                       }
                                       className="worker-action-link"
-                                      title="Open terminal"
+                                      title="Inspect run and review its result"
                                     >
-                                      Terminal →
+                                      Review →
                                     </Link>
                                   </div>
                                 </div>

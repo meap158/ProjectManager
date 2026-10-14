@@ -885,3 +885,46 @@ it.each(['accepted', 'rejected'] as const)(
     expect(screen.getByText('Clean')).toBeDefined();
   },
 );
+
+it('shows successful unreviewed work in Needs you with a review link and no Retry', async () => {
+  const master = {
+    id: 'review-master',
+    name: 'Review master',
+    enabled: false,
+    projectIds: [1],
+    providers: ['codex'],
+    maxWorkers: 2,
+    maxWorkersPerProject: 1,
+    maxWorkersPerProvider: 1,
+    reservePercent: 10,
+    allowUnknownQuota: false,
+    quotaMaxAgeMs: 60000,
+  };
+  vi.mocked(api.orchestrators).mockResolvedValue({ instances: [master], events: [] });
+  vi.mocked(api.listProjects).mockResolvedValue([
+    { id: 1, name: 'One', git: null, missing: false, scan: { status: 'idle', error: null } },
+  ] as Awaited<ReturnType<typeof api.listProjects>>);
+  vi.mocked(api.listAllRuns).mockResolvedValue([
+    {
+      id: 91,
+      projectId: 1,
+      name: 'Completed worker',
+      status: 'succeeded',
+      validation: null,
+      orchestratorId: null,
+    },
+  ] as Awaited<ReturnType<typeof api.listAllRuns>>);
+  vi.mocked(api.listAllSessions).mockResolvedValue([]);
+  vi.mocked(api.listCardsInFlight).mockResolvedValue([]);
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  await screen.findByText('Needs review');
+  expect(screen.queryByText('Clean')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  expect(screen.getByRole('link', { name: 'Review \u2192' }).getAttribute('href')).toBe(
+    '/projects/1?tab=agents',
+  );
+});
