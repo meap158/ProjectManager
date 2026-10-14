@@ -46,7 +46,24 @@ it('refuses retry when another worker is active on the linked task without inser
       db.prepare('UPDATE agent_runs SET status=? WHERE id=2').run(status);
       expect(() => supervisor.retryRun(1)).toThrow(/already has an active worker/);
       expect(db.prepare('SELECT COUNT(*) AS n FROM agent_runs').get()!.n).toBe(2);
+      // Failed retries must release their write transaction.
+      db.exec('BEGIN IMMEDIATE');
+      db.exec('ROLLBACK');
     }
+    db.prepare("UPDATE agent_runs SET status='killed' WHERE id=2").run();
+    const spawn = vi
+      .spyOn(
+        supervisor as unknown as {
+          spawnRun: (row: unknown, relaunch: boolean) => Promise<void>;
+        },
+        'spawnRun',
+      )
+      .mockResolvedValue(undefined);
+    const retry = supervisor.retryRun(1);
+    expect(retry).toMatchObject({ cardId: 1, orchestratorId: 'owner', status: 'queued' });
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(() => supervisor.retryRun(1)).toThrow(/already has an active worker/);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM agent_runs').get()!.n).toBe(3);
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });

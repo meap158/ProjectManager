@@ -1591,42 +1591,53 @@ export class AgentSupervisor {
     if (row.status === 'queued' || row.status === 'running') {
       throw new AgentError(409, 'Run is still active; stop it before retrying');
     }
-    if (
-      row.card_id != null &&
-      this.db
-        .prepare(
-          "SELECT id FROM agent_runs WHERE card_id = ? AND status IN ('queued', 'running') LIMIT 1",
-        )
-        .get(row.card_id)
-    )
-      throw new AgentError(409, 'This task already has an active worker; stop it before retrying');
-    const ts = now();
-    const logPath = path.join(
-      this.logDir,
-      `run-${Date.now()}-${Math.floor(Math.random() * 1e6)}.log`,
-    );
-    const next = Number(
-      this.db
-        .prepare(
-          `INSERT INTO agent_runs
+    this.db.exec('BEGIN IMMEDIATE');
+    let next: number;
+    try {
+      if (
+        row.card_id != null &&
+        this.db
+          .prepare(
+            "SELECT id FROM agent_runs WHERE card_id = ? AND status IN ('queued', 'running') LIMIT 1",
+          )
+          .get(row.card_id)
+      )
+        throw new AgentError(
+          409,
+          'This task already has an active worker; stop it before retrying',
+        );
+      const ts = now();
+      const logPath = path.join(
+        this.logDir,
+        `run-${Date.now()}-${Math.floor(Math.random() * 1e6)}.log`,
+      );
+      next = Number(
+        this.db
+          .prepare(
+            `INSERT INTO agent_runs
              (project_id, card_id, name, provider_id, command_json, prompt, status,
               attempts, max_attempts, created_at, log_path, autonomy, orchestrator_id)
            VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          row.project_id,
-          row.card_id,
-          row.name,
-          row.provider_id,
-          row.command_json,
-          row.prompt,
-          row.max_attempts,
-          ts,
-          logPath,
-          row.autonomy,
-          row.orchestrator_id,
-        ).lastInsertRowid,
-    );
+          )
+          .run(
+            row.project_id,
+            row.card_id,
+            row.name,
+            row.provider_id,
+            row.command_json,
+            row.prompt,
+            row.max_attempts,
+            ts,
+            logPath,
+            row.autonomy,
+            row.orchestrator_id,
+          ).lastInsertRowid,
+      );
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
     const fresh = this.db
       .prepare(`SELECT * FROM agent_runs WHERE id = ?`)
       .get(next) as unknown as RunRow;
