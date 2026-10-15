@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest';
 import { openDb } from '../../db.js';
 import { startRunHost } from './runDaemon.js';
 import { RunClient } from './runClient.js';
-import { launchManagedRun } from './managedRun.js';
+import { launchManagedRun, observeManagedRun } from './managedRun.js';
 
 it('binds a run attempt before real launch and reattaches without another worker', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'pm-managed-run-'));
@@ -39,7 +39,23 @@ it('binds a run attempt before real launch and reattaches without another worker
     expect(readFileSync(marker, 'utf8')).toBe('one');
     expect(readFileSync(actualLog, 'utf8')).toContain('ready');
     expect(again.execution.outputPath).toBe(actualLog);
+    expect(await observeManagedRun(client, first.identity, 0)).toMatchObject({
+      phase: 'active',
+      outcome: null,
+      output: { data: expect.stringContaining('ready') },
+    });
     expect(await client.stop(nonce)).toBe(true);
+    expect(await observeManagedRun(client, first.identity, 0)).toMatchObject({
+      phase: 'complete',
+      outcome: 'failed',
+    });
+    const lost = await RunClient.connect(host.connection.address, host.connection.token);
+    lost.close();
+    expect(await observeManagedRun(lost, first.identity, 0)).toMatchObject({
+      phase: 'unknown',
+      outcome: null,
+    });
+
     expect((await launchManagedRun(db, client, 1, 1, input)).execution.state).toBe('exited');
     // An unavailable old journal is not evidence that its execution never launched.
     const replacement = {
@@ -59,3 +75,49 @@ it('binds a run attempt before real launch and reattaches without another worker
     rmSync(dir, { recursive: true, force: true });
   }
 }, 15000);
+
+it('drains bounded output before completion and refuses mismatched output ownership', async () => {
+  const identity = {
+    nonce: 'n',
+    runId: 1,
+    runLogPath: path.resolve('fixture.log'),
+    attempt: 1,
+    fingerprint: 'f',
+    hostInstance: 'host',
+    hostGeneration: 1,
+    dispatchKey: null,
+    orchestratorId: null,
+    createdAt: 0,
+  };
+  const status = vi.fn(async () => ({
+    nonce: 'n',
+    hostInstance: 'host',
+    state: 'exited',
+    exitCode: 0,
+    outputPath: identity.runLogPath,
+  }));
+  const read = vi.fn(async () => ({ data: 'page', nextOffset: 128, totalBytes: 256 }));
+  const client = { status, read } as unknown as RunClient;
+  expect(await observeManagedRun(client, identity, 0)).toMatchObject({
+    phase: 'draining',
+    outcome: null,
+  });
+  read.mockResolvedValueOnce({ data: 'tail', nextOffset: 256, totalBytes: 256 });
+  expect(await observeManagedRun(client, identity, 128)).toMatchObject({
+    phase: 'complete',
+    outcome: 'succeeded',
+  });
+  status.mockResolvedValueOnce({
+    nonce: 'n',
+    hostInstance: 'host',
+    state: 'exited',
+    exitCode: 0,
+    outputPath: path.resolve('other.log'),
+  });
+  read.mockClear();
+  expect(await observeManagedRun(client, identity, 0)).toMatchObject({
+    phase: 'unknown',
+    outcome: null,
+  });
+  expect(read).not.toHaveBeenCalled();
+});

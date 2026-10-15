@@ -254,3 +254,15 @@ Seven journal/launcher/managed tests and six transport/client/daemon tests passe
 server types and scoped lint. The real managed worker test asserts the persisted run log
 contains its output. Supervisor polling and lifecycle adoption, unknown occupancy and review
 evidence handling remain unimplemented; no output mirroring/cursor recovery is claimed.
+
+## Read-only managed execution observation, 2026-10-15
+
+observeManagedRun now returns active/draining/complete/unknown states without launching work.
+It verifies nonce, originating host and normalized persisted output path before reading output.
+A terminal host result is not reported complete until bounded output reads reach the current
+log end. Only then does exit code determine succeeded/failed outcome. Missing ownership,
+mismatched output, absent output or a disconnected client yields unknown with no task outcome.
+Real worker observation and closed-client behavior are covered alongside controlled multi-page
+output/ownership mismatch tests. Two managed-run tests, server types and scoped lint passed.
+This supplies the observation contract for supervisor adoption; it does not yet update run
+rows, occupancy, review evidence or UI lifecycle state, and does not auto-reconnect or relaunch.
