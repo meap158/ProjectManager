@@ -240,3 +240,17 @@ ownership is unknown. Identity migration and bridge tests passed, plus server ty
 The existing supervisor spawn/poll/reconcile loop does not call this bridge yet. Adoption still
 requires persisted output cursors, current-worktree evidence rules, typed unknown lifecycle,
 occupancy/retry controls and authenticated automatic host connection/startup.
+
+## Shared production log identity, 2026-10-15
+
+Journal schema 2 persists each execution's output path; initial/schema-1 journals upgrade
+transactionally and retain claims. Managed launch binds the production run's immutable log
+identity rather than duplicating host output into a second file. The host remains the writer;
+reconnected reads use the journaled path. Explicit paths participate in the launch fingerprint
+and claim conflict check. Legacy null paths retain derived-path read compatibility; no inferred
+path grants a new launch. Clients require shared-run-log-v1 in addition to pipe-runs-v1 before
+sending launch, avoiding accidental use of an older host with incompatible log ownership.
+Seven journal/launcher/managed tests and six transport/client/daemon tests passed, along with
+server types and scoped lint. The real managed worker test asserts the persisted run log
+contains its output. Supervisor polling and lifecycle adoption, unknown occupancy and review
+evidence handling remain unimplemented; no output mirroring/cursor recovery is claimed.

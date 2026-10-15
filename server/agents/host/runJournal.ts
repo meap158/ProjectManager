@@ -8,6 +8,7 @@ export interface JournalRun {
   pid: number | null;
   exitCode: number | null;
   signal: string | null;
+  outputPath: string | null;
 }
 
 /** A durable claim authorizes one launch. Stored PIDs never authorize adoption or termination. */
@@ -21,7 +22,7 @@ export class RunJournal {
     this.db = new DatabaseSync(file);
     try {
       const version = this.db.prepare('PRAGMA user_version').get()!.user_version as number;
-      if (version > 1) throw new Error(`Unsupported run journal schema: ${version}`);
+      if (version > 2) throw new Error(`Unsupported run journal schema: ${version}`);
       this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;');
       if (version === 0) {
         this.db.exec('BEGIN IMMEDIATE');
@@ -37,6 +38,18 @@ export class RunJournal {
           throw error;
         }
       }
+      if (version < 2) {
+        this.db.exec('BEGIN IMMEDIATE');
+        try {
+          this.db.exec(
+            'ALTER TABLE executions ADD COLUMN output_path TEXT; PRAGMA user_version=2;',
+          );
+          this.db.exec('COMMIT');
+        } catch (error) {
+          this.db.exec('ROLLBACK');
+          throw error;
+        }
+      }
     } catch (error) {
       this.db.close();
       throw error;
@@ -46,7 +59,7 @@ export class RunJournal {
     const row = this.db
       .prepare(
         `SELECT nonce,fingerprint,host_instance AS hostInstance,
-      state,pid,exit_code AS exitCode,signal FROM executions WHERE nonce=?`,
+      state,pid,exit_code AS exitCode,signal,output_path AS outputPath FROM executions WHERE nonce=?`,
       )
       .get(nonce) as unknown as JournalRun | undefined;
     if (!row) return null;
@@ -54,18 +67,22 @@ export class RunJournal {
       return { ...row, state: 'unknown' };
     return row;
   }
-  claim(nonce: string, fingerprint: string): { launch: boolean; run: JournalRun } {
+  claim(
+    nonce: string,
+    fingerprint: string,
+    outputPath: string | null = null,
+  ): { launch: boolean; run: JournalRun } {
     if (!nonce.trim() || !fingerprint.trim()) throw new Error('Missing launch identity');
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const result = this.db
         .prepare(
-          `INSERT INTO executions(nonce,fingerprint,host_instance,state)
-        VALUES(?,?,?,'claimed') ON CONFLICT(nonce) DO NOTHING`,
+          `INSERT INTO executions(nonce,fingerprint,host_instance,state,output_path)
+        VALUES(?,?,?,'claimed',?) ON CONFLICT(nonce) DO NOTHING`,
         )
-        .run(nonce, fingerprint, this.instance);
+        .run(nonce, fingerprint, this.instance, outputPath);
       const run = this.get(nonce)!;
-      if (run.fingerprint !== fingerprint)
+      if (run.fingerprint !== fingerprint || run.outputPath !== outputPath)
         throw new Error('Launch nonce has conflicting arguments');
       this.db.exec('COMMIT');
       return { launch: result.changes === 1, run };

@@ -89,13 +89,13 @@ it('upgrades the initial unversioned journal without losing claims and refuses f
     });
     journal.close();
     const future = new DatabaseSync(file);
-    expect(future.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 1 });
-    future.exec('PRAGMA user_version=2');
+    expect(future.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 });
+    future.exec('PRAGMA user_version=3');
     future.close();
-    expect(() => new RunJournal(file, 'old-code')).toThrow(/Unsupported run journal schema: 2/);
+    expect(() => new RunJournal(file, 'old-code')).toThrow(/Unsupported run journal schema: 3/);
     const inspect = new DatabaseSync(file);
     try {
-      expect(inspect.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 });
+      expect(inspect.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 3 });
       expect(inspect.prepare('SELECT COUNT(*) AS n FROM executions').get()).toMatchObject({ n: 1 });
     } finally {
       inspect.close();

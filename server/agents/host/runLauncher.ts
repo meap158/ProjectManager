@@ -10,6 +10,7 @@ export interface PipeRunLaunch {
   cwd: string;
   env: Record<string, string>;
   timeoutMs?: number;
+  logPath?: string;
 }
 
 /** Host-local launch coordinator. Socket authentication and supervisor wiring are separate. */
@@ -25,21 +26,22 @@ export class RunLauncher {
     const timeoutMs = input.timeoutMs ?? 60 * 60_000;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 240 * 60_000)
       throw new Error('Invalid execution timeout');
+    const logPath = input.logPath ? path.resolve(input.logPath) : this.logPath(input.nonce);
     const fingerprint = createHash('sha256')
       .update(
         JSON.stringify({
           argv: input.argv,
           cwd: input.cwd,
           timeoutMs,
-          logPath: this.logPath(input.nonce),
+          logPath,
           env: Object.entries(input.env).sort(([a], [b]) => a.localeCompare(b)),
         }),
       )
       .digest('hex');
-    const claim = this.journal.claim(input.nonce, fingerprint);
+    const claim = this.journal.claim(input.nonce, fingerprint, logPath);
     if (!claim.launch) return claim.run;
     try {
-      const log = new OutputLog(this.logPath(input.nonce));
+      const log = new OutputLog(logPath);
       const proc = spawn(input.argv[0], input.argv.slice(1), {
         cwd: input.cwd,
         env: input.env,
@@ -99,8 +101,10 @@ export class RunLauncher {
     nonce: string,
     after: number,
   ): { data: string; nextOffset: number; totalBytes: number } | null {
-    if (!this.journal.get(nonce)) return null;
-    const log = this.live.get(nonce)?.log ?? new OutputLog(this.logPath(nonce));
+    const execution = this.journal.get(nonce);
+    if (!execution) return null;
+    const log =
+      this.live.get(nonce)?.log ?? new OutputLog(execution.outputPath ?? this.logPath(nonce));
     return { ...log.read(after), totalBytes: log.totalBytes };
   }
 

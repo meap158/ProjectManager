@@ -19,6 +19,8 @@ it('binds a run attempt before real launch and reattaches without another worker
     );
     db.exec(`INSERT INTO agent_runs(id,project_id,name,command_json,status,created_at,log_path,orchestrator_id)
       VALUES(1,1,'Managed','{"command":["fixture"]}','queued','now','/managed.log','master');`);
+    const actualLog = path.join(dir, 'managed.log');
+    db.prepare('UPDATE agent_runs SET log_path=? WHERE id=1').run(actualLog);
     const marker = path.join(dir, 'launches');
     const input = {
       cwd: dir,
@@ -35,6 +37,8 @@ it('binds a run attempt before real launch and reattaches without another worker
     const again = await launchManagedRun(db, client, 1, 1, input);
     expect(again.identity.nonce).toBe(nonce);
     expect(readFileSync(marker, 'utf8')).toBe('one');
+    expect(readFileSync(actualLog, 'utf8')).toContain('ready');
+    expect(again.execution.outputPath).toBe(actualLog);
     expect(await client.stop(nonce)).toBe(true);
     expect((await launchManagedRun(db, client, 1, 1, input)).execution.state).toBe('exited');
     // An unavailable old journal is not evidence that its execution never launched.

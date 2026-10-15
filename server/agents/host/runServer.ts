@@ -14,6 +14,7 @@ const request = z.discriminatedUnion('op', [
       argv: z.array(z.string().max(20000)).min(1).max(1024),
       cwd: z.string().min(1).max(32768),
       env: z.record(z.string(), z.string().max(32768)),
+      logPath: z.string().min(1).max(32768).optional(),
       timeoutMs: z.number().int().min(1).max(14400000).optional(),
     })
     .strict(),
@@ -92,7 +93,11 @@ export function createRunServer(token: string, launcher: RunLauncher, journal: R
         send({
           id: hello.data.id,
           ok: true,
-          result: { version: 1, instance: journal.instance, capabilities: ['pipe-runs-v1'] },
+          result: {
+            version: 1,
+            instance: journal.instance,
+            capabilities: ['pipe-runs-v1', 'shared-run-log-v1'],
+          },
         });
         return;
       }

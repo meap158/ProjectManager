@@ -9,7 +9,7 @@ export async function launchManagedRun(
   client: RunClient,
   runId: number,
   attempt: number,
-  launch: Omit<PipeRunLaunch, 'nonce'>,
+  launch: Omit<PipeRunLaunch, 'nonce' | 'logPath'>,
 ) {
   const previous = findRunExecution(db, runId, attempt);
   if (previous) {
@@ -29,7 +29,11 @@ export async function launchManagedRun(
     generation: 1,
     attempt,
   });
-  const execution = await client.launch({ ...launch, nonce: identity.nonce });
+  const execution = await client.launch({
+    ...launch,
+    nonce: identity.nonce,
+    logPath: identity.runLogPath,
+  });
   if (execution.hostInstance !== identity.hostInstance)
     throw new Error('Execution host identity mismatch');
   return { identity, execution };

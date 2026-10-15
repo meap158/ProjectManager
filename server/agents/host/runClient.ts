@@ -11,6 +11,7 @@ const run = z.object({
   pid: z.number().int().positive().nullable(),
   exitCode: z.number().int().nullable(),
   signal: z.string().nullable(),
+  outputPath: z.string().nullable(),
 });
 const output = z.object({
   data: z.string().max(128 * 1024),
@@ -81,7 +82,11 @@ export class RunClient {
           capabilities: z.array(z.string()),
         })
         .parse(await client.call({ op: 'hello', token }));
-      if (!hello.capabilities.includes('pipe-runs-v1'))
+      if (
+        !['pipe-runs-v1', 'shared-run-log-v1'].every((capability) =>
+          hello.capabilities.includes(capability),
+        )
+      )
         throw new Error('Run host capability unavailable');
       client.instance = hello.instance;
       return client;

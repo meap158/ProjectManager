@@ -65,7 +65,7 @@ it('requires authentication and replays real pipe execution over bounded local r
       });
     expect(await send({ id: 1, op: 'hello', token })).toMatchObject({
       ok: true,
-      result: { capabilities: ['pipe-runs-v1'] },
+      result: { capabilities: ['pipe-runs-v1', 'shared-run-log-v1'] },
     });
     const marker = path.join(dir, 'launches.txt');
     const launch = {
