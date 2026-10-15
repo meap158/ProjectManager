@@ -37,6 +37,7 @@ export function createRunServer(token: string, launcher: RunLauncher, journal: R
   if (Buffer.byteLength(token) < 32)
     throw new Error('Run host token must contain at least 32 bytes');
   const sockets = new Set<net.Socket>();
+  let draining = false;
   const server = net.createServer((socket) => {
     if (sockets.size >= 16) {
       socket.destroy();
@@ -106,6 +107,14 @@ export function createRunServer(token: string, launcher: RunLauncher, journal: R
         return;
       }
       const message = parsed.data;
+      if (draining && message.op === 'launch') {
+        send({
+          id: message.id,
+          ok: false,
+          error: 'Run host is draining; no new launches accepted',
+        });
+        return;
+      }
       try {
         const result =
           message.op === 'launch'
@@ -145,6 +154,9 @@ export function createRunServer(token: string, launcher: RunLauncher, journal: R
   });
   return {
     server,
+    drain: () => {
+      draining = true;
+    },
     disconnect: () => {
       for (const socket of sockets) socket.destroy();
     },

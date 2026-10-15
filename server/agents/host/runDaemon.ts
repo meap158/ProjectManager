@@ -1,5 +1,13 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+  realpathSync,
+} from 'node:fs';
 import path from 'node:path';
 import { RunJournal } from './runJournal.js';
 import { RunLauncher } from './runLauncher.js';
@@ -32,7 +40,11 @@ export async function startRunHost(dataDir: string) {
   if (process.platform !== 'win32') chmodSync(directory, 0o700);
   const instance = randomUUID(),
     token = randomBytes(32).toString('hex');
-  const hash = createHash('sha256').update(path.resolve(dataDir)).digest('hex').slice(0, 24);
+  const canonical = realpathSync(directory);
+  const hash = createHash('sha256')
+    .update(process.platform === 'win32' ? canonical.toLowerCase() : canonical)
+    .digest('hex')
+    .slice(0, 24);
   const address =
     process.platform === 'win32'
       ? `\\\\.\\pipe\\projectmanager-runs-${hash}`
@@ -58,6 +70,7 @@ export async function startRunHost(dataDir: string) {
       connection,
       shutdown: () => {
         if (shutdown) return shutdown;
+        host.drain();
         shutdown = (async () => {
           if (!(await launcher.stopAll())) {
             shutdown = undefined;

@@ -16,6 +16,8 @@ it('publishes authenticated host identity and refuses a competing host without r
     const connection = readRunRendezvous(dir);
     expect(connection).toEqual(host.connection);
     await expect(startRunHost(dir)).rejects.toThrow();
+    if (process.platform === 'win32')
+      await expect(startRunHost(dir.toUpperCase())).rejects.toThrow();
     expect(readRunRendezvous(dir)).toEqual(connection);
     client = await RunClient.connect(connection.address, connection.token);
     expect(client.hostInstance).toBe(connection.instance);

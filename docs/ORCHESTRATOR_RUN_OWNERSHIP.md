@@ -215,3 +215,15 @@ lint are checked separately. This is not supervisor adoption or host-crash conta
 stale socket recovery intentionally refuses ambiguous ownership instead of unlinking a path;
 platform validation, explicit stale-owner recovery, retention, production automatic startup,
 execution-identity binding and typed supervisor reconciliation remain required.
+
+## Host drain and canonical ownership, 2026-10-15
+
+A lifecycle recheck found that shutdown could snapshot live workers while an existing client
+launched another one. The server now enters drain mode synchronously before stopAll: launch
+requests reject without reserving a nonce, while status/read/stop remain usable. An uncertain
+stop does not reopen launch admission. Host socket names now derive from the real directory
+path, case-folded on Windows, so alternate path casing cannot create a second address for the
+same journal directory. Tests verify drain rejection without a claim and competing startup
+through uppercase Windows paths. Five daemon/client tests passed, server types and scoped
+lint passed. These fixes apply to the standalone host foundation; production supervisor
+adoption and platform containment are still unimplemented.

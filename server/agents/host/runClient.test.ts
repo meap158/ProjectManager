@@ -48,6 +48,10 @@ it('reconnects to the same live execution without relaunching and preserves stop
     expect(await second.status('one')).toMatchObject({ state: 'exited' });
     expect((await second.read('one', 0))?.data).toContain('ready');
     expect(await second.status('missing')).toBeNull();
+    host.drain();
+    await expect(second.launch({ ...input, nonce: 'while-draining' })).rejects.toThrow(/draining/);
+    expect(journal.get('while-draining')).toBeNull();
+    expect(await second.status('one')).toMatchObject({ state: 'exited' });
   } finally {
     first?.close();
     second?.close();
