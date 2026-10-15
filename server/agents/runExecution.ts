@@ -88,3 +88,21 @@ export function reserveRunExecution(
     throw error;
   }
 }
+
+export function findRunExecution(
+  db: Db,
+  runId: number,
+  attempt: number,
+): RunExecutionIdentity | null {
+  return (
+    (db
+      .prepare(
+        `SELECT e.nonce,e.run_id AS runId,e.run_log_path AS runLogPath,e.attempt,
+    e.fingerprint,e.host_instance AS hostInstance,e.host_generation AS hostGeneration,
+    e.dispatch_key AS dispatchKey,e.orchestrator_id AS orchestratorId,e.created_at AS createdAt
+    FROM agent_run_executions e JOIN agent_runs r ON r.id=e.run_id AND r.log_path=e.run_log_path
+    WHERE e.run_id=? AND e.attempt=?`,
+      )
+      .get(runId, attempt) as unknown as RunExecutionIdentity | undefined) ?? null
+  );
+}

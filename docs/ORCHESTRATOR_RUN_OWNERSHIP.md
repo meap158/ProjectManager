@@ -227,3 +227,16 @@ same journal directory. Tests verify drain rejection without a claim and competi
 through uppercase Windows paths. Five daemon/client tests passed, server types and scoped
 lint passed. These fixes apply to the standalone host foundation; production supervisor
 adoption and platform containment are still unimplemented.
+
+## Run-attempt identity bridge, 2026-10-15
+
+launchManagedRun now joins persisted production run identity to the authenticated host client.
+It reserves the attempt nonce before launch, replays observed running/completed/unknown host
+execution without launching again, and refuses to launch when an old execution is absent from
+a replacement host's journal. Host identity mismatches reject. Lookup joins the current run's
+log identity, preventing a reused row ID from attaching historical execution. A real host/worker
+fixture verifies one launch marker, reattachment, terminal replay and no launch when replacement
+ownership is unknown. Identity migration and bridge tests passed, plus server types/scoped lint.
+The existing supervisor spawn/poll/reconcile loop does not call this bridge yet. Adoption still
+requires persisted output cursors, current-worktree evidence rules, typed unknown lifecycle,
+occupancy/retry controls and authenticated automatic host connection/startup.
