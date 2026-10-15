@@ -146,3 +146,13 @@ or external side effect ended. Escaped descendants, Unix containment behavior an
 races still require the platform containment work in the acceptance matrix. This launcher is
 still not connected to production supervisor/socket transport, and no existing run lifecycle
 policy is changed by these foundations.
+
+## Journal format compatibility, 2026-10-15
+
+The journal now upgrades its initial unversioned format transactionally to schema version 1
+without deleting launch tombstones. A newer schema version is refused before changing journal
+settings or tables, and failed initialization closes the database handle. An existing-file
+test verifies completed-claim replay after upgrade and unchanged data/version after a future
+schema rejection. Three journal tests, server types and scoped lint passed. Host transport
+and production lifecycle integration remain open; journal version compatibility alone is not
+runtime capability negotiation.

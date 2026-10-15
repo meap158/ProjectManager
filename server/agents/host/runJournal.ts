@@ -19,12 +19,28 @@ export class RunJournal {
   ) {
     if (!instance.trim()) throw new Error('Missing host instance');
     this.db = new DatabaseSync(file);
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
-      CREATE TABLE IF NOT EXISTS executions (
-        nonce TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, host_instance TEXT NOT NULL,
-        state TEXT NOT NULL CHECK(state IN ('claimed','running','exited','unknown')),
-        pid INTEGER, exit_code INTEGER, signal TEXT
-      );`);
+    try {
+      const version = this.db.prepare('PRAGMA user_version').get()!.user_version as number;
+      if (version > 1) throw new Error(`Unsupported run journal schema: ${version}`);
+      this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;');
+      if (version === 0) {
+        this.db.exec('BEGIN IMMEDIATE');
+        try {
+          this.db.exec(`CREATE TABLE IF NOT EXISTS executions (
+            nonce TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, host_instance TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN ('claimed','running','exited','unknown')),
+            pid INTEGER, exit_code INTEGER, signal TEXT
+          ); PRAGMA user_version=1;`);
+          this.db.exec('COMMIT');
+        } catch (error) {
+          this.db.exec('ROLLBACK');
+          throw error;
+        }
+      }
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
   }
   get(nonce: string): JournalRun | null {
     const row = this.db

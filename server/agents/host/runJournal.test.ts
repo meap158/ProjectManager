@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { expect, it } from 'vitest';
 import { RunJournal } from './runJournal.js';
+import { DatabaseSync } from 'node:sqlite';
 
 it('retains claims after abrupt process exit and never reauthorizes uncertain or completed launches', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'pm-run-journal-'));
@@ -68,6 +69,38 @@ it('fences competing host completion while permitting the live owner to report i
   } finally {
     first.close();
     other.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it('upgrades the initial unversioned journal without losing claims and refuses future schemas', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pm-journal-upgrade-'));
+  const file = path.join(dir, 'journal.db');
+  try {
+    const old = new DatabaseSync(file);
+    old.exec(`CREATE TABLE executions(nonce TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,host_instance TEXT NOT NULL,
+      state TEXT NOT NULL,pid INTEGER,exit_code INTEGER,signal TEXT);
+      INSERT INTO executions VALUES('old','args','original','exited',1234,0,NULL);`);
+    old.close();
+    const journal = new RunJournal(file, 'new');
+    expect(journal.claim('old', 'args')).toMatchObject({
+      launch: false,
+      run: { state: 'exited', exitCode: 0 },
+    });
+    journal.close();
+    const future = new DatabaseSync(file);
+    expect(future.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 1 });
+    future.exec('PRAGMA user_version=2');
+    future.close();
+    expect(() => new RunJournal(file, 'old-code')).toThrow(/Unsupported run journal schema: 2/);
+    const inspect = new DatabaseSync(file);
+    try {
+      expect(inspect.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 });
+      expect(inspect.prepare('SELECT COUNT(*) AS n FROM executions').get()).toMatchObject({ n: 1 });
+    } finally {
+      inspect.close();
+    }
+  } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
