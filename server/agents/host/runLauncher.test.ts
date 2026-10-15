@@ -72,3 +72,33 @@ it('retains spawn failure without reauthorizing the same nonce', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it('stops only live owned workers and acknowledges close before terminal replay', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pm-run-stop-'));
+  const journal = new RunJournal(path.join(dir, 'journal.db'), 'host');
+  const launcher = new RunLauncher(journal);
+  try {
+    const input = {
+      nonce: 'long',
+      cwd: dir,
+      env: { ...process.env } as Record<string, string>,
+      argv: [process.execPath, '-e', 'setTimeout(()=>{},15000)'],
+    };
+    launcher.launch(input, () => {});
+    expect(await launcher.stop('missing')).toBe(false);
+    expect(await launcher.stop('long')).toBe(true);
+    expect(journal.get('long')?.state).toBe('exited');
+    expect(launcher.launch(input, () => {}).state).toBe('exited');
+    launcher.launch({ ...input, nonce: 'timeout', timeoutMs: 100 }, () => {});
+    await expect.poll(() => journal.get('timeout')?.state, { timeout: 6000 }).toBe('exited');
+    expect(() => launcher.launch({ ...input, nonce: 'invalid', timeoutMs: 0 }, () => {})).toThrow(
+      /timeout/,
+    );
+    expect(journal.get('invalid')).toBeNull();
+  } finally {
+    await launcher.stop('long');
+    await launcher.stop('timeout');
+    journal.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { RunJournal, type JournalRun } from './runJournal.js';
 
 export interface PipeRunLaunch {
@@ -7,19 +7,25 @@ export interface PipeRunLaunch {
   argv: string[];
   cwd: string;
   env: Record<string, string>;
+  timeoutMs?: number;
 }
 
 /** Host-local launch coordinator. Socket authentication and supervisor wiring are separate. */
 export class RunLauncher {
+  private live = new Map<string, { proc: ChildProcess; closed: Promise<void> }>();
   constructor(private journal: RunJournal) {}
 
   launch(input: PipeRunLaunch, onData: (text: string) => void): JournalRun {
     if (!input.argv.length || !input.argv[0]?.trim()) throw new Error('Missing executable');
+    const timeoutMs = input.timeoutMs ?? 60 * 60_000;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 240 * 60_000)
+      throw new Error('Invalid execution timeout');
     const fingerprint = createHash('sha256')
       .update(
         JSON.stringify({
           argv: input.argv,
           cwd: input.cwd,
+          timeoutMs,
           env: Object.entries(input.env).sort(([a], [b]) => a.localeCompare(b)),
         }),
       )
@@ -34,12 +40,27 @@ export class RunLauncher {
         detached: true,
         windowsHide: true,
       });
+      let closed!: () => void;
+      const entry = {
+        proc,
+        closed: new Promise<void>((resolve) => {
+          closed = resolve;
+        }),
+      };
+      this.live.set(input.nonce, entry);
+      const timer = setTimeout(() => {
+        void this.stop(input.nonce);
+      }, timeoutMs);
+      timer.unref();
       // Attach lifecycle listeners before publishing startup; a fast exit must still be journaled.
       proc.once('error', () => {
         this.journal.finished(input.nonce, null, 'spawn-error');
       });
       proc.once('close', (code, signal) => {
+        clearTimeout(timer);
         this.journal.finished(input.nonce, code, signal);
+        if (this.live.get(input.nonce) === entry) this.live.delete(input.nonce);
+        closed();
       });
       const output = (data: string) => {
         try {
@@ -59,5 +80,39 @@ export class RunLauncher {
       throw error;
     }
     return this.journal.get(input.nonce)!;
+  }
+  /** Stop only an execution owned by this live host; a journal PID is never used. */
+  async stop(nonce: string): Promise<boolean> {
+    const entry = this.live.get(nonce);
+    if (!entry) return this.journal.get(nonce)?.state === 'exited';
+    const proc = entry.proc;
+    if (proc.pid && proc.exitCode === null && proc.signalCode === null) {
+      if (process.platform === 'win32') {
+        await new Promise<void>((resolve) => {
+          execFile(
+            'taskkill',
+            ['/pid', String(proc.pid), '/T', '/F'],
+            { windowsHide: true, timeout: 3000 },
+            () => resolve(),
+          );
+        });
+      } else {
+        try {
+          process.kill(-proc.pid, 'SIGKILL');
+        } catch {
+          /* Wait for the actual close event. */
+        }
+      }
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ended = await Promise.race([
+      entry.closed.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), 3000);
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+    if (!ended) this.journal.unknown(nonce);
+    return ended;
   }
 }

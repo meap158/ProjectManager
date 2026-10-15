@@ -129,3 +129,20 @@ The launcher is not yet reachable from a socket or the supervisor. Authenticated
 negotiation, identity bridging, bounded persistent output, timeout/stop ownership, journal
 migration/retention and actual host-crash containment remain required before production use.
 Do not use this internal class as a claim that current Orchestrator workers are host-owned.
+
+## Owned launcher stop and timeout foundation, 2026-10-15
+
+RunLauncher now holds live ChildProcess handles, accepts a bounded execution timeout and offers
+stop(nonce). It never looks up a stored PID for termination: only its currently live handle
+permits a Windows taskkill tree request or Unix process-group signal. Stop waits for the root
+process close acknowledgement; a missing acknowledgement records unknown execution. Timeout
+uses the same stop path, and timeout settings participate in the command fingerprint. Unknown
+or old-host journal entries cannot be stopped by guessing their PID. Real-process tests verify
+stop/timeout completion, terminal replay, missing ownership and invalid timeout rejection.
+Three launcher tests passed, with server types and scoped lint.
+
+Root close and a process-group/tree termination request are not proof that every descendant
+or external side effect ended. Escaped descendants, Unix containment behavior and OS identity
+races still require the platform containment work in the acceptance matrix. This launcher is
+still not connected to production supervisor/socket transport, and no existing run lifecycle
+policy is changed by these foundations.
