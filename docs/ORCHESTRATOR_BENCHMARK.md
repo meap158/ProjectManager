@@ -145,3 +145,33 @@ Both used four prepared SQL statements. This is the same isolated read-only fixt
 not controlled LAN/mobile latency or p95. Earlier unbounded global feed was 4,211,650 bytes.
 The page endpoint bounds hydration/transport but still aggregates unresolved rows for counts.
 Client integration is still required before the polling page benefits from this reduction.
+
+## SQL pending pages across masters (2026-10-15)
+
+Command: `node --import tsx scripts/benchmark-orchestrator-api.mjs --cards=1000,10000 --masters=1,5,20 --samples=5 --operations=pending`.
+Node 22.21.0; 100,000 historical runs. Five warm measured samples per case, local Hono request
+handling/SQL/serialization. Each row times the complete sequential master batch. The harness
+checks pending totals and page equality against the full situation baseline and rejects
+unexpected database writes. No workers, live database, network or browser are involved.
+
+| Cards  | Scope   | Masters | Batch median ms | Batch max ms | Prepared statements/batch | Bytes/master | Process RSS MB |
+| ------ | ------- | ------- | --------------- | ------------ | ------------------------- | ------------ | -------------- |
+| 1,000  | Project | 1       | 2.26            | 2.71         | 5                         | 4,493        | 126.9          |
+| 1,000  | Project | 5       | 6.31            | 6.86         | 25                        | 4,493        | 131.8          |
+| 1,000  | Project | 20      | 25.09           | 28.54        | 100                       | 4,515        | 144.0          |
+| 1,000  | Global  | 1       | 1.26            | 1.32         | 5                         | 4,521        | 154.8          |
+| 1,000  | Global  | 5       | 7.03            | 7.65         | 25                        | 4,521        | 159.8          |
+| 1,000  | Global  | 20      | 22.74           | 32.30        | 100                       | 4,521        | 159.7          |
+| 10,000 | Project | 1       | 1.22            | 1.42         | 5                         | 4,534        | 161.9          |
+| 10,000 | Project | 5       | 6.06            | 6.35         | 25                        | 4,534        | 167.1          |
+| 10,000 | Project | 20      | 22.72           | 30.35        | 100                       | 4,556        | 169.1          |
+| 10,000 | Global  | 1       | 2.34            | 2.51         | 5                         | 4,562        | 190.1          |
+| 10,000 | Global  | 5       | 15.09           | 23.30        | 25                        | 4,562        | 232.7          |
+| 10,000 | Global  | 20      | 49.05           | 54.94        | 100                       | 4,562        | 233.5          |
+
+The global case repeats the same large scope for every master; the project case scopes each
+master separately. RSS is the whole benchmark process at that point, including fixtures and
+prior cases; it is not endpoint allocation or retained-memory evidence. Five samples do not
+establish p95. This verifies bounded response detail and observed read scaling, not bounded
+COUNT cost, cold caches, concurrent clients, provider calls, dispatch writes, LAN/render time
+or complete tick latency. Dispatch/write-cost and physical-client gates remain open.
