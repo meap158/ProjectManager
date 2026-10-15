@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from 'node:util';
 import { execFileSync, spawn } from 'node:child_process';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openDb } from '../db.js';
@@ -61,10 +62,29 @@ describe.skipIf(process.platform !== 'win32' || !cpuBudgetSupported())(
         ],
         { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
       );
-      const childPid = await new Promise<number>((resolve) =>
-        parent.stdout.once('data', (d) => resolve(Number(String(d).trim()))),
-      );
-      children.push(childPid, parent.pid!);
+      if (parent.pid) children.push(parent.pid);
+      const childPid = await new Promise<number>((resolve, reject) => {
+        let buffer = '';
+        const timer = setTimeout(
+          () => reject(new Error('Fixture child PID was not received')),
+          10000,
+        );
+        parent.once('error', (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        parent.stdout.on('data', (data) => {
+          buffer += stripVTControlCharacters(String(data));
+          const newline = buffer.indexOf('\n');
+          if (newline < 0) return;
+          clearTimeout(timer);
+          const pid = Number(buffer.slice(0, newline).trim());
+          if (!Number.isSafeInteger(pid) || pid < 1)
+            reject(new Error(`Invalid fixture child PID: ${buffer}`));
+          else resolve(pid);
+        });
+      });
+      children.push(childPid);
 
       expect(await applyCpuBudget([parent.pid!], 1)).toBeGreaterThanOrEqual(2);
       for (const pid of [parent.pid!, childPid]) {
