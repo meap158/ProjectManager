@@ -29,6 +29,9 @@ const request = z.discriminatedUnion('op', [
   z.object({ id: z.number().int().positive(), op: z.literal('stop'), nonce }).strict(),
 ]);
 
+type WithoutId<T> = T extends unknown ? Omit<T, 'id'> : never;
+export type RunCommand = WithoutId<z.infer<typeof request>>;
+
 /** Authenticated, bounded local transport; callers own listening address and journal lifetime. */
 export function createRunServer(token: string, launcher: RunLauncher, journal: RunJournal) {
   if (Buffer.byteLength(token) < 32)
@@ -88,7 +91,7 @@ export function createRunServer(token: string, launcher: RunLauncher, journal: R
         send({
           id: hello.data.id,
           ok: true,
-          result: { version: 1, capabilities: ['pipe-runs-v1'] },
+          result: { version: 1, instance: journal.instance, capabilities: ['pipe-runs-v1'] },
         });
         return;
       }

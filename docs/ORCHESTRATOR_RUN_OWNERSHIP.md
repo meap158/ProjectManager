@@ -183,3 +183,16 @@ completion polling, output reads and invalid cursor handling. The transport test
 typecheck and scoped lint pass. It is not a standalone host daemon or supervisor integration:
 authenticated rendezvous, unpredictable host instance propagation, startup/version selection,
 OS socket permissions, process containment and production adoption remain open.
+
+## Typed run-host client and reconnect evidence, 2026-10-15
+
+RunClient authenticates hello, requires pipe-runs-v1/version 1, and exposes the host instance
+for execution identity binding. It bounds outstanding calls and response framing, correlates
+reply IDs, validates typed run/output results and rejects all pending requests on disconnect
+or timeout. There is no automatic reconnect or launch replay; callers must inspect/replay the
+same nonce explicitly. The real socket/worker fixture disconnects one client, reconnects a
+second, confirms one launch marker, reads output and stops the same worker. Negative fixtures
+reject an unsupported host and a silent host without sending launch. Three client tests,
+server types and scoped lint pass; the server transport test also passed in the preceding run.
+Standalone authenticated rendezvous/startup, actual host-process crash handling, supervisor
+adoption and platform containment remain open.

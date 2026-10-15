@@ -15,7 +15,7 @@ export class RunJournal {
   private db: DatabaseSync;
   constructor(
     file: string,
-    private instance: string,
+    readonly instance: string,
   ) {
     if (!instance.trim()) throw new Error('Missing host instance');
     this.db = new DatabaseSync(file);
