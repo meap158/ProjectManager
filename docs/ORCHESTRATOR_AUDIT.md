@@ -670,3 +670,13 @@ process to disappear before deleting the temporary directory. It restores the en
 finally and does not terminate production hosts or change session survival defaults. All 18
 CLI tests and scoped lint passed with workspace TEMP/TMP. This resolves the observed focused
 cleanup failure; a fresh whole-suite run is still required after the three fixture repairs.
+
+## Successful direct full-suite rerun, 2026-10-15
+
+After CPU PID parsing, completion Git isolation and CLI host-exit teardown repairs, the direct
+full Vitest run passed 605 tests across 115 files in 184.09 seconds, one thread worker with
+workspace TEMP/TMP. This establishes the direct test gate for the pre-outputLog-extraction
+state. It does not establish npm run check, whose shared formatting gate remains separate,
+or physical mobile/LAN behavior. The subsequent bounded log extraction/host output persistence
+passed ten focused log/delivery/launcher tests, server types and scoped lint; that narrower
+result does not imply the full suite was rerun after extraction.

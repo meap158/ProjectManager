@@ -11,7 +11,7 @@ it('launches a real pipe worker once and replays its completion after host resta
   const marker = path.join(dir, 'launches.txt');
   let journal = new RunJournal(file, 'host-one');
   try {
-    const launcher = new RunLauncher(journal);
+    const launcher = new RunLauncher(journal, path.join(dir, 'logs'));
     const input = {
       nonce: 'attempt',
       cwd: dir,
@@ -34,16 +34,21 @@ it('launches a real pipe worker once and replays its completion after host resta
     expect(output).toContain('output');
     expect(output).toContain('error');
     expect(readFileSync(marker, 'utf8')).toBe('one');
+    expect(launcher.read('attempt', 0)?.data).toContain('output');
     expect(() =>
       launcher.launch({ ...input, argv: [process.execPath, '-e', 'process.exit(1)'] }, () => {}),
     ).toThrow(/conflicting/);
     journal.close();
     journal = new RunJournal(file, 'host-two');
-    expect(new RunLauncher(journal).launch(input, () => {})).toMatchObject({
+    expect(new RunLauncher(journal, path.join(dir, 'logs')).launch(input, () => {})).toMatchObject({
       state: 'exited',
       exitCode: 0,
     });
     expect(readFileSync(marker, 'utf8')).toBe('one');
+    const recovered = new RunLauncher(journal, path.join(dir, 'logs')).read('attempt', 0);
+    expect(recovered?.data).toContain('output');
+    expect(recovered?.data).toContain('error');
+    expect(recovered?.nextOffset).toBe(recovered?.totalBytes);
   } finally {
     journal.close();
     rmSync(dir, { recursive: true, force: true });
@@ -54,7 +59,7 @@ it('retains spawn failure without reauthorizing the same nonce', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'pm-run-launcher-'));
   const journal = new RunJournal(path.join(dir, 'journal.db'), 'host');
   try {
-    const launcher = new RunLauncher(journal);
+    const launcher = new RunLauncher(journal, path.join(dir, 'logs'));
     const input = {
       nonce: 'missing',
       cwd: dir,
@@ -76,7 +81,7 @@ it('retains spawn failure without reauthorizing the same nonce', async () => {
 it('stops only live owned workers and acknowledges close before terminal replay', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'pm-run-stop-'));
   const journal = new RunJournal(path.join(dir, 'journal.db'), 'host');
-  const launcher = new RunLauncher(journal);
+  const launcher = new RunLauncher(journal, path.join(dir, 'logs'));
   try {
     const input = {
       nonce: 'long',

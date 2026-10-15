@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { OutputLog } from '../outputLog.js';
 import { createHash } from 'node:crypto';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { RunJournal, type JournalRun } from './runJournal.js';
@@ -12,8 +14,11 @@ export interface PipeRunLaunch {
 
 /** Host-local launch coordinator. Socket authentication and supervisor wiring are separate. */
 export class RunLauncher {
-  private live = new Map<string, { proc: ChildProcess; closed: Promise<void> }>();
-  constructor(private journal: RunJournal) {}
+  private live = new Map<string, { proc: ChildProcess; closed: Promise<void>; log: OutputLog }>();
+  constructor(
+    private journal: RunJournal,
+    private outputDir: string,
+  ) {}
 
   launch(input: PipeRunLaunch, onData: (text: string) => void): JournalRun {
     if (!input.argv.length || !input.argv[0]?.trim()) throw new Error('Missing executable');
@@ -26,6 +31,7 @@ export class RunLauncher {
           argv: input.argv,
           cwd: input.cwd,
           timeoutMs,
+          logPath: this.logPath(input.nonce),
           env: Object.entries(input.env).sort(([a], [b]) => a.localeCompare(b)),
         }),
       )
@@ -33,6 +39,7 @@ export class RunLauncher {
     const claim = this.journal.claim(input.nonce, fingerprint);
     if (!claim.launch) return claim.run;
     try {
+      const log = new OutputLog(this.logPath(input.nonce));
       const proc = spawn(input.argv[0], input.argv.slice(1), {
         cwd: input.cwd,
         env: input.env,
@@ -43,6 +50,7 @@ export class RunLauncher {
       let closed!: () => void;
       const entry = {
         proc,
+        log,
         closed: new Promise<void>((resolve) => {
           closed = resolve;
         }),
@@ -58,11 +66,13 @@ export class RunLauncher {
       });
       proc.once('close', (code, signal) => {
         clearTimeout(timer);
+        log.releaseCache();
         this.journal.finished(input.nonce, code, signal);
         if (this.live.get(input.nonce) === entry) this.live.delete(input.nonce);
         closed();
       });
       const output = (data: string) => {
+        log.append(data);
         try {
           onData(data);
         } catch {
@@ -81,6 +91,19 @@ export class RunLauncher {
     }
     return this.journal.get(input.nonce)!;
   }
+  private logPath(nonce: string): string {
+    return path.join(this.outputDir, createHash('sha256').update(nonce).digest('hex') + '.log');
+  }
+
+  read(
+    nonce: string,
+    after: number,
+  ): { data: string; nextOffset: number; totalBytes: number } | null {
+    if (!this.journal.get(nonce)) return null;
+    const log = this.live.get(nonce)?.log ?? new OutputLog(this.logPath(nonce));
+    return { ...log.read(after), totalBytes: log.totalBytes };
+  }
+
   /** Stop only an execution owned by this live host; a journal PID is never used. */
   async stop(nonce: string): Promise<boolean> {
     const entry = this.live.get(nonce);

@@ -156,3 +156,15 @@ test verifies completed-claim replay after upgrade and unchanged data/version af
 schema rejection. Three journal tests, server types and scoped lint passed. Host transport
 and production lifecycle integration remain open; journal version compatibility alone is not
 runtime capability negotiation.
+
+## Persistent bounded pipe output foundation, 2026-10-15
+
+OutputLog was extracted unchanged into a shared module, with supervisor re-exports preserving
+existing consumers. RunLauncher now writes through that same capped file/cache implementation
+and exposes byte-offset reads, including stdout/stderr replay after reopening the journal.
+Log paths are derived from a hash of the nonce under the host output directory, preventing a
+nonce from choosing a filesystem path. The derived log path participates in launch replay
+fingerprinting; a different output directory cannot silently relaunch the same nonce. Live
+reads use the writer cache and finished runs release it; replay reads from bounded disk logs.
+Ten focused log/delivery/real-launcher tests passed, plus server types and scoped lint.
+Host socket capabilities, supervisor adoption, retention and platform containment remain open.
