@@ -196,3 +196,22 @@ reject an unsupported host and a silent host without sending launch. Three clien
 server types and scoped lint pass; the server transport test also passed in the preceding run.
 Standalone authenticated rendezvous/startup, actual host-process crash handling, supervisor
 adoption and platform containment remain open.
+
+## Standalone authenticated run host foundation, 2026-10-15
+
+startRunHost and runHostMain now start the pipe-run service independently, with a fresh random
+host instance and 32-byte random token, versioned rendezvous publication only after acquiring
+the deterministic local address, and a private run-host directory/token file. Unix directory
+and socket modes are explicitly restricted. Startup never unlinks an existing socket; competing
+hosts fail without replacing credentials. Shutdown requests stop on owned live executions,
+waits for close acknowledgements and keeps the host available if termination remains unknown.
+The build's existing TypeScript inclusion emits the standalone entrypoint with the server.
+
+Two actual lifecycle tests passed on Windows: competing-host/rendezvous protection and a
+standalone host child retaining a real worker after a separate dispatch client process exits.
+A new client replays that nonce without a second marker, then stops the same worker. Test
+cleanup stops its worker before ending only its own daemon child. Server types and scoped
+lint are checked separately. This is not supervisor adoption or host-crash containment. Unix
+stale socket recovery intentionally refuses ambiguous ownership instead of unlinking a path;
+platform validation, explicit stale-owner recovery, retention, production automatic startup,
+execution-identity binding and typed supervisor reconciliation remain required.

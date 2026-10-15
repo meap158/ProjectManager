@@ -104,6 +104,11 @@ export class RunLauncher {
     return { ...log.read(after), totalBytes: log.totalBytes };
   }
 
+  async stopAll(): Promise<boolean> {
+    const results = await Promise.all([...this.live.keys()].map((nonce) => this.stop(nonce)));
+    return results.every(Boolean);
+  }
+
   /** Stop only an execution owned by this live host; a journal PID is never used. */
   async stop(nonce: string): Promise<boolean> {
     const entry = this.live.get(nonce);
