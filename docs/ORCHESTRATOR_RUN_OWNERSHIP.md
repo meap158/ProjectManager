@@ -168,3 +168,18 @@ fingerprinting; a different output directory cannot silently relaunch the same n
 reads use the writer cache and finished runs release it; replay reads from bounded disk logs.
 Ten focused log/delivery/real-launcher tests passed, plus server types and scoped lint.
 Host socket capabilities, supervisor adoption, retention and platform containment remain open.
+
+## Authenticated local run transport foundation, 2026-10-15
+
+createRunServer now wraps the journal/launcher with a local socket request handler. A valid
+hello token is required before launch/status/read/stop; token comparison is constant-time for
+matching lengths. Strict schemas validate commands, nonces, timeouts and output cursors.
+Connections, buffered frames, pending requests and queued response bytes are bounded, with
+idle connections closed. Invalid requests with valid IDs receive correlated errors; missing
+identity or unauthenticated/malformed traffic is disconnected. Capabilities advertise
+pipe-runs-v1. A real Windows named-pipe fixture verifies unauthenticated stop rejection, wrong
+token rejection, oversized frame disconnection, one actual worker launch despite replay,
+completion polling, output reads and invalid cursor handling. The transport test, server
+typecheck and scoped lint pass. It is not a standalone host daemon or supervisor integration:
+authenticated rendezvous, unpredictable host instance propagation, startup/version selection,
+OS socket permissions, process containment and production adoption remain open.
