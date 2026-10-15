@@ -94,3 +94,21 @@ with invented owners. Existing-database upgrade/reopen, conflicting reservation 
 retry identity are covered by tests. The bridge is not yet used by production launch code:
 host capability negotiation, durable host launch journal, typed lifecycle state and recovery
 integration remain required before it can provide process ownership guarantees.
+
+## Host journal foundation, 2026-10-15
+
+RunJournal now persists nonce/fingerprint launch claims and terminal results in a separate
+SQLite WAL journal with synchronous=FULL. Only the first committed claim returns launch=true.
+A repeated nonce with different arguments rejects. Startup under a different host instance
+projects claimed/running entries as execution unknown, never permits a second launch and
+cannot overwrite the original owner's result. The original live host can still report an
+actual exit. Terminal results are retained across restarts, and late duplicate callbacks
+cannot rewrite them. PIDs remain diagnostic metadata only.
+
+Tests include a child that commits claimed/running/finished entries then exits without closing
+the journal, plus two competing journal connections. Together with execution-identity upgrade
+coverage, three tests passed; server types and scoped lint were checked separately. This is
+storage/state-transition coverage, not a hosted OS launch test. Journal schema migration and
+retention, unpredictable per-boot host identity, capability negotiation, pipe execution,
+bounded host transport and supervisor integration remain open. No production process launch
+uses this journal yet, so its existence alone does not close the orphan-worker recovery gap.
