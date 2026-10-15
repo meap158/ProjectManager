@@ -659,3 +659,14 @@ completion fixtures now passes all six tests. Completion fixture now initializes
 repository so ignored workspace TEMP ancestors cannot hide its files. CLI cleanup EBUSY still
 needs lifecycle investigation. This is not a whole-suite pass, and formatting failures remain
 a separate repository gate. The earlier passing Orchestrator subsets do not close either gate.
+
+## CLI fixture host lifecycle repair, 2026-10-15
+
+The failing CLI teardown called supervisor.shutdown then immediately removed its data folder.
+Hosted PTYs deliberately outlive that shutdown, and the detached host retains resources until
+its orphan grace expires. The fixture now sets the existing test-only orphan override to one
+second, captures its own host rendezvous PID before shutdown, and waits for that specific host
+process to disappear before deleting the temporary directory. It restores the environment in
+finally and does not terminate production hosts or change session survival defaults. All 18
+CLI tests and scoped lint passed with workspace TEMP/TMP. This resolves the observed focused
+cleanup failure; a fresh whole-suite run is still required after the three fixture repairs.

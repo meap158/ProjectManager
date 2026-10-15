@@ -2,7 +2,7 @@
 // unwrapped, PTY sessions, live streaming, and recording what a run changed.
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -14,6 +14,7 @@ import type {
 } from '../../shared/types.js';
 import { createApp } from '../app.js';
 import { openDb } from '../db.js';
+import { HOST_GENERATION, rendezvousFile } from './host/protocol.js';
 import { processEnv, ptyAvailable } from './proc.js';
 import {
   buildDispatchArgv,
@@ -142,6 +143,7 @@ let tmp: string;
 let app: ReturnType<typeof createApp>;
 let projectId: number;
 let repo: string;
+const originalOrphanMs = process.env.PM_HOST_ORPHAN_MS;
 
 const call = (method: string, url: string, body?: unknown) =>
   app.request(`/api${url}`, {
@@ -172,6 +174,7 @@ const getRun = async (id: number) =>
   (await (await call('GET', `/agent-runs/${id}`)).json()) as AgentRun;
 
 beforeAll(async () => {
+  process.env.PM_HOST_ORPHAN_MS = '1000';
   tmp = mkdtempSync(path.join(os.tmpdir(), 'pm-cli-'));
   repo = path.join(tmp, 'repo');
   const { mkdirSync } = await import('node:fs');
@@ -188,9 +191,33 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
-  await app.supervisor.shutdown();
-  rmSync(tmp, { recursive: true, force: true });
-});
+  try {
+    const rendezvous = rendezvousFile(tmp, HOST_GENERATION);
+    const hostPid = existsSync(rendezvous)
+      ? (JSON.parse(readFileSync(rendezvous, 'utf8')) as { pid: number }).pid
+      : undefined;
+    await app.supervisor.shutdown();
+    if (hostPid !== undefined) {
+      expect(Number.isSafeInteger(hostPid) && hostPid > 0).toBe(true);
+      await waitFor(
+        async () => {
+          try {
+            process.kill(hostPid, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        (alive) => !alive,
+        'fixture session host exit',
+      );
+    }
+    rmSync(tmp, { recursive: true, force: true });
+  } finally {
+    if (originalOrphanMs === undefined) delete process.env.PM_HOST_ORPHAN_MS;
+    else process.env.PM_HOST_ORPHAN_MS = originalOrphanMs;
+  }
+}, 35000);
 
 describe.skipIf(!ptyAvailable())('PTY sessions', () => {
   it('defaults to a pseudo-terminal: stdin is a TTY, Enter is \\r, resize works', async () => {
