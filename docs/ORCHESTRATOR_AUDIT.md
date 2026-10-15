@@ -646,3 +646,16 @@ current pipe adapter, authenticated session host, host generation/orphan policy 
 surviving-worker regression. It defines protocol/schema compatibility, unknown-execution
 handling, attempt/request identity separation and a real-process acceptance matrix. It is an
 implementation plan; none of its proposed host/journal/typed-state behavior is claimed shipped.
+
+## Whole-suite direct test result, 2026-10-15
+
+The confirmed full Vitest process completed exit 1: 112 files passed, three failed; 602 tests
+passed and two failed (604 total), 268.44 seconds. It used one thread worker and workspace
+TEMP/TMP. Failures were Windows CPU fixture PID parsing, completion file discovery returning
+an empty list, and CLI suite cleanup EBUSY. The CPU fixture was changed while that run was
+already in progress; its final stack lines reference the changed file, so the final full-run
+CPU failure is not evidence against the corrected fixture. A fresh focused run of CPU and
+completion fixtures now passes all six tests. Completion fixture now initializes its own Git
+repository so ignored workspace TEMP ancestors cannot hide its files. CLI cleanup EBUSY still
+needs lifecycle investigation. This is not a whole-suite pass, and formatting failures remain
+a separate repository gate. The earlier passing Orchestrator subsets do not close either gate.

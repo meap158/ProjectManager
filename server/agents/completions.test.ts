@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,6 +44,9 @@ describe('chat composer suggestions (PM-117)', () => {
 
   it('matches files by name first, then by path', async () => {
     const project = path.join(root, 'files');
+    mkdirSync(project, { recursive: true });
+    // Isolate Git discovery from an enclosing checkout when TEMP lives under ignored data/.
+    execFileSync('git', ['init', '-q'], { cwd: project, windowsHide: true });
     for (const f of [
       'src/app.ts',
       'src/components/AppShell.tsx',
