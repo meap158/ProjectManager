@@ -112,3 +112,20 @@ storage/state-transition coverage, not a hosted OS launch test. Journal schema m
 retention, unpredictable per-boot host identity, capability negotiation, pipe execution,
 bounded host transport and supervisor integration remain open. No production process launch
 uses this journal yet, so its existence alone does not close the orphan-worker recovery gap.
+
+## Journal-backed pipe launcher, 2026-10-15
+
+RunLauncher now connects a committed journal claim to an actual shell-free detached pipe
+spawn. It fingerprints argv, cwd and ordered environment entries locally rather than trusting
+a caller-supplied fingerprint. Duplicate nonces replay the journal without spawning, including
+completed and unknown attempts; changed arguments reject. Exit is recorded on close after
+stdout/stderr drain. Spawn errors remain terminal journal results, and synchronous exceptions
+conservatively retain unknown execution. Viewer callback errors do not terminate the worker.
+Real fixture tests verify one launch marker despite duplicate requests, stdout/stderr delivery,
+terminal replay after reopening under a new host instance, conflicting arguments and spawn
+failure replay. Four launcher/journal tests, server types and scoped lint passed.
+
+The launcher is not yet reachable from a socket or the supervisor. Authenticated capability
+negotiation, identity bridging, bounded persistent output, timeout/stop ownership, journal
+migration/retention and actual host-crash containment remain required before production use.
+Do not use this internal class as a claim that current Orchestrator workers are host-owned.
