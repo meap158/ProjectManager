@@ -127,6 +127,28 @@ it.skipIf(process.platform !== 'win32')(
       expect(supervisor.getRun(1)).toMatchObject({ status: 'running', executionState: 'unknown' });
       expect(readFileSync(marker, 'utf8').trim().split('\n')).toHaveLength(1);
       expect(alive(workerPid!)).toBe(true);
+      await expect(
+        supervisor.resolveUnknownRun(1, '00000000-0000-4000-8000-000000000000'),
+      ).rejects.toThrow('Execution changed');
+      await supervisor.removeRun(2);
+      // The user confirms only after independently terminating this isolated fixture worker.
+      process.kill(workerPid!, 'SIGKILL');
+      await expect.poll(() => alive(workerPid!), { timeout: 10000 }).toBe(false);
+      const resolved = await supervisor.resolveUnknownRun(1, first.identity.nonce);
+      expect(resolved).toMatchObject({
+        status: 'failed',
+        executionState: 'complete',
+        validation: null,
+        executionResolution: {
+          source: 'manual-confirmation',
+          nonce: first.identity.nonce,
+          resolvedAt: expect.any(String),
+        },
+      });
+      expect(resolved.error).toContain('outcome remains unverified');
+      await expect(supervisor.resolveUnknownRun(1, first.identity.nonce)).rejects.toThrow(
+        'no longer unknown',
+      );
     } finally {
       await supervisor?.shutdown();
       client?.close();

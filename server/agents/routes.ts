@@ -497,6 +497,14 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     return c.json(run);
   });
 
+  app.post('/agent-runs/:id/resolve-unknown', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({ nonce: z.string().uuid(), confirmation: z.literal('worker-stopped') }).strict(),
+    );
+    return c.json(await supervisor.resolveUnknownRun(parseId(c), body.nonce));
+  });
+
   app.post('/agent-runs/:id/retry', (c) => {
     try {
       return c.json(supervisor.retryRun(parseId(c)), 201);

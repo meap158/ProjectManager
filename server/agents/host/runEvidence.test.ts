@@ -105,8 +105,9 @@ it('upgrades an existing database without inventing historical baselines', () =>
   const dir = mkdtempSync(path.join(tmpdir(), 'pm-evidence-upgrade-'));
   try {
     const old = new DatabaseSync(path.join(dir, 'projectmanager.db'));
-    old.exec(MIGRATIONS.slice(0, -1).join('\n'));
-    old.exec(`PRAGMA user_version=${MIGRATIONS.length - 1};
+    const prior = MIGRATIONS.findIndex((sql) => sql.startsWith('CREATE TABLE agent_run_evidence'));
+    old.exec(MIGRATIONS.slice(0, prior).join('\n'));
+    old.exec(`PRAGMA user_version=${prior};
       INSERT INTO projects(id,name,path,created_at) VALUES(1,'Old','/old','now');
       INSERT INTO agent_runs(id,project_id,name,command_json,status,created_at,log_path)
       VALUES(1,1,'Old','{}','succeeded','now','/old.log');`);

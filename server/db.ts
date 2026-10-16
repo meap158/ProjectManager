@@ -218,6 +218,7 @@ export const MIGRATIONS: string[] = [
     nonce TEXT PRIMARY KEY,
     cwd TEXT NOT NULL, baseline_at TEXT NOT NULL, baseline_json TEXT
   );`,
+  `ALTER TABLE agent_runs ADD COLUMN execution_resolution_json TEXT;`,
 ];
 
 export function openDb(dataDir: string): Db {

@@ -344,6 +344,11 @@ export const api = {
     request<AgentOutput>('GET', `/agent-runs/${id}/output?after=${after}`),
   stopRun: (id: number) => request<AgentRun>('POST', `/agent-runs/${id}/stop`),
   retryRun: (id: number) => request<AgentRun>('POST', `/agent-runs/${id}/retry`),
+  resolveUnknownRun: (id: number, nonce: string) =>
+    request<AgentRun>('POST', `/agent-runs/${id}/resolve-unknown`, {
+      nonce,
+      confirmation: 'worker-stopped',
+    }),
   validateRun: (id: number, decision: 'accepted' | 'rejected', moveTo?: 'review' | 'done') =>
     request<AgentRun>('POST', `/agent-runs/${id}/validate`, { decision, moveTo }),
   deleteRun: (id: number) => request<void>('DELETE', `/agent-runs/${id}`),

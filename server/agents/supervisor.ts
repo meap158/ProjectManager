@@ -297,6 +297,7 @@ interface RunRow {
   log_path: string;
   autonomy: AgentAutonomy;
   execution_state?: 'active' | 'unknown' | 'complete' | null;
+  execution_resolution_json?: string | null;
   changes_json: string | null;
   orchestrator_id: string | null;
 }
@@ -1480,6 +1481,30 @@ export class AgentSupervisor {
         .run(now(), id);
     }
     return this.getRun(id);
+  }
+
+  /** User attestation resolves reservation, never claims host-confirmed stop or task success. */
+  async resolveUnknownRun(id: number, nonce: string): Promise<AgentRun> {
+    await this.pollManagedRuns();
+    if (this.closed) throw new AgentError(409, 'Supervisor is shutting down');
+    const resolvedAt = now();
+    const resolution = JSON.stringify({ source: 'manual-confirmation', nonce, resolvedAt });
+    const result = this.db
+      .prepare(
+        `UPDATE agent_runs SET status='failed',execution_state='complete',
+      execution_resolution_json=?,ended_at=?,error='Worker termination confirmed manually; task outcome remains unverified'
+      WHERE id=? AND status IN ('queued','running') AND execution_state='unknown'
+      AND ?=(SELECT e.nonce FROM agent_run_executions e WHERE e.run_id=agent_runs.id
+        AND e.run_log_path=agent_runs.log_path ORDER BY e.attempt DESC LIMIT 1)`,
+      )
+      .run(resolution, resolvedAt, id, nonce);
+    if (!result.changes)
+      throw new AgentError(
+        409,
+        'Execution changed or is no longer unknown; refresh before resolving it',
+      );
+    this.startQueuedRuns();
+    return this.getRun(id)!;
   }
 
   retryRun(id: number): AgentRun {
@@ -2697,7 +2722,24 @@ export class AgentSupervisor {
       const card = getCard(this.db, row.card_id);
       if (card) cardKey = card.key;
     }
+    const execution =
+      row.execution_state === 'unknown'
+        ? (this.db
+            .prepare(
+              `SELECT nonce FROM agent_run_executions
+      WHERE run_id=? AND run_log_path=? ORDER BY attempt DESC LIMIT 1`,
+            )
+            .get(row.id, row.log_path) as { nonce: string } | undefined)
+        : undefined;
     return {
+      ...(execution ? { executionNonce: execution.nonce } : {}),
+      ...(row.execution_resolution_json
+        ? {
+            executionResolution: JSON.parse(
+              row.execution_resolution_json,
+            ) as AgentRun['executionResolution'],
+          }
+        : {}),
       id: row.id,
       orchestratorId: row.orchestrator_id ?? null,
       projectId: row.project_id,

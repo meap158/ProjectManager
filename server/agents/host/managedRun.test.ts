@@ -59,6 +59,9 @@ it('binds a run attempt before real launch and reattaches without another worker
     await recoverManagedRuns(db, dir, () => true, outputChanged);
     expect(writes()).toBe(activeWrites);
     expect(outputChanged).toHaveBeenCalledTimes(2);
+    db.exec("UPDATE agent_runs SET execution_state='unknown' WHERE id=1");
+    await expect(supervisor.resolveUnknownRun(1, nonce)).rejects.toThrow('no longer unknown');
+    expect(supervisor.getRun(1)).toMatchObject({ status: 'running', executionState: 'active' });
     await supervisor!.stopRun(1);
     await supervisor!.shutdown();
     supervisor = undefined;

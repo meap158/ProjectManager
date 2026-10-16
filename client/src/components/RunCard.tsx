@@ -139,6 +139,13 @@ export function RunCard({
         </p>
       )}
 
+      {run.executionResolution && (
+        <p className="notice" role="status">
+          Resolved manually {formatRelative(run.executionResolution.resolvedAt)}. Worker termination
+          was confirmed by you; task outcome still needs review.
+        </p>
+      )}
+
       {run.validation && (
         <div className="notice" role="status">
           <span>
@@ -206,7 +213,7 @@ export function RunCard({
         </div>
       )}
 
-      <div className="run-actions">
+      <div className="run-actions" style={{ flexWrap: 'wrap' }}>
         <button
           type="button"
           className="btn btn-sm"
@@ -224,6 +231,20 @@ export function RunCard({
           >
             Stop
           </button>
+        )}
+        {active && run.executionState === 'unknown' && run.executionNonce && (
+          <ConfirmDelete
+            key={run.executionNonce}
+            text="Resolve unknown execution"
+            label="Resolve unknown execution"
+            heading="Have you verified this worker has stopped?"
+            message="Only confirm after independently checking and stopping the worker outside ProjectManager. This releases its execution slot, records your manual confirmation and leaves the task outcome unverified. It does not stop the worker or accept the task."
+            confirmLabel="I verified the worker has stopped"
+            icon={null}
+            small
+            disabled={busy}
+            onConfirm={() => act(() => api.resolveUnknownRun(run.id, run.executionNonce!))}
+          />
         )}
         <span style={{ flex: 1 }} />
         <ConfirmDelete

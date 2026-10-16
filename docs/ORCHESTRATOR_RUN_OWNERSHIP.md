@@ -440,3 +440,27 @@ The subsequent complete direct Vitest run passed 631 tests / 125 files in 157.75
 with exit code 0, including this crash test and preceding hosted/evidence/CPU work.
 That result closes the current direct regression gate, while the remaining rollout
 and physical/platform requirements above stay open.
+
+### Explicit manual unknown resolution, 2026-10-16
+
+Run details now offer a separate confirmation for unknown execution. The dialog
+states that the user must independently verify and stop the worker outside the app;
+opening it sends nothing and Cancel receives focus. Confirming submits the exact
+attempt nonce and explicit worker-stopped attestation. A changed nonce unmounts any
+open confirmation. Run actions wrap on small screens.
+
+The supervisor observes the owner again before resolving. A now-known live or
+completed execution, stale nonce or already-resolved row rejects. Only an active
+unknown row matching the latest immutable run/log/attempt identity can transition.
+The persisted resolution records manual-confirmation, nonce and timestamp. It frees
+execution capacity as an unvalidated failed outcome, not success or host-confirmed
+termination. Card review/validation is unchanged and logs/evidence remain intact.
+No worker is killed and no replacement is launched by the resolution request itself;
+already-queued unrelated work may use the released slot.
+
+Twenty UI/API/managed/crash/evidence/assignment tests pass, with client/server types
+and scoped lint. The real crash test independently stops its fixture worker before
+attesting. API tests require the explicit attestation and reject stale/double requests;
+a live-owner test rejects stale unknown UI state. Physical mobile dialog review and
+the remaining platform/crash/production gates remain open. The previous 631-test full
+run predates this manual-resolution change; no new full-suite pass is claimed here.
