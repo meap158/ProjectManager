@@ -277,3 +277,21 @@ retry. Completion wakes queued work. Real-host tests cover startup adoption, a
 single launch marker, acknowledged stop, terminal reconciliation and unavailable
 host preservation. New dispatch routing and automatic host startup remain rollout
 gates; this does not establish descendant containment or mobile validation.
+
+### Project deletion ownership gate, 2026-10-16
+
+The project DELETE route now awaits authenticated stop acknowledgments for owned
+active runs before cascading project data. A missing/unreachable owner returns 409
+and retains the project, run and execution identity. The storage DELETE independently
+checks active owned runs in the same SQL statement, so an execution reserved during
+the asynchronous preflight prevents deletion. Real-host API tests verify confirmed
+termination before successful deletion and a still-running worker with all records
+preserved when its host cannot be reached. Terminal journal identities remain as
+history after the run foreign key is cleared by a successful cascade.
+
+The next dispatch integration should reuse this lifecycle contract: connect to an
+authenticated compatible host before reservation, persist intent before launch,
+replay the same nonce after an uncertain reply, and never fall back to local spawn.
+Automatic host startup must claim the deterministic socket before publishing its
+credentials and must not remove an ambiguous Unix socket. New hosted dispatch remains
+disabled pending its own real-process crash and review-evidence acceptance tests.

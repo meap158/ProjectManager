@@ -1557,6 +1557,19 @@ export class AgentSupervisor {
     return true;
   }
 
+  /** Resolve hosted owners before project deletion can cascade their run records. */
+  async stopHostedProjectRuns(projectId: number): Promise<void> {
+    const runs = this.db
+      .prepare(
+        `SELECT r.id FROM agent_runs r
+      WHERE r.project_id=? AND r.status IN ('queued','running') AND EXISTS (
+        SELECT 1 FROM agent_run_executions e WHERE e.run_id=r.id AND e.run_log_path=r.log_path
+      )`,
+      )
+      .all(projectId) as { id: number }[];
+    for (const run of runs) await this.stopRun(run.id);
+  }
+
   /** Stop everything for a deleted project and drop its logs. */
   async onProjectDeleted(projectId: number): Promise<void> {
     // Queued runs must not take a slot freed by killing this project's live ones.

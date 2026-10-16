@@ -305,7 +305,16 @@ export function createApp(
   app.delete('/projects/:id', async (c) => {
     const id = parseId(c);
     // Only removes tracking data; files on disk are never touched.
-    if (!store.deleteProject(db, id)) throw new HttpError(404, 'Project not found');
+    if (!store.getProjectRow(db, id)) throw new HttpError(404, 'Project not found');
+    await supervisor.stopHostedProjectRuns(id);
+    if (!store.deleteProject(db, id)) {
+      if (store.getProjectRow(db, id))
+        throw new HttpError(
+          409,
+          'Project still has active hosted workers; stop them before removing it',
+        );
+      throw new HttpError(404, 'Project not found');
+    }
     store.deleteSetting(db, ghAccountSettingKey(id));
     scanner.forget(id);
     await supervisor.onProjectDeleted(id);

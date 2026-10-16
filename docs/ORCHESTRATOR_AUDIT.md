@@ -698,3 +698,19 @@ A further audit found project deletion currently cascades database rows before
 worker cleanup. Hosted executions need a pre-delete stop/ownership gate; otherwise
 unknown occupancy can disappear without authoritative termination. This remains
 open alongside new hosted dispatch routing and automatic host startup.
+
+## Project deletion ownership and regression rerun, 2026-10-16
+
+Project removal now awaits hosted stop acknowledgments before cascading records;
+unreachable owners return 409 and preserve tracking. The storage delete includes
+an atomic active-owned-run predicate to reject new reservations during the wait.
+Sixteen deletion/API/storage tests pass, plus server types, scoped lint and formatting.
+Real-host tests cover both confirmed exit and a still-running unreachable worker.
+
+The fresh full Vitest summary reports 616 passing tests across 120 files in 148.92s,
+including the installer startup correction and deletion guard. Its PowerShell wrapper
+returned exit 1 while redirecting Node warning stderr as NativeCommandError; the
+captured log contains no failed tests. Therefore this is a passing Vitest summary,
+not a successful shell-command exit or npm run check. The existing shared formatting
+gate and physical mobile/LAN validation remain separate. New hosted dispatch and
+automatic host startup are still pending; this does not close the full audit.

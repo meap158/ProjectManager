@@ -136,7 +136,18 @@ export function setBoardPreset(db: Db, id: number, preset: BoardPreset): boolean
 }
 
 export function deleteProject(db: Db, id: number): boolean {
-  return db.prepare('DELETE FROM projects WHERE id = ?').run(id).changes > 0;
+  // Keep this check in the DELETE statement: another dispatcher may reserve an
+  // execution while the API is awaiting stop acknowledgments.
+  return (
+    db
+      .prepare(
+        `DELETE FROM projects WHERE id = ? AND NOT EXISTS (
+    SELECT 1 FROM agent_runs r WHERE r.project_id=projects.id AND r.status IN ('queued','running')
+      AND EXISTS (SELECT 1 FROM agent_run_executions e WHERE e.run_id=r.id AND e.run_log_path=r.log_path)
+  )`,
+      )
+      .run(id).changes > 0
+  );
 }
 
 export function saveScanResults(
