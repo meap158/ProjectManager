@@ -176,7 +176,7 @@ export function OrchestratorPage() {
             : '',
         );
     };
-    const stop = serialPoll(load, 5000);
+    const stop = serialPoll(load, 5000, { pauseWhenHidden: true });
     return () => {
       active = false;
       stop();

@@ -778,3 +778,15 @@ scoped lint pass. The latest npm run check passed typechecks/repository lint but
 stopped at five unrelated shared UI formatting warnings; it did not reach tests.
 These focused recovery improvements do not close the broader rollout, typed
 runtime-failure, summary-transport or physical/platform acceptance gaps above.
+
+## Visibility-aware workspace refresh, 2026-10-16
+
+Orchestrator overview and history/live/review feeds now opt into visibility-aware
+completion-based polling. Hidden tabs schedule no new refreshes; returning clears
+the old timer and refreshes immediately without overlap or catch-up bursts. Existing
+in-flight requests settle normally and existing response ownership/epoch guards
+remain in place. Other poll consumers retain their default behavior. Three lifecycle
+cases plus existing poll, run-feed and page tests pass (33 tests), with client types
+and scoped lint. This reduces hidden-tab request traffic, not foreground request
+count or payload size; consolidated overview transport remains open. No physical
+mobile suspension/resumption or LAN latency claim is made by the jsdom checks.

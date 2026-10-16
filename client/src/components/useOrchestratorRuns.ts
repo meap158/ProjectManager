@@ -40,24 +40,28 @@ export function useOrchestratorRuns(
   useEffect(() => {
     if (!owner || paused) return;
     let active = true;
-    const stop = serialPoll(async () => {
-      if (active) setPending(true);
-      try {
-        const data = await (kind === 'legacy'
-          ? api.orchestratorRuns(owner, before, focus)
-          : kind === 'history'
-            ? api.orchestratorHistory(owner, before, focus)
-            : api.orchestratorActionable(owner, before, kind));
-        if (active) {
-          setResult({ owner, kind, before, focus, data });
-          setFailure(null);
+    const stop = serialPoll(
+      async () => {
+        if (active) setPending(true);
+        try {
+          const data = await (kind === 'legacy'
+            ? api.orchestratorRuns(owner, before, focus)
+            : kind === 'history'
+              ? api.orchestratorHistory(owner, before, focus)
+              : api.orchestratorActionable(owner, before, kind));
+          if (active) {
+            setResult({ owner, kind, before, focus, data });
+            setFailure(null);
+          }
+        } catch (error) {
+          if (active) setFailure({ owner, kind, before, focus, message: (error as Error).message });
+        } finally {
+          if (active) setPending(false);
         }
-      } catch (error) {
-        if (active) setFailure({ owner, kind, before, focus, message: (error as Error).message });
-      } finally {
-        if (active) setPending(false);
-      }
-    }, 5000);
+      },
+      5000,
+      { pauseWhenHidden: true },
+    );
     return () => {
       active = false;
       stop();
