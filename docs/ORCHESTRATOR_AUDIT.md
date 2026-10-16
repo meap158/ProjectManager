@@ -3,13 +3,13 @@
 Implementation status, revalidated 2026-10-16. This table summarizes verified behavior;
 chronological findings below preserve earlier evidence and are not current completion claims.
 
-| Area                     | Verified implementation                                                                                                                                                                             | Remaining acceptance work                                                                                                                                 |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Durable execution        | Reservations, leases, heartbeats, insertion/revision fences, manual replay; opt-in authenticated hosted launch/replay, persisted logs and attempt identity, unknown occupancy and acknowledged stop | Scheduler request identity across attempts, durable task generations, remaining real crash boundaries, containment/platform checks, production enablement |
-| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated feeds, scoped chat selector, lifecycle controls; persisted pre-launch interval evidence and live hosted CPU refresh              | Physical mobile/browser review, actionable typed provider/auth recovery and physical review of manual unknown-execution resolution                        |
-| Efficiency               | Indexed scoped SQL projections, narrow reconciliation, single-flight ticks, settled polling, round-robin fairness; unchanged hosted polls make zero row writes                                      | Dispatch/write-cost measurements, consolidated summary transport and end-to-end latency                                                                   |
-| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget/cooldown, attention episode dedup, explicit idle-worker messaging                                                               | Classified provider/auth recovery, task dependencies, provider preferences and bounded managed-worker reuse                                               |
-| Evaluation               | Fresh direct whole-suite run: 631 tests / 125 files passed, exit 0; real hosted launch/evidence/CPU/crash acceptance included                                                                       | npm formatting gate in shared files, physical mobile/LAN and cross-platform execution                                                                     |
+| Area                     | Verified implementation                                                                                                                                                                                                                                            | Remaining acceptance work                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Durable execution        | Reservations, leases, heartbeats, insertion/revision fences, manual replay; opt-in authenticated hosted launch/replay, persisted logs and attempt identity, unknown occupancy and acknowledged stop                                                                | Scheduler request identity across attempts, durable task generations, remaining real crash boundaries, containment/platform checks, production enablement |
+| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated feeds, scoped chat selector, lifecycle controls, owner-linked active/failed recovery; persisted pre-launch interval evidence and live hosted CPU refresh                                        | Physical mobile/browser review, actionable typed provider/auth recovery and physical review of manual unknown-execution resolution                        |
+| Efficiency               | Indexed scoped SQL projections, narrow reconciliation, single-flight ticks, settled polling, round-robin fairness; unchanged hosted polls make zero row writes; measured batched events/policy parsing; consolidated compact overview and visibility-aware polling | Global/settled and committed-write benchmarks, bounded portfolio summaries and physical end-to-end latency                                                |
+| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget/cooldown, attention episode dedup, explicit idle-worker messaging                                                                                                                              | Classified provider/auth recovery, task dependencies, provider preferences and bounded managed-worker reuse                                               |
+| Evaluation               | Fresh direct whole-suite run: 649 tests / 128 files passed, exit 0; includes recovery links and overview/polling changes                                                                                                                                           | npm formatting gate in shared files, physical mobile/LAN and cross-platform execution                                                                     |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -43,8 +43,8 @@ assignment history is backfilled.
    drafts, retry exhaustion and scoped result links before physical mobile review.
 3. **Finish measured efficiency.** The tested partial indexes and upgrade migration are committed. Measure complete read-only inspection/preview and isolated dispatch ticks at
    1k/10k cards, 100k history and 1/5/20 masters: p50/p95, SQL/quota reads, writes, RSS and response
-   bytes. Include many unreviewed runs and unscoped masters. Then introduce a versioned summary
-   and paginated situation details where measured payloads require it. Preserve the current
+   bytes. Include many unreviewed runs and unscoped masters. The versioned overview and paginated pending/run details are implemented; measure remaining
+   unbounded portfolio sections and introduce bounded summaries where required. Preserve the current
    fresh insertion fence and populated-view/stale-response behavior.
 4. **Evaluate follow-through after those gates.** Add evidence-linked review, task dependencies,
    provider preferences and bounded managed-worker reuse. Keep optional decomposition/planning
@@ -826,3 +826,16 @@ an ID tie-break. Service payload assertions and page regressions pass (44 tests)
 with both typechecks and scoped lint. Card count remains unbounded in this overview;
 this is a per-card payload reduction, not proof of bounded portfolio scaling or
 physical LAN improvement.
+
+## Full regression after overview and recovery changes, 2026-10-16
+
+The direct Vitest run passed all 649 tests across 128 files in 194.38 seconds,
+exit code 0, using one thread worker and workspace TEMP/TMP. This includes the
+recent active/unknown worker links, cooldown inspection, visibility-aware polling,
+consolidated overview and compact session/card payload changes. It ran against the
+shared worktree, including the other agent's uncommitted UI/schema changes; those
+changes remain unstaged by this agent. This result is a full test-suite gate, not
+npm run check, physical mobile/LAN acceptance, platform containment or approval
+to enable hosted dispatch by default. The opening status table now reflects the
+implemented transport and measured event/policy work rather than listing them as
+entirely pending.
