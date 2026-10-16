@@ -243,3 +243,29 @@ At 10k cards/20 masters the fixture writes 10,142 rows for 20 dispatches. A next
 should batch event persistence while preserving last-transition suppression, event
 ordering/counts, bounded retention and updates across asynchronous dispatch checks.
 A controlled rerun is required before claiming an improvement.
+
+## Bounded observation batching rerun (2026-10-16)
+
+Same command/fixture and twenty measured samples after batching consecutive non-
+dispatch observations. Buffers cap at 500, timestamps are captured when observed,
+and events flush before dispatch and at each master's end. Event application retains
+sequential order, last-500 retention and exact wait/review/observe duplicate suppression.
+Policy and chat edits across asynchronous dispatch are preserved by fresh state reads.
+
+|  Cards | Masters |   p50 ms | Sample p95 ms |   Max ms | Row mutations | SQL preparations | RSS MB |
+| -----: | ------: | -------: | ------------: | -------: | ------------: | ---------------: | -----: |
+|  1,000 |       1 |    10.62 |         13.98 |    14.96 |            11 |              106 |  110.7 |
+|  1,000 |       5 |    72.48 |         84.64 |    89.31 |            47 |              482 |  111.9 |
+|  1,000 |      20 |   435.55 |        489.28 |   492.09 |           182 |            1,892 |  130.3 |
+| 10,000 |       1 |    23.25 |         29.10 |    29.22 |            11 |              556 |  134.8 |
+| 10,000 |       5 |   601.26 |        639.60 |   642.11 |            47 |            2,732 |  154.3 |
+| 10,000 |      20 | 3,143.33 |      3,471.98 | 3,533.30 |           182 |           10,892 |  154.5 |
+
+At 10k cards/20 masters the same fixture went from 10,142 to 182 row mutations
+(98.2% fewer), with observed median 8,832.37 to 3,143.33 ms. Samples were sequential
+local runs, not randomized production A/B trials; timing differences include host
+load. Mutation reduction and history equivalence are independently asserted. All
+98 Orchestrator tests pass, server types/scoped lint pass. These checks do not
+establish a fresh whole-repository pass, committed fsync cost, steady-state/global
+scope behavior, provider execution or mobile/LAN latency. Per-decision policy reads
+still scale with board size and remain a separate optimization opportunity.

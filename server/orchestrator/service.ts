@@ -382,33 +382,32 @@ export class OrchestratorService {
     this.event(event);
   }
   private event(event: Omit<OrchestratorEvent, 'at'>) {
+    this.events([event]);
+  }
+  /** Apply observations in order against the same bounded history, persisting once. */
+  private events(events: (Omit<OrchestratorEvent, 'at'> & { at?: string })[]) {
+    if (!events.length) return;
     const state = this.state();
-    const last = [...state.events]
-      .reverse()
-      .find(
-        (previous) =>
-          previous.orchestratorId === event.orchestratorId && previous.cardId === event.cardId,
-      );
-    if (
-      last &&
-      last.orchestratorId === event.orchestratorId &&
-      last.cardId === event.cardId &&
-      last.action === event.action &&
-      last.message === event.message
-    ) {
-      // These are state observations, not new occurrences. Preserve transition time
-      // and avoid rewriting the entire settings blob every idle tick.
-      if (['wait', 'review', 'observe'].includes(event.action)) return;
-      state.events = [...state.events, { ...event, count: 1, at: new Date().toISOString() }].slice(
-        -500,
-      );
-      setSetting(this.db, KEY, state);
-      return;
+    let changed = false;
+    for (const event of events) {
+      const last = [...state.events]
+        .reverse()
+        .find(
+          (previous) =>
+            previous.orchestratorId === event.orchestratorId && previous.cardId === event.cardId,
+        );
+      if (
+        last &&
+        last.action === event.action &&
+        last.message === event.message &&
+        ['wait', 'review', 'observe'].includes(event.action)
+      )
+        continue;
+      state.events.push({ ...event, count: 1, at: event.at ?? new Date().toISOString() });
+      if (state.events.length > 500) state.events.shift();
+      changed = true;
     }
-    state.events = [...state.events, { ...event, count: 1, at: new Date().toISOString() }].slice(
-      -500,
-    );
-    setSetting(this.db, KEY, state);
+    if (changed) setSetting(this.db, KEY, state);
   }
   start() {
     if (this.started) return;
@@ -572,11 +571,17 @@ export class OrchestratorService {
         blockedCardIds: assignments.blockedCards(),
       });
       const decisions = planOrchestration(initial, snapshot());
+      const observations: (Omit<OrchestratorEvent, 'at'> & { at: string })[] = [];
+      const observe = (event: Omit<OrchestratorEvent, 'at'>) => {
+        observations.push({ ...event, at: new Date().toISOString() });
+        // Bound queued observation memory even for global scopes with huge boards.
+        if (observations.length >= 500) this.events(observations.splice(0));
+      };
       for (const decision of decisions) {
         const current = this.state().instances.find((i) => i.id === initial.id);
         if (!current?.enabled) break;
         if (current.strategy === 'observe') {
-          this.event({
+          observe({
             orchestratorId: initial.id,
             cardId: decision.cardId,
             action: 'observe',
@@ -587,7 +592,7 @@ export class OrchestratorService {
         // Waiting/review proposals cannot launch work. Re-read expensive snapshots only
         // for potential dispatches; a newly eligible wait is picked up on the next check.
         if (decision.action !== 'dispatch') {
-          this.event({
+          observe({
             orchestratorId: initial.id,
             cardId: decision.cardId,
             action: decision.action,
@@ -595,6 +600,7 @@ export class OrchestratorService {
           });
           continue;
         }
+        this.events(observations.splice(0));
         const fresh = planOrchestration(current, snapshot()).find(
           (d) => d.cardId === decision.cardId,
         );
@@ -713,6 +719,7 @@ export class OrchestratorService {
           });
         }
       }
+      this.events(observations);
     }
   }
 }

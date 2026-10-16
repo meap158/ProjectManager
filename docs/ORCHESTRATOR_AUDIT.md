@@ -740,3 +740,15 @@ to release an execution slot after independent termination rather than leaving t
 user permanently blocked on an unreachable owner. Twenty focused tests and both
 typechecks/scoped lint pass. This improves user recovery but does not establish OS
 containment or a fresh whole-suite result; see the ownership document for exact limits.
+
+## Measured event-write amplification reduction, 2026-10-16
+
+Complete isolated dispatching ticks exposed per-decision event-blob writes as a
+bottleneck. Consecutive wait/review/observe events now persist in bounded batches,
+flushing before dispatch and after each master. Tests prove sequential retention/
+deduplication equivalence and preserve policy/chat edits across dispatch waits.
+The twenty-sample 10k-card/20-master fixture reduced row mutations 10,142 to 182;
+observed median tick time changed 8.83s to 3.14s. All 98 Orchestrator tests, server
+types and scoped lint pass. Detailed scope and exclusions are in the benchmark
+document. Remaining efficiency work includes settled/global scenarios, committed
+write durability, policy-read scaling and consolidated summary transport.

@@ -19,7 +19,7 @@ for (const cards of [1000, 10000])
     await supervisor.shutdown();
     let launches = 0;
     // Explicit measurement seam: preserve production validation/insertion/mapping,
-    // replace OS execution only. This does not measure complete scheduler ticks.
+    // replace OS execution only. The service itself still executes complete ticks.
     supervisor.spawnRun = async () => {
       launches++;
     };

@@ -53,7 +53,10 @@ describe('orchestrator service', () => {
       quotaMaxAgeMs: 60000,
     });
     try {
+      const beforeWrites = Number(db.prepare('SELECT total_changes() AS n').get()!.n);
       await service.tick();
+      const tickWrites = Number(db.prepare('SELECT total_changes() AS n').get()!.n) - beforeWrites;
+      expect(tickWrites).toBeLessThan(10);
       expect(listAllRuns).not.toHaveBeenCalled();
       expect(dispatchCard).not.toHaveBeenCalled();
       expect(service.state().events.filter((event) => event.action === 'review')).toHaveLength(100);
@@ -734,6 +737,92 @@ it('narrows pending SQL reads to an authorized project and rejects scope expansi
     ).toBe(true);
     expect(service.pending('missing', 0, 10, 2)).toBeNull();
   } finally {
+    db.close();
+  }
+});
+
+it('batched observation history matches sequential retention and duplicate suppression', () => {
+  const a = openDb(':memory:'),
+    b = openDb(':memory:');
+  const supervisor = { listAllSessions: () => [] } as unknown as AgentSupervisor;
+  const sequential = new OrchestratorService(a, supervisor, null);
+  const batched = new OrchestratorService(b, supervisor, null);
+  const events = Array.from({ length: 620 }, (_, cardId) => ({
+    orchestratorId: 'fixture',
+    cardId,
+    action: 'wait' as const,
+    message: 'Waiting',
+  }));
+  events.push({ ...events[619]! });
+  try {
+    for (const event of events) sequential.record(event);
+    (
+      batched as unknown as {
+        events(batch: Omit<import('../../shared/orchestrator.js').OrchestratorEvent, 'at'>[]): void;
+      }
+    ).events(events);
+    const normalized = (service: OrchestratorService) =>
+      service.state().events.map(({ at: _at, ...event }) => event);
+    expect(normalized(batched)).toEqual(normalized(sequential));
+    expect(batched.state().events).toHaveLength(500);
+    const before = Number(b.prepare('SELECT total_changes() AS n').get()!.n);
+    (
+      batched as unknown as {
+        events(batch: Omit<import('../../shared/orchestrator.js').OrchestratorEvent, 'at'>[]): void;
+      }
+    ).events([events[619]!]);
+    expect(Number(b.prepare('SELECT total_changes() AS n').get()!.n)).toBe(before);
+  } finally {
+    a.close();
+    b.close();
+  }
+});
+
+it('flushes observations before asynchronous dispatch and retains policy/chat edits afterward', async () => {
+  const db = openDb(':memory:');
+  db.prepare("INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture',?,'now')").run(tmp);
+  db.exec(`INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at)
+    VALUES(1,1,'Review before','review',0,'now','now'),(2,1,'Dispatch','todo',1,'now','now'),(3,1,'Review after','review',2,'now','now');`);
+  const dispatch = vi.fn(async () => {
+    expect(
+      service.state().events.some((event) => event.cardId === 1 && event.action === 'review'),
+    ).toBe(true);
+    await Promise.resolve();
+    service.save({ ...service.state().instances[0]!, name: 'Edited while dispatching' });
+    service.record({
+      orchestratorId: service.state().instances[0]!.id,
+      action: 'observe',
+      message: 'Chat observation',
+    });
+    return { id: 50, projectId: 1, cardId: 2, providerId: 'codex', status: 'running' };
+  });
+  const service = new OrchestratorService(
+    db,
+    { listAllSessions: () => [], dispatchCard: dispatch } as unknown as AgentSupervisor,
+    null,
+  );
+  service.save({
+    name: 'Fixture',
+    enabled: true,
+    projectIds: [1],
+    providers: ['codex'],
+    maxWorkers: 1,
+    maxWorkersPerProject: 1,
+    maxWorkersPerProvider: 1,
+    reservePercent: 10,
+    allowUnknownQuota: false,
+    quotaMaxAgeMs: 60000,
+  });
+  try {
+    await service.tick();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(service.state().instances[0]!.name).toBe('Edited while dispatching');
+    expect(service.state().events.map((event) => event.message)).toContain('Chat observation');
+    expect(
+      service.state().events.some((event) => event.cardId === 3 && event.action === 'review'),
+    ).toBe(true);
+  } finally {
+    await service.stop();
     db.close();
   }
 });
