@@ -54,9 +54,12 @@ describe('orchestrator service', () => {
     });
     try {
       const beforeWrites = Number(db.prepare('SELECT total_changes() AS n').get()!.n);
+      const parses = vi.spyOn(JSON, 'parse');
       await service.tick();
       const tickWrites = Number(db.prepare('SELECT total_changes() AS n').get()!.n) - beforeWrites;
       expect(tickWrites).toBeLessThan(10);
+      expect(parses.mock.calls.length).toBeLessThan(25);
+      parses.mockRestore();
       expect(listAllRuns).not.toHaveBeenCalled();
       expect(dispatchCard).not.toHaveBeenCalled();
       expect(service.state().events.filter((event) => event.action === 'review')).toHaveLength(100);
@@ -824,5 +827,57 @@ it('flushes observations before asynchronous dispatch and retains policy/chat ed
   } finally {
     await service.stop();
     db.close();
+  }
+});
+
+it('sees policy edits from another database connection at every commit fence', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'pm-policy-refresh-'));
+  const db = openDb(dir),
+    other = openDb(dir);
+  db.prepare("INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture',?,'now')").run(dir);
+  db.exec(
+    "INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(1,1,'Task','todo',0,'now','now')",
+  );
+  const second = new OrchestratorService(other, {} as AgentSupervisor, null);
+  const dispatch = vi.fn(
+    async (_project: number, _card: number, input: { canCommit?: () => boolean }) => {
+      expect(input.canCommit?.()).toBe(true);
+      const policy = second.state().instances[0]!;
+      second.save({ ...policy, enabled: false });
+      expect(input.canCommit?.()).toBe(false);
+      second.save({ ...policy, projectIds: [999] });
+      expect(input.canCommit?.()).toBe(false);
+      second.save({ ...policy, name: 'External edit' });
+      expect(input.canCommit?.()).toBe(true);
+      return { id: 50, projectId: 1, cardId: 1, providerId: 'codex', status: 'running' };
+    },
+  );
+  const service = new OrchestratorService(
+    db,
+    { listAllSessions: () => [], dispatchCard: dispatch } as unknown as AgentSupervisor,
+    null,
+  );
+  service.save({
+    name: 'Fixture',
+    enabled: true,
+    projectIds: [1],
+    providers: ['codex'],
+    maxWorkers: 1,
+    maxWorkersPerProject: 1,
+    maxWorkersPerProvider: 1,
+    reservePercent: 10,
+    allowUnknownQuota: false,
+    quotaMaxAgeMs: 60000,
+  });
+  try {
+    await service.tick();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(service.state().instances[0]!.name).toBe('External edit');
+  } finally {
+    await service.stop();
+    await second.stop();
+    db.close();
+    other.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

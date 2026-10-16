@@ -752,3 +752,15 @@ observed median tick time changed 8.83s to 3.14s. All 98 Orchestrator tests, ser
 types and scoped lint pass. Detailed scope and exclusions are in the benchmark
 document. Remaining efficiency work includes settled/global scenarios, committed
 write durability, policy-read scaling and consolidated summary transport.
+
+## Fresh policy parsing without stale dispatch, 2026-10-16
+
+Per-decision policy lookup now reuses parsing only for an exact match of the latest
+persisted JSON value, while still reading it at every decision/commit fence. A
+second SQLite connection can pause or narrow scope and the next fence rejects;
+public state snapshots remain independently parsed mutable values. All 99
+Orchestrator tests and static checks pass. The same twenty-sample largest tick
+fixture observed median 3.14s to 0.74s with writes unchanged at 182. Prepared
+statement reuse is not a query-count reduction. The benchmark document records
+full numbers and exclusions; remaining global/settled/physical and rollout gates
+are unchanged.

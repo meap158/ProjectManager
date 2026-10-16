@@ -269,3 +269,30 @@ load. Mutation reduction and history equivalence are independently asserted. All
 establish a fresh whole-repository pass, committed fsync cost, steady-state/global
 scope behavior, provider execution or mobile/LAN latency. Per-decision policy reads
 still scale with board size and remain a separate optimization opportunity.
+
+## Fresh-read policy hydration cache (2026-10-16)
+
+The next twenty-sample rerun uses the identical project-scoped first-transition
+fixture. Every per-decision and pre-insertion policy check still reads the persisted
+settings value. A private prepared SELECT and parse cache reuse hydration only when
+the exact raw JSON bytes match. Public mutable state snapshots are unchanged. A
+second-connection test changes enabled state and project scope between commit checks
+and verifies immediate rejection/restoration; existing task/quota/capacity fences pass.
+
+|  Cards | Masters | p50 ms | Sample p95 ms | Max ms | Row mutations | SQL preparations | RSS MB |
+| -----: | ------: | -----: | ------------: | -----: | ------------: | ---------------: | -----: |
+|  1,000 |       1 |  10.83 |         13.70 |  14.57 |            11 |               56 |  110.8 |
+|  1,000 |       5 |  54.28 |         64.76 |  70.87 |            47 |              228 |  112.2 |
+|  1,000 |      20 | 275.76 |        405.85 | 425.63 |           182 |              873 |  131.6 |
+| 10,000 |       1 |  16.67 |         19.27 |  23.97 |            11 |               56 |  135.1 |
+| 10,000 |       5 | 153.93 |        159.84 | 166.77 |            47 |              228 |  148.3 |
+| 10,000 |      20 | 738.48 |        796.31 | 883.13 |           182 |              873 |  158.6 |
+
+The largest fixture's observed median changed from 3,143.33 to 738.48 ms after event
+batching, with the same 182 row mutations. The 873 preparations are not 873 queries:
+policy SELECT executions still occur for each fresh check, but reuse their prepared
+statement. This removes repeated parsing/hydration, not freshness or SQL reads. Timing
+runs were sequential and may differ in host load; no production/LAN or committed-fsync
+claim follows. All 99 Orchestrator tests, server types, scoped lint and formatting pass.
+Global scopes, settled repeated ticks, current provider/quota IO and physical clients
+remain separate measurement gates.

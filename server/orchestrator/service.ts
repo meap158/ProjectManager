@@ -48,6 +48,27 @@ export class OrchestratorService {
   private timer?: ReturnType<typeof setTimeout>;
   private started = false;
   private generation = 0;
+  private policyQuery?: ReturnType<Db['prepare']>;
+  private policyCache?: { raw: string | null; byId: Map<string, OrchestratorConfig> };
+  /** Read the persisted value every time; only reuse parsing when its exact bytes match. */
+  private currentPolicy(id: string): OrchestratorConfig | undefined {
+    this.policyQuery ??= this.db.prepare('SELECT value FROM settings WHERE key = ?');
+    const raw = (this.policyQuery.get(KEY) as { value: string } | undefined)?.value ?? null;
+    if (!this.policyCache || this.policyCache.raw !== raw) {
+      let instances: OrchestratorConfig[] = [];
+      try {
+        instances = (raw ? (JSON.parse(raw) as OrchestratorState) : null)?.instances ?? [];
+      } catch {
+        /* Match missing/corrupt settings fallback. */
+      }
+      this.policyCache = {
+        raw,
+        byId: new Map(instances.map((instance) => [instance.id, instance])),
+      };
+    }
+    return this.policyCache.byId.get(id);
+  }
+
   constructor(
     private db: Db,
     private supervisor: AgentSupervisor,
@@ -578,7 +599,7 @@ export class OrchestratorService {
         if (observations.length >= 500) this.events(observations.splice(0));
       };
       for (const decision of decisions) {
-        const current = this.state().instances.find((i) => i.id === initial.id);
+        const current = this.currentPolicy(initial.id);
         if (!current?.enabled) break;
         if (current.strategy === 'observe') {
           observe({
@@ -653,7 +674,7 @@ export class OrchestratorService {
             dispatchKey,
             canCommit: () => {
               superseded = false;
-              const policy = this.state().instances.find((instance) => instance.id === initial.id);
+              const policy = this.currentPolicy(initial.id);
               if (
                 !assignments.isLeaseValid(this.owner, epoch) ||
                 !policy?.enabled ||
