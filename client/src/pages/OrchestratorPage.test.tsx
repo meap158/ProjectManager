@@ -1208,3 +1208,37 @@ it('shows a failed initial review load instead of claiming nothing needs attenti
   expect(screen.getByRole('navigation', { name: 'Review pages' })).toBeDefined();
   expect(screen.getByRole('navigation', { name: 'Live workers pages' })).toBeDefined();
 });
+
+it('clears a recovered overview connection warning without retaining a stale action error', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(api.orchestratorOverview)
+      .mockRejectedValueOnce(new Error('Connection lost'))
+      .mockResolvedValueOnce({
+        version: 1,
+        generatedAt: 'now',
+        state: { instances: [], events: [] },
+        projects: [],
+        sessions: [],
+        cards: [],
+        unavailable: [],
+      });
+    await act(async () => {
+      render(
+        <MemoryRouter>
+          <OrchestratorPage />
+        </MemoryRouter>,
+      );
+    });
+    expect(screen.getByRole('alert').textContent).toContain('Connection lost');
+    expect(screen.getByRole('alert').textContent).toContain('retrying automatically');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.queryByText(/Connection lost/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  } finally {
+    cleanup();
+    vi.useRealTimers();
+  }
+});

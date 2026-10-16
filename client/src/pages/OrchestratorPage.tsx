@@ -149,7 +149,10 @@ export function OrchestratorPage() {
             : '',
         );
       } catch (e) {
-        if (current()) setError((e as Error).message);
+        if (current())
+          setRefreshWarning(
+            `Could not refresh Orchestrators: ${(e as Error).message}. Displayed data may be out of date; retrying automatically.`,
+          );
       }
     };
     const stop = serialPoll(load, 5000, { pauseWhenHidden: true });

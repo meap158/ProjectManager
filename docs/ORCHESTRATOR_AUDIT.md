@@ -839,3 +839,12 @@ npm run check, physical mobile/LAN acceptance, platform containment or approval
 to enable hosted dispatch by default. The opening status table now reflects the
 implemented transport and measured event/policy work rather than listing them as
 entirely pending.
+
+## Connection-warning recovery, 2026-10-16
+
+Overview transport failures now use the automatically recoverable stale-data warning,
+rather than the persistent user-action error state. A subsequent successful refresh
+clears the warning without clearing unrelated action errors. The regression exercises
+an initial failed request followed by the normal five-second successful retry; all
+24 page tests, client types and scoped lint pass. The prior 649-test full-suite result
+predates this small UI correction and is not claimed as a post-correction full run.
