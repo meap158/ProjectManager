@@ -188,6 +188,7 @@ export function planOrchestration(
         !limits ||
         !limits.windows.length ||
         !Number.isFinite(Date.parse(limits.asOf)) ||
+        Date.parse(limits.asOf) > now ||
         now - Date.parse(limits.asOf) > policy.quotaMaxAgeMs
       )
         return (

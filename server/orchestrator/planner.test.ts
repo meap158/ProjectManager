@@ -138,3 +138,32 @@ describe('orchestrator planning', () => {
     expect(decisions[2]?.action).toBe('wait');
   });
 });
+
+it.each(['not-a-date', new Date(now + 86400000).toISOString()])(
+  'treats invalid or future report time %s as unknown quota',
+  (asOf) => {
+    const state = snapshot();
+    state.cards = [card(1)];
+    state.limits = [{ ...limits('codex', 20), asOf }];
+    const scoped = { ...policy, providers: ['codex'] };
+    expect(planOrchestration(scoped, state, now)[0]).toMatchObject({
+      action: 'wait',
+      waitReason: 'quota_unknown',
+      providerBlockers: [{ providerId: 'codex', code: 'quota_unknown' }],
+    });
+    expect(planOrchestration({ ...scoped, allowUnknownQuota: true }, state, now)[0]).toMatchObject({
+      action: 'dispatch',
+      providerId: 'codex',
+    });
+  },
+);
+it('accepts the exact freshness boundary and rejects the next millisecond', () => {
+  const state = snapshot();
+  state.cards = [card(1)];
+  state.limits = [limits('codex', 20)];
+  const scoped = { ...policy, providers: ['codex'] };
+  expect(planOrchestration(scoped, state, now + policy.quotaMaxAgeMs)[0]?.action).toBe('dispatch');
+  expect(planOrchestration(scoped, state, now + policy.quotaMaxAgeMs + 1)[0]?.waitReason).toBe(
+    'quota_unknown',
+  );
+});

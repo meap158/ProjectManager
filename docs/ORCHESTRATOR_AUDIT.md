@@ -877,3 +877,14 @@ It asserts the stored original ID/owner and single-worker count, then successful
 matching replay after completion. All 22 agent lifecycle tests and scoped lint pass.
 Current task revision checking still occurs synchronously at the insertion fence;
 it does not replace a persisted logical request identity across attempts.
+
+## Quota clock validity, 2026-10-16
+
+Future-dated usage reports no longer pass freshness through a negative age. They
+use the existing unknown-quota blocker and recovery guidance, alongside invalid
+or stale timestamps; explicit allowUnknownQuota remains authoritative. Tests cover
+future/invalid timestamps with both policy choices and the exact expiration
+boundary. All 108 server Orchestrator tests, server types and scoped lint pass.
+This validates report-clock handling, not runtime authentication or new quota
+collection. A machine clock behind the report must obtain valid evidence or use
+its explicit unknown-quota policy.
