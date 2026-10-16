@@ -244,7 +244,11 @@ const TTL_MS = 30_000;
 let cached: { at: number; sourceKey: string; value: ProviderLimits[] } | null = null;
 
 /** Every provider's limits that can be read locally, cached briefly (Settings polls). */
-export function readLimits(dataDir: string | null, now = Date.now()): ProviderLimits[] {
+export function readLimits(
+  dataDir: string | null,
+  now = Date.now(),
+  refresh = false,
+): ProviderLimits[] {
   const sourcePath = (value: string) => {
     const resolved = path.resolve(value);
     return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
@@ -253,7 +257,13 @@ export function readLimits(dataDir: string | null, now = Date.now()): ProviderLi
     dataDir === null ? null : sourcePath(dataDir),
     sourcePath(process.env.CODEX_HOME || path.join(os.homedir(), '.codex')),
   ]);
-  if (cached && cached.sourceKey === sourceKey && now >= cached.at && now - cached.at < TTL_MS)
+  if (
+    !refresh &&
+    cached &&
+    cached.sourceKey === sourceKey &&
+    now >= cached.at &&
+    now - cached.at < TTL_MS
+  )
     return cached.value.map((value) => rollOver(value, now));
   const value = [
     claudeLimits(dataDir, now),

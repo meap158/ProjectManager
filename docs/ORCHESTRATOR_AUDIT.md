@@ -932,3 +932,15 @@ resetSinceReport for fresh-verification gating. Real-file fixtures verify source
 isolation, normal TTL reuse and clock rollback; 29 parser/planner tests, server types
 and scoped lint pass. The 30-second TTL remains, so a manual check may not immediately
 observe a newly written report. A deliberate refresh path remains to implement.
+
+## Explicit local quota refresh, 2026-10-17
+
+Both manual tick routes now request one uncached local usage read before joining
+the existing serialized/coalesced scheduler. Subsequent snapshots and dispatch
+fences retain normal cache reuse; recurring ticks and preview remain cached.
+Unknown scoped IDs reject before requesting refresh. The cache fixture proves a
+newly written report becomes visible immediately with explicit refresh and remains
+cached afterward; route tests verify global/scoped options. All 127 Orchestrator/
+parser tests, server types and scoped lint pass. This closes the deliberate-refresh
+gap above for Check now. It reads local records only and does not query provider
+accounts, send terminal input or create quota evidence when no report exists.

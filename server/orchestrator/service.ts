@@ -522,7 +522,9 @@ export class OrchestratorService {
     return this.currentExecution ?? Promise.resolve();
   }
 
-  tick(instanceId?: string): Promise<void> {
+  tick(instanceId?: string, options: { refreshQuota?: boolean } = {}): Promise<void> {
+    // Manual checks refresh once; subsequent policy fences reuse that same bounded cache.
+    if (options.refreshQuota) readLimits(this.dataDir, Date.now(), true);
     if (!this.executing) {
       this.executing = true;
       const execution = this.runTick(instanceId).finally(() => {

@@ -153,6 +153,12 @@ it('isolates cached quota by source directory and refreshes after clock rollback
     save(second, 30);
     expect(usage(second, now + 2)).toBe(80);
     expect(usage(second, now - 1)).toBe(30);
+    save(second, 40);
+    expect(
+      readLimits(second, now, true).find((value) => value.providerId === 'claude')?.windows[0]
+        ?.usedPercent,
+    ).toBe(40);
+    expect(usage(second, now + 1)).toBe(40);
   } finally {
     vi.unstubAllEnvs();
   }

@@ -218,3 +218,18 @@ it('serves the consolidated overview without dispatching or resolving work', asy
   expect(await response.json()).toEqual(overview.mock.results[0]!.value);
   expect(overview).toHaveBeenCalledTimes(1);
 });
+
+it('requests fresh local quota for manual checks and rejects unknown scope first', async () => {
+  const tick = vi.fn(async () => {});
+  const app = new Hono();
+  registerOrchestratorRoutes(app, {
+    tick,
+    state: () => ({ instances: [{ id: 'master' }], events: [] }),
+  } as unknown as OrchestratorService);
+  expect((await app.request('/orchestrators/tick', { method: 'POST' })).status).toBe(200);
+  expect(tick).toHaveBeenLastCalledWith(undefined, { refreshQuota: true });
+  expect((await app.request('/orchestrators/master/tick', { method: 'POST' })).status).toBe(200);
+  expect(tick).toHaveBeenLastCalledWith('master', { refreshQuota: true });
+  expect((await app.request('/orchestrators/missing/tick', { method: 'POST' })).status).toBe(404);
+  expect(tick).toHaveBeenCalledTimes(2);
+});

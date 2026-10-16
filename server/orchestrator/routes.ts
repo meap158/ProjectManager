@@ -162,14 +162,14 @@ export function registerOrchestratorRoutes(
     return c.json(service.save(parsed.data), 201);
   });
   app.post('/orchestrators/tick', async (c) => {
-    await service.tick();
+    await service.tick(undefined, { refreshQuota: true });
     return c.json(service.state());
   });
   app.post('/orchestrators/:id/tick', async (c) => {
     const id = c.req.param('id');
     if (!service.state().instances.some((instance) => instance.id === id))
       return c.json({ error: 'Orchestrator not found' }, 404);
-    await service.tick(id);
+    await service.tick(id, { refreshQuota: true });
     return c.json(service.state());
   });
   app.post('/orchestrators/prune-attention', async (c) => {
