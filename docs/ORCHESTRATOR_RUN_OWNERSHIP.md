@@ -418,3 +418,25 @@ and scoped lint pass. Refresh retains the existing limiter's best-effort OS sema
 counts do not establish that every descendant was updated, and failures remain visible
 in diagnostics. Unix execution, containment, full crash acceptance, production
 configuration and physical mobile controls are still open.
+
+### Real host crash with a surviving worker, 2026-10-16
+
+A new Windows fixture launches a real daemon and independently marked worker, kills
+only that daemon abruptly, and confirms the worker remains alive. A replacement host
+projects its old journal entry as unknown. Managed replay returns that unknown attempt
+without launching. Supervisor startup preserves attempts/validation, holds the sole
+capacity slot, leaves another run queued, refuses retry and refuses an unconfirmed stop.
+The launch marker remains one. Cleanup terminates only the fixture's independently
+observed worker; production never adopts or terminates a journal PID.
+
+The case passes on Windows. It proves conservative unknown handling after an actual
+host crash, not containment or exactly-once external effects. Unix stale sockets remain
+conservatively nonreplaceable and need their own acceptance case. Other crash boundaries,
+explicit user resolution of unknown execution and default production enablement remain
+open. A new full-suite process was started after these focused changes; its final result
+must be recorded separately rather than inferred from this one passing case.
+
+The subsequent complete direct Vitest run passed 631 tests / 125 files in 157.75s
+with exit code 0, including this crash test and preceding hosted/evidence/CPU work.
+That result closes the current direct regression gate, while the remaining rollout
+and physical/platform requirements above stay open.

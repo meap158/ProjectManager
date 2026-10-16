@@ -1,15 +1,15 @@
 # Orchestrator audit and upgrade plan
 
-Implementation status, revalidated 2026-10-15. This table is the current assessment;
-chronological findings later in this document preserve earlier implementation evidence.
+Implementation status, revalidated 2026-10-16. This table summarizes verified behavior;
+chronological findings below preserve earlier evidence and are not current completion claims.
 
-| Area                     | Verified implementation                                                                                                                                                                                     | Remaining acceptance work                                                                                                                                                                                  |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Durable execution        | Keyed reservations/reconciliation, lease epochs, heartbeats, insertion fences, revision checks, superseded-attempt refunds and manual request replay                                                        | Scheduler request identity, durable task generations, full supervisor process crash matrix                                                                                                                 |
-| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated cursor history and run links, scoped chat selector, startup guard and immediate lifecycle responses                                      | Physical mobile/browser checks, clearer recovery and review evidence                                                                                                                                       |
-| Efficiency               | Scoped SQL history projections, indexed situation builder, narrow reconciliation, live occupancy and attention result queries, single-flight ticks, settled polling, transition dedup, round-robin fairness | Multi-master read routes measured; cursor-paged workspace history and batched hydration verified. SQL pending detail paging verified. Remaining: dispatch/write-cost measurements and consolidated summary |
-| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget and cooldown, attention episode dedup, explicit idle-worker messaging                                                                   | Classified provider/auth recovery, evidence-linked review, dependencies and bounded worker reuse                                                                                                           |
-| Evaluation               | Earlier full regression: 566 tests / 111 files passed; latest resource-constrained rerun failed (details below). Focused Orchestrator checks passed                                                         | Live runtime/mobile checks, end-to-end latency and completion metrics                                                                                                                                      |
+| Area                     | Verified implementation                                                                                                                                                                             | Remaining acceptance work                                                                                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Durable execution        | Reservations, leases, heartbeats, insertion/revision fences, manual replay; opt-in authenticated hosted launch/replay, persisted logs and attempt identity, unknown occupancy and acknowledged stop | Scheduler request identity across attempts, durable task generations, remaining real crash boundaries, containment/platform checks, explicit unknown resolution and production enablement |
+| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated feeds, scoped chat selector, lifecycle controls; persisted pre-launch interval evidence and live hosted CPU refresh              | Physical mobile/browser review, actionable typed provider/auth recovery and clearer unknown-execution resolution                                                                          |
+| Efficiency               | Indexed scoped SQL projections, narrow reconciliation, single-flight ticks, settled polling, round-robin fairness; unchanged hosted polls make zero row writes                                      | Dispatch/write-cost measurements, consolidated summary transport and end-to-end latency                                                                                                   |
+| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget/cooldown, attention episode dedup, explicit idle-worker messaging                                                               | Classified provider/auth recovery, task dependencies, provider preferences and bounded managed-worker reuse                                                                               |
+| Evaluation               | Fresh direct whole-suite run: 631 tests / 125 files passed, exit 0; real hosted launch/evidence/CPU/crash acceptance included                                                                       | npm formatting gate in shared files, physical mobile/LAN and cross-platform execution                                                                                                     |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -714,3 +714,20 @@ captured log contains no failed tests. Therefore this is a passing Vitest summar
 not a successful shell-command exit or npm run check. The existing shared formatting
 gate and physical mobile/LAN validation remain separate. New hosted dispatch and
 automatic host startup are still pending; this does not close the full audit.
+
+## Current complete direct regression result, 2026-10-16
+
+The fresh direct Vitest process passed all 631 tests across 125 files in 157.75s,
+with exit code 0, one thread worker and workspace TEMP/TMP. This includes opt-in
+hosted dispatch, persisted worktree evidence, pre-launch CPU verification, live
+Settings CPU refresh and the real host-crash/surviving-worker case. The prior
+PowerShell redirection status ambiguity is absent in this direct run. The separate
+npm run check formatting gate and physical/cross-platform acceptance still require
+independent evidence; the overall Orchestrator objective remains open.
+
+The follow-up npm run check passed both typechecks and repository lint, then stopped
+at formatting in the five previously shared UI files plus server/db.ts. The database
+warning was entirely CRLF versus LF (no text difference); normalizing its line endings
+passed its targeted format check and retained the other agent's schema repair unstaged.
+The five shared UI files remain untouched. npm's test stage was not reached; the
+separate 631-test direct run above is the current complete test evidence.
