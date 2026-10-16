@@ -295,3 +295,20 @@ replay the same nonce after an uncertain reply, and never fall back to local spa
 Automatic host startup must claim the deterministic socket before publishing its
 credentials and must not remove an ambiguous Unix socket. New hosted dispatch remains
 disabled pending its own real-process crash and review-evidence acceptance tests.
+
+### Automatic connection foundation, 2026-10-16
+
+connectRunHost authenticates published credentials and verifies the returned host
+instance and capabilities before returning a client. An absent rendezvous permits
+one startup flight per canonical data directory; concurrent callers wait through
+credential publication. Any existing malformed credentials, failed authentication,
+identity mismatch or absent published socket rejects without replacing ownership.
+Failed startup flights release their in-process guard for a later explicit retry.
+
+The default startup uses a hidden detached intermediate and the development tsx or
+built JS entrypoint, following the existing session-host launch convention. Focused
+connection tests inject a controlled real host to verify startup sharing, reuse,
+failure release and refusal to replace broken credentials/socket ownership. The
+existing daemon test separately proves child-owned worker survival. The new default
+intermediate launch itself still needs a real-process integration test, and this
+helper is not yet wired into supervisor dispatch. No production rollout is claimed.
