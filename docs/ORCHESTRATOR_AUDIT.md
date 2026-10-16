@@ -680,3 +680,21 @@ state. It does not establish npm run check, whose shared formatting gate remains
 or physical mobile/LAN behavior. The subsequent bounded log extraction/host output persistence
 passed ten focused log/delivery/launcher tests, server types and scoped lint; that narrower
 result does not imply the full suite was rerun after extraction.
+
+## Recovery write cost and startup ordering, 2026-10-16
+
+Unchanged hosted-run polls now perform zero SQLite row writes, verified with
+`total_changes()` against a real hosted worker and an unavailable-host case. Output
+callbacks still run so log growth remains observable. Committed as d657df6 (PM-64).
+
+A full direct run after recovery integration completed with 611 passing tests and
+three installer lifecycle failures (119 files, 168.14 seconds). It exposed an added
+asynchronous recovery wait before installer startup cleanup, which could label a
+new installation interrupted. Cleanup now runs before the first reconciliation
+await. All eleven installer/managed-recovery tests pass after that correction,
+with server types and scoped lint. This is not a post-correction full-suite pass.
+
+A further audit found project deletion currently cascades database rows before
+worker cleanup. Hosted executions need a pre-delete stop/ownership gate; otherwise
+unknown occupancy can disappear without authoritative termination. This remains
+open alongside new hosted dispatch routing and automatic host startup.

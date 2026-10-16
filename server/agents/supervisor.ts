@@ -517,6 +517,12 @@ export class AgentSupervisor {
   // ---- Boot reconciliation: survive restarts and reboots -------------------------------------
 
   private async reconcile(): Promise<void> {
+    // Installs never relaunch: they are quick and idempotent enough to retry by hand.
+    this.db
+      .prepare(
+        `UPDATE agent_installs SET status = 'failed', error = ?, ended_at = ? WHERE status = 'running'`,
+      )
+      .run('Server shut down before completion', now());
     // Sessions are never dropped by a restart: anything still wanted is re-attached (alive in the
     // session host) or relaunched (died, e.g. reboot). Only deliberately stopped ones stay down.
     const sessions = this.db
@@ -583,12 +589,6 @@ export class AgentSupervisor {
       }
     }
     await this.pollManagedRuns();
-    // Installs never relaunch: they are quick and idempotent enough to retry by hand.
-    this.db
-      .prepare(
-        `UPDATE agent_installs SET status = 'failed', error = ?, ended_at = ? WHERE status = 'running'`,
-      )
-      .run('Server shut down before completion', now());
   }
 
   // ---- Sessions -------------------------------------------------------------------------------
