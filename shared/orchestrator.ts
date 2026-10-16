@@ -72,7 +72,7 @@ export interface OrchestratorPlanDecision {
     supervisorAttempts: number;
     requiresReview: boolean;
   };
-  providerBlockers?: { providerId: string; detail: string }[];
+  providerBlockers?: OrchestratorProviderBlocker[];
 }
 
 export interface OrchestratorState {
@@ -176,3 +176,10 @@ export type OrchestratorCardSummary = Pick<
   CardWithProject,
   'id' | 'projectId' | 'key' | 'title' | 'status' | 'projectName'
 >;
+
+export interface OrchestratorProviderBlocker {
+  providerId: string;
+  /** Optional for older persisted/fixture responses; unknown codes get no invented action. */
+  code?: 'unavailable' | 'capacity' | 'quota_unknown' | 'quota_reserve';
+  detail: string;
+}

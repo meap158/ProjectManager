@@ -848,3 +848,14 @@ clears the warning without clearing unrelated action errors. The regression exer
 an initial failed request followed by the normal five-second successful retry; all
 24 page tests, client types and scoped lint pass. The prior 649-test full-suite result
 predates this small UI correction and is not claimed as a post-correction full run.
+
+## Per-provider recovery in mixed decisions, 2026-10-16
+
+Provider blocker codes now have a shared installation/capacity/quota union rather
+than an untyped server string omitted from the client contract. Each blocker shows
+its own recovery link: missing CLI to Settings, occupied capacity to workers, and
+missing/reserved quota to usage. This avoids a single aggregate wait reason hiding
+the correction for another provider. Older responses without a code retain detail
+without inferred authentication/configuration actions. Planner, mixed-blocker,
+compatibility and page tests pass (34 tests), with both typechecks and scoped lint.
+This does not classify provider runtime authentication failures; that remains open.

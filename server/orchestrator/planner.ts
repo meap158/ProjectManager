@@ -1,6 +1,9 @@
 import type { AgentRun, AgentSession, Card } from '../../shared/types.js';
 import type { ProviderLimits } from '../../shared/limits.js';
-import type { OrchestratorWaitReason } from '../../shared/orchestrator.js';
+import type {
+  OrchestratorWaitReason,
+  OrchestratorProviderBlocker,
+} from '../../shared/orchestrator.js';
 
 export type PlanningRun = Pick<
   AgentRun,
@@ -29,7 +32,9 @@ export interface OrchestratorDecision {
     externalWorkers: number;
     projectWorkers: number;
   };
-  providerBlockers?: { providerId: string; code: string; detail: string }[];
+  providerBlockers?: (OrchestratorProviderBlocker & {
+    code: NonNullable<OrchestratorProviderBlocker['code']>;
+  })[];
 }
 
 /** Pure scheduling: execution must revalidate the snapshot before dispatching. */
@@ -167,7 +172,7 @@ export function planOrchestration(
     }
     const providerBlockers: NonNullable<OrchestratorDecision['providerBlockers']> = [];
     const eligible = policy.providers.filter((providerId) => {
-      const block = (code: string, detail: string) => {
+      const block = (code: NonNullable<OrchestratorProviderBlocker['code']>, detail: string) => {
         providerBlockers.push({ providerId, code, detail });
         return false;
       };

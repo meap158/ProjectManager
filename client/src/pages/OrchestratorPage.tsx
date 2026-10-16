@@ -2,6 +2,7 @@
 import { Link, useSearchParams } from 'react-router';
 import { api } from '../api';
 import { OrchestratorPending } from '../components/OrchestratorPending';
+import { OrchestratorProviderRecovery } from '../components/OrchestratorProviderRecovery';
 import { OrchestratorNextStep } from '../components/OrchestratorNextStep';
 import { Dropdown } from '../components/Dropdown';
 import { ConfirmDelete } from '../components/ConfirmDelete';
@@ -1112,7 +1113,7 @@ export function OrchestratorPage() {
                                         <li key={blocker.providerId}>
                                           {PROVIDER_LABELS[blocker.providerId] ??
                                             blocker.providerId}
-                                          : {blocker.detail}
+                                          : <OrchestratorProviderRecovery blocker={blocker} />
                                         </li>
                                       ))}
                                     </ul>
