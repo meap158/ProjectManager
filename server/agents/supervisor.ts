@@ -1,3 +1,5 @@
+import { readRunRendezvous } from './host/runDaemon.js';
+import { RunClient } from './host/runClient.js';
 import { budgetedRunArgv } from './host/budgetedRun.js';
 import { connectRunHost } from './host/connectRunHost.js';
 import { launchManagedRun } from './host/managedRun.js';
@@ -478,6 +480,31 @@ export class AgentSupervisor {
       .filter((live) => !(live.proc instanceof HostedProc))
       .map((live) => live.proc.pid);
     await this.limitCpu([this.host?.connected ? this.host.hostPid : undefined, ...pids]);
+    if (!this.cpuBudget || this.closed || !this.dataDir) return;
+    const owned = this.db
+      .prepare(
+        `SELECT 1 FROM agent_runs r WHERE r.status IN ('queued','running')
+      AND EXISTS (SELECT 1 FROM agent_run_executions e WHERE e.run_id=r.id AND e.run_log_path=r.log_path) LIMIT 1`,
+      )
+      .get();
+    if (!owned) return;
+    let client: RunClient | undefined;
+    try {
+      // Refresh never starts a replacement host to resolve uncertain ownership.
+      const connection = readRunRendezvous(this.dataDir);
+      client = await RunClient.connect(connection.address, connection.token, 35000);
+      if (client.hostInstance !== connection.instance)
+        throw new Error('Run host identity mismatch');
+      if (!this.closed) {
+        const result = await client.refreshCpuBudget(getCpuBudget(this.db).threads);
+        if (result.owned > 0 && result.updated === 0)
+          console.warn('[agents] Hosted CPU budget was not applied');
+      }
+    } catch (error) {
+      console.warn('[agents] Hosted CPU refresh unavailable:', (error as Error).message);
+    } finally {
+      client?.close();
+    }
   }
 
   /** The host went away (crashed/killed): its sessions are gone; restart them normally. */

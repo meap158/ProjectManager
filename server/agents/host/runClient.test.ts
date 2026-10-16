@@ -98,3 +98,42 @@ it.each(['unsupported', 'silent'])('rejects a %s host without attempting launch'
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+it('does not send CPU refresh to an older compatible host', async () => {
+  const address =
+    process.platform === 'win32'
+      ? `\\\\.\\pipe\\pm-run-legacy-${randomUUID()}`
+      : path.join(tmpdir(), `pm-run-${randomUUID()}.sock`);
+  const sockets = new Set<net.Socket>();
+  let received = '';
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+    socket.on('data', (data) => {
+      received += String(data);
+      socket.write(
+        JSON.stringify({
+          id: 1,
+          ok: true,
+          result: {
+            version: 1,
+            instance: 'legacy',
+            capabilities: ['pipe-runs-v1', 'shared-run-log-v1'],
+          },
+        }) + '\n',
+      );
+    });
+  });
+  let client: RunClient | undefined;
+  try {
+    server.listen(address);
+    await once(server, 'listening');
+    client = await RunClient.connect(address, randomUUID());
+    await expect(client.refreshCpuBudget(1)).rejects.toThrow('CPU refresh capability unavailable');
+    expect(received).not.toContain('cpu-budget');
+  } finally {
+    client?.close();
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

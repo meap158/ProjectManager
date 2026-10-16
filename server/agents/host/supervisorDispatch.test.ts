@@ -1,4 +1,5 @@
-import { cpuBudgetSupported } from '../cpuBudget.js';
+import { execFileSync } from 'node:child_process';
+import { cpuBudgetSupported, setCpuBudget, affinityMask } from '../cpuBudget.js';
 import * as gitChanges from '../gitChanges.js';
 import { mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -45,7 +46,7 @@ it.each([
           command: [
             process.execPath,
             '-e',
-            `require('node:fs').appendFileSync(${JSON.stringify(marker)},'one');console.log('ready');setInterval(()=>{},1000)`,
+            `require('node:fs').appendFileSync(${JSON.stringify(marker)},'one');console.log('ready');console.log('worker-pid:'+process.pid);setInterval(()=>{},1000)`,
           ],
           timeoutMs: 10000,
         }),
@@ -103,6 +104,33 @@ it.each([
           .poll(async () => (await client.read(nonce!, 0))?.data, { timeout: 10000 })
           .toContain('ready');
         expect(readFileSync(marker, 'utf8')).toBe('one');
+        if (authenticated === 'cpu-budget') {
+          setCpuBudget(db, 1);
+          await supervisor.refreshCpuBudget();
+          if (process.platform === 'win32') {
+            const pid = (await client.status(nonce))!.pid!;
+            const output = await client.read(nonce, 0);
+            const workerPid = Number(/worker-pid:(\d+)/.exec(output!.data)?.[1]);
+            expect(Number.isSafeInteger(workerPid) && workerPid > 0).toBe(true);
+            for (const ownedPid of [pid, workerPid]) {
+              const state = execFileSync(
+                'powershell.exe',
+                [
+                  '-NoProfile',
+                  '-NonInteractive',
+                  '-Command',
+                  `$p=Get-Process -Id ${ownedPid}; "$([int64]$p.ProcessorAffinity) $($p.PriorityClass)"`,
+                ],
+                { encoding: 'utf8', windowsHide: true, timeout: 5000 },
+              )
+                .trim()
+                .split(/\s+/);
+              expect(BigInt(state[0]!)).toBe(BigInt.asIntN(64, affinityMask(1)));
+              expect(state[1]).toBe('BelowNormal');
+            }
+          }
+        }
+
         expect(supervisor.getRun(1)).toMatchObject({
           attempts: 1,
           executionState: lostReply ? 'unknown' : 'active',
@@ -123,6 +151,7 @@ it.each([
         expect(readFileSync(marker, 'utf8')).toBe('one');
         await supervisor.stopRun(1);
         expect((await client.status(nonce))?.state).toBe('exited');
+        expect(await client.refreshCpuBudget(1)).toEqual({ owned: 0, updated: 0 });
       } else {
         expect(existsSync(marker)).toBe(false);
         expect(db.prepare('SELECT COUNT(*) AS n FROM agent_run_executions').get()).toMatchObject({

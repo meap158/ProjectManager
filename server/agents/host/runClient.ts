@@ -33,6 +33,7 @@ export class RunClient {
   private buffer = '';
   private closed = false;
   private instance = '';
+  private capabilities = new Set<string>();
   private constructor(
     private socket: net.Socket,
     private timeoutMs: number,
@@ -89,6 +90,7 @@ export class RunClient {
       )
         throw new Error('Run host capability unavailable');
       client.instance = hello.instance;
+      client.capabilities = new Set(hello.capabilities);
       return client;
     } catch (error) {
       client.close();
@@ -106,6 +108,13 @@ export class RunClient {
   }
   async read(nonce: string, after: number) {
     return output.nullable().parse(await this.call({ op: 'read', nonce, after }));
+  }
+  async refreshCpuBudget(threads: number) {
+    if (!this.capabilities.has('cpu-budget-refresh-v1'))
+      throw new Error('Run host CPU refresh capability unavailable');
+    return z
+      .object({ owned: z.number().int().nonnegative(), updated: z.number().int().nonnegative() })
+      .parse(await this.call({ op: 'cpu-budget', threads }));
   }
   async stop(nonce: string) {
     return z.boolean().parse(await this.call({ op: 'stop', nonce }));

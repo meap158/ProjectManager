@@ -1,3 +1,4 @@
+import { applyCpuBudget, totalThreads } from '../cpuBudget.js';
 import path from 'node:path';
 import { OutputLog } from '../outputLog.js';
 import { createHash } from 'node:crypto';
@@ -106,6 +107,17 @@ export class RunLauncher {
     const log =
       this.live.get(nonce)?.log ?? new OutputLog(execution.outputPath ?? this.logPath(nonce));
     return { ...log.read(after), totalBytes: log.totalBytes };
+  }
+
+  /** Only currently owned process handles are eligible; journal PIDs are never consulted. */
+  async refreshCpuBudget(threads: number): Promise<{ owned: number; updated: number }> {
+    if (!Number.isSafeInteger(threads) || threads < 1 || threads > totalThreads())
+      throw new Error('Invalid CPU thread budget');
+    const roots = [...this.live.values()]
+      .map((entry) => entry.proc)
+      .filter((proc) => proc.pid && proc.exitCode === null && proc.signalCode === null)
+      .map((proc) => proc.pid!);
+    return { owned: roots.length, updated: await applyCpuBudget(roots, threads) };
   }
 
   async stopAll(): Promise<boolean> {

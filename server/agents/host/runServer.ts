@@ -28,6 +28,13 @@ const request = z.discriminatedUnion('op', [
     })
     .strict(),
   z.object({ id: z.number().int().positive(), op: z.literal('stop'), nonce }).strict(),
+  z
+    .object({
+      id: z.number().int().positive(),
+      op: z.literal('cpu-budget'),
+      threads: z.number().int().positive().max(65536),
+    })
+    .strict(),
 ]);
 
 type WithoutId<T> = T extends unknown ? Omit<T, 'id'> : never;
@@ -96,7 +103,7 @@ export function createRunServer(token: string, launcher: RunLauncher, journal: R
           result: {
             version: 1,
             instance: journal.instance,
-            capabilities: ['pipe-runs-v1', 'shared-run-log-v1'],
+            capabilities: ['pipe-runs-v1', 'shared-run-log-v1', 'cpu-budget-refresh-v1'],
           },
         });
         return;
@@ -122,13 +129,15 @@ export function createRunServer(token: string, launcher: RunLauncher, journal: R
       }
       try {
         const result =
-          message.op === 'launch'
-            ? launcher.launch(message, () => {})
-            : message.op === 'status'
-              ? journal.get(message.nonce)
-              : message.op === 'read'
-                ? launcher.read(message.nonce, message.after)
-                : await launcher.stop(message.nonce);
+          message.op === 'cpu-budget'
+            ? await launcher.refreshCpuBudget(message.threads)
+            : message.op === 'launch'
+              ? launcher.launch(message, () => {})
+              : message.op === 'status'
+                ? journal.get(message.nonce)
+                : message.op === 'read'
+                  ? launcher.read(message.nonce, message.after)
+                  : await launcher.stop(message.nonce);
         send({ id: message.id, ok: true, result });
       } catch (error) {
         send({ id: message.id, ok: false, error: (error as Error).message });

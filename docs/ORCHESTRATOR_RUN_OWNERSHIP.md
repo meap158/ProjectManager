@@ -398,3 +398,23 @@ Changing the budget of already-running hosted workers is still not wired into
 Settings refresh. That and platform containment remain rollout gates, as do the
 remaining crash matrix and production configuration. No default enablement or
 fresh full-suite pass is claimed by these focused checks.
+
+### Live Settings CPU refresh, 2026-10-16
+
+The host advertises cpu-budget-refresh-v1 and accepts an authenticated bounded
+cpu-budget request. RunLauncher collects only current live ChildProcess roots;
+completed or old-host journal PIDs are never used. The existing tree limiter updates
+those roots and descendants and returns owned-root and updated-process counts.
+Supervisor Settings refresh connects only to the published host, validates instance,
+and sends the saved budget; it never starts a replacement during refresh. Unavailable
+or older hosts produce an explicit diagnostic while retaining their executions.
+
+The Windows integration changes the saved setting, calls supervisor refresh, and
+checks affinity and BelowNormal priority on both the owned wrapper and actual worker.
+After stop, refresh reports zero owned/updated processes. A legacy-capability test
+verifies no unsupported operation is sent. Ten dispatch/client/server tests passed;
+the final descendant-enhanced dispatch test file passes all five tests. Server types
+and scoped lint pass. Refresh retains the existing limiter's best-effort OS semantics:
+counts do not establish that every descendant was updated, and failures remain visible
+in diagnostics. Unix execution, containment, full crash acceptance, production
+configuration and physical mobile controls are still open.
