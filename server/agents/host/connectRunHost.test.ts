@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { connectRunHost } from './connectRunHost.js';
-import { startRunHost, runRendezvousFile } from './runDaemon.js';
+import { startRunHost, runRendezvousFile, readRunRendezvous } from './runDaemon.js';
 import type { RunClient } from './runClient.js';
 
 it('starts once for simultaneous callers and reuses the authenticated host', async () => {
@@ -80,3 +81,92 @@ it('releases a failed startup flight so a later explicit connection can retry', 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it('default detached startup survives the calling process and reuses its live worker', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pm-auto-host-process-'));
+  const marker = path.join(dir, 'launches');
+  const input = {
+    nonce: 'auto-fixture',
+    cwd: dir,
+    env: { ...process.env },
+    argv: [
+      process.execPath,
+      '-e',
+      `require('node:fs').appendFileSync(${JSON.stringify(marker)},'one');console.log('ready');setInterval(()=>{},1000)`,
+    ],
+  };
+  let client: RunClient | undefined;
+  let connection: ReturnType<typeof readRunRendezvous> | undefined;
+  try {
+    const source = `import {connectRunHost} from ${JSON.stringify(new URL('./connectRunHost.ts', import.meta.url).href)};
+      const client=await connectRunHost(${JSON.stringify(dir)});
+      await client.launch(${JSON.stringify(input)});
+      const deadline=Date.now()+10000;
+      while(!(await client.read('auto-fixture',0))?.data.includes('ready')) {
+        if(Date.now()>deadline)throw new Error('fixture worker timeout');
+        await new Promise(resolve=>setTimeout(resolve,20));
+      }
+      client.close();process.exit(86);`;
+    const caller = spawnSync(
+      process.execPath,
+      ['--import', import.meta.resolve('tsx'), '--input-type=module', '--eval', source],
+      { cwd: dir, encoding: 'utf8', timeout: 20000, windowsHide: true },
+    );
+    expect(caller.error, caller.stderr).toBeUndefined();
+    expect(caller.status, caller.stderr).toBe(86);
+    connection = readRunRendezvous(dir);
+    expect(connection.pid).toBeGreaterThan(0);
+    expect(connection.pid).not.toBe(process.pid);
+    client = await connectRunHost(dir);
+    expect(client.hostInstance).toBe(connection.instance);
+    expect(await client.launch(input)).toMatchObject({ state: 'running' });
+    expect(readFileSync(marker, 'utf8')).toBe('one');
+    expect(await client.stop(input.nonce)).toBe(true);
+  } finally {
+    if (!connection) {
+      try {
+        connection = readRunRendezvous(dir);
+      } catch {
+        /* Startup may fail before publication. */
+      }
+    }
+    if (client) {
+      await client.stop(input.nonce).catch(() => false);
+      client.close();
+    }
+    if (connection?.pid && connection.pid !== process.pid) {
+      // Only this test's fresh data folder can publish this diagnostic PID.
+      try {
+        process.kill(connection.pid, 'SIGTERM');
+      } catch {
+        /* Already exited. */
+      }
+      await expect
+        .poll(
+          () => {
+            try {
+              process.kill(connection!.pid!, 0);
+              return false;
+            } catch {
+              return true;
+            }
+          },
+          { timeout: 10000 },
+        )
+        .toBe(true);
+    }
+    await expect
+      .poll(
+        () => {
+          try {
+            rmSync(dir, { recursive: true, force: true });
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 5000 },
+      )
+      .toBe(true);
+  }
+}, 30000);

@@ -15,6 +15,8 @@ import { createRunServer } from './runServer.js';
 
 export interface RunRendezvous {
   version: 1;
+  /** Diagnostic only; never authorizes production adoption or termination. */
+  pid?: number;
   instance: string;
   address: string;
   token: string;
@@ -27,7 +29,8 @@ export function readRunRendezvous(dataDir: string): RunRendezvous {
     value.version !== 1 ||
     typeof value.instance !== 'string' ||
     typeof value.address !== 'string' ||
-    typeof value.token !== 'string'
+    typeof value.token !== 'string' ||
+    (value.pid !== undefined && (!Number.isSafeInteger(value.pid) || value.pid < 1))
   )
     throw new Error('Invalid run host rendezvous');
   return value;
@@ -61,7 +64,7 @@ export async function startRunHost(dataDir: string) {
       });
     });
     if (process.platform !== 'win32') chmodSync(address, 0o600);
-    const connection: RunRendezvous = { version: 1, instance, address, token };
+    const connection: RunRendezvous = { version: 1, instance, address, token, pid: process.pid };
     const pending = path.join(directory, `${instance}.json.tmp`);
     writeFileSync(pending, JSON.stringify(connection), { mode: 0o600, flag: 'wx' });
     renameSync(pending, runRendezvousFile(dataDir));

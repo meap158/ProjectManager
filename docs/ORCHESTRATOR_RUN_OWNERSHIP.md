@@ -359,3 +359,19 @@ This is a bounded worktree comparison using the existing status/mtime/size algor
 not exclusive authorship or content-level provenance. Snapshot failures remain
 unavailable evidence. Default intermediate startup, CPU budgets, containment and
 production opt-in configuration remain open rollout work.
+
+### Real automatic startup evidence, 2026-10-16
+
+The default connectRunHost launch path is now exercised from a separate Node caller
+process, using the real hidden detached intermediate and source entrypoint. That
+caller launches a fixture worker and exits. A new client authenticates the published
+instance, replays the nonce and observes one launch marker before host-confirmed stop.
+The rendezvous now includes an optional validated positive PID for diagnostics only;
+production ownership and stop still use authenticated nonce/instance state, never PID.
+The fixture uses only its fresh private directory's PID for teardown, waits for that
+daemon to disappear, and asynchronously waits for Windows handle release before cleanup.
+
+Ten automatic-connection/daemon/supervisor tests, server types and scoped lint pass
+on this Windows environment. This closes the missing default-intermediate test here,
+not Unix/platform containment, CPU enforcement, all crash boundaries, production
+configuration or physical mobile controls. Default hosted dispatch remains disabled.
