@@ -910,3 +910,14 @@ cover both providers; all 27 parser/planner tests, server types and scoped lint
 pass. Existing explicit unknown-quota policy remains the choice when evidence is
 unavailable. Parser percentage normalization and rollover assumptions remain under
 audit; this timestamp change does not validate those separate paths.
+
+## Fresh verification after rollover, 2026-10-16
+
+The planner now treats resetSinceReport as unknown evidence rather than using the
+display's estimated zero as verified allowance. Default policy waits for a fresh
+report; explicit unknown-quota opt-in can proceed, while a known exhausted sibling
+window still blocks. An integration fixture passes a real rollOver result to the
+planner and verifies recovery with a new report. All 125 Orchestrator/parser tests,
+server types and scoped lint pass. Display rollover behavior is unchanged. This
+provides fresh verification gating, not an active provider quota-fetch scheduler;
+usage collection still depends on the existing locally recorded reports.

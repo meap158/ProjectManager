@@ -206,6 +206,14 @@ export function planOrchestration(
           'quota_reserve',
           `Quota reaches the ${policy.reservePercent}% reserve; wait for renewed allowance and a fresh usage report`,
         );
+      if (limits.windows.some((w) => w.resetSinceReport))
+        return (
+          policy.allowUnknownQuota ||
+          block(
+            'quota_unknown',
+            'Allowance reset since the last report; obtain a fresh usage report before dispatch',
+          )
+        );
       if (limits.windows.some((w) => !validPercent(w.usedPercent)))
         return (
           policy.allowUnknownQuota ||

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { rollOver } from '../agents/limits.js';
 import type { Card, AgentRun } from '../../shared/types.js';
 import { planOrchestration, type OrchestratorPolicy } from './planner.js';
 const now = Date.parse('2026-10-10T12:00:00Z');
@@ -185,3 +186,22 @@ it.each([-1, 101, NaN, Infinity, -Infinity])(
     ).toBe('quota_exceeded');
   },
 );
+
+it('requires fresh verification after estimated quota rollover unless unknown quota is explicitly allowed', () => {
+  const report = limits('codex', 100);
+  report.windows[0]!.resetsAt = new Date(now - 1).toISOString();
+  const rolled = rollOver(report, now);
+  const state = { ...snapshot(), cards: [card(1)], limits: [rolled] };
+  const scoped = { ...policy, providers: ['codex'] };
+  expect(rolled.windows[0]).toMatchObject({ usedPercent: 0, resetSinceReport: true });
+  expect(planOrchestration(scoped, state, now)[0]?.waitReason).toBe('quota_unknown');
+  expect(planOrchestration({ ...scoped, allowUnknownQuota: true }, state, now)[0]?.action).toBe(
+    'dispatch',
+  );
+  rolled.windows.push(limits('codex', 100).windows[0]!);
+  expect(planOrchestration({ ...scoped, allowUnknownQuota: true }, state, now)[0]?.waitReason).toBe(
+    'quota_exceeded',
+  );
+  state.limits = [limits('codex', 20)];
+  expect(planOrchestration(scoped, state, now)[0]?.action).toBe('dispatch');
+});
