@@ -266,3 +266,14 @@ Real worker observation and closed-client behavior are covered alongside control
 output/ownership mismatch tests. Two managed-run tests, server types and scoped lint passed.
 This supplies the observation contract for supervisor adoption; it does not yet update run
 rows, occupancy, review evidence or UI lifecycle state, and does not auto-reconnect or relaunch.
+
+### Supervisor recovery integration
+
+Persisted hosted attempts are observed on startup and every two seconds. Matching
+run/log identities suppress legacy local relaunch and hold capacity while the host
+is unavailable. Run details expose unknown execution explicitly. Stop requires an
+authenticated host acknowledgment; an unconfirmed stop remains active and prevents
+retry. Completion wakes queued work. Real-host tests cover startup adoption, a
+single launch marker, acknowledged stop, terminal reconciliation and unavailable
+host preservation. New dispatch routing and automatic host startup remain rollout
+gates; this does not establish descendant containment or mobile validation.

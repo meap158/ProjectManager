@@ -213,6 +213,7 @@ export const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL,
     UNIQUE(run_id, run_log_path, attempt)
   );`,
+  `ALTER TABLE agent_runs ADD COLUMN execution_state TEXT CHECK(execution_state IN ('active','unknown','complete'));`,
 ];
 
 export function openDb(dataDir: string): Db {

@@ -46,6 +46,7 @@ export interface ManagedRunObservation {
   outcome: 'succeeded' | 'failed' | null;
   output: Awaited<ReturnType<RunClient['read']>>;
   detail?: string;
+  exitCode?: number | null;
 }
 
 /** Read-only: neither missing ownership nor a lost response can cause a new launch. */
@@ -78,6 +79,7 @@ export async function observeManagedRun(
     if (execution.state !== 'exited') return { phase: 'active', outcome: null, output };
     if (output.nextOffset < output.totalBytes) return { phase: 'draining', outcome: null, output };
     return {
+      exitCode: execution.exitCode,
       phase: 'complete',
       outcome: execution.exitCode === 0 ? 'succeeded' : 'failed',
       output,

@@ -1,3 +1,4 @@
+import { hasManagedExecution, recoverManagedRuns, stopManagedRun } from './host/recoverRuns.js';
 // Supervises persistent agent CLI sessions and one-shot runs.
 //
 // Design (supervisor pattern, like systemd/supervisord):
@@ -289,6 +290,7 @@ interface RunRow {
   ended_at: string | null;
   log_path: string;
   autonomy: AgentAutonomy;
+  execution_state?: 'active' | 'unknown' | 'complete' | null;
   changes_json: string | null;
   orchestrator_id: string | null;
 }
@@ -351,6 +353,8 @@ export class AgentSupervisor {
     number,
     { phase: 'stopping' | 'starting' | 'restoring' | 'failed'; error?: string; since: number }
   >();
+  private managedTimer?: ReturnType<typeof setInterval>;
+  private managedPolling: Promise<void> | null = null;
   private continuationTimer?: ReturnType<typeof setInterval>;
   /** Emits `output:<kind>:<id>` whenever a log grows, for live streaming to the GUI. */
   readonly events = new EventEmitter().setMaxListeners(0);
@@ -419,6 +423,12 @@ export class AgentSupervisor {
       }
     }, 10_000);
     this.continuationTimer.unref();
+    this.managedTimer = setInterval(() => {
+      void this.pollManagedRuns().catch((error: Error) => {
+        console.error('[agents] managed recovery:', error);
+      });
+    }, 2000);
+    this.managedTimer.unref();
   }
 
   // ---- Session host ------------------------------------------------------------------------
@@ -555,6 +565,7 @@ export class AgentSupervisor {
       .prepare(`SELECT * FROM agent_runs WHERE status IN ('queued', 'running')`)
       .all() as unknown as RunRow[];
     for (const row of runs) {
+      if (hasManagedExecution(this.db, row.id, row.log_path)) continue;
       if (row.attempts < row.max_attempts) {
         this.log(
           row.log_path,
@@ -571,6 +582,7 @@ export class AgentSupervisor {
           );
       }
     }
+    await this.pollManagedRuns();
     // Installs never relaunch: they are quick and idempotent enough to retry by hand.
     this.db
       .prepare(
@@ -1404,6 +1416,23 @@ export class AgentSupervisor {
     const row = this.db.prepare(`SELECT * FROM agent_runs WHERE id = ?`).get(id) as unknown as
       RunRow | undefined;
     if (!row) return null;
+    if (
+      (row.status === 'queued' || row.status === 'running') &&
+      hasManagedExecution(this.db, id, row.log_path)
+    ) {
+      // Serialize with observation so a stale poll cannot overwrite the stop acknowledgment.
+      await this.managedPolling;
+      try {
+        await stopManagedRun(this.db, this.dataDir, id, row.log_path);
+      } catch {
+        throw new AgentError(
+          409,
+          'Stop unconfirmed; execution may still be running. Reconnect to its host and try again',
+        );
+      }
+      this.startQueuedRuns();
+      return this.getRun(id);
+    }
     const live = this.live.get(`run:${id}`);
     if (live) {
       live.stoppedByUser = true;
@@ -1558,6 +1587,8 @@ export class AgentSupervisor {
   async shutdown(): Promise<void> {
     this.closed = true;
     clearInterval(this.continuationTimer);
+    clearInterval(this.managedTimer);
+    await this.managedPolling;
     const installKills = [...this.installing.values()].map(async (live) => {
       if (live.timer) clearTimeout(live.timer);
       try {
@@ -2051,12 +2082,38 @@ export class AgentSupervisor {
       .run(now(), id);
   }
 
+  private pollManagedRuns(): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    this.managedPolling ??= recoverManagedRuns(
+      this.db,
+      this.dataDir,
+      () => !this.closed,
+      (id, file) => {
+        const log = this.logs.get(`run:${id}`);
+        const size = logicalSize(file);
+        if (log && log.totalBytes !== size) {
+          log.resync(size);
+          this.events.emit(`output:run:${id}`);
+        }
+      },
+    ).finally(() => {
+      this.managedPolling = null;
+      this.startQueuedRuns();
+    });
+    return this.managedPolling;
+  }
+
   /** Runs holding a slot: live, or between the spawn decision and the process start. */
   private activeRuns(): number {
     let n = 0;
     for (const live of this.live.values()) if (live.kind === 'run') n++;
     for (const key of this.starting) if (key.startsWith('run:')) n++;
-    return n;
+    const hosted = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM agent_runs r WHERE r.status IN ('queued','running') AND EXISTS (SELECT 1 FROM agent_run_executions e WHERE e.run_id=r.id AND e.run_log_path=r.log_path)`,
+      )
+      .get() as { n: number };
+    return n + hosted.n;
   }
 
   /** Starts queued runs, oldest first, while slots are free. */
@@ -2072,6 +2129,10 @@ export class AgentSupervisor {
   }
 
   private async spawnRun(row: RunRow, isRelaunch: boolean): Promise<void> {
+    if (hasManagedExecution(this.db, row.id, row.log_path)) {
+      await this.pollManagedRuns();
+      return;
+    }
     const key = this.logPathFor('run', row.id);
     if (this.live.has(key) || this.starting.has(key)) return;
     // Everything up to `starting.add` is synchronous, so concurrent callers count each other.
@@ -2518,6 +2579,7 @@ export class AgentSupervisor {
       autonomy: row.autonomy,
       changes: row.changes_json ? (JSON.parse(row.changes_json) as RunChanges) : null,
       status: row.status,
+      ...(row.execution_state ? { executionState: row.execution_state } : {}),
       exitCode: row.exit_code,
       error: row.error,
       attempts: row.attempts,

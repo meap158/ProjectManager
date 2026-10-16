@@ -487,6 +487,7 @@ export interface AgentSession {
 export type AgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'killed';
 
 export interface AgentRun {
+  executionState?: 'active' | 'unknown' | 'complete';
   id: number;
   /** Master that dispatched this run; independent of current assignment state. */
   orchestratorId?: string | null;

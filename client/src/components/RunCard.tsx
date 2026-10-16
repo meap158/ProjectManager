@@ -85,7 +85,7 @@ export function RunCard({
               {active && <span className="spinner" style={{ width: 10, height: 10 }} />}
               {run.status === 'succeeded' && '✓ '}
               {run.status === 'failed' && '✗ '}
-              {run.status}
+              {run.executionState === 'unknown' ? 'Execution unknown' : run.status}
               {run.attempts > 1 && ` · try ${run.attempts}`}
             </span>
             <span

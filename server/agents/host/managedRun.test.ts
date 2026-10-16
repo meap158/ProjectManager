@@ -2,9 +2,11 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
+import { AgentSupervisor } from '../supervisor.js';
 import { openDb } from '../../db.js';
 import { startRunHost } from './runDaemon.js';
 import { RunClient } from './runClient.js';
+import { recoverManagedRuns, stopManagedRun } from './recoverRuns.js';
 import { launchManagedRun, observeManagedRun } from './managedRun.js';
 
 it('binds a run attempt before real launch and reattaches without another worker', async () => {
@@ -13,6 +15,7 @@ it('binds a run attempt before real launch and reattaches without another worker
   const host = await startRunHost(dir);
   const client = await RunClient.connect(host.connection.address, host.connection.token);
   let nonce: string | undefined;
+  let supervisor: AgentSupervisor | undefined;
   try {
     db.prepare("INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture',?,'now')").run(
       dir,
@@ -44,7 +47,18 @@ it('binds a run attempt before real launch and reattaches without another worker
       outcome: null,
       output: { data: expect.stringContaining('ready') },
     });
-    expect(await client.stop(nonce)).toBe(true);
+    supervisor = new AgentSupervisor(db, path.join(dir, 'supervisor-logs'), { dataDir: dir });
+    await supervisor.ready;
+    expect(
+      db.prepare('SELECT status,execution_state,attempts FROM agent_runs WHERE id=1').get(),
+    ).toMatchObject({ status: 'running', execution_state: 'active', attempts: 1 });
+    await supervisor!.stopRun(1);
+    await supervisor!.shutdown();
+    supervisor = undefined;
+    expect(
+      db.prepare('SELECT status,execution_state FROM agent_runs WHERE id=1').get(),
+    ).toMatchObject({ status: 'killed', execution_state: 'complete' });
+    expect(readFileSync(marker, 'utf8')).toBe('one');
     expect(await observeManagedRun(client, first.identity, 0)).toMatchObject({
       phase: 'complete',
       outcome: 'failed',
@@ -56,6 +70,30 @@ it('binds a run attempt before real launch and reattaches without another worker
       outcome: null,
     });
 
+    db.exec("UPDATE agent_runs SET status='running',execution_state='active' WHERE id=1");
+    await recoverManagedRuns(
+      db,
+      dir,
+      () => true,
+      () => {},
+    );
+    expect(
+      db.prepare('SELECT status,execution_state FROM agent_runs WHERE id=1').get(),
+    ).toMatchObject({ status: 'failed', execution_state: 'complete' });
+    db.exec("UPDATE agent_runs SET status='running',execution_state='active' WHERE id=1");
+    await recoverManagedRuns(
+      db,
+      null,
+      () => true,
+      () => {},
+    );
+    expect(
+      db.prepare('SELECT status,execution_state FROM agent_runs WHERE id=1').get(),
+    ).toMatchObject({ status: 'running', execution_state: 'unknown' });
+    await expect(stopManagedRun(db, null, 1, actualLog)).rejects.toThrow();
+    expect(
+      db.prepare('SELECT status,execution_state FROM agent_runs WHERE id=1').get(),
+    ).toMatchObject({ status: 'running', execution_state: 'unknown' });
     expect((await launchManagedRun(db, client, 1, 1, input)).execution.state).toBe('exited');
     // An unavailable old journal is not evidence that its execution never launched.
     const replacement = {
@@ -68,6 +106,7 @@ it('binds a run attempt before real launch and reattaches without another worker
     );
     expect(replacement.launch).not.toHaveBeenCalled();
   } finally {
+    await supervisor?.shutdown();
     if (nonce) await client.stop(nonce).catch(() => false);
     client.close();
     await host.shutdown();
