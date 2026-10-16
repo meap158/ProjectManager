@@ -175,3 +175,33 @@ prior cases; it is not endpoint allocation or retained-memory evidence. Five sam
 establish p95. This verifies bounded response detail and observed read scaling, not bounded
 COUNT cost, cold caches, concurrent clients, provider calls, dispatch writes, LAN/render time
 or complete tick latency. Dispatch/write-cost and physical-client gates remain open.
+
+## Dispatch insertion/write baseline (2026-10-16)
+
+Reproduce: `node --import tsx scripts/benchmark-orchestrator-dispatch.mjs --samples=20`.
+Node 22.21.0; isolated file-backed SQLite, 100,000 accepted historical runs, one
+warmup and twenty measured sequential batches. Each batch dispatches one task per
+synthetic master through production `dispatchCard` validation, insertion, card
+transition and response mapping. Only the OS spawn method is replaced. Assertions
+check queued state, zero attempts, one launch-boundary call and one moved card per
+dispatch, and stable SQL preparation/mutation counts. A transaction rollback restores
+the fixture after each batch; commit/fsync time is excluded.
+
+|  Cards | Masters | Batch p50 ms | Sample p95 ms | Max ms | Row mutations | SQL preparations | Process RSS MB |
+| -----: | ------: | -----------: | ------------: | -----: | ------------: | ---------------: | -------------: |
+|  1,000 |       1 |        10.33 |         14.13 |  14.52 |             2 |               13 |          102.4 |
+|  1,000 |       5 |        58.31 |         89.25 |  90.24 |            10 |               65 |          112.3 |
+|  1,000 |      20 |       282.49 |        436.72 | 489.07 |            40 |              260 |          107.8 |
+| 10,000 |       1 |         9.03 |         14.37 |  15.48 |             2 |               13 |          104.9 |
+| 10,000 |       5 |        56.61 |         72.33 | 118.23 |            10 |               65 |          115.8 |
+| 10,000 |      20 |       208.52 |        266.73 | 273.15 |            40 |              260 |          107.5 |
+
+The two mutations are run insertion and card movement. `total_changes()` counts
+SQLite row mutations, not disk IO, index-page writes or bytes. Prepared statements
+are not rows visited. Sample p95 is nearest-rank over twenty local observations,
+not a production latency guarantee; RSS is whole-process state including fixtures.
+Variation between cases is not a controlled optimization comparison. This harness
+uses synthetic master labels rather than running OrchestratorService ticks. It
+excludes scheduler plans/leases/assignments, fresh quota IO, provider discovery,
+actual hosted launch, committed WAL durability, network and rendering. Complete
+dispatching-tick measurements at 1/5/20 masters remain an explicit separate gate.
