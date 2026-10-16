@@ -167,3 +167,21 @@ it('accepts the exact freshness boundary and rejects the next millisecond', () =
     'quota_unknown',
   );
 });
+
+it.each([-1, 101, NaN, Infinity, -Infinity])(
+  'treats invalid percentage %s as unknown and never masks a known exhausted window',
+  (usedPercent) => {
+    const state = snapshot();
+    state.cards = [card(1)];
+    state.limits = [limits('codex', usedPercent)];
+    const scoped = { ...policy, providers: ['codex'] };
+    expect(planOrchestration(scoped, state, now)[0]?.waitReason).toBe('quota_unknown');
+    expect(planOrchestration({ ...scoped, allowUnknownQuota: true }, state, now)[0]?.action).toBe(
+      'dispatch',
+    );
+    state.limits[0]!.windows.push(limits('codex', 100).windows[0]!);
+    expect(
+      planOrchestration({ ...scoped, allowUnknownQuota: true }, state, now)[0]?.waitReason,
+    ).toBe('quota_exceeded');
+  },
+);

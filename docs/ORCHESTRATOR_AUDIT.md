@@ -888,3 +888,14 @@ boundary. All 108 server Orchestrator tests, server types and scoped lint pass.
 This validates report-clock handling, not runtime authentication or new quota
 collection. A machine clock behind the report must obtain valid evidence or use
 its explicit unknown-quota policy.
+
+## Usage percentage validity, 2026-10-16
+
+Fresh quota reports now require finite percentages within 0?100. Negative,
+over-100 and non-finite values are unknown evidence, with the existing explicit
+unknown-quota policy controlling eligibility. A valid window at the reserve takes
+precedence over any malformed sibling window, so allowing unknown quota cannot
+mask known exhaustion. Five invalid-value cases cover both policy choices and
+mixed exhausted windows. All 113 Orchestrator tests, server types and scoped lint
+pass. This is a dispatch-boundary check; provider parser normalization and runtime
+authentication classification remain separate concerns.

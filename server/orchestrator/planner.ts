@@ -195,16 +195,23 @@ export function planOrchestration(
           policy.allowUnknownQuota ||
           block('quota_unknown', 'Quota missing or stale; obtain a fresh usage report')
         );
-      const enough = limits.windows.every(
-        (w) => Number.isFinite(w.usedPercent) && w.usedPercent < 100 - policy.reservePercent,
-      );
-      return (
-        enough ||
-        block(
+      const validPercent = (value: number) => Number.isFinite(value) && value >= 0 && value <= 100;
+      // A known exhausted window takes precedence over another malformed window.
+      if (
+        limits.windows.some(
+          (w) => validPercent(w.usedPercent) && w.usedPercent >= 100 - policy.reservePercent,
+        )
+      )
+        return block(
           'quota_reserve',
           `Quota reaches the ${policy.reservePercent}% reserve; wait for renewed allowance and a fresh usage report`,
-        )
-      );
+        );
+      if (limits.windows.some((w) => !validPercent(w.usedPercent)))
+        return (
+          policy.allowUnknownQuota ||
+          block('quota_unknown', 'Quota report contains invalid usage; obtain a fresh usage report')
+        );
+      return true;
     });
     const providerId = eligible[0];
     if (!providerId) {
