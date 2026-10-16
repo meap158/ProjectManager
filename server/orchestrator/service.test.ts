@@ -574,6 +574,10 @@ it('explains persisted cooldown and exhausted budgets without mislabelling live 
         "INSERT INTO orchestrator_assignments(card_id,orchestrator_id,state,attempts,retry_after,updated_at) VALUES(?,'master',?,?,?,?)",
       ).run(index + 1, entry.state, entry.attempts, entry.retryAt, Date.now());
     }
+    db.exec(
+      "INSERT INTO agent_runs(id,project_id,card_id,name,command_json,status,created_at,log_path,orchestrator_id) VALUES(77,1,1,'Failed worker','[]','failed','now','','actual-owner')",
+    );
+    db.exec("UPDATE agent_runs SET validation = 'rejected' WHERE id = 77");
     const dispatchCard = vi.fn();
     const service = new OrchestratorService(
       db,
@@ -600,6 +604,10 @@ it('explains persisted cooldown and exhausted budgets without mislabelling live 
     expect(preview?.decisions[1]?.reason).toBe('Retry budget exhausted');
     expect(preview?.decisions.every((d) => d.action === 'wait')).toBe(true);
     expect(preview?.decisions[0]?.retry.retryAt).not.toBeNull();
+    expect(preview?.decisions[0]?.worker).toMatchObject({
+      runId: 77,
+      orchestratorId: 'actual-owner',
+    });
     expect(db.prepare('SELECT * FROM orchestrator_assignments').all()).toEqual(before);
     expect(dispatchCard).not.toHaveBeenCalled();
   } finally {

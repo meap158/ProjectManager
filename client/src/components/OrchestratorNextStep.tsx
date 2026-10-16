@@ -79,7 +79,13 @@ export function OrchestratorNextStep({ decision }: { decision: OrchestratorPlanD
           label: 'Inspect unknown execution',
           target: 'workers' as const,
         }
-      : steps[decision.waitReason];
+      : decision.waitReason === 'retry_cooldown' && decision.worker
+        ? {
+            text: 'Inspect the failed run during the cooldown and correct its cause before the next attempt. Checking again does not bypass the cooldown.',
+            label: 'Inspect failed run',
+            target: 'workers' as const,
+          }
+        : steps[decision.waitReason];
   if (!step) return null;
   const href =
     step.target === 'workers'

@@ -280,7 +280,8 @@ export class OrchestratorService {
           : latestRuns.get(decision.cardId);
         const inspectRun =
           decision.waitReason === 'review_required' ||
-          (explainRetry && waitReason === 'retry_budget_exhausted');
+          (explainRetry &&
+            (waitReason === 'retry_budget_exhausted' || waitReason === 'retry_cooldown'));
         return {
           ...decision,
           ...((inspectRun || activeWorker) && latest

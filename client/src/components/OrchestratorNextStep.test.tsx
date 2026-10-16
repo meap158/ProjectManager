@@ -100,3 +100,25 @@ it.each(['active', 'unknown'] as const)(
       expect(screen.getByText(/independently verifying it has stopped/)).toBeDefined();
   },
 );
+
+it('links cooldown inspection to its worker without offering an immediate retry', () => {
+  render(
+    <MemoryRouter>
+      <OrchestratorNextStep
+        decision={{
+          cardId: 4,
+          projectId: 7,
+          action: 'wait',
+          reason: 'Cooldown',
+          waitReason: 'retry_cooldown',
+          worker: { runId: 9, orchestratorId: 'actual-owner' },
+        }}
+      />
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('link', { name: 'Inspect failed run' }).getAttribute('href')).toBe(
+    '/orchestrators?orchestrator=actual-owner&run=9#orchestrator-runs-actual-owner',
+  );
+  expect(screen.getByText(/does not bypass the cooldown/)).toBeDefined();
+  expect(screen.queryByRole('button')).toBeNull();
+});

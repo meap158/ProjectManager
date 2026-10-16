@@ -764,3 +764,17 @@ fixture observed median 3.14s to 0.74s with writes unchanged at 182. Prepared
 statement reuse is not a query-count reduction. The benchmark document records
 full numbers and exclusions; remaining global/settled/physical and rollout gates
 are unchanged.
+
+## Worker recovery links, 2026-10-16
+
+Preview decisions now retain the actual active worker's owner and execution state,
+including when a newer finished run exists for the same task (69009c5, PM-64).
+Unknown executions link to their owning Orchestrator and explain independent
+termination verification before manual resolution. Cooldown decisions with a
+persisted worker now offer failed-run inspection while preserving retry timing,
+review precedence and attempt limits; dispatch errors without a run retain the
+task fallback. The 112-test Orchestrator/component suite, both typechecks and
+scoped lint pass. The latest npm run check passed typechecks/repository lint but
+stopped at five unrelated shared UI formatting warnings; it did not reach tests.
+These focused recovery improvements do not close the broader rollout, typed
+runtime-failure, summary-transport or physical/platform acceptance gaps above.
