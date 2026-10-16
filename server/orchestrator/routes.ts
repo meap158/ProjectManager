@@ -43,6 +43,7 @@ export function registerOrchestratorRoutes(
   chat?: OrchestratorChat,
 ) {
   app.get('/orchestrators', (c) => c.json(service.state()));
+  app.get('/orchestrators/overview', (c) => c.json(service.overview()));
   if (chat) {
     // The master's own chat CLI (PM-89): open (or reopen) it, or ask it for a one-time check
     // on pending work. AgentErrors (404 / 409 / 400) carry their own status.

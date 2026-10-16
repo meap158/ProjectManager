@@ -131,50 +131,22 @@ export function OrchestratorPage() {
       if (performing.current) return;
       const epoch = ++refreshEpoch.current;
       const current = () => active && epoch === refreshEpoch.current && !performing.current;
-      const failures: string[] = [];
-      await Promise.all([
-        api.orchestrators().then(
-          (next) => {
-            if (current()) {
-              setState(next);
-              setLoaded(true);
-            }
-          },
-          (e: Error) => {
-            if (current()) setError(e.message);
-          },
-        ),
-        api.listProjects().then(
-          (next) => {
-            if (current()) setProjects(next);
-          },
-          () => {
-            failures.push('projects');
-          },
-        ),
-        api.listAllSessions().then(
-          (next) => {
-            if (current()) setSessions(next);
-          },
-          () => {
-            failures.push('sessions');
-          },
-        ),
-        api.listCardsInFlight().then(
-          (next) => {
-            if (current()) setInFlightCards(next);
-          },
-          () => {
-            failures.push('cards');
-          },
-        ),
-      ]);
-      if (current())
+      try {
+        const next = await api.orchestratorOverview();
+        if (!current()) return;
+        setState(next.state);
+        setLoaded(true);
+        if (next.projects !== null) setProjects(next.projects);
+        if (next.sessions !== null) setSessions(next.sessions);
+        if (next.cards !== null) setInFlightCards(next.cards);
         setRefreshWarning(
-          failures.length
-            ? `Could not refresh ${failures.join(', ')}. Displayed data may be out of date; retrying automatically.`
+          next.unavailable.length
+            ? `Could not refresh ${next.unavailable.join(', ')}. Displayed data may be out of date; retrying automatically.`
             : '',
         );
+      } catch (e) {
+        if (current()) setError((e as Error).message);
+      }
     };
     const stop = serialPoll(load, 5000, { pauseWhenHidden: true });
     return () => {
@@ -192,30 +164,15 @@ export function OrchestratorPage() {
     setActionResult(null);
     try {
       await action();
-      const failures: string[] = [];
-      const [nextState, nextProjects, nextSessions, nextInFlight] = await Promise.all([
-        api.orchestrators(),
-        api.listProjects().catch(() => {
-          failures.push('projects');
-          return projects;
-        }),
-        api.listAllSessions().catch(() => {
-          failures.push('sessions');
-          return sessions;
-        }),
-        api.listCardsInFlight().catch(() => {
-          failures.push('cards');
-          return inFlightCards;
-        }),
-      ]);
-      setState(nextState);
-      setProjects(nextProjects);
+      const next = await api.orchestratorOverview();
+      setState(next.state);
+      if (next.projects !== null) setProjects(next.projects);
+      if (next.sessions !== null) setSessions(next.sessions);
+      if (next.cards !== null) setInFlightCards(next.cards);
       setRunRefresh((value) => value + 1);
-      setSessions(nextSessions);
-      setInFlightCards(nextInFlight);
       setRefreshWarning(
-        failures.length
-          ? `Could not refresh ${failures.join(', ')}. Displayed data may be out of date; retrying automatically.`
+        next.unavailable.length
+          ? `Could not refresh ${next.unavailable.join(', ')}. Displayed data may be out of date; retrying automatically.`
           : '',
       );
     } catch (e) {

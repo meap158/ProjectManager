@@ -1,4 +1,5 @@
 import type {
+  OrchestratorOverview,
   OrchestratorConfig,
   OrchestratorSituation,
   OrchestratorPendingPage,
@@ -106,6 +107,7 @@ export const api = {
   orchestratorSituation: (id: string) =>
     request<OrchestratorSituation>('GET', `/orchestrators/${encodeURIComponent(id)}/situation`),
   orchestrators: () => request<OrchestratorState>('GET', '/orchestrators'),
+  orchestratorOverview: () => request<OrchestratorOverview>('GET', '/orchestrators/overview'),
   previewOrchestrator: (id: string, offset = 0) =>
     request<{
       at: string;

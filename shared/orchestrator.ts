@@ -1,3 +1,4 @@
+import type { AgentSession, CardWithProject, ProjectSummary } from './types.js';
 export interface OrchestratorConfig {
   id: string;
   name: string;
@@ -158,4 +159,15 @@ export interface OrchestratorPendingPage {
   limit: number;
   items: SituationItem[];
   nextOffset: number | null;
+}
+
+/** One refresh boundary; failed optional sections retain their previous client data. */
+export interface OrchestratorOverview {
+  version: 1;
+  generatedAt: string;
+  state: OrchestratorState;
+  projects: ProjectSummary[] | null;
+  sessions: AgentSession[] | null;
+  cards: CardWithProject[] | null;
+  unavailable: ('projects' | 'sessions' | 'cards')[];
 }

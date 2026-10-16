@@ -6,6 +6,7 @@ import { getSetting, setSetting, getCard, listCards, listCardsInFlight } from '.
 import { providerStatuses } from '../agents/providers.js';
 import { readLimits } from '../agents/limits.js';
 import type {
+  OrchestratorOverview,
   OrchestratorConfig,
   OrchestratorEvent,
   OrchestratorSituation,
@@ -83,6 +84,27 @@ export class OrchestratorService {
         executing: this.executing,
         lastTickAt: this.lastTickAt,
       },
+    };
+  }
+  overview(): OrchestratorOverview {
+    const state = this.state();
+    const unavailable: OrchestratorOverview['unavailable'] = [];
+    const read = <T>(key: OrchestratorOverview['unavailable'][number], get: () => T): T | null => {
+      try {
+        return get();
+      } catch {
+        unavailable.push(key);
+        return null;
+      }
+    };
+    return {
+      version: 1,
+      generatedAt: new Date().toISOString(),
+      state,
+      projects: read('projects', () => this.attentionProjects?.() ?? []),
+      sessions: read('sessions', () => this.supervisor.listAllSessions()),
+      cards: read('cards', () => listCardsInFlight(this.db)),
+      unavailable,
     };
   }
   /**

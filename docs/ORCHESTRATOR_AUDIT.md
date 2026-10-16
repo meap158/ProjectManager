@@ -790,3 +790,17 @@ cases plus existing poll, run-feed and page tests pass (33 tests), with client t
 and scoped lint. This reduces hidden-tab request traffic, not foreground request
 count or payload size; consolidated overview transport remains open. No physical
 mobile suspension/resumption or LAN latency claim is made by the jsdom checks.
+
+## Consolidated foreground overview, 2026-10-16
+
+The page's state/projects/sessions/in-flight-card refresh now uses one versioned
+GET /orchestrators/overview instead of four requests, both on polling and after
+actions. The existing serial polling and mutation epochs still fence late responses.
+Optional sections return null plus an unavailable key on read failure, preserving
+last-known client data and explicit stale warnings; state read failures remain request
+failures. No provider calls, launches or database writes are introduced. Existing
+paged history/live/review transports are unchanged and still refresh separately.
+Service/route and page regressions pass (127 tests), with both typechecks and scoped
+lint. This establishes request-count reduction for the overview, not reduced payload
+volume, bounded global overview size or measured physical LAN latency. The broader
+summary scaling and physical acceptance work remains open.

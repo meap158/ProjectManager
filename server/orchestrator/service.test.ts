@@ -938,3 +938,43 @@ it.each([
     }
   },
 );
+
+it('builds an overview without writes and retains explicit unavailable sections', () => {
+  const db = openDb(':memory:');
+  try {
+    db.exec(
+      "INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture','/fixture','now'); INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(1,1,'Task','in_progress',0,'now','now');",
+    );
+    const sessions = vi.fn(() => []);
+    const projects = vi.fn(() => []);
+    const service = new OrchestratorService(
+      db,
+      { listAllSessions: sessions } as unknown as AgentSupervisor,
+      null,
+      projects,
+    );
+    const before = db.prepare('SELECT total_changes() AS n').get()!.n;
+    const overview = service.overview();
+    expect(overview).toMatchObject({
+      version: 1,
+      state: { instances: [], events: [] },
+      projects: [],
+      sessions: [],
+      unavailable: [],
+    });
+    expect(overview.cards?.map((card) => card.id)).toEqual([1]);
+    expect(sessions).toHaveBeenCalledTimes(1);
+    expect(projects).toHaveBeenCalledTimes(1);
+    sessions.mockImplementationOnce(() => {
+      throw new Error('unavailable');
+    });
+    const partial = service.overview();
+    expect(partial.sessions).toBeNull();
+    expect(partial.projects).toEqual([]);
+    expect(partial.cards).toHaveLength(1);
+    expect(partial.unavailable).toEqual(['sessions']);
+    expect(db.prepare('SELECT total_changes() AS n').get()!.n).toBe(before);
+  } finally {
+    db.close();
+  }
+});

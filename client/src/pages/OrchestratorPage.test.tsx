@@ -8,6 +8,33 @@ import { OrchestratorPage } from './OrchestratorPage';
 const runFixture = vi.hoisted(() => vi.fn(async () => []));
 vi.mock('../api', () => ({
   api: {
+    orchestratorOverview: vi.fn(async () => {
+      const state = await api.orchestrators();
+      const unavailable: ('projects' | 'sessions' | 'cards')[] = [];
+      const [projects, sessions, cards] = await Promise.all([
+        api.listProjects().catch(() => {
+          unavailable.push('projects');
+          return null;
+        }),
+        api.listAllSessions().catch(() => {
+          unavailable.push('sessions');
+          return null;
+        }),
+        api.listCardsInFlight().catch(() => {
+          unavailable.push('cards');
+          return null;
+        }),
+      ]);
+      return {
+        version: 1 as const,
+        generatedAt: 'now',
+        state,
+        projects,
+        sessions,
+        cards,
+        unavailable,
+      };
+    }),
     orchestrators: vi.fn(async () => ({ instances: [], events: [] })),
     listProjects: vi.fn(async () => [{ id: 1, name: 'Project one' }]),
     saveOrchestrator: vi.fn(async () => ({})),

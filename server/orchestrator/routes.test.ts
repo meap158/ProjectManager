@@ -200,3 +200,21 @@ it('separates live detail pages from bounded owned history requests', async () =
   );
   expect(workspaceRuns).toHaveBeenCalledExactlyOnceWith('owner', 90, 20, 10, true);
 });
+
+it('serves the consolidated overview without dispatching or resolving work', async () => {
+  const overview = vi.fn(() => ({
+    version: 1,
+    generatedAt: 'now',
+    state: { instances: [], events: [] },
+    projects: [],
+    sessions: [],
+    cards: [],
+    unavailable: [],
+  }));
+  const app = new Hono();
+  registerOrchestratorRoutes(app, { overview } as unknown as OrchestratorService);
+  const response = await app.request('/orchestrators/overview');
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(overview.mock.results[0]!.value);
+  expect(overview).toHaveBeenCalledTimes(1);
+});
