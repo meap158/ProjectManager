@@ -921,3 +921,14 @@ planner and verifies recovery with a new report. All 125 Orchestrator/parser tes
 server types and scoped lint pass. Display rollover behavior is unchanged. This
 provides fresh verification gating, not an active provider quota-fetch scheduler;
 usage collection still depends on the existing locally recorded reports.
+
+## Quota cache source isolation, 2026-10-16
+
+The single bounded quota cache entry now includes normalized data-directory and
+effective Codex-home identity. Different sources cannot reuse one another's report;
+clock rollback invalidates reuse rather than extending its lifetime. Cached reads
+re-evaluate rollover against the read time without rereading rollout files, preserving
+resetSinceReport for fresh-verification gating. Real-file fixtures verify source
+isolation, normal TTL reuse and clock rollback; 29 parser/planner tests, server types
+and scoped lint pass. The 30-second TTL remains, so a manual check may not immediately
+observe a newly written report. A deliberate refresh path remains to implement.

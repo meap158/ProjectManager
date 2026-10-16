@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { claudeLimits, codexLimits, lastCodexLimits, windowLabel } from './limits.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { claudeLimits, codexLimits, lastCodexLimits, readLimits, windowLabel } from './limits.js';
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -131,3 +131,29 @@ it.each([undefined, '', 'invalid'])(
     expect(claudeLimits(dir, Date.parse('2026-10-06T13:00:00Z'))).toBeNull();
   },
 );
+
+it('isolates cached quota by source directory and refreshes after clock rollback', () => {
+  const first = mkdtempSync(path.join(os.tmpdir(), 'pm-quota-cache-a-'));
+  const second = mkdtempSync(path.join(os.tmpdir(), 'pm-quota-cache-b-'));
+  dirs.push(first, second);
+  vi.stubEnv('CODEX_HOME', first);
+  const now = Date.parse('2026-10-06T13:00:00Z');
+  const save = (dir: string, used: number) =>
+    writeFileSync(
+      path.join(dir, 'claude-limits.json'),
+      JSON.stringify({ asOf: new Date(now).toISOString(), fiveHour: { used_percentage: used } }),
+    );
+  try {
+    save(first, 10);
+    save(second, 80);
+    const usage = (dir: string, at: number) =>
+      readLimits(dir, at).find((value) => value.providerId === 'claude')?.windows[0]?.usedPercent;
+    expect(usage(first, now)).toBe(10);
+    expect(usage(second, now + 1)).toBe(80);
+    save(second, 30);
+    expect(usage(second, now + 2)).toBe(80);
+    expect(usage(second, now - 1)).toBe(30);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

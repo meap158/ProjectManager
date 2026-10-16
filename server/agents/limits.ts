@@ -241,15 +241,24 @@ export function claudeLimits(dataDir: string | null, now = Date.now()): Provider
 }
 
 const TTL_MS = 30_000;
-let cached: { at: number; value: ProviderLimits[] } | null = null;
+let cached: { at: number; sourceKey: string; value: ProviderLimits[] } | null = null;
 
 /** Every provider's limits that can be read locally, cached briefly (Settings polls). */
 export function readLimits(dataDir: string | null, now = Date.now()): ProviderLimits[] {
-  if (cached && now - cached.at < TTL_MS) return cached.value;
+  const sourcePath = (value: string) => {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  const sourceKey = JSON.stringify([
+    dataDir === null ? null : sourcePath(dataDir),
+    sourcePath(process.env.CODEX_HOME || path.join(os.homedir(), '.codex')),
+  ]);
+  if (cached && cached.sourceKey === sourceKey && now >= cached.at && now - cached.at < TTL_MS)
+    return cached.value.map((value) => rollOver(value, now));
   const value = [
     claudeLimits(dataDir, now),
     codexLimits(os.homedir(), process.env.CODEX_HOME, now),
   ].filter((l): l is ProviderLimits => l !== null);
-  cached = { at: now, value };
+  cached = { at: now, sourceKey, value };
   return value;
 }
