@@ -1,3 +1,4 @@
+import { observeRunChanges } from '../runEvidence.js';
 import type { Db } from '../../db.js';
 import type { RunExecutionIdentity } from '../runExecution.js';
 import { logicalSize } from '../logFile.js';
@@ -39,6 +40,8 @@ export async function recoverManagedRuns(
       const observation = await observeManagedRun(client, row, logicalSize(row.runLogPath));
       if (!active()) return;
       const complete = observation.phase === 'complete';
+      const changes = complete ? await observeRunChanges(db, row) : null;
+      if (!active()) return;
       const state = observation.phase === 'unknown' ? 'unknown' : complete ? 'complete' : 'active';
       const status = complete ? observation.outcome! : 'running';
       const error =
@@ -48,7 +51,7 @@ export async function recoverManagedRuns(
             ? `Hosted worker exited with code ${observation.exitCode ?? 'unknown'}`
             : null;
       db.prepare(
-        `UPDATE agent_runs SET status=?,execution_state=?,attempts=MAX(attempts,?),error=?,exit_code=?,ended_at=?
+        `UPDATE agent_runs SET status=?,execution_state=?,attempts=MAX(attempts,?),error=?,exit_code=?,ended_at=?,changes_json=COALESCE(changes_json,?)
         WHERE id=? AND log_path=? AND status IN ('queued','running')
         AND (status IS NOT ? OR execution_state IS NOT ? OR attempts < ? OR error IS NOT ?
           OR exit_code IS NOT ? OR (? = 0 AND ended_at IS NOT NULL))`,
@@ -59,6 +62,7 @@ export async function recoverManagedRuns(
         error,
         observation.exitCode ?? null,
         complete ? new Date().toISOString() : null,
+        changes ? JSON.stringify(changes) : null,
         row.runId!,
         row.runLogPath,
         status,

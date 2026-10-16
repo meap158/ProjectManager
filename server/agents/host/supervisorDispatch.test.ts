@@ -1,3 +1,4 @@
+import * as gitChanges from '../gitChanges.js';
 import { mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,10 +8,12 @@ import { AgentSupervisor } from '../supervisor.js';
 import { startRunHost, runRendezvousFile } from './runDaemon.js';
 import { RunClient } from './runClient.js';
 
-it.each([true, false, 'lost-reply'] as const)(
+it.each([true, false, 'lost-reply', 'shutdown-baseline'] as const)(
   'opt-in supervisor uses hosted ownership without local fallback (authenticated=%s)',
   async (authenticated) => {
     const lostReply = authenticated === 'lost-reply';
+    let releaseBaseline: (() => void) | undefined;
+    let capturing = false;
     const dir = mkdtempSync(path.join(tmpdir(), 'pm-supervisor-dispatch-'));
     const db = openDb(':memory:');
     const host = await startRunHost(dir);
@@ -41,6 +44,15 @@ it.each([true, false, 'lost-reply'] as const)(
         }),
         path.join(dir, 'worker.log'),
       );
+      if (authenticated === 'shutdown-baseline') {
+        vi.spyOn(gitChanges, 'snapshotTree').mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              capturing = true;
+              releaseBaseline = () => resolve(null);
+            }),
+        );
+      }
       if (lostReply) {
         const launch = RunClient.prototype.launch;
         vi.spyOn(RunClient.prototype, 'launch').mockImplementationOnce(async function (input) {
@@ -53,6 +65,24 @@ it.each([true, false, 'lost-reply'] as const)(
         managedRuns: true,
       });
       await supervisor.ready;
+      if (authenticated === 'shutdown-baseline') {
+        await expect.poll(() => capturing).toBe(true);
+        let finished = false;
+        const stopping = supervisor.shutdown().then(() => {
+          finished = true;
+        });
+        await Promise.resolve();
+        expect(finished).toBe(false);
+        releaseBaseline!();
+        await stopping;
+        expect(existsSync(marker)).toBe(false);
+        const identity = db
+          .prepare('SELECT nonce FROM agent_run_executions WHERE run_id=1')
+          .get() as { nonce: string };
+        expect(await client.status(identity.nonce)).toBeNull();
+        return;
+      }
+
       await expect
         .poll(() => supervisor!.getRun(1)?.status)
         .toBe(authenticated ? 'running' : 'failed');
@@ -90,6 +120,7 @@ it.each([true, false, 'lost-reply'] as const)(
         expect(supervisor.getRun(1)?.error).toContain('Hosted runtime unavailable');
       }
     } finally {
+      releaseBaseline?.();
       vi.restoreAllMocks();
       await supervisor?.shutdown();
       if (nonce) await client.stop(nonce).catch(() => false);

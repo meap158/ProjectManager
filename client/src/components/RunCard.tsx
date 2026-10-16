@@ -128,6 +128,16 @@ export function RunCard({
       {run.error && <div className="error-banner">{run.error}</div>}
 
       {run.changes && !active && <RunChangesSummary run={run} />}
+      {run.changes?.observation && !active && (
+        <p
+          className="faint"
+          style={{ margin: 0, fontSize: 12.5 }}
+          title={`${run.changes.observation.baselineAt} to ${run.changes.observation.observedAt}`}
+        >
+          Compared with the saved pre-launch worktree. May include changes from other work; review
+          the output before accepting.
+        </p>
+      )}
 
       {run.validation && (
         <div className="notice" role="status">

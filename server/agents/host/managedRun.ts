@@ -1,3 +1,4 @@
+import { captureRunBaseline } from '../runEvidence.js';
 import path from 'node:path';
 import type { RunExecutionIdentity } from '../runExecution.js';
 import type { Db } from '../../db.js';
@@ -12,6 +13,7 @@ export async function launchManagedRun(
   runId: number,
   attempt: number,
   launch: Omit<PipeRunLaunch, 'nonce' | 'logPath'>,
+  canLaunch: () => boolean = () => true,
 ) {
   const previous = findRunExecution(db, runId, attempt);
   if (previous) {
@@ -31,6 +33,8 @@ export async function launchManagedRun(
     generation: 1,
     attempt,
   });
+  if (!previous) await captureRunBaseline(db, identity, launch.cwd);
+  if (!canLaunch()) throw new Error('Launch canceled before host submission');
   const execution = await client.launch({
     ...launch,
     nonce: identity.nonce,

@@ -214,6 +214,10 @@ export const MIGRATIONS: string[] = [
     UNIQUE(run_id, run_log_path, attempt)
   );`,
   `ALTER TABLE agent_runs ADD COLUMN execution_state TEXT CHECK(execution_state IN ('active','unknown','complete'));`,
+  `CREATE TABLE agent_run_evidence (
+    nonce TEXT PRIMARY KEY,
+    cwd TEXT NOT NULL, baseline_at TEXT NOT NULL, baseline_json TEXT
+  );`,
 ];
 
 export function openDb(dataDir: string): Db {

@@ -516,6 +516,8 @@ export interface AgentRun {
 }
 
 export interface RunChanges {
+  /** Persisted pre-launch vs later observed worktree; may include other authors' edits. */
+  observation?: { baselineAt: string; observedAt: string };
   /** Files that changed during the run (working tree or committed), project-relative. */
   files: string[];
   /** Commits the run created. */

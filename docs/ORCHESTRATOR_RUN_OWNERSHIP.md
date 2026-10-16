@@ -335,3 +335,27 @@ The option is not enabled by createApp/production configuration. Default interme
 startup still needs direct real-process coverage, hosted change snapshots/review
 evidence need implementation, and CPU budgets and platform containment remain gates
 before default dispatch rollout. No historical worktree diff is invented on recovery.
+
+### Persisted hosted review evidence, 2026-10-16
+
+New hosted attempts capture a bounded immutable Git baseline before host submission,
+keyed by attempt nonce and recording the working directory and capture time. Replay
+never substitutes a later snapshot. Completion compares the current tree with that
+saved baseline and stores the result with both observation timestamps. Completed
+results remain fixed on subsequent polls. Missing/unavailable old baselines stay
+null rather than manufacturing a historical diff. The review UI labels comparisons
+as shared-worktree interval evidence that may include other authors' changes.
+
+A real Git/worker test reopens the database before reconciliation, preserves an
+unchanged pre-existing dirty file, finds the worker's new file and confirms later
+edits cannot rewrite the saved result. Existing-schema upgrade/reopen leaves old
+runs untouched with no invented evidence. Shutdown now awaits hosted setup and
+revalidates launch after asynchronous capture; a paused-capture test proves no
+worker starts after shutdown. Six evidence/dispatch tests, client/server types and
+scoped lint pass. The preceding broader host/database group passed 34 tests before
+the final shutdown/upgrade tests were added; no new whole-suite pass is claimed.
+
+This is a bounded worktree comparison using the existing status/mtime/size algorithm,
+not exclusive authorship or content-level provenance. Snapshot failures remain
+unavailable evidence. Default intermediate startup, CPU budgets, containment and
+production opt-in configuration remain open rollout work.

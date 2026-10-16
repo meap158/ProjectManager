@@ -357,6 +357,7 @@ export class AgentSupervisor {
     { phase: 'stopping' | 'starting' | 'restoring' | 'failed'; error?: string; since: number }
   >();
   private readonly managedRuns: boolean;
+  private managedDispatches = new Set<Promise<void>>();
   private managedTimer?: ReturnType<typeof setInterval>;
   private managedPolling: Promise<void> | null = null;
   private continuationTimer?: ReturnType<typeof setInterval>;
@@ -1609,6 +1610,7 @@ export class AgentSupervisor {
     clearInterval(this.continuationTimer);
     clearInterval(this.managedTimer);
     await this.managedPolling;
+    await Promise.allSettled([...this.managedDispatches]);
     const installKills = [...this.installing.values()].map(async (live) => {
       if (live.timer) clearTimeout(live.timer);
       try {
@@ -2192,12 +2194,18 @@ export class AgentSupervisor {
           : { command, env: {} };
         const resolved = await resolveArgv(connection.command);
         if (this.managedRuns) {
-          await this.spawnManagedRun(row, {
+          const pending = this.spawnManagedRun(row, {
             argv: resolved,
             cwd,
             env: processEnv(connection.env),
             timeoutMs,
           });
+          this.managedDispatches.add(pending);
+          try {
+            await pending;
+          } finally {
+            this.managedDispatches.delete(pending);
+          }
           return;
         }
         // Snapshot the work tree so validation can show what the agent actually changed.
@@ -2290,7 +2298,17 @@ export class AgentSupervisor {
         !['queued', 'running'].includes(current.status)
       )
         return;
-      await launchManagedRun(this.db, client, row.id, row.attempts + 1, launch);
+      await launchManagedRun(this.db, client, row.id, row.attempts + 1, launch, () => {
+        if (this.closed) return false;
+        const current = this.db
+          .prepare('SELECT status,log_path FROM agent_runs WHERE id=?')
+          .get(row.id) as { status: string; log_path: string } | undefined;
+        return (
+          !!current &&
+          current.log_path === row.log_path &&
+          ['queued', 'running'].includes(current.status)
+        );
+      });
       if (!this.closed) {
         this.db
           .prepare(
