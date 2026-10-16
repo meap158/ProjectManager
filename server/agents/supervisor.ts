@@ -1,3 +1,4 @@
+import { budgetedRunArgv } from './host/budgetedRun.js';
 import { connectRunHost } from './host/connectRunHost.js';
 import { launchManagedRun } from './host/managedRun.js';
 import type { PipeRunLaunch } from './host/runLauncher.js';
@@ -2286,7 +2287,8 @@ export class AgentSupervisor {
     let client: Awaited<ReturnType<typeof connectRunHost>> | undefined;
     try {
       if (!this.dataDir) throw new Error('Hosted runs require a data directory');
-      if (this.cpuBudget) throw new Error('Hosted run CPU budget enforcement is not yet supported');
+      if (this.cpuBudget)
+        launch = { ...launch, argv: budgetedRunArgv(launch.argv, getCpuBudget(this.db).threads) };
       client = await connectRunHost(this.dataDir);
       const current = this.db
         .prepare('SELECT status,log_path FROM agent_runs WHERE id=?')

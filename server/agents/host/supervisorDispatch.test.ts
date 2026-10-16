@@ -1,3 +1,4 @@
+import { cpuBudgetSupported } from '../cpuBudget.js';
 import * as gitChanges from '../gitChanges.js';
 import { mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,13 @@ import { AgentSupervisor } from '../supervisor.js';
 import { startRunHost, runRendezvousFile } from './runDaemon.js';
 import { RunClient } from './runClient.js';
 
-it.each([true, false, 'lost-reply', 'shutdown-baseline'] as const)(
+it.each([
+  true,
+  false,
+  'lost-reply',
+  'shutdown-baseline',
+  ...(cpuBudgetSupported() ? ['cpu-budget'] : []),
+])(
   'opt-in supervisor uses hosted ownership without local fallback (authenticated=%s)',
   async (authenticated) => {
     const lostReply = authenticated === 'lost-reply';
@@ -63,6 +70,7 @@ it.each([true, false, 'lost-reply', 'shutdown-baseline'] as const)(
       supervisor = new AgentSupervisor(db, path.join(dir, 'logs'), {
         dataDir: dir,
         managedRuns: true,
+        cpuBudget: authenticated === 'cpu-budget',
       });
       await supervisor.ready;
       if (authenticated === 'shutdown-baseline') {
@@ -91,7 +99,9 @@ it.each([true, false, 'lost-reply', 'shutdown-baseline'] as const)(
           .prepare('SELECT nonce FROM agent_run_executions WHERE run_id=1')
           .get() as { nonce: string };
         nonce = identity.nonce;
-        await expect.poll(async () => (await client.read(nonce!, 0))?.data).toContain('ready');
+        await expect
+          .poll(async () => (await client.read(nonce!, 0))?.data, { timeout: 10000 })
+          .toContain('ready');
         expect(readFileSync(marker, 'utf8')).toBe('one');
         expect(supervisor.getRun(1)).toMatchObject({
           attempts: 1,
@@ -102,6 +112,7 @@ it.each([true, false, 'lost-reply', 'shutdown-baseline'] as const)(
         supervisor = new AgentSupervisor(db, path.join(dir, 'logs'), {
           dataDir: dir,
           managedRuns: true,
+          cpuBudget: authenticated === 'cpu-budget',
         });
         await supervisor.ready;
         expect(supervisor.getRun(1)).toMatchObject({

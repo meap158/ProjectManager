@@ -375,3 +375,26 @@ Ten automatic-connection/daemon/supervisor tests, server types and scoped lint p
 on this Windows environment. This closes the missing default-intermediate test here,
 not Unix/platform containment, CPU enforcement, all crash boundaries, production
 configuration or physical mobile controls. Default hosted dispatch remains disabled.
+
+### CPU budget before hosted worker startup, 2026-10-16
+
+Opt-in hosted dispatch now wraps budgeted commands in an owned bootstrap. It applies
+the saved thread budget and priority to itself, verifies its own resulting OS affinity
+and priority, and only then creates the real worker with inherited settings. Invalid,
+unsupported or unverified configuration exits without starting the worker. The wrapper
+and command arguments participate in the host's ordinary immutable launch fingerprint;
+stop/timeout still address the owned root and its process tree. No persisted PID is
+used to adopt or configure a worker.
+
+A Windows real-process probe confirms the worker sees the expected mask and
+BelowNormal priority on its first command, and preserves its exit code. Invalid
+budget input proves the target command is not executed. Budget-enabled supervisor
+launch/recovery/stop is also covered; seven bootstrap/dispatch tests, server types
+and scoped lint pass. Linux verification is implemented against /proc affinity and
+process priority but has not been run here. The prior blanket CPU-enabled launch
+rejection is removed only for the internal opt-in path.
+
+Changing the budget of already-running hosted workers is still not wired into
+Settings refresh. That and platform containment remain rollout gates, as do the
+remaining crash matrix and production configuration. No default enablement or
+fresh full-suite pass is claimed by these focused checks.
