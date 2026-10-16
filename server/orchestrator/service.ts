@@ -2,11 +2,19 @@
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../db.js';
 import type { AgentSupervisor } from '../agents/supervisor.js';
-import { getSetting, setSetting, getCard, listCards, listCardsInFlight } from '../store.js';
+import {
+  getSetting,
+  setSetting,
+  getCard,
+  listCards,
+  listCardsInFlight,
+  cardKey,
+} from '../store.js';
 import { providerStatuses } from '../agents/providers.js';
 import { readLimits } from '../agents/limits.js';
 import type {
   OrchestratorOverview,
+  OrchestratorCardSummary,
   OrchestratorConfig,
   OrchestratorEvent,
   OrchestratorSituation,
@@ -115,7 +123,18 @@ export class OrchestratorService {
             : session.status === 'running',
         );
       }),
-      cards: read('cards', () => listCardsInFlight(this.db)),
+      cards: read('cards', () => {
+        const rows = this.db
+          .prepare(
+            `
+          SELECT c.id, c.project_id AS projectId, c.title, c.status, p.name AS projectName
+          FROM cards c JOIN projects p ON p.id = c.project_id
+          WHERE c.status IN ('in_progress', 'review') ORDER BY c.updated_at, c.id
+        `,
+          )
+          .all() as Omit<OrchestratorCardSummary, 'key'>[];
+        return rows.map((row) => ({ ...row, key: cardKey(row.id) }));
+      }),
       unavailable,
     };
   }

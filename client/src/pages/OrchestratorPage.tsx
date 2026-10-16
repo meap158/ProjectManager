@@ -6,8 +6,12 @@ import { OrchestratorNextStep } from '../components/OrchestratorNextStep';
 import { Dropdown } from '../components/Dropdown';
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { PROVIDER_LABELS } from '../components/icons';
-import type { AgentSession, CardWithProject, ProjectSummary } from '../../../shared/types';
-import type { OrchestratorConfig, OrchestratorState } from '../../../shared/orchestrator';
+import type { AgentSession, ProjectSummary } from '../../../shared/types';
+import type {
+  OrchestratorConfig,
+  OrchestratorState,
+  OrchestratorCardSummary,
+} from '../../../shared/orchestrator';
 import { projectAttention } from '../../../shared/projectAttention';
 import './orchestrator.css';
 import { serialPoll } from '../lib/serialPoll';
@@ -83,7 +87,7 @@ export function OrchestratorPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [runRefresh, setRunRefresh] = useState(0);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
-  const [inFlightCards, setInFlightCards] = useState<CardWithProject[]>([]);
+  const [inFlightCards, setInFlightCards] = useState<OrchestratorCardSummary[]>([]);
   // Collapsed orchestrators and panels (PM-90), remembered in this browser.
   const { isCollapsed, toggle } = useCollapsed('pm.orchestrator.collapsed');
   const [draft, setDraft] = useState<Omit<OrchestratorConfig, 'id'> & { id?: string }>(defaults);

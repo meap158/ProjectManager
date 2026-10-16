@@ -168,6 +168,11 @@ export interface OrchestratorOverview {
   state: OrchestratorState;
   projects: ProjectSummary[] | null;
   sessions: AgentSession[] | null;
-  cards: CardWithProject[] | null;
+  cards: OrchestratorCardSummary[] | null;
   unavailable: ('projects' | 'sessions' | 'cards')[];
 }
+
+export type OrchestratorCardSummary = Pick<
+  CardWithProject,
+  'id' | 'projectId' | 'key' | 'title' | 'status' | 'projectName'
+>;

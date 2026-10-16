@@ -963,6 +963,16 @@ it('builds an overview without writes and retains explicit unavailable sections'
       unavailable: [],
     });
     expect(overview.cards?.map((card) => card.id)).toEqual([1]);
+    expect(overview.cards?.[0]).toEqual({
+      id: 1,
+      projectId: 1,
+      key: 'PM-1',
+      title: 'Task',
+      status: 'in_progress',
+      projectName: 'Fixture',
+    });
+    expect(overview.cards?.[0]).not.toHaveProperty('description');
+
     expect(sessions).toHaveBeenCalledTimes(1);
     expect(projects).toHaveBeenCalledTimes(1);
     sessions.mockImplementationOnce(() => {

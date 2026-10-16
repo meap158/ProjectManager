@@ -815,3 +815,14 @@ change supervision, delete records or mutate the supervisor's session array.
 An unsorted mixed-history regression and existing service/route/page tests pass
 (53 tests), with server typecheck and scoped lint. This reduces serialized history,
 not the supervisor's underlying list hydration cost or measured LAN latency.
+
+## Compact overview card projection, 2026-10-16
+
+Overview cards now use a typed six-field SQL projection (identity, project, key,
+title, status and project name) instead of fetching and serializing complete cards.
+Descriptions and unrelated metadata are excluded before database hydration; the
+full card endpoints remain unchanged. Ordering retains updated-at precedence with
+an ID tie-break. Service payload assertions and page regressions pass (44 tests),
+with both typechecks and scoped lint. Card count remains unbounded in this overview;
+this is a per-card payload reduction, not proof of bounded portfolio scaling or
+physical LAN improvement.
