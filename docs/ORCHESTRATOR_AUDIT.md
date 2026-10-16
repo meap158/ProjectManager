@@ -870,3 +870,10 @@ The real dispatch regression checks a 409 conflict and one persisted worker befo
 and after completion. Agent/service tests pass (42 tests), with server types and
 scoped lint. This closes owner reuse only; request fingerprinting, durable task
 generations and cross-attempt request identity remain explicit open work.
+
+The dispatch replay fixture now runs for both manual/null and master ownership,
+rejecting another master in each case and manual takeover of a master-owned run.
+It asserts the stored original ID/owner and single-worker count, then successful
+matching replay after completion. All 22 agent lifecycle tests and scoped lint pass.
+Current task revision checking still occurs synchronously at the insertion fence;
+it does not replace a persisted logical request identity across attempts.

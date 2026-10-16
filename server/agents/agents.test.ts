@@ -404,44 +404,61 @@ describe('sessions', () => {
 });
 
 describe('runs and card lifecycle', () => {
-  it('reuses a durable dispatch key without creating another worker', async () => {
-    const card = (await (
-      await call('POST', `/projects/${projectId}/cards`, { title: 'Idempotent task' })
-    ).json()) as { id: number };
-    const input = { command: [NODE, '-e', ECHO], dispatchKey: `test-dispatch-${card.id}` };
-    await expect(
-      app.supervisor.dispatchCard(projectId, card.id, { ...input, canCommit: () => false }),
-    ).rejects.toThrow('ownership or policy changed');
-    expect(
-      testDb
-        .prepare('SELECT COUNT(*) AS n FROM agent_runs WHERE dispatch_key = ?')
-        .get(input.dispatchKey)?.n,
-    ).toBe(0);
-    const first = await app.supervisor.dispatchCard(projectId, card.id, input);
-    const again = await app.supervisor.dispatchCard(projectId, card.id, input);
-    expect(again.id).toBe(first.id);
-    await expect(
-      app.supervisor.dispatchCard(projectId, card.id, {
-        ...input,
-        orchestratorId: 'different-owner',
-      }),
-    ).rejects.toMatchObject({
-      status: 409,
-      message: 'Dispatch key belongs to another orchestrator',
-    });
+  it.each([undefined, 'master-owner'])(
+    'reuses a durable dispatch key for owner %s without creating another worker',
+    async (orchestratorId) => {
+      const card = (await (
+        await call('POST', `/projects/${projectId}/cards`, { title: 'Idempotent task' })
+      ).json()) as { id: number };
+      const input = {
+        command: [NODE, '-e', ECHO],
+        dispatchKey: `test-dispatch-${card.id}`,
+        orchestratorId,
+      };
+      await expect(
+        app.supervisor.dispatchCard(projectId, card.id, { ...input, canCommit: () => false }),
+      ).rejects.toThrow('ownership or policy changed');
+      expect(
+        testDb
+          .prepare('SELECT COUNT(*) AS n FROM agent_runs WHERE dispatch_key = ?')
+          .get(input.dispatchKey)?.n,
+      ).toBe(0);
+      const first = await app.supervisor.dispatchCard(projectId, card.id, input);
+      const again = await app.supervisor.dispatchCard(projectId, card.id, input);
+      expect(again.id).toBe(first.id);
+      await expect(
+        app.supervisor.dispatchCard(projectId, card.id, {
+          ...input,
+          orchestratorId: 'different-owner',
+        }),
+      ).rejects.toMatchObject({
+        status: 409,
+        message: 'Dispatch key belongs to another orchestrator',
+      });
+      if (orchestratorId) {
+        await expect(
+          app.supervisor.dispatchCard(projectId, card.id, { ...input, orchestratorId: undefined }),
+        ).rejects.toMatchObject({ status: 409 });
+      }
+      expect(
+        testDb
+          .prepare('SELECT id, orchestrator_id FROM agent_runs WHERE dispatch_key = ?')
+          .get(input.dispatchKey),
+      ).toMatchObject({ id: first.id, orchestrator_id: orchestratorId ?? null });
 
-    expect(
-      testDb
-        .prepare('SELECT COUNT(*) AS n FROM agent_runs WHERE dispatch_key = ?')
-        .get(input.dispatchKey)?.n,
-    ).toBe(1);
-    await waitFor(
-      () => getRun(first.id),
-      (r) => r.status === 'succeeded',
-      'idempotent run',
-    );
-    expect((await app.supervisor.dispatchCard(projectId, card.id, input)).id).toBe(first.id);
-  });
+      expect(
+        testDb
+          .prepare('SELECT COUNT(*) AS n FROM agent_runs WHERE dispatch_key = ?')
+          .get(input.dispatchKey)?.n,
+      ).toBe(1);
+      await waitFor(
+        () => getRun(first.id),
+        (r) => r.status === 'succeeded',
+        'idempotent run',
+      );
+      expect((await app.supervisor.dispatchCard(projectId, card.id, input)).id).toBe(first.id);
+    },
+  );
   it('dispatches a card, succeeds it, and validates it to Review', async () => {
     const card = (await (
       await call('POST', `/projects/${projectId}/cards`, { title: 'Agent task' })
