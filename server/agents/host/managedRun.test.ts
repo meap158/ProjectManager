@@ -52,6 +52,13 @@ it('binds a run attempt before real launch and reattaches without another worker
     expect(
       db.prepare('SELECT status,execution_state,attempts FROM agent_runs WHERE id=1').get(),
     ).toMatchObject({ status: 'running', execution_state: 'active', attempts: 1 });
+    const writes = () => (db.prepare('SELECT total_changes() AS n').get() as { n: number }).n;
+    const activeWrites = writes();
+    const outputChanged = vi.fn();
+    await recoverManagedRuns(db, dir, () => true, outputChanged);
+    await recoverManagedRuns(db, dir, () => true, outputChanged);
+    expect(writes()).toBe(activeWrites);
+    expect(outputChanged).toHaveBeenCalledTimes(2);
     await supervisor!.stopRun(1);
     await supervisor!.shutdown();
     supervisor = undefined;
@@ -90,6 +97,14 @@ it('binds a run attempt before real launch and reattaches without another worker
     expect(
       db.prepare('SELECT status,execution_state FROM agent_runs WHERE id=1').get(),
     ).toMatchObject({ status: 'running', execution_state: 'unknown' });
+    const unknownWrites = writes();
+    await recoverManagedRuns(
+      db,
+      null,
+      () => true,
+      () => {},
+    );
+    expect(writes()).toBe(unknownWrites);
     await expect(stopManagedRun(db, null, 1, actualLog)).rejects.toThrow();
     expect(
       db.prepare('SELECT status,execution_state FROM agent_runs WHERE id=1').get(),

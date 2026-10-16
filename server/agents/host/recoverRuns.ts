@@ -49,7 +49,9 @@ export async function recoverManagedRuns(
             : null;
       db.prepare(
         `UPDATE agent_runs SET status=?,execution_state=?,attempts=MAX(attempts,?),error=?,exit_code=?,ended_at=?
-        WHERE id=? AND log_path=? AND status IN ('queued','running')`,
+        WHERE id=? AND log_path=? AND status IN ('queued','running')
+        AND (status IS NOT ? OR execution_state IS NOT ? OR attempts < ? OR error IS NOT ?
+          OR exit_code IS NOT ? OR (? = 0 AND ended_at IS NOT NULL))`,
       ).run(
         status,
         state,
@@ -59,6 +61,12 @@ export async function recoverManagedRuns(
         complete ? new Date().toISOString() : null,
         row.runId!,
         row.runLogPath,
+        status,
+        state,
+        row.attempt,
+        error,
+        observation.exitCode ?? null,
+        complete ? 1 : 0,
       );
       changed(row.runId!, row.runLogPath);
     }
@@ -67,7 +75,9 @@ export async function recoverManagedRuns(
       for (const row of rows) {
         db.prepare(
           `UPDATE agent_runs SET status='running',execution_state='unknown',error='Run host unavailable; execution ownership is unknown'
-        WHERE id=? AND log_path=? AND status IN ('queued','running')`,
+        WHERE id=? AND log_path=? AND status IN ('queued','running')
+        AND (status IS NOT 'running' OR execution_state IS NOT 'unknown'
+          OR error IS NOT 'Run host unavailable; execution ownership is unknown')`,
         ).run(row.runId!, row.runLogPath);
         changed(row.runId!, row.runLogPath);
       }
