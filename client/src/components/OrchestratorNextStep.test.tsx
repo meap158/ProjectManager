@@ -71,3 +71,32 @@ it('opens an owned review in its Orchestrator workspace', () => {
     '/orchestrators?orchestrator=master&run=9#orchestrator-runs-master',
   );
 });
+
+it.each(['active', 'unknown'] as const)(
+  'opens the owning worker for %s execution',
+  (executionState) => {
+    render(
+      <MemoryRouter>
+        <OrchestratorNextStep
+          decision={{
+            cardId: 4,
+            projectId: 7,
+            action: 'wait',
+            reason: 'Worker',
+            waitReason: 'active_worker',
+            worker: { runId: 9, orchestratorId: 'actual-owner', executionState },
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(
+      screen
+        .getByRole('link', {
+          name: executionState === 'unknown' ? 'Inspect unknown execution' : 'View workers',
+        })
+        .getAttribute('href'),
+    ).toBe('/orchestrators?orchestrator=actual-owner&run=9#orchestrator-runs-actual-owner');
+    if (executionState === 'unknown')
+      expect(screen.getByText(/independently verifying it has stopped/)).toBeDefined();
+  },
+);

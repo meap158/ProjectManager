@@ -5,7 +5,7 @@ import type { OrchestratorWaitReason } from '../../shared/orchestrator.js';
 export type PlanningRun = Pick<
   AgentRun,
   'id' | 'projectId' | 'cardId' | 'providerId' | 'status' | 'validation'
-> & { orchestratorId?: string | null };
+> & { orchestratorId?: string | null; executionState?: AgentRun['executionState'] | null };
 
 export interface OrchestratorPolicy {
   projectIds: number[];

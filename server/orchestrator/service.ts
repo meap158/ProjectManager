@@ -225,9 +225,16 @@ export class OrchestratorService {
     const providers = await providerStatuses();
     const runs = planningRuns(this.db, instance.projectIds);
     const latestRuns = new Map<number, (typeof runs)[number]>();
+    const activeRuns = new Map<number, (typeof runs)[number]>();
     for (const run of runs) {
       if (run.cardId != null && run.id > (latestRuns.get(run.cardId)?.id ?? -1))
         latestRuns.set(run.cardId, run);
+      if (
+        run.cardId != null &&
+        ['queued', 'running'].includes(run.status) &&
+        run.id > (activeRuns.get(run.cardId)?.id ?? -1)
+      )
+        activeRuns.set(run.cardId, run);
     }
     const decisions = planOrchestration(instance, {
       cards: projects
@@ -267,17 +274,21 @@ export class OrchestratorService {
         // The planner preserves reservations; preview explains the exact persisted blocker.
         // Live workers and pending reviews keep precedence over retry metadata.
         const explainRetry = decision.waitReason === 'assignment_reserved' && waitReason;
-        const latest = latestRuns.get(decision.cardId);
+        const activeWorker = decision.waitReason === 'active_worker';
+        const latest = activeWorker
+          ? activeRuns.get(decision.cardId)
+          : latestRuns.get(decision.cardId);
         const inspectRun =
           decision.waitReason === 'review_required' ||
           (explainRetry && waitReason === 'retry_budget_exhausted');
         return {
           ...decision,
-          ...(inspectRun && latest
+          ...((inspectRun || activeWorker) && latest
             ? {
                 worker: {
                   runId: latest.id,
                   orchestratorId: latest.orchestratorId ?? null,
+                  ...(latest.executionState ? { executionState: latest.executionState } : {}),
                 },
               }
             : {}),

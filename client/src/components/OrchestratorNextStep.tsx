@@ -72,7 +72,14 @@ const steps: Record<
 
 export function OrchestratorNextStep({ decision }: { decision: OrchestratorPlanDecision }) {
   if (decision.action === 'dispatch' || !decision.waitReason) return null;
-  const step = steps[decision.waitReason];
+  const step =
+    decision.waitReason === 'active_worker' && decision.worker?.executionState === 'unknown'
+      ? {
+          text: 'Execution ownership is unknown. Check the worker and connection; resolve it from run details only after independently verifying it has stopped.',
+          label: 'Inspect unknown execution',
+          target: 'workers' as const,
+        }
+      : steps[decision.waitReason];
   if (!step) return null;
   const href =
     step.target === 'workers'

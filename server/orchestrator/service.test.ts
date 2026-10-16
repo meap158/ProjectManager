@@ -881,3 +881,52 @@ it('sees policy edits from another database connection at every commit fence', a
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it.each([
+  ['running', 'active'],
+  ['running', 'unknown'],
+  ['queued', 'unknown'],
+] as const)(
+  'links the actual %s/%s worker instead of a newer finished run',
+  async (status, executionState) => {
+    const db = openDb(':memory:');
+    try {
+      db.exec(
+        "INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture','/fixture','now'); INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(1,1,'Task','in_progress',0,'now','now');",
+      );
+      db.prepare(
+        "INSERT INTO agent_runs(id,project_id,card_id,name,command_json,status,execution_state,created_at,log_path,orchestrator_id) VALUES(77,1,1,'Worker','[]',?,?,'now','','actual-owner')",
+      ).run(status, executionState);
+      db.exec(
+        "INSERT INTO agent_runs(id,project_id,card_id,name,command_json,status,validation,created_at,log_path,orchestrator_id) VALUES(78,1,1,'Finished','[]','succeeded','accepted','now','','different-owner')",
+      );
+      const service = new OrchestratorService(
+        db,
+        { listAllSessions: () => [] } as unknown as AgentSupervisor,
+        null,
+      );
+      const master = service.save({
+        name: 'Fixture',
+        enabled: false,
+        strategy: 'observe',
+        projectIds: [1],
+        providers: ['codex'],
+        maxWorkers: 2,
+        maxWorkersPerProject: 2,
+        maxWorkersPerProvider: 2,
+        reservePercent: 10,
+        allowUnknownQuota: false,
+        quotaMaxAgeMs: 60000,
+      });
+      const before = db.prepare('SELECT total_changes() AS n').get()!.n;
+      const preview = await service.preview(master.id, 0, 1);
+      expect(preview?.decisions[0]).toMatchObject({
+        waitReason: 'active_worker',
+        worker: { runId: 77, orchestratorId: 'actual-owner', executionState },
+      });
+      expect(db.prepare('SELECT total_changes() AS n').get()!.n).toBe(before);
+    } finally {
+      db.close();
+    }
+  },
+);

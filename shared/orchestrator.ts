@@ -44,7 +44,11 @@ export interface OrchestratorExecutionStatus {
 }
 
 export interface OrchestratorPlanDecision {
-  worker?: { runId: number; orchestratorId: string | null };
+  worker?: {
+    runId: number;
+    orchestratorId: string | null;
+    executionState?: 'active' | 'unknown' | 'complete';
+  };
   cardId: number;
   projectId: number;
   action: 'dispatch' | 'review' | 'wait';
