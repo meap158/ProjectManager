@@ -1,3 +1,6 @@
+import { connectRunHost } from './host/connectRunHost.js';
+import { launchManagedRun } from './host/managedRun.js';
+import type { PipeRunLaunch } from './host/runLauncher.js';
 import { hasManagedExecution, recoverManagedRuns, stopManagedRun } from './host/recoverRuns.js';
 // Supervises persistent agent CLI sessions and one-shot runs.
 //
@@ -353,6 +356,7 @@ export class AgentSupervisor {
     number,
     { phase: 'stopping' | 'starting' | 'restoring' | 'failed'; error?: string; since: number }
   >();
+  private readonly managedRuns: boolean;
   private managedTimer?: ReturnType<typeof setInterval>;
   private managedPolling: Promise<void> | null = null;
   private continuationTimer?: ReturnType<typeof setInterval>;
@@ -398,6 +402,8 @@ export class AgentSupervisor {
     private logDir: string,
     options: {
       host?: boolean;
+      /** Opt-in until hosted dispatch crash and platform acceptance gates pass. */
+      managedRuns?: boolean;
       dataDir?: string;
       installRecipes?: Partial<Record<string, InstallRecipe>>;
       maxParallelRuns?: number;
@@ -406,6 +412,7 @@ export class AgentSupervisor {
   ) {
     mkdirSync(logDir, { recursive: true });
     this.dataDir = options.dataDir ?? null;
+    this.managedRuns = options.managedRuns ?? false;
     this.maxParallelRuns = options.maxParallelRuns ?? MAX_PARALLEL_RUNS;
     this.cpuBudget = options.cpuBudget ?? false;
     this.installRecipes = options.installRecipes ?? {};
@@ -2184,6 +2191,15 @@ export class AgentSupervisor {
             )
           : { command, env: {} };
         const resolved = await resolveArgv(connection.command);
+        if (this.managedRuns) {
+          await this.spawnManagedRun(row, {
+            argv: resolved,
+            cwd,
+            env: processEnv(connection.env),
+            timeoutMs,
+          });
+          return;
+        }
         // Snapshot the work tree so validation can show what the agent actually changed.
         before = await snapshotTree(cwd);
         proc = spawnPipe(resolved, { cwd, env: processEnv(connection.env), stdin: false });
@@ -2252,6 +2268,61 @@ export class AgentSupervisor {
       this.starting.delete(key);
       // A start that failed or was abandoned gives its slot to the next queued run.
       if (!this.live.has(key)) this.startQueuedRuns();
+    }
+  }
+
+  private async spawnManagedRun(
+    row: RunRow,
+    launch: Omit<PipeRunLaunch, 'nonce' | 'logPath'>,
+  ): Promise<void> {
+    let client: Awaited<ReturnType<typeof connectRunHost>> | undefined;
+    try {
+      if (!this.dataDir) throw new Error('Hosted runs require a data directory');
+      if (this.cpuBudget) throw new Error('Hosted run CPU budget enforcement is not yet supported');
+      client = await connectRunHost(this.dataDir);
+      const current = this.db
+        .prepare('SELECT status,log_path FROM agent_runs WHERE id=?')
+        .get(row.id) as { status: string; log_path: string } | undefined;
+      if (
+        this.closed ||
+        !current ||
+        current.log_path !== row.log_path ||
+        !['queued', 'running'].includes(current.status)
+      )
+        return;
+      await launchManagedRun(this.db, client, row.id, row.attempts + 1, launch);
+      if (!this.closed) {
+        this.db
+          .prepare(
+            `UPDATE agent_runs SET status='running',execution_state='active',started_at=COALESCE(started_at,?),attempts=MAX(attempts,?)
+          WHERE id=? AND log_path=? AND status IN ('queued','running')`,
+          )
+          .run(now(), row.attempts + 1, row.id, row.log_path);
+      }
+    } catch (error) {
+      if (this.closed) return;
+      if (hasManagedExecution(this.db, row.id, row.log_path)) {
+        this.db
+          .prepare(
+            `UPDATE agent_runs SET status='running',execution_state='unknown',attempts=MAX(attempts,?),error=?
+          WHERE id=? AND log_path=? AND status IN ('queued','running')`,
+          )
+          .run(
+            row.attempts + 1,
+            `Launch unconfirmed: ${(error as Error).message}`,
+            row.id,
+            row.log_path,
+          );
+      } else {
+        this.finishRun(
+          row,
+          'failed',
+          null,
+          `Hosted runtime unavailable: ${(error as Error).message}`,
+        );
+      }
+    } finally {
+      client?.close();
     }
   }
 

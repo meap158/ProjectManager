@@ -312,3 +312,26 @@ failure release and refusal to replace broken credentials/socket ownership. The
 existing daemon test separately proves child-owned worker survival. The new default
 intermediate launch itself still needs a real-process integration test, and this
 helper is not yet wired into supervisor dispatch. No production rollout is claimed.
+
+### Opt-in supervisor dispatch, 2026-10-16
+
+AgentSupervisor now accepts an internal `managedRuns` option (default false). This
+path uses the authenticated connection helper, revalidates the current run/log and
+active status after connecting, then reserves the attempt before host launch.
+Missing runtime/authentication before reservation fails explicitly without local
+spawn. A lost launch response after reservation preserves active occupancy with
+unknown execution. Shutdown detaches; the next supervisor observes the same attempt.
+Unsupported CPU-budget enforcement rejects before launch instead of silently ignoring
+that setting. Legacy/manual routing is unchanged when this option is absent.
+
+Three real-worker dispatch tests verify one marker and one charged attempt through
+supervisor shutdown/recovery, host-confirmed stop, failed authentication with no
+local worker, and a deliberately lost launch acknowledgment recovering unknown to
+active. The broader host/installer/process-recovery group passed 44 tests before the
+additional lost-reply case; the updated dispatch file passes all three. Server types
+and scoped lint pass. This is not a fresh full-suite run after dispatch integration.
+
+The option is not enabled by createApp/production configuration. Default intermediate
+startup still needs direct real-process coverage, hosted change snapshots/review
+evidence need implementation, and CPU budgets and platform containment remain gates
+before default dispatch rollout. No historical worktree diff is invented on recovery.
