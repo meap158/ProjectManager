@@ -804,3 +804,14 @@ Service/route and page regressions pass (127 tests), with both typechecks and sc
 lint. This establishes request-count reduction for the overview, not reduced payload
 volume, bounded global overview size or measured physical LAN latency. The broader
 summary scaling and physical acceptance work remains open.
+
+## Overview session history filtering, 2026-10-16
+
+The overview now returns running ordinary sessions and only the highest-ID chat
+session for each Orchestrator, matching the page's existing consumers. Stopped
+latest chats remain available for reopening; older chat and stopped ordinary
+history remains available through the existing session APIs. Filtering does not
+change supervision, delete records or mutate the supervisor's session array.
+An unsorted mixed-history regression and existing service/route/page tests pass
+(53 tests), with server typecheck and scoped lint. This reduces serialized history,
+not the supervisor's underlying list hydration cost or measured LAN latency.

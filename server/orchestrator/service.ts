@@ -102,7 +102,19 @@ export class OrchestratorService {
       generatedAt: new Date().toISOString(),
       state,
       projects: read('projects', () => this.attentionProjects?.() ?? []),
-      sessions: read('sessions', () => this.supervisor.listAllSessions()),
+      sessions: read('sessions', () => {
+        const sessions = this.supervisor.listAllSessions();
+        const latestChat = new Map<string, number>();
+        for (const session of sessions) {
+          if (session.orchestratorId && session.id > (latestChat.get(session.orchestratorId) ?? -1))
+            latestChat.set(session.orchestratorId, session.id);
+        }
+        return sessions.filter((session) =>
+          session.orchestratorId
+            ? latestChat.get(session.orchestratorId) === session.id
+            : session.status === 'running',
+        );
+      }),
       cards: read('cards', () => listCardsInFlight(this.db)),
       unavailable,
     };

@@ -978,3 +978,29 @@ it('builds an overview without writes and retains explicit unavailable sections'
     db.close();
   }
 });
+
+it('omits stopped ordinary sessions and historical chats from the overview without mutating supervision', () => {
+  const db = openDb(':memory:');
+  try {
+    const sessions = [
+      { id: 1, status: 'stopped', orchestratorId: null },
+      { id: 2, status: 'running', orchestratorId: null },
+      { id: 5, status: 'stopped', orchestratorId: 'master' },
+      { id: 3, status: 'running', orchestratorId: 'master' },
+      { id: 4, status: 'stopped', orchestratorId: 'other' },
+    ];
+    const original = structuredClone(sessions);
+    const service = new OrchestratorService(
+      db,
+      { listAllSessions: () => sessions } as unknown as AgentSupervisor,
+      null,
+    );
+    expect(service.overview().sessions?.map((session) => session.id)).toEqual([2, 5, 4]);
+    expect(sessions).toEqual(original);
+    expect(service.overview().sessions?.find((session) => session.id === 5)?.status).toBe(
+      'stopped',
+    );
+  } finally {
+    db.close();
+  }
+});
