@@ -899,3 +899,14 @@ mask known exhaustion. Five invalid-value cases cover both policy choices and
 mixed exhausted windows. All 113 Orchestrator tests, server types and scoped lint
 pass. This is a dispatch-boundary check; provider parser normalization and runtime
 authentication classification remain separate concerns.
+
+## Recorded quota timestamps, 2026-10-16
+
+Codex and Claude usage readers no longer replace missing timestamps with the time
+of reading. Missing/empty/invalid report dates produce no quota evidence; valid
+dates normalize to UTC ISO before report comparison. This prevents an undated old
+record from appearing perpetually fresh to autonomous dispatch. Six parser cases
+cover both providers; all 27 parser/planner tests, server types and scoped lint
+pass. Existing explicit unknown-quota policy remains the choice when evidence is
+unavailable. Parser percentage normalization and rollover assumptions remain under
+audit; this timestamp change does not validate those separate paths.

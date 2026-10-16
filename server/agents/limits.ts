@@ -119,11 +119,16 @@ export function lastCodexLimits(text: string): ProviderLimits | null {
       const windows = [toWindow(limits?.primary), toWindow(limits?.secondary)].filter(
         (w): w is UsageWindow => w !== null,
       );
-      if (windows.length === 0) continue;
+      if (
+        windows.length === 0 ||
+        typeof event.timestamp !== 'string' ||
+        !Number.isFinite(Date.parse(event.timestamp))
+      )
+        continue;
       return {
         providerId: 'codex',
         windows: windows.sort((a, b) => a.windowMinutes - b.windowMinutes),
-        asOf: event.timestamp ?? new Date().toISOString(),
+        asOf: new Date(event.timestamp).toISOString(),
         source: 'Codex session log (~/.codex/sessions)',
       };
     } catch {
@@ -215,12 +220,17 @@ export function claudeLimits(dataDir: string | null, now = Date.now()): Provider
       claudeWindow(saved.fiveHour, 300),
       claudeWindow(saved.sevenDay, 10_080),
     ].filter((w): w is UsageWindow => w !== null);
-    if (windows.length === 0) return null;
+    if (
+      windows.length === 0 ||
+      typeof saved.asOf !== 'string' ||
+      !Number.isFinite(Date.parse(saved.asOf))
+    )
+      return null;
     return rollOver(
       {
         providerId: 'claude',
         windows,
-        asOf: saved.asOf ?? new Date(now).toISOString(),
+        asOf: new Date(saved.asOf).toISOString(),
         source: 'Claude Code status line (sessions started from ProjectManager)',
       },
       now,

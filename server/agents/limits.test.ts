@@ -44,7 +44,7 @@ describe('Codex usage limits', () => {
         event('2026-10-06T10:05:00Z', 23, 82),
       ].join('\n'),
     );
-    expect(found?.asOf).toBe('2026-10-06T10:05:00Z');
+    expect(found?.asOf).toBe('2026-10-06T10:05:00.000Z');
     expect(found?.windows.map((w) => [w.label, w.usedPercent])).toEqual([
       ['5-hour', 23],
       ['Weekly', 82],
@@ -110,3 +110,24 @@ describe('Claude Code usage limits', () => {
     expect(claudeLimits(null)).toBeNull();
   });
 });
+
+it.each([undefined, '', 'invalid'])(
+  'does not invent freshness for an undated Codex report (%s)',
+  (timestamp) => {
+    const report = JSON.parse(event('2026-10-06T13:00:00Z', 20, 30));
+    report.timestamp = timestamp;
+    expect(lastCodexLimits(JSON.stringify(report))).toBeNull();
+  },
+);
+it.each([undefined, '', 'invalid'])(
+  'does not invent freshness for an undated Claude report (%s)',
+  (asOf) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'pm-undated-usage-'));
+    dirs.push(dir);
+    writeFileSync(
+      path.join(dir, 'claude-limits.json'),
+      JSON.stringify({ asOf, fiveHour: { used_percentage: 20 } }),
+    );
+    expect(claudeLimits(dir, Date.parse('2026-10-06T13:00:00Z'))).toBeNull();
+  },
+);
