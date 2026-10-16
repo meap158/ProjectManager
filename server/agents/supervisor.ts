@@ -1332,10 +1332,15 @@ export class AgentSupervisor {
             .prepare('SELECT * FROM agent_runs WHERE dispatch_key = ?')
             .get(input.dispatchKey) as unknown as RunRow | undefined)
         : undefined;
+    const validateDispatchOwner = (run: RunRow) => {
+      if (run.project_id !== projectId || run.card_id !== cardId)
+        throw new AgentError(409, 'Dispatch key belongs to another task');
+      if ((run.orchestrator_id ?? null) !== (input.orchestratorId ?? null))
+        throw new AgentError(409, 'Dispatch key belongs to another orchestrator');
+    };
     const existing = existingDispatch();
     if (existing) {
-      if (existing.project_id !== projectId || existing.card_id !== cardId)
-        throw new AgentError(409, 'Dispatch key belongs to another task');
+      validateDispatchOwner(existing);
       return this.toRun(existing);
     }
     const running = (
@@ -1394,8 +1399,7 @@ export class AgentSupervisor {
 
     const repeated = existingDispatch();
     if (repeated) {
-      if (repeated.project_id !== projectId || repeated.card_id !== cardId)
-        throw new AgentError(409, 'Dispatch key belongs to another task');
+      validateDispatchOwner(repeated);
       return this.toRun(repeated);
     }
     if (input.canCommit && !input.canCommit())

@@ -859,3 +859,14 @@ the correction for another provider. Older responses without a code retain detai
 without inferred authentication/configuration actions. Planner, mixed-blocker,
 compatibility and page tests pass (34 tests), with both typechecks and scoped lint.
 This does not classify provider runtime authentication failures; that remains open.
+
+## Dispatch replay ownership fence, 2026-10-16
+
+Both early and post-await dispatch-key replay paths now validate the persisted
+Orchestrator owner as well as project/card identity. A conflicting master cannot
+adopt an existing run simply by supplying its dispatch key; null/manual ownership
+is distinct from master ownership. Matching requests still replay the same run.
+The real dispatch regression checks a 409 conflict and one persisted worker before
+and after completion. Agent/service tests pass (42 tests), with server types and
+scoped lint. This closes owner reuse only; request fingerprinting, durable task
+generations and cross-attempt request identity remain explicit open work.

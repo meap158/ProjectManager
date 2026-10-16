@@ -420,6 +420,16 @@ describe('runs and card lifecycle', () => {
     const first = await app.supervisor.dispatchCard(projectId, card.id, input);
     const again = await app.supervisor.dispatchCard(projectId, card.id, input);
     expect(again.id).toBe(first.id);
+    await expect(
+      app.supervisor.dispatchCard(projectId, card.id, {
+        ...input,
+        orchestratorId: 'different-owner',
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'Dispatch key belongs to another orchestrator',
+    });
+
     expect(
       testDb
         .prepare('SELECT COUNT(*) AS n FROM agent_runs WHERE dispatch_key = ?')
