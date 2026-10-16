@@ -205,3 +205,41 @@ uses synthetic master labels rather than running OrchestratorService ticks. It
 excludes scheduler plans/leases/assignments, fresh quota IO, provider discovery,
 actual hosted launch, committed WAL durability, network and rendering. Complete
 dispatching-tick measurements at 1/5/20 masters remain an explicit separate gate.
+
+## Complete dispatching service-tick baseline (2026-10-16)
+
+Reproduce: `node --import tsx scripts/benchmark-orchestrator-ticks.mjs --samples=20`.
+One warmup/twenty samples, file-backed isolated SQLite, 100k accepted historical runs,
+20 projects, Todo cards evenly distributed, 1/5/20 enabled project-scoped masters.
+Each master allows one worker, with shared provider capacity 32. Actual service ticks
+include planning, lease/assignment/event writes, fresh insertion fences, production
+quota reads and production dispatch insertion/card transitions. Provider discovery
+is warm; unknown quota is allowed for the custom fixture provider. Only the custom
+command and OS launch boundary are substituted. Assertions prove exactly one dispatch
+and one moved card per master and stable mutation/SQL counts. Every sample starts
+fresh event history and rolls back afterward: this measures first transitions, not
+settled recurring checks or committed WAL durability. Twenty sequential tick samples
+are sample quantiles, not production guarantees. RSS includes the entire fixture.
+
+|  Cards | Masters |   p50 ms | Sample p95 ms |    Max ms | Row mutations | SQL preparations | RSS MB |
+| -----: | ------: | -------: | ------------: | --------: | ------------: | ---------------: | -----: |
+|  1,000 |       1 |    13.17 |         15.13 |     15.22 |            59 |              202 |  110.3 |
+|  1,000 |       5 |   110.66 |        132.90 |    138.49 |           287 |              962 |  127.9 |
+|  1,000 |      20 |   806.78 |        888.36 |  1,010.66 |         1,142 |            3,812 |  135.0 |
+| 10,000 |       1 |   204.59 |        220.35 |    273.58 |           509 |            1,552 |  141.5 |
+| 10,000 |       5 | 2,993.15 |      4,180.52 |  4,869.36 |         2,537 |            7,712 |  145.7 |
+| 10,000 |      20 | 8,832.37 |     16,609.05 | 18,086.80 |        10,142 |           30,812 |  144.9 |
+
+The measured run used the same harness before its copied JSON scope label was fixed;
+that old printed label incorrectly described insertion-only scope. The executed loop
+already called the full service tick. The committed harness label now matches that
+loop. No workers or production data were touched. This is a project-scoped first-
+transition workload, not global-scope, fresh authenticated provider/quota IO, worker
+startup, committed disk durability or mobile/LAN latency.
+
+The scaling exposes a concrete target: event() reloads and rewrites the shared
+settings/event blob for every decision, even though only 500 events are retained.
+At 10k cards/20 masters the fixture writes 10,142 rows for 20 dispatches. A next change
+should batch event persistence while preserving last-transition suppression, event
+ordering/counts, bounded retention and updates across asynchronous dispatch checks.
+A controlled rerun is required before claiming an improvement.
