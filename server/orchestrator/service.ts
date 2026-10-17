@@ -609,9 +609,10 @@ export class OrchestratorService {
     epoch: number,
     instanceId?: string | ReadonlySet<string>,
   ) {
+    const generation = this.generation;
     assignments.reconcile();
     const providers = (await providerStatuses()).filter((p) => p.available).map((p) => p.id);
-    if (!assignments.isLeaseValid(this.owner, epoch)) return;
+    if (generation !== this.generation || !assignments.isLeaseValid(this.owner, epoch)) return;
     for (const initial of this.state().instances.filter(
       (i) =>
         i.enabled &&
@@ -678,6 +679,7 @@ export class OrchestratorService {
         if (observations.length >= 500) this.events(observations.splice(0));
       };
       for (const decision of decisions) {
+        if (generation !== this.generation) return;
         const current = this.currentPolicy(initial.id);
         if (!current?.enabled) break;
         if (current.strategy === 'observe') {
@@ -755,6 +757,7 @@ export class OrchestratorService {
               superseded = false;
               const policy = this.currentPolicy(initial.id);
               if (
+                generation !== this.generation ||
                 !assignments.isLeaseValid(this.owner, epoch) ||
                 !policy?.enabled ||
                 policy.strategy === 'observe' ||

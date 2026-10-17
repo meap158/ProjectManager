@@ -968,3 +968,14 @@ for scoped and explicit-global cases. The 117-test Orchestrator suite passed bef
 the added global variant; all 24 service tests then passed with that variant.
 Server types and scoped lint passed for the production change. This closes the
 coalescing scope escalation found during this audit.
+
+## Shutdown scheduling fence, 2026-10-17
+
+Active ticks now capture the service generation and revalidate it after provider
+discovery, before each decision and at the insertion callback. Stopping/restarting
+the service invalidates old scheduling continuations, while existing launched-run
+acknowledgment remains recorded. A delayed-probe fixture queues a manual follow-up,
+stops the service, then releases discovery: no worker launches, no reservation is
+created and the task remains Todo. All 119 Orchestrator tests, server types and
+scoped lint pass. This controls scheduling after stop; it does not terminate
+already running workers or claim OS-level process containment.

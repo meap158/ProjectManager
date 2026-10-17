@@ -1103,3 +1103,55 @@ it.each([false, true])(
     }
   },
 );
+
+it('stops active and queued scheduling after a delayed provider probe without claiming work', async () => {
+  const db = openDb(':memory:');
+  db.exec(
+    "INSERT INTO projects(id,name,path,created_at) VALUES(1,'Fixture','/fixture','now'); INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(1,1,'Task','todo',0,'now','now');",
+  );
+  const dispatch = vi.fn();
+  const service = new OrchestratorService(
+    db,
+    { listAllSessions: () => [], dispatchCard: dispatch } as unknown as AgentSupervisor,
+    null,
+  );
+  const master = service.save({
+    name: 'Fixture',
+    enabled: true,
+    projectIds: [1],
+    providers: ['codex'],
+    maxWorkers: 1,
+    maxWorkersPerProject: 1,
+    maxWorkersPerProvider: 1,
+    reservePercent: 10,
+    allowUnknownQuota: false,
+    quotaMaxAgeMs: 60000,
+  });
+  let release!: () => void;
+  vi.mocked(providerStatuses).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () =>
+          resolve([{ id: 'codex', available: true }] as Awaited<
+            ReturnType<typeof providerStatuses>
+          >);
+      }),
+  );
+  const active = service.tick(master.id);
+  const queued = service.tick(master.id, { refreshQuota: true });
+  const stopping = service.stop();
+  try {
+    await queued;
+    release();
+    await Promise.all([active, stopping]);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(db.prepare('SELECT * FROM orchestrator_assignments').all()).toEqual([]);
+    expect(db.prepare('SELECT status FROM cards WHERE id = 1').get()).toMatchObject({
+      status: 'todo',
+    });
+  } finally {
+    release();
+    await service.stop();
+    db.close();
+  }
+});
