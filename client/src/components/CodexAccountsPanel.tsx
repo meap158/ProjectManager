@@ -6,8 +6,9 @@ import { UsageLimits } from './UsageLimits';
 
 /**
  * Settings → Codex accounts (PM-164): manage saved Codex auth.json profiles, switch the active
- * account for new sessions/runs, save the current ~/.codex login, or automatically rotate to the
- * next non-exhausted account when a session or run hits its usage limit.
+ * account, save the current ~/.codex login, or automatically rotate to the next non-exhausted
+ * account when a Codex CLI hits its usage limit. The account selected here is the login for
+ * every Codex session, run and orchestrator chat.
  */
 export function CodexAccountsPanel({ onError }: { onError: (message: string) => void }) {
   const [state, setState] = useState<CodexAccountsState | null>(null);
@@ -109,9 +110,11 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
         <span className="meta">active: {activeLabel}</span>
       </div>
       <p className="faint" style={{ margin: '0 0 12px', fontSize: 12.5 }}>
-        Switch between your default Codex CLI login (<code>~/.codex/auth.json</code>) and saved{' '}
+        The account selected here is the Codex login for every Codex session, run and orchestrator
+        chat. Switch between the default CLI login (<code>~/.codex/auth.json</code>) and saved{' '}
         <code>auth.json</code> profiles, or automatically rotate to another account with remaining
-        quota when a session or run hits a usage limit.
+        quota when one of those CLIs hits a usage limit. Moving onto a different login starts a
+        new conversation in each session.
       </p>
 
       {state === null ? (

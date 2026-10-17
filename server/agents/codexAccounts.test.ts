@@ -189,7 +189,7 @@ describe('CodexAccounts (PM-164)', () => {
     const state = accounts.importAccount('Genzy', JSON.stringify({ OPENAI_API_KEY: 'sk-genzy' }));
     const home = accounts.profile(state.accounts[0]!.id).home;
     const saved = readFileSync(path.join(home, 'config.toml'), 'utf8');
-    expect(saved).toContain('cli_auth_credentials_store = "file"');
+    expect(saved.startsWith('cli_auth_credentials_store = "file"\n')).toBe(true);
     expect(saved).not.toContain('keyring');
     expect(readFileSync(path.join(defaultCodexHome, 'config.toml'), 'utf8')).toContain('keyring');
   });
@@ -247,6 +247,72 @@ describe('CodexAccounts (PM-164)', () => {
       expect(command.codexAccountId).toBe(accountId);
       expect(command.env?.CODEX_HOME).toBe(path.join(tmpDir, 'codex-accounts', accountId));
       expect(existsSync(path.join(tmpDir, 'codex-accounts', accountId, 'sessions'))).toBe(false);
+    } finally {
+      await supervisor.shutdown();
+    }
+  });
+
+  it('applies the selected Codex account to every Codex session, not just the one switched', async () => {
+    const supervisor = new AgentSupervisor(db, path.join(tmpDir, 'logs'), { dataDir: tmpDir });
+    try {
+      await supervisor.ready;
+      writeFileSync(path.join(defaultCodexHome, 'auth.json'), '{"OPENAI_API_KEY":"sk-default"}\n');
+      const imported = supervisor.importCodexAccount(
+        'Genzy',
+        JSON.stringify({ OPENAI_API_KEY: 'sk-genzy' }),
+      );
+      const accountId = imported.accounts[0]!.id;
+      const projectId = insertProject(db, 'switch-all', path.join(tmpDir, 'proj-all'));
+      const insert = (name: string, account: string, home: string) =>
+        Number(
+          db
+            .prepare(
+              `INSERT INTO agent_sessions
+                 (project_id, name, provider_id, command_json, resume_json, cwd, status,
+                  desired_state, supervise, created_at, started_at, log_path)
+               VALUES (?, ?, 'codex', ?, ?, ?, 'exited', 'stopped', 0, ?, ?, ?)`,
+            )
+            .run(
+              projectId,
+              name,
+              JSON.stringify({
+                command: ['codex'],
+                env: { CODEX_HOME: home },
+                codexAccountId: account,
+              }),
+              JSON.stringify(['codex', 'resume', '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12']),
+              path.join(tmpDir, 'proj-all'),
+              '2026-10-18T00:00:00.000Z',
+              '2026-10-18T00:00:00.000Z',
+              path.join(tmpDir, 'logs', `${name}.log`),
+            ).lastInsertRowid,
+        );
+      const first = insert('one', 'default', defaultCodexHome);
+      const second = insert('two', 'default', defaultCodexHome);
+
+      await supervisor.switchSessionCodexAccount(first, accountId);
+
+      const homes = [first, second].map((id) => {
+        const row = db
+          .prepare('SELECT command_json, resume_json FROM agent_sessions WHERE id = ?')
+          .get(id) as { command_json: string; resume_json: string | null };
+        return {
+          resume: row.resume_json,
+          command: JSON.parse(row.command_json) as {
+            codexAccountId?: string;
+            env?: { CODEX_HOME?: string };
+          },
+        };
+      });
+      for (const session of homes) {
+        expect(session.resume).toBeNull();
+        expect(session.command.codexAccountId).toBe(accountId);
+        expect(session.command.env?.CODEX_HOME).toBe(
+          path.join(tmpDir, 'codex-accounts', accountId),
+        );
+      }
+      expect(supervisor.codexAccountsState().activeProfileId).toBe(accountId);
+      expect(supervisor.getSession(second)?.codexAccountId).toBe(accountId);
     } finally {
       await supervisor.shutdown();
     }

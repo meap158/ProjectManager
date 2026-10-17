@@ -383,8 +383,8 @@ export class AgentSupervisor {
   /** Test-only recipe overrides (production always uses the catalog). */
   private readonly installRecipes: Partial<Record<string, InstallRecipe>>;
   private readonly codexAccounts: CodexAccounts | null;
-  /** Accounts already tried during the current usage-limit episode of a Codex session. */
-  private sessionTriedAccounts = new Map<number, string[]>();
+  /** Accounts already tried in the current Codex usage-limit rotation. One list for every Codex CLI. */
+  private codexRotationTried: string[] = [];
   private switchingCodexSession = new Set<number>();
   /** Resolves once boot reconciliation (re-attach / relaunch) is done. */
   readonly ready: Promise<void>;
@@ -470,29 +470,46 @@ export class AgentSupervisor {
     return this.withCodexAccounts((accounts) => accounts.removeAccount(id));
   }
 
-  setActiveCodexAccount(id: string | null): CodexAccountsState {
+  setActiveCodexAccount(
+    id: string | null,
+    options: { keepRotation?: boolean } = {},
+  ): CodexAccountsState {
     const state = this.withCodexAccounts((accounts) => accounts.setActive(id));
-    // Settings → Switch to account. Sessions already stopped on a usage limit move onto this
-    // login. Sessions that are still working keep the account they started with.
-    this.moveLimitedCodexSessions(id);
+    // A choice in Settings starts a fresh rotation. Auto-switch keeps the accounts it already tried.
+    if (!options.keepRotation) this.codexRotationTried = [];
+    this.applyCodexAccountToSessions(id === null || id === 'default' ? 'default' : id);
     return state;
   }
 
-  /** Restarts Codex sessions that are showing a usage limit onto `id` (`null` = default). */
-  private moveLimitedCodexSessions(id: string | null): void {
-    const targetKey = id === null || id === 'default' ? 'default' : id;
-    for (const sessionId of this.usageLimits.keys()) {
-      if (this.switchingCodexSession.has(sessionId)) continue;
-      const row = this.getSessionRow(sessionId);
-      if (!row || row.provider_id !== 'codex' || row.status !== 'running') continue;
-      const current = this.sessionCodexProfile(row);
-      if (current?.id === targetKey) continue;
-      this.switchingCodexSession.add(sessionId);
-      void this.switchSessionCodexAccount(sessionId, id, {
-        continuePrompt: true,
+  /**
+   * Points every Codex session at the account selected in Settings. There is one Codex login for
+   * the whole app: sessions, runs and orchestrator chats do not keep a login of their own.
+   * A session whose stored home differs is moved, including one that is mid-turn. A different
+   * login starts a new conversation (`switchSessionCodexAccount` clears resume).
+   */
+  private applyCodexAccountToSessions(
+    targetKey: string,
+    options: { exceptId?: number } = {},
+  ): void {
+    const profileId = targetKey === 'default' ? null : targetKey;
+    const rows = this.db
+      .prepare(`SELECT * FROM agent_sessions WHERE provider_id = 'codex'`)
+      .all() as unknown as SessionRow[];
+    for (const row of rows) {
+      if (row.id === options.exceptId || this.switchingCodexSession.has(row.id)) continue;
+      const storedKey = this.storedCodexProfile(row)?.id ?? null;
+      if (storedKey === targetKey) continue;
+      if (storedKey === null && targetKey === 'default') continue;
+      const willRestart =
+        this.live.has(`session:${row.id}`) ||
+        row.desired_state === 'running' ||
+        row.status === 'running';
+      if (willRestart) this.switchingCodexSession.add(row.id);
+      void this.switchSessionCodexAccount(row.id, profileId, {
+        continuePrompt: false,
         setGlobal: false,
       }).catch((error: Error) => {
-        this.switchingCodexSession.delete(sessionId);
+        this.switchingCodexSession.delete(row.id);
         console.error('[agents] codex account switch:', error);
       });
     }
@@ -511,7 +528,7 @@ export class AgentSupervisor {
   async switchSessionCodexAccount(
     id: number,
     profileId: string | null,
-    options: { continuePrompt?: boolean; setGlobal?: boolean } = {},
+    options: { continuePrompt?: boolean; setGlobal?: boolean; keepRotation?: boolean } = {},
   ): Promise<AgentSession> {
     const row = this.getSessionRow(id);
     if (!row) throw new AgentError(404, 'Session not found');
@@ -519,16 +536,20 @@ export class AgentSupervisor {
       throw new AgentError(400, 'Account switching is only supported for Codex sessions');
     const targetKey = profileId === null || profileId === 'default' ? 'default' : profileId;
     const target = this.withCodexAccounts((accounts) => accounts.profile(targetKey));
-    // Read the login this session is on before changing the global default. Sessions that
-    // have never stored an account fall back to that default, so reading afterwards would
-    // look like the session was already on the new login and `codex resume` would keep going.
-    const previous = this.sessionCodexProfile(row);
+    // The login stored on this session, not the Settings selection. Reading the selection after
+    // setActive would look like the session was already there, and `codex resume` would keep going.
+    const previous = this.storedCodexProfile(row);
+    const willRestart =
+      this.live.has(`session:${id}`) || row.desired_state === 'running' || row.status === 'running';
+    if (willRestart) this.switchingCodexSession.add(id);
     if (options.setGlobal !== false) {
       this.withCodexAccounts((accounts) =>
         accounts.setActive(target.id === 'default' ? null : target.id),
       );
+      if (!options.keepRotation) this.codexRotationTried = [];
+      this.applyCodexAccountToSessions(target.id, { exceptId: id });
     }
-    const switchedAccount = previous != null && previous.home !== target.home;
+    const switchedAccount = previous ? previous.home !== target.home : target.id !== 'default';
     const parsed = JSON.parse(row.command_json) as {
       command: string[];
       env?: Record<string, string>;
@@ -550,11 +571,11 @@ export class AgentSupervisor {
         id,
       );
     this.usageLimits.delete(id);
-    const shouldRestart =
-      this.live.has(`session:${id}`) || row.desired_state === 'running' || row.status === 'running';
-    if (!shouldRestart) return this.getSession(id)!;
+    if (!willRestart) {
+      this.switchingCodexSession.delete(id);
+      return this.getSession(id)!;
+    }
 
-    this.switchingCodexSession.add(id);
     try {
       this.outputFor(`session:${id}`, row.log_path).append(
         switchedAccount
@@ -573,25 +594,26 @@ export class AgentSupervisor {
     }
   }
 
-  private sessionCodexProfile(row: SessionRow): { id: string; name: string; home: string } | null {
+  /** The login recorded on this session. Does not fall back to Settings. */
+  private storedCodexProfile(row: SessionRow): { id: string; name: string; home: string } | null {
     if (row.provider_id !== 'codex' || !this.codexAccounts) return null;
     try {
       const parsed = JSON.parse(row.command_json) as {
         env?: Record<string, string>;
         codexAccountId?: string;
       };
-      if (parsed.codexAccountId) {
-        try {
-          return this.codexAccounts.profile(parsed.codexAccountId);
-        } catch {
-          // Account was removed; fall back to the active profile.
-        }
-      }
-      const fromEnv = this.codexAccounts.keyForHome(parsed.env?.CODEX_HOME);
-      if (fromEnv) return this.codexAccounts.profile(fromEnv);
+      const key =
+        parsed.codexAccountId ?? this.codexAccounts.keyForHome(parsed.env?.CODEX_HOME) ?? null;
+      if (!key) return null;
+      return this.codexAccounts.profile(key);
     } catch {
-      // Fall through to selectedProfile.
+      return null;
     }
+  }
+
+  /** The Codex login from Settings. Every Codex CLI uses this, not a per-session account. */
+  private sessionCodexProfile(row: SessionRow): { id: string; name: string; home: string } | null {
+    if (row.provider_id !== 'codex' || !this.codexAccounts) return null;
     return this.codexAccounts.selectedProfile();
   }
 
@@ -893,10 +915,9 @@ export class AgentSupervisor {
     const resume = explicit ? null : buildResumeArgv(provider, conversationId);
     const cwd = resolveCwd(input.cwd ?? project.path);
     const env = validateEnv(input.env);
+    // One Codex login for the app. A caller cannot pin a different CODEX_HOME on this session.
     const codexProfile =
-      providerId === 'codex' && this.codexAccounts && !env.CODEX_HOME
-        ? this.codexAccounts.selectedProfile()
-        : null;
+      providerId === 'codex' && this.codexAccounts ? this.codexAccounts.selectedProfile() : null;
     if (codexProfile) env.CODEX_HOME = codexProfile.home;
     const terminal: AgentTerminal = input.terminal ?? (ptyAvailable() ? 'pty' : 'pipe');
     if (terminal === 'pty' && !ptyAvailable()) {
@@ -1281,17 +1302,17 @@ export class AgentSupervisor {
           !this.switchingCodexSession.has(row.id) &&
           !this.restarting.has(row.id)
         ) {
+          if (this.switchingCodexSession.size > 0) continue;
           const currentKey = this.sessionCodexProfile(row)?.id ?? 'default';
-          const tried = [
-            ...new Set([...(this.sessionTriedAccounts.get(row.id) ?? []), currentKey]),
-          ];
+          const tried = [...new Set([...this.codexRotationTried, currentKey])];
           const next = this.codexAccounts.nextUnused(currentKey, tried, Date.now());
           const tail = this.logTail(row.log_path) ?? '';
           if (next && next.id !== currentKey && emptyCodexPrompt(tail)) {
-            this.sessionTriedAccounts.set(row.id, tried);
+            this.codexRotationTried = tried;
             void this.switchSessionCodexAccount(row.id, next.id, {
               continuePrompt: true,
               setGlobal: true,
+              keepRotation: true,
             }).catch(() => undefined);
             continue;
           }
@@ -1387,7 +1408,6 @@ export class AgentSupervisor {
     deleteSetting(this.db, seenTitleKey(id));
     deleteSetting(this.db, `session-auto-continue:${id}`);
     this.restarting.delete(id);
-    this.sessionTriedAccounts.delete(id);
     this.switchingCodexSession.delete(id);
     // Forget the record's process and log now: SQLite reuses ids, and a new session with this id
     // must not be mistaken for the old one while the old process is still exiting.
@@ -2002,20 +2022,33 @@ export class AgentSupervisor {
         codexFreshStart?: boolean;
       };
       const command = parsedCmd.command;
+      // Settings picks the Codex login. A home stored on the session does not override it.
       const codexProfile = this.sessionCodexProfile(row);
-      const env =
-        codexProfile && (!parsedCmd.env?.CODEX_HOME || parsedCmd.codexAccountId)
-          ? { ...parsedCmd.env, CODEX_HOME: codexProfile.home }
-          : { ...parsedCmd.env };
+      const env = codexProfile
+        ? { ...parsedCmd.env, CODEX_HOME: codexProfile.home }
+        : { ...parsedCmd.env };
+      const storedCodexKey =
+        parsedCmd.codexAccountId ??
+        this.codexAccounts?.keyForHome(parsedCmd.env?.CODEX_HOME) ??
+        null;
+      const codexAccountChanged = !!(
+        codexProfile &&
+        storedCodexKey &&
+        storedCodexKey !== codexProfile.id
+      );
       // Relaunching prefers the stored resume argv (e.g. `claude --continue`),
       // so an AI conversation picks up instead of starting cold. Shells and
       // custom commands simply respawn. Crossing Codex accounts is the exception:
       // the previous thread's id belongs to the other login.
       let resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
-      const freshStart = parsedCmd.codexFreshStart === true;
+      const freshStart = parsedCmd.codexFreshStart === true || codexAccountChanged;
       if (freshStart) {
         resume = null;
-        const rest = { ...parsedCmd };
+        const rest = {
+          ...parsedCmd,
+          env,
+          ...(codexProfile ? { codexAccountId: codexProfile.id } : {}),
+        };
         delete rest.codexFreshStart;
         this.db
           .prepare('UPDATE agent_sessions SET command_json = ?, resume_json = NULL WHERE id = ?')
@@ -2477,18 +2510,6 @@ export class AgentSupervisor {
 
   private runCodexProfile(row: RunRow): { id: string; name: string; home: string } | null {
     if (row.provider_id !== 'codex' || !this.codexAccounts) return null;
-    try {
-      const parsed = JSON.parse(row.command_json) as { codexAccountId?: string };
-      if (parsed.codexAccountId) {
-        try {
-          return this.codexAccounts.profile(parsed.codexAccountId);
-        } catch {
-          // Account was removed; fall back to the active profile.
-        }
-      }
-    } catch {
-      // Fall through.
-    }
     return this.codexAccounts.selectedProfile();
   }
 
@@ -2628,7 +2649,10 @@ export class AgentSupervisor {
           const tried = [...new Set([...(storedCmd.triedCodexAccounts ?? []), codexProfile.id])];
           const next = this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now());
           if (next && next.id !== codexProfile.id) {
-            this.codexAccounts.setActive(next.id === 'default' ? null : next.id);
+            this.codexRotationTried = [...new Set([...this.codexRotationTried, codexProfile.id])];
+            this.setActiveCodexAccount(next.id === 'default' ? null : next.id, {
+              keepRotation: true,
+            });
             const nextCmdJson = JSON.stringify({
               ...storedCmd,
               codexAccountId: next.id,

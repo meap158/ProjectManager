@@ -512,6 +512,9 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   a 4px bar beneath (amber from 75%, red from 90%). The header collapses it to a one-line summary
   ("Claude Code 94% · Codex 28%", highest window per CLI), saved per browser. Hidden when no CLI
   reports limits.
+- **One account per CLI:** the Codex account selected in Settings is the login for every Codex
+  session, run and orchestrator chat. There is no separate account on an individual CLI.
+  Choosing another account moves all of them; a different login starts a new conversation.
 - **Limits on Agent work (PM-18):** limits belong to the account, not a session or run, so they
   appear once per CLI: on the project Agents tab as a slim section of its own below Agent work
   and its terminal (PM-42); in the workspace List view inside the toolbar's free middle (PM-50),
