@@ -243,6 +243,31 @@ export function claudeLimits(dataDir: string | null, now = Date.now()): Provider
 const TTL_MS = 30_000;
 let cached: { at: number; sourceKey: string; value: ProviderLimits[] } | null = null;
 
+function activeCodexHome(dataDir: string | null): string {
+  const fallback = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  if (!dataDir) return fallback;
+  try {
+    const raw = JSON.parse(
+      readFileSync(path.join(dataDir, 'codex-accounts.json'), 'utf8'),
+    ) as {
+      activeProfileId?: string | null;
+      accounts?: { id?: string }[];
+    };
+    const id = raw.activeProfileId;
+    if (
+      typeof id === 'string' &&
+      /^[0-9a-f-]{36}$/i.test(id) &&
+      Array.isArray(raw.accounts) &&
+      raw.accounts.some((a) => a.id === id)
+    ) {
+      return path.join(dataDir, 'codex-accounts', id);
+    }
+  } catch {
+    // No saved registry or default account selected.
+  }
+  return fallback;
+}
+
 /** Every provider's limits that can be read locally, cached briefly (Settings polls). */
 export function readLimits(
   dataDir: string | null,
@@ -253,9 +278,10 @@ export function readLimits(
     const resolved = path.resolve(value);
     return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
   };
+  const codexHome = activeCodexHome(dataDir);
   const sourceKey = JSON.stringify([
     dataDir === null ? null : sourcePath(dataDir),
-    sourcePath(process.env.CODEX_HOME || path.join(os.homedir(), '.codex')),
+    sourcePath(codexHome),
   ]);
   if (
     !refresh &&
@@ -265,10 +291,9 @@ export function readLimits(
     now - cached.at < TTL_MS
   )
     return cached.value.map((value) => rollOver(value, now));
-  const value = [
-    claudeLimits(dataDir, now),
-    codexLimits(os.homedir(), process.env.CODEX_HOME, now),
-  ].filter((l): l is ProviderLimits => l !== null);
+  const value = [claudeLimits(dataDir, now), codexLimits(os.homedir(), codexHome, now)].filter(
+    (l): l is ProviderLimits => l !== null,
+  );
   cached = { at: now, sourceKey, value };
   return value;
 }

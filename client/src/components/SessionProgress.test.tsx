@@ -120,6 +120,41 @@ describe('SessionProgress', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
     expect(screen.getByText(/clears on the next check/)).toBeDefined();
   });
+
+  it('offers quick Codex account switching when hitting usage limits (PM-164)', async () => {
+    const session = makeSession({
+      providerId: 'codex',
+      terminal: 'pty',
+      codexAccountId: 'default',
+      codexAccountName: 'Default Codex account',
+      usageLimit: { resetsAt: '2099-10-11T12:30:00Z' },
+    });
+    (api as Record<string, unknown>).getCodexAccounts = vi.fn().mockResolvedValue({
+      activeProfileId: null,
+      autoSwitch: true,
+      defaultAccount: { available: true },
+      accounts: [
+        {
+          id: '11111111-1111-1111-1111-111111111111',
+          name: 'Backup Pro',
+          createdAt: '2026-10-17T00:00:00Z',
+        },
+      ],
+    });
+    const switchMock = vi.fn().mockResolvedValue(session);
+    (api as Record<string, unknown>).switchSessionCodexAccount = switchMock;
+
+    render(<SessionProgress session={session} />);
+    const select = await screen.findByLabelText('Switch Codex account for Claude Code');
+    fireEvent.change(select, { target: { value: '11111111-1111-1111-1111-111111111111' } });
+    await waitFor(() =>
+      expect(switchMock).toHaveBeenCalledWith(
+        1,
+        '11111111-1111-1111-1111-111111111111',
+        true,
+      ),
+    );
+  });
 });
 
 describe('SessionRestartStatus', () => {

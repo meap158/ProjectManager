@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AgentSession } from '../../../shared/types';
+import type { AgentSession, CodexAccountsState } from '../../../shared/types';
 import { api } from '../api';
 import './session-progress.css';
 
@@ -44,13 +44,15 @@ const fullTime = (iso: string) =>
 /**
  * Shared feedback in list rows and the selected terminal header: Codex terminals' auto-continue
  * and, when the CLI shows its plan usage limit, a notice like Claude desktop's (PM-58): when it
- * resets in your timezone, "Auto-continue when limits reset", Try again and View details.
+ * resets in your timezone, "Auto-continue when limits reset", Try again, Switch account (PM-164),
+ * and View details.
  */
 export function SessionProgress({ session }: { session: AgentSession }) {
   const [clock, setClock] = useState(() => Date.now());
-  const [pending, setPending] = useState<'toggle' | 'retry' | null>(null);
+  const [pending, setPending] = useState<'toggle' | 'retry' | 'switch' | null>(null);
   const [error, setError] = useState('');
   const [details, setDetails] = useState(false);
+  const [accountsState, setAccountsState] = useState<CodexAccountsState | null>(null);
   const continuation = session.autoContinue;
   const limit = session.usageLimit ?? null;
   const enabled = !!continuation?.enabled;
@@ -62,6 +64,21 @@ export function SessionProgress({ session }: { session: AgentSession }) {
     return () => clearInterval(timer);
   }, [resetAt]);
 
+  useEffect(() => {
+    if (!limit || session.providerId !== 'codex' || typeof api.getCodexAccounts !== 'function')
+      return;
+    let active = true;
+    api
+      .getCodexAccounts()
+      .then((s) => {
+        if (active) setAccountsState(s);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [limit, session.providerId, session.codexAccountId]);
+
   if (session.providerId !== 'codex' || session.terminal !== 'pty') return null;
   const msLeft = resetAt ? Date.parse(resetAt) - clock : null;
   const due = msLeft !== null && msLeft <= 0;
@@ -71,7 +88,7 @@ export function SessionProgress({ session }: { session: AgentSession }) {
     : msLeft !== null && msLeft < 60_000
       ? 'in under a minute'
       : `in ${minutesLeft} min`;
-  const act = async (kind: 'toggle' | 'retry', call: () => Promise<unknown>) => {
+  const act = async (kind: 'toggle' | 'retry' | 'switch', call: () => Promise<unknown>) => {
     setPending(kind);
     setError('');
     try {
@@ -83,12 +100,29 @@ export function SessionProgress({ session }: { session: AgentSession }) {
     }
   };
 
+  const currentAccountKey = session.codexAccountId ?? 'default';
+  const otherAccounts = accountsState
+    ? [
+        ...(currentAccountKey !== 'default'
+          ? [{ id: 'default', name: 'Default Codex account' }]
+          : []),
+        ...accountsState.accounts
+          .filter((a) => a.id !== currentAccountKey)
+          .map((a) => ({ id: a.id, name: a.name })),
+      ]
+    : [];
+
   return (
     // Clicks here act on these controls, never on the row or pane around them.
     <span
       className={`session-progress${limit ? ' is-limited' : ''}`}
       onClick={(e) => e.stopPropagation()}
     >
+      {session.codexAccountName && session.codexAccountId && session.codexAccountId !== 'default' && (
+        <span className="badge" title={`Codex account: ${session.codexAccountName}`}>
+          {session.codexAccountName}
+        </span>
+      )}
       {limit ? (
         <span
           className="session-limit"
@@ -133,6 +167,35 @@ export function SessionProgress({ session }: { session: AgentSession }) {
           >
             {pending === 'retry' ? 'Sending…' : 'Try again'}
           </button>
+          {otherAccounts.length > 0 && (
+            <select
+              className="input"
+              aria-label={`Switch Codex account for ${session.name}`}
+              disabled={pending !== null}
+              value=""
+              style={{ height: 26, padding: '2px 8px', fontSize: 12, width: 'auto' }}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (!val) return;
+                void act('switch', () =>
+                  api.switchSessionCodexAccount(
+                    session.id,
+                    val === 'default' ? null : val,
+                    true,
+                  ),
+                );
+              }}
+            >
+              <option value="">
+                {pending === 'switch' ? 'Switching…' : 'Switch account & continue…'}
+              </option>
+              {otherAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="button"
             className="btn btn-sm"

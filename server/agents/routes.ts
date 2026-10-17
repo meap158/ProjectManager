@@ -188,6 +188,54 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     return c.body(null, 204);
   });
 
+  // ---- Codex accounts (PM-164: saved auth.json profiles + automatic usage-limit rotation) ----
+  app.get('/agents/codex-accounts', (c) => c.json(supervisor.codexAccountsState()));
+
+  app.post('/agents/codex-accounts', async (c) => {
+    const body = await parseBody(
+      c,
+      z
+        .object({
+          name: z.string().trim().min(1).max(80).optional(),
+          authJson: z
+            .string()
+            .min(2)
+            .max(64 * 1024)
+            .optional(),
+          saveCurrent: z.boolean().optional(),
+        })
+        .refine((b) => b.saveCurrent || (b.name && b.authJson), {
+          message: 'Provide name and authJson, or saveCurrent: true',
+        }),
+    );
+    if (body.saveCurrent) {
+      return c.json(supervisor.saveCurrentCodexAccount(body.name), 201);
+    }
+    return c.json(supervisor.importCodexAccount(body.name!, body.authJson!), 201);
+  });
+
+  app.put('/agents/codex-accounts/active', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({ activeProfileId: z.string().trim().min(1).max(64).nullable() }),
+    );
+    return c.json(supervisor.setActiveCodexAccount(body.activeProfileId));
+  });
+
+  app.put('/agents/codex-accounts/auto-switch', async (c) => {
+    const body = await parseBody(c, z.object({ autoSwitch: z.boolean() }));
+    return c.json(supervisor.setCodexAutoSwitch(body.autoSwitch));
+  });
+
+  app.patch('/agents/codex-accounts/:accountId', async (c) => {
+    const body = await parseBody(c, z.object({ name: z.string().trim().min(1).max(80) }));
+    return c.json(supervisor.renameCodexAccount(c.req.param('accountId'), body.name));
+  });
+
+  app.delete('/agents/codex-accounts/:accountId', (c) =>
+    c.json(supervisor.removeCodexAccount(c.req.param('accountId'))),
+  );
+
   // ---- Sessions -------------------------------------------------------------------------------
   app.get('/projects/:id/agent-sessions', (c) => {
     const projectId = requireProject(db, c);
@@ -252,7 +300,7 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     const offset = after === undefined ? undefined : Number(after);
     if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0))
       throw new AgentError(400, 'Invalid offset');
-    const source = transcriptSource(resume.providerId, resume.resumeJson);
+    const source = transcriptSource(resume.providerId, resume.resumeJson, resume.codexHome);
     const file = source ? await findTranscript(source) : null;
     if (!file) return c.json({ supported: !!source, items: [], next: 0, reset: false });
     return c.json({ supported: true, ...(await readTranscript(file, resume.providerId, offset)) });
@@ -262,7 +310,7 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   app.get('/agent-sessions/:id/subagent', async (c) => {
     const resume = supervisor.sessionResume(parseId(c));
     if (!resume) throw new AgentError(404, 'Session not found');
-    const source = transcriptSource(resume.providerId, resume.resumeJson);
+    const source = transcriptSource(resume.providerId, resume.resumeJson, resume.codexHome);
     const file = source?.providerId === 'claude' ? await findTranscript(source) : null;
     const items = file ? await readSubagent(file, c.req.query('tool') ?? '') : null;
     return c.json({ items });
@@ -423,6 +471,21 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   });
   // "Try again" on the usage-limit notice (PM-58): continue once now, into an empty prompt.
   app.post('/agent-sessions/:id/continue-now', (c) => c.json(supervisor.continueNow(parseId(c))));
+  app.post('/agent-sessions/:id/codex-account', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({
+        profileId: z.string().trim().min(1).max(64).nullable(),
+        continuePrompt: z.boolean().optional(),
+      }),
+    );
+    return c.json(
+      await supervisor.switchSessionCodexAccount(parseId(c), body.profileId, {
+        continuePrompt: body.continuePrompt,
+        setGlobal: true,
+      }),
+    );
+  });
 
   app.post('/agent-sessions/:id/stop', async (c) => {
     const session = await supervisor.stopSession(parseId(c));

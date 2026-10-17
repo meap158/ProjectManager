@@ -56,6 +56,7 @@ import type {
   CardStatus,
   InstallRecipe,
   RunChanges,
+  CodexAccountsState,
 } from '../../shared/types.js';
 import { isTerminalReport, stripTerminalReports } from '../../shared/terminalReports.js';
 import { boardConnection, boardTaskNote } from '../boardMcp.js';
@@ -81,10 +82,15 @@ import {
   type TimerMemo,
   workingInTail,
 } from './activity.js';
-import { readLimits } from './limits.js';
+import { codexLimits, readLimits } from './limits.js';
 import { applyCpuBudget, getCpuBudget } from './cpuBudget.js';
 import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
-import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
+import {
+  claudeSessionId,
+  codexSessionFor,
+  findCodexRolloutFile,
+  staleClaudeResume,
+} from './usage.js';
 import {
   antigravityConversationFor,
   claudeCustomTitle,
@@ -110,6 +116,7 @@ import {
 import { resolveArgv } from './resolve.js';
 import { renderScreen } from './screen.js';
 import { logBase, logicalSize, physicalSize, removeLog } from './logFile.js';
+import { CodexAccountError, CodexAccounts } from './codexAccounts.js';
 
 const now = () => new Date().toISOString();
 
@@ -380,6 +387,10 @@ export class AgentSupervisor {
   private installStarting = new Set<string>();
   /** Test-only recipe overrides (production always uses the catalog). */
   private readonly installRecipes: Partial<Record<string, InstallRecipe>>;
+  private readonly codexAccounts: CodexAccounts | null;
+  /** Accounts already tried during the current usage-limit episode of a Codex session. */
+  private sessionTriedAccounts = new Map<number, string[]>();
+  private switchingCodexSession = new Set<number>();
   /** Resolves once boot reconciliation (re-attach / relaunch) is done. */
   readonly ready: Promise<void>;
 
@@ -417,6 +428,7 @@ export class AgentSupervisor {
   ) {
     mkdirSync(logDir, { recursive: true });
     this.dataDir = options.dataDir ?? null;
+    this.codexAccounts = this.dataDir ? new CodexAccounts(this.dataDir, db) : null;
     this.managedRuns = options.managedRuns ?? false;
     this.maxParallelRuns = options.maxParallelRuns ?? MAX_PARALLEL_RUNS;
     this.cpuBudget = options.cpuBudget ?? false;
@@ -441,6 +453,137 @@ export class AgentSupervisor {
       });
     }, 2000);
     this.managedTimer.unref();
+  }
+
+  codexAccountsState(): CodexAccountsState {
+    return this.withCodexAccounts((accounts) => accounts.state());
+  }
+
+  importCodexAccount(name: string, authJson: string): CodexAccountsState {
+    return this.withCodexAccounts((accounts) => accounts.importAccount(name, authJson));
+  }
+
+  saveCurrentCodexAccount(name?: string): CodexAccountsState {
+    return this.withCodexAccounts((accounts) => accounts.saveCurrentAccount(name));
+  }
+
+  renameCodexAccount(id: string, name: string): CodexAccountsState {
+    return this.withCodexAccounts((accounts) => accounts.renameAccount(id, name));
+  }
+
+  removeCodexAccount(id: string): CodexAccountsState {
+    return this.withCodexAccounts((accounts) => accounts.removeAccount(id));
+  }
+
+  setActiveCodexAccount(id: string | null): CodexAccountsState {
+    return this.withCodexAccounts((accounts) => accounts.setActive(id));
+  }
+
+  setCodexAutoSwitch(enabled: boolean): CodexAccountsState {
+    return this.withCodexAccounts((accounts) => accounts.setAutoSwitch(enabled));
+  }
+
+  /**
+   * Switches a Codex session to the specified account profile (`null` or `'default'` for the
+   * default CODEX_HOME login), migrating its rollout transcript so `codex resume` keeps the
+   * conversation intact, and restarts the session if it is running.
+   */
+  async switchSessionCodexAccount(
+    id: number,
+    profileId: string | null,
+    options: { continuePrompt?: boolean; setGlobal?: boolean } = {},
+  ): Promise<AgentSession> {
+    const row = this.getSessionRow(id);
+    if (!row) throw new AgentError(404, 'Session not found');
+    if (row.provider_id !== 'codex')
+      throw new AgentError(400, 'Account switching is only supported for Codex sessions');
+    const targetKey = profileId === null || profileId === 'default' ? 'default' : profileId;
+    const target = this.withCodexAccounts((accounts) => accounts.profile(targetKey));
+    if (options.setGlobal !== false) {
+      this.withCodexAccounts((accounts) =>
+        accounts.setActive(target.id === 'default' ? null : target.id),
+      );
+    }
+    const previous = this.sessionCodexProfile(row);
+    const convId = this.conversationOf(row);
+    if (this.codexAccounts && previous && previous.home !== target.home) {
+      const rollout = findCodexRolloutFile(
+        row.cwd,
+        row.started_at,
+        convId,
+        os.homedir(),
+        previous.home,
+      );
+      this.codexAccounts.copyRolloutToHome(previous.home, target.home, rollout);
+    }
+    const parsed = JSON.parse(row.command_json) as {
+      command: string[];
+      env?: Record<string, string>;
+      codexAccountId?: string;
+    };
+    const nextEnv = { ...(parsed.env ?? {}), CODEX_HOME: target.home };
+    this.db
+      .prepare('UPDATE agent_sessions SET command_json = ? WHERE id = ?')
+      .run(
+        JSON.stringify({ ...parsed, env: nextEnv, codexAccountId: target.id }),
+        id,
+      );
+    this.usageLimits.delete(id);
+    const shouldRestart =
+      this.live.has(`session:${id}`) || row.desired_state === 'running' || row.status === 'running';
+    if (!shouldRestart) return this.getSession(id)!;
+
+    this.switchingCodexSession.add(id);
+    try {
+      this.outputFor(`session:${id}`, row.log_path).append(
+        `\r\n[supervisor] switching Codex account to ${target.name}\r\n`,
+      );
+      await this.stopSession(id);
+      if (options.continuePrompt) {
+        this.db
+          .prepare(`INSERT INTO agent_input_queue (session_id, data, created_at) VALUES (?, ?, ?)`)
+          .run(id, CONTINUE_PROMPT, now());
+      }
+      return await this.startSession(id);
+    } finally {
+      this.switchingCodexSession.delete(id);
+    }
+  }
+
+  private sessionCodexProfile(
+    row: SessionRow,
+  ): { id: string; name: string; home: string } | null {
+    if (row.provider_id !== 'codex' || !this.codexAccounts) return null;
+    try {
+      const parsed = JSON.parse(row.command_json) as {
+        env?: Record<string, string>;
+        codexAccountId?: string;
+      };
+      if (parsed.codexAccountId) {
+        try {
+          return this.codexAccounts.profile(parsed.codexAccountId);
+        } catch {
+          // Account was removed; fall back to the active profile.
+        }
+      }
+      const fromEnv = this.codexAccounts.keyForHome(parsed.env?.CODEX_HOME);
+      if (fromEnv) return this.codexAccounts.profile(fromEnv);
+    } catch {
+      // Fall through to selectedProfile.
+    }
+    return this.codexAccounts.selectedProfile();
+  }
+
+  private withCodexAccounts<T>(run: (accounts: CodexAccounts) => T): T {
+    if (!this.codexAccounts)
+      throw new AgentError(409, 'Codex account management needs a configured app data directory');
+    try {
+      return run(this.codexAccounts);
+    } catch (error) {
+      if (error instanceof CodexAccountError)
+        throw new AgentError(error.status, error.message);
+      throw error;
+    }
   }
 
   // ---- Session host ------------------------------------------------------------------------
@@ -730,6 +873,11 @@ export class AgentSupervisor {
     const resume = explicit ? null : buildResumeArgv(provider, conversationId);
     const cwd = resolveCwd(input.cwd ?? project.path);
     const env = validateEnv(input.env);
+    const codexProfile =
+      providerId === 'codex' && this.codexAccounts && !env.CODEX_HOME
+        ? this.codexAccounts.selectedProfile()
+        : null;
+    if (codexProfile) env.CODEX_HOME = codexProfile.home;
     const terminal: AgentTerminal = input.terminal ?? (ptyAvailable() ? 'pty' : 'pipe');
     if (terminal === 'pty' && !ptyAvailable()) {
       throw new AgentError(400, 'Terminal sessions need node-pty, which is not installed here');
@@ -752,7 +900,11 @@ export class AgentSupervisor {
         projectId,
         name,
         providerId,
-        JSON.stringify({ command, env }),
+        JSON.stringify({
+          command,
+          env,
+          ...(codexProfile ? { codexAccountId: codexProfile.id } : {}),
+        }),
         resume ? JSON.stringify(resume) : null,
         cwd,
         (input.supervise ?? true) ? 1 : 0,
@@ -1069,6 +1221,15 @@ export class AgentSupervisor {
       setSetting(this.db, key, { ...state, enabled: false, resumesAt: null, message });
   }
 
+  private codexWindowsForSession(row: SessionRow) {
+    const profile = this.sessionCodexProfile(row);
+    if (profile) {
+      const profileLimits = codexLimits(os.homedir(), profile.home);
+      if (profileLimits) return profileLimits.windows;
+    }
+    return readLimits(this.dataDir).find((p) => p.providerId === 'codex')?.windows ?? [];
+  }
+
   private armContinuation(row: SessionRow): void {
     const key = `session-auto-continue:${row.id}`;
     const state = getSetting<{ enabled: boolean; resumesAt: string | null; attempts: number }>(
@@ -1076,10 +1237,10 @@ export class AgentSupervisor {
       key,
     );
     if (!state?.enabled || state.resumesAt) return;
-    const limits = readLimits(this.dataDir).find((p) => p.providerId === 'codex');
+    const windows = this.codexWindowsForSession(row);
     const resumesAt = allowanceReset(
       this.logTail(row.log_path) ?? '',
-      limits?.windows ?? [],
+      windows,
       Date.now(),
     );
     if (!resumesAt) return;
@@ -1091,15 +1252,40 @@ export class AgentSupervisor {
       .prepare(`SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'`)
       .all() as unknown as SessionRow[];
     // Whether each one is showing its usage limit, opted in or not, for the limit notice.
-    const windows = readLimits(this.dataDir).find((p) => p.providerId === 'codex')?.windows ?? [];
     const running = new Set(rows.map((r) => r.id));
     for (const id of this.usageLimits.keys()) if (!running.has(id)) this.usageLimits.delete(id);
     for (const row of rows) {
+      const windows = this.codexWindowsForSession(row);
       const shown = usageLimitShown(this.sessionScreen(row.id, 4000) ?? '', windows, Date.now());
-      if (shown) this.usageLimits.set(row.id, shown);
-      else this.usageLimits.delete(row.id);
+      if (shown) {
+        this.usageLimits.set(row.id, shown);
+        if (
+          this.codexAccounts &&
+          this.codexAccounts.state().autoSwitch &&
+          !this.switchingCodexSession.has(row.id) &&
+          !this.restarting.has(row.id)
+        ) {
+          const currentKey = this.sessionCodexProfile(row)?.id ?? 'default';
+          const tried = [
+            ...new Set([...(this.sessionTriedAccounts.get(row.id) ?? []), currentKey]),
+          ];
+          const next = this.codexAccounts.nextUnused(currentKey, tried, Date.now());
+          const tail = this.logTail(row.log_path) ?? '';
+          if (next && next.id !== currentKey && emptyCodexPrompt(tail)) {
+            this.sessionTriedAccounts.set(row.id, tried);
+            void this.switchSessionCodexAccount(row.id, next.id, {
+              continuePrompt: true,
+              setGlobal: true,
+            }).catch(() => undefined);
+            continue;
+          }
+        }
+      } else {
+        this.usageLimits.delete(row.id);
+      }
     }
     for (const row of rows) {
+      if (this.switchingCodexSession.has(row.id)) continue;
       const key = `session-auto-continue:${row.id}`;
       let state = getSetting<{
         enabled: boolean;
@@ -1185,6 +1371,8 @@ export class AgentSupervisor {
     deleteSetting(this.db, seenTitleKey(id));
     deleteSetting(this.db, `session-auto-continue:${id}`);
     this.restarting.delete(id);
+    this.sessionTriedAccounts.delete(id);
+    this.switchingCodexSession.delete(id);
     // Forget the record's process and log now: SQLite reuses ids, and a new session with this id
     // must not be mistaken for the old one while the old process is still exiting.
     this.live.delete(`session:${id}`);
@@ -1427,6 +1615,8 @@ export class AgentSupervisor {
       this.logDir,
       `run-${Date.now()}-${Math.floor(Math.random() * 1e6)}.log`,
     );
+    const codexAccountId =
+      providerId === 'codex' && this.codexAccounts ? this.codexAccounts.selectedId() : undefined;
     const id = Number(
       this.db
         .prepare(
@@ -1440,7 +1630,11 @@ export class AgentSupervisor {
           cardId,
           `${card.key}: ${card.title}`.slice(0, 120),
           providerId,
-          JSON.stringify({ command, timeoutMs }),
+          JSON.stringify({
+            command,
+            timeoutMs,
+            ...(codexAccountId ? { codexAccountId } : {}),
+          }),
           prompt,
           maxAttempts,
           ts,
@@ -1785,10 +1979,17 @@ export class AgentSupervisor {
     if (this.live.has(key) || this.starting.has(key)) return;
     this.starting.add(key);
     try {
-      const { command, env } = JSON.parse(row.command_json) as {
+      const parsedCmd = JSON.parse(row.command_json) as {
         command: string[];
         env: Record<string, string>;
+        codexAccountId?: string;
       };
+      const command = parsedCmd.command;
+      const codexProfile = this.sessionCodexProfile(row);
+      const env =
+        codexProfile && (!parsedCmd.env?.CODEX_HOME || parsedCmd.codexAccountId)
+          ? { ...parsedCmd.env, CODEX_HOME: codexProfile.home }
+          : { ...parsedCmd.env };
       // Relaunching prefers the stored resume argv (e.g. `claude --continue`),
       // so an AI conversation picks up instead of starting cold. Shells and
       // custom commands simply respawn.
@@ -1817,7 +2018,13 @@ export class AgentSupervisor {
         }
       }
       if (isRelaunch && !resume && row.provider_id === 'codex' && command[0] === 'codex') {
-        const id = codexSessionFor(row.cwd, row.created_at, this.claimedConversations(row));
+        const id = codexSessionFor(
+          row.cwd,
+          row.created_at,
+          this.claimedConversations(row),
+          os.homedir(),
+          env.CODEX_HOME,
+        );
         if (id) resume = this.saveResume(row.id, [command[0], 'resume', id]);
       }
       // Grok saves a pinned conversation only once it has one; until then start fresh.
@@ -2135,14 +2342,22 @@ export class AgentSupervisor {
     if (row.provider_id !== 'codex') return claudeSessionId(resume, command);
     if (resume?.[1] === 'resume' && resume[2] && resume[2] !== '--last') return resume[2];
     if (command[0] !== 'codex') return null;
-    const id = codexSessionFor(row.cwd, row.created_at, this.claimedConversations(row));
+    const codexHome = this.sessionCodexProfile(row)?.home;
+    const id = codexSessionFor(
+      row.cwd,
+      row.created_at,
+      this.claimedConversations(row),
+      os.homedir(),
+      codexHome,
+    );
     if (id) this.saveResume(row.id, [command[0], 'resume', id]);
     return id;
   }
 
   private cliTitle(row: SessionRow, id: string): string | null {
     if (row.provider_id === 'claude') return claudeCustomTitle(row.cwd, id);
-    if (row.provider_id === 'codex') return codexThreadName(id);
+    if (row.provider_id === 'codex')
+      return codexThreadName(id, os.homedir(), this.sessionCodexProfile(row)?.home);
     return grokManualTitle(row.cwd, id);
   }
 
@@ -2225,6 +2440,39 @@ export class AgentSupervisor {
     }
   }
 
+  private runCodexProfile(row: RunRow): { id: string; name: string; home: string } | null {
+    if (row.provider_id !== 'codex' || !this.codexAccounts) return null;
+    try {
+      const parsed = JSON.parse(row.command_json) as { codexAccountId?: string };
+      if (parsed.codexAccountId) {
+        try {
+          return this.codexAccounts.profile(parsed.codexAccountId);
+        } catch {
+          // Account was removed; fall back to the active profile.
+        }
+      }
+    } catch {
+      // Fall through.
+    }
+    return this.codexAccounts.selectedProfile();
+  }
+
+  private runHitUsageLimit(logPath: string, codexHome?: string): boolean {
+    const tail = stripTerminal(this.logTail(logPath, 8192) ?? '');
+    if (
+      /you[’']ve hit your usage limit|usage_limit_reached|usage limit reached|insufficient_quota|quota exceeded/i.test(
+        tail,
+      )
+    ) {
+      return true;
+    }
+    const windows =
+      (codexHome ? codexLimits(os.homedir(), codexHome) : null)?.windows ??
+      readLimits(this.dataDir).find((p) => p.providerId === 'codex')?.windows ??
+      [];
+    return allowanceReset(tail, windows, Date.now()) !== null;
+  }
+
   private async spawnRun(row: RunRow, isRelaunch: boolean): Promise<void> {
     if (hasManagedExecution(this.db, row.id, row.log_path)) {
       await this.pollManagedRuns();
@@ -2246,10 +2494,17 @@ export class AgentSupervisor {
     }
     this.starting.add(key);
     try {
-      const { command, timeoutMs } = JSON.parse(row.command_json) as {
+      const storedCmd = JSON.parse(row.command_json) as {
         command: string[];
         timeoutMs: number;
+        codexAccountId?: string;
+        triedCodexAccounts?: string[];
       };
+      const { command, timeoutMs } = storedCmd;
+      const codexProfile = this.runCodexProfile(row);
+      const runEnv: Record<string, string> = codexProfile
+        ? { CODEX_HOME: codexProfile.home }
+        : {};
       const project = getProjectRow(this.db, row.project_id);
       const cwd = project?.path ?? process.cwd();
       const log = this.outputFor(key, row.log_path);
@@ -2264,9 +2519,9 @@ export class AgentSupervisor {
               { kind: 'run', id: row.id, logPath: row.log_path },
               row.provider_id,
               command,
-              {},
+              runEnv,
             )
-          : { command, env: {} };
+          : { command, env: runEnv };
         const resolved = await resolveArgv(connection.command);
         if (this.managedRuns) {
           const pending = this.spawnManagedRun(row, {
@@ -2328,6 +2583,39 @@ export class AgentSupervisor {
           RunRow | undefined;
         if (!current || current.log_path !== row.log_path) return; // Deleted (id maybe reused).
         if (current.status !== 'running' && current.status !== 'queued') return;
+        if (
+          code !== 0 &&
+          !live.stoppedByUser &&
+          !timedOut &&
+          row.provider_id === 'codex' &&
+          codexProfile &&
+          this.codexAccounts?.state().autoSwitch &&
+          this.runHitUsageLimit(row.log_path, codexProfile.home)
+        ) {
+          const tried = [...new Set([...(storedCmd.triedCodexAccounts ?? []), codexProfile.id])];
+          const next = this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now());
+          if (next && next.id !== codexProfile.id) {
+            this.codexAccounts.setActive(next.id === 'default' ? null : next.id);
+            const nextCmdJson = JSON.stringify({
+              ...storedCmd,
+              codexAccountId: next.id,
+              triedCodexAccounts: tried,
+            });
+            this.db
+              .prepare(
+                `UPDATE agent_runs SET command_json = ?, status = 'queued', attempts = ? WHERE id = ? AND log_path = ?`,
+              )
+              .run(nextCmdJson, Math.max(0, attempts - 1), row.id, row.log_path);
+            log.append(
+              `\n[supervisor] usage limit reached on ${codexProfile.name} — switching to ${next.name} and retrying run\n`,
+            );
+            const updated = this.db
+              .prepare(`SELECT * FROM agent_runs WHERE id = ?`)
+              .get(row.id) as unknown as RunRow | undefined;
+            if (updated) void this.spawnRun(updated, true);
+            return;
+          }
+        }
         const changes = before ? diffSince(cwd, before).catch(() => null) : Promise.resolve(null);
         void changes.then((diff) => {
           if (live.stoppedByUser) {
@@ -2670,6 +2958,7 @@ export class AgentSupervisor {
 
   private toSession(row: SessionRow): AgentSession {
     const { command } = JSON.parse(row.command_json) as { command: string[] };
+    const codexProfile = this.sessionCodexProfile(row);
     const live = this.live.get(`session:${row.id}`);
     const { size: diskLogBytes, mtime: lastOutputAt } = this.fileStat(row.log_path);
     const progress = this.restarting.get(row.id);
@@ -2707,6 +2996,8 @@ export class AgentSupervisor {
         resumesAt: null,
         message: '',
       },
+      codexAccountId: codexProfile?.id ?? null,
+      codexAccountName: codexProfile?.name ?? null,
       id: row.id,
       projectId: row.project_id,
       name: row.name,
@@ -2841,9 +3132,17 @@ export class AgentSupervisor {
   }
 
   /** Provider and resume argv of a session, for its chat view's transcript (mobile). */
-  sessionResume(id: number): { providerId: string; resumeJson: string | null } | null {
+  sessionResume(
+    id: number,
+  ): { providerId: string; resumeJson: string | null; codexHome?: string } | null {
     const row = this.getSessionRow(id);
-    return row ? { providerId: row.provider_id, resumeJson: row.resume_json } : null;
+    return row
+      ? {
+          providerId: row.provider_id,
+          resumeJson: row.resume_json,
+          codexHome: this.sessionCodexProfile(row)?.home,
+        }
+      : null;
   }
 
   /**

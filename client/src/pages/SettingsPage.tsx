@@ -12,6 +12,7 @@ import {
 import { useAgentLimits } from '../agentLimits';
 import { api } from '../api';
 import { AgentPermissionsPanel } from '../components/AgentPermissionsPanel';
+import { CodexAccountsPanel } from '../components/CodexAccountsPanel';
 import { CpuBudgetPanel } from '../components/CpuBudgetPanel';
 import { LanAccessPanel } from '../components/LanAccessPanel';
 import { UsageLimits } from '../components/UsageLimits';
@@ -187,6 +188,8 @@ export function SettingsPage() {
         )}
         {confirmId && <InstallConfirm provider={clis.find((p) => p.id === confirmId) ?? null} />}
       </section>
+
+      <CodexAccountsPanel onError={(msg) => setError(msg || null)} />
 
       <AgentPermissionsPanel providers={providers} onError={setError} />
 

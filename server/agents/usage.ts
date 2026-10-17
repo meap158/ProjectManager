@@ -184,8 +184,9 @@ export function findCodexRolloutFile(
   startedAt?: string | null,
   resumeId?: string | null,
   home = os.homedir(),
+  codexHome?: string,
 ): string | null {
-  const root = path.join(home, '.codex', 'sessions');
+  const root = path.join(codexHome || path.join(home, '.codex'), 'sessions');
   const start = startedAt ? Date.parse(startedAt) : NaN;
   const folders: string[] = [];
   const baseTime = Number.isFinite(start) ? start : Date.now();
@@ -376,13 +377,28 @@ export function sessionUsage(
     if (!row) continue;
     const parse = (json: string | null) => {
       try {
-        return json ? (JSON.parse(json) as string[]) : null;
+        return json ? (JSON.parse(json) as unknown) : null;
       } catch {
         return null;
       }
     };
-    const command = parse(row.command_json);
-    const resume = parse(row.resume_json);
+    const rawCommand = parse(row.command_json);
+    const command = Array.isArray(rawCommand)
+      ? (rawCommand as string[])
+      : rawCommand &&
+          typeof rawCommand === 'object' &&
+          Array.isArray((rawCommand as { command?: unknown }).command)
+        ? ((rawCommand as { command: string[] }).command ?? null)
+        : null;
+    const codexHome =
+      rawCommand &&
+      typeof rawCommand === 'object' &&
+      !Array.isArray(rawCommand) &&
+      typeof (rawCommand as { env?: Record<string, unknown> }).env?.CODEX_HOME === 'string'
+        ? ((rawCommand as { env: { CODEX_HOME: string } }).env.CODEX_HOME ?? undefined)
+        : undefined;
+    const rawResume = parse(row.resume_json);
+    const resume = Array.isArray(rawResume) ? (rawResume as string[]) : null;
     try {
       if (row.provider_id === 'claude') {
         const sessionId = claudeSessionId(command, resume);
@@ -391,7 +407,11 @@ export function sessionUsage(
       } else if (row.provider_id === 'codex') {
         const resumeId =
           resume && resume[0] === 'codex' && resume[1] === 'resume' ? resume[2] : null;
-        const file = findCodexRolloutFile(row.cwd, row.started_at, resumeId);
+        const file =
+          findCodexRolloutFile(row.cwd, row.started_at, resumeId, os.homedir(), codexHome) ??
+          (codexHome
+            ? findCodexRolloutFile(row.cwd, row.started_at, resumeId, os.homedir())
+            : null);
         if (file) result[id] = readCodexRolloutUsage(file);
       } else if (row.provider_id === 'grok') {
         const sessionId = claudeSessionId(command, resume);
@@ -418,10 +438,11 @@ export function codexSessionFor(
   startedAt: string,
   claimed: ReadonlySet<string> = new Set(),
   home = os.homedir(),
+  codexHome?: string,
 ): string | null {
   const start = Date.parse(startedAt);
   if (!Number.isFinite(start)) return null;
-  const root = path.join(home, '.codex', 'sessions');
+  const root = path.join(codexHome || path.join(home, '.codex'), 'sessions');
   const folders: string[] = [];
   // Days from the start (UTC and local can differ by one) up to today.
   for (let t = start - 86_400_000; t <= Date.now() + 86_400_000; t += 86_400_000) {

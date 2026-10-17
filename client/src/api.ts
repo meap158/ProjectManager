@@ -29,6 +29,7 @@ import type {
   CardRunSummary,
   CardStatus,
   CardWithProject,
+  CodexAccountsState,
   DirectoryListing,
   ProjectDetail,
   PullRequestAction,
@@ -321,6 +322,12 @@ export const api = {
   /** "Try again" after a usage limit (PM-58): sends the continuation once, now. */
   continueSessionNow: (id: number) =>
     request<AgentSession>('POST', `/agent-sessions/${id}/continue-now`),
+  /** Switch a Codex session's account (PM-164) and optionally continue immediately. */
+  switchSessionCodexAccount: (id: number, profileId: string | null, continuePrompt?: boolean) =>
+    request<AgentSession>('POST', `/agent-sessions/${id}/codex-account`, {
+      profileId,
+      continuePrompt,
+    }),
   deleteSession: (id: number) => request<void>('DELETE', `/agent-sessions/${id}`),
 
   /** Newest runs across every project. */
@@ -367,4 +374,24 @@ export const api = {
   installOutput: (id: number, after: number) =>
     request<AgentOutput>('GET', `/agent-installs/${id}/output?after=${after}`),
   deleteInstall: (id: number) => request<void>('DELETE', `/agent-installs/${id}`),
+
+  // ---- Codex accounts (PM-164) ------------------------------------------------------------------
+  getCodexAccounts: () => request<CodexAccountsState>('GET', '/agents/codex-accounts'),
+  importCodexAccount: (name: string, authJson: string) =>
+    request<CodexAccountsState>('POST', '/agents/codex-accounts', { name, authJson }),
+  saveCurrentCodexAccount: (name?: string) =>
+    request<CodexAccountsState>('POST', '/agents/codex-accounts', {
+      saveCurrent: true,
+      ...(name ? { name } : {}),
+    }),
+  setActiveCodexAccount: (activeProfileId: string | null) =>
+    request<CodexAccountsState>('PUT', '/agents/codex-accounts/active', { activeProfileId }),
+  setCodexAutoSwitch: (autoSwitch: boolean) =>
+    request<CodexAccountsState>('PUT', '/agents/codex-accounts/auto-switch', { autoSwitch }),
+  renameCodexAccount: (accountId: string, name: string) =>
+    request<CodexAccountsState>('PATCH', `/agents/codex-accounts/${encodeURIComponent(accountId)}`, {
+      name,
+    }),
+  removeCodexAccount: (accountId: string) =>
+    request<CodexAccountsState>('DELETE', `/agents/codex-accounts/${encodeURIComponent(accountId)}`),
 };

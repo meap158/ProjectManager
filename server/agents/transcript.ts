@@ -20,12 +20,14 @@ const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export interface TranscriptSource {
   providerId: string;
   conversationId: string;
+  codexHome?: string;
 }
 
 /** The conversation a session resumes into ("claude --resume <id>", "codex resume <id>"). */
 export function transcriptSource(
   providerId: string,
   resumeJson: string | null,
+  codexHome?: string,
 ): TranscriptSource | null {
   if (!resumeJson || (providerId !== 'claude' && providerId !== 'codex')) return null;
   let argv: unknown;
@@ -36,7 +38,7 @@ export function transcriptSource(
   }
   if (!Array.isArray(argv)) return null;
   const id = argv.find((a): a is string => typeof a === 'string' && ID.test(a));
-  return id ? { providerId, conversationId: id } : null;
+  return id ? { providerId, conversationId: id, ...(codexHome ? { codexHome } : {}) } : null;
 }
 
 const found = new Map<string, string>();
@@ -46,7 +48,7 @@ export async function findTranscript(
   source: TranscriptSource,
   home = os.homedir(),
 ): Promise<string | null> {
-  const key = `${source.providerId}:${source.conversationId}`;
+  const key = `${source.providerId}:${source.conversationId}:${source.codexHome ?? ''}`;
   const cached = found.get(key);
   if (cached) return cached;
   let file: string | null = null;
@@ -66,17 +68,21 @@ export async function findTranscript(
     }
   } else {
     // Newest days first: a live session's rollout is almost always in the last few.
-    const root = path.join(home, '.codex', 'sessions');
+    const roots = [
+      ...(source.codexHome ? [path.join(source.codexHome, 'sessions')] : []),
+      path.join(home, '.codex', 'sessions'),
+    ];
     const sorted = async (dir: string) =>
       (await readdir(dir).catch(() => [] as string[])).sort().reverse();
-    search: for (const y of await sorted(root))
-      for (const m of await sorted(path.join(root, y)))
-        for (const d of await sorted(path.join(root, y, m)))
-          for (const f of await readdir(path.join(root, y, m, d)).catch(() => [] as string[]))
-            if (f.endsWith(`${source.conversationId}.jsonl`)) {
-              file = path.join(root, y, m, d, f);
-              break search;
-            }
+    search: for (const root of roots)
+      for (const y of await sorted(root))
+        for (const m of await sorted(path.join(root, y)))
+          for (const d of await sorted(path.join(root, y, m)))
+            for (const f of await readdir(path.join(root, y, m, d)).catch(() => [] as string[]))
+              if (f.endsWith(`${source.conversationId}.jsonl`)) {
+                file = path.join(root, y, m, d, f);
+                break search;
+              }
   }
   if (file) found.set(key, file);
   return file;

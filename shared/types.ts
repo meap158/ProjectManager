@@ -386,6 +386,32 @@ export interface AgentProviderStatus extends AgentProvider {
   install: InstallPreview | null;
 }
 
+/** Codex authentication profiles kept in the local app data directory. Credentials are never returned. */
+export interface CodexAccount {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** Non-secret account label extracted from JWT claims (e.g. email or "API key"), if any. */
+  email?: string | null;
+  plan?: string | null;
+  /** Latest locally recorded usage windows for this account profile, if any. */
+  limits?: import('./limits.js').ProviderLimits | null;
+}
+
+export interface CodexAccountsState {
+  accounts: CodexAccount[];
+  /** null selects the user's normal CODEX_HOME login. */
+  activeProfileId: string | null;
+  autoSwitch: boolean;
+  /** Non-secret metadata for the default CODEX_HOME login, if auth.json exists there. */
+  defaultAccount?: {
+    available: boolean;
+    email?: string | null;
+    plan?: string | null;
+    limits?: import('./limits.js').ProviderLimits | null;
+  };
+}
+
 /** One official way to install an agent CLI, exactly as its vendor documents it. */
 export interface InstallRecipe {
   /** Shown in the UI before anything runs, e.g. "Official installer (claude.ai)". */
@@ -445,6 +471,9 @@ export interface AgentSession {
    * windows reset if known. Null once the message is off screen or the reset has passed.
    */
   usageLimit?: { resetsAt: string | null } | null;
+  /** Active Codex account profile id ('default' or saved UUID) and display name for Codex sessions (PM-164). */
+  codexAccountId?: string | null;
+  codexAccountName?: string | null;
   id: number;
   projectId: number;
   name: string;

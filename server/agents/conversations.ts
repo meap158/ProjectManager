@@ -183,8 +183,12 @@ export function claudeCustomTitle(cwd: string, id: string, home = os.homedir()):
 }
 
 /** The name you gave a Codex thread with /rename (Codex records no automatic names for them). */
-export function codexThreadName(id: string, home = os.homedir()): string | null {
-  const file = path.join(home, '.codex', 'session_index.jsonl');
+export function codexThreadName(
+  id: string,
+  home = os.homedir(),
+  codexHome?: string,
+): string | null {
+  const file = path.join(codexHome || path.join(home, '.codex'), 'session_index.jsonl');
   for (const line of linesNewestFirst<{ id?: string; thread_name?: string }>(
     tail(file, 1_000_000),
   )) {
