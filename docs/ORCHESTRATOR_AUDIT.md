@@ -1034,3 +1034,15 @@ active-card count. This removes the pending benchmark claim for that fixture but
 does not close global performance: latency remains high and cache memory needs
 review. The benchmark's new validated fixture selectors retain full-matrix defaults.
 See the benchmark document for exact command, sampling limits and remaining costs.
+
+## Bounded observation working set, 2026-10-17
+
+The observation parse cache now retains at most two recently accessed masters and
+skips snapshots whose serialized UTF-8 exceeds 2 MiB. Evicted state remains persisted
+and is freshly rehydrated; no task observations are discarded. A 20-master fixture
+asserts the retention bound and zero duplicate writes across repeated evictions,
+plus an oversized snapshot bypass. All 121 Orchestrator tests, server types and
+scoped lint pass. The 4 MiB combined serialized eligibility limit is not a total
+heap bound: parsed objects, active batches and other app state have overhead. The
+prior 320.8 MB RSS measurement predates this bound; a post-change RSS/latency run
+is still required, and persisted map retention remains separate work.

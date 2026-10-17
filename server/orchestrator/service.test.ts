@@ -1203,3 +1203,36 @@ it('keeps observation cache consistent with rollback and external snapshot edits
     db.close();
   }
 });
+
+it('bounds retained observation snapshots and rehydrates evicted masters without writes', () => {
+  const db = openDb(':memory:');
+  const service = new OrchestratorService(db, {} as AgentSupervisor, null);
+  const cache = (service as unknown as { observationCache: Map<string, unknown> }).observationCache;
+  const events = Array.from({ length: 20 }, (_, id) => ({
+    orchestratorId: `master-${id}`,
+    cardId: 1,
+    action: 'wait',
+    message: 'Waiting',
+  }));
+  try {
+    for (const event of events) {
+      service.record(event);
+      expect(cache.size).toBeLessThanOrEqual(2);
+    }
+    const before = db.prepare('SELECT total_changes() AS n').get()!.n;
+    for (const event of events) {
+      service.record(event);
+      expect(cache.size).toBeLessThanOrEqual(2);
+    }
+    expect(db.prepare('SELECT total_changes() AS n').get()!.n).toBe(before);
+    service.record({
+      orchestratorId: 'large',
+      action: 'wait',
+      message: 'x'.repeat(2 * 1024 * 1024),
+    });
+    expect(cache.has('large')).toBe(false);
+    expect(cache.size).toBeLessThanOrEqual(2);
+  } finally {
+    db.close();
+  }
+});

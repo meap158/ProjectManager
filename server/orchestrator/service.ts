@@ -63,6 +63,17 @@ export class OrchestratorService {
     string,
     { raw: string | null; values: Record<string, { action: string; message: string }> }
   >();
+  /** Retain a small working set; persisted snapshots remain the source of truth. */
+  private cacheObservation(
+    id: string,
+    snapshot: { raw: string | null; values: Record<string, { action: string; message: string }> },
+  ) {
+    this.observationCache.delete(id);
+    if (snapshot.raw && Buffer.byteLength(snapshot.raw, 'utf8') > 2 * 1024 * 1024) return;
+    this.observationCache.set(id, snapshot);
+    while (this.observationCache.size > 2)
+      this.observationCache.delete(this.observationCache.keys().next().value!);
+  }
   private policyQuery?: ReturnType<Db['prepare']>;
   private policyCache?: { raw: string | null; byId: Map<string, OrchestratorConfig> };
   /** Read the persisted value every time; only reuse parsing when its exact bytes match. */
@@ -502,8 +513,8 @@ export class OrchestratorService {
           let cached = this.observationCache.get(event.orchestratorId);
           if (!cached || cached.raw !== raw) {
             cached = { raw, values: raw ? JSON.parse(raw) : {} };
-            this.observationCache.set(event.orchestratorId, cached);
           }
+          this.cacheObservation(event.orchestratorId, cached);
           snapshot = { values: cached.values, changed: false };
           observations.set(event.orchestratorId, snapshot);
         }
@@ -527,7 +538,7 @@ export class OrchestratorService {
       this.db.exec('RELEASE orchestrator_observations');
       for (const [id, snapshot] of observations)
         if (snapshot.changed)
-          this.observationCache.set(id, {
+          this.cacheObservation(id, {
             raw: JSON.stringify(snapshot.values),
             values: snapshot.values,
           });
