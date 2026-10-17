@@ -7,13 +7,14 @@ import { OrchestratorService } from './service.js';
 import * as planning from './planningRuns.js';
 import type { AgentSupervisor } from '../agents/supervisor.js';
 import { providerStatuses } from '../agents/providers.js';
+import { readLimits } from '../agents/limits.js';
 vi.mock('../agents/providers.js', () => ({
   providerStatuses: vi.fn(async () => [{ id: 'codex', available: true }]),
 }));
 vi.mock('../agents/limits.js', () => ({
-  readLimits: () => [
+  readLimits: vi.fn(() => [
     { providerId: 'codex', asOf: new Date().toISOString(), windows: [{ usedPercent: 20 }] },
-  ],
+  ]),
 }));
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'pm-orchestrator-'));
 afterEach(() => {
@@ -1011,6 +1012,35 @@ it('omits stopped ordinary sessions and historical chats from the overview witho
       'stopped',
     );
   } finally {
+    db.close();
+  }
+});
+
+it('refreshes quota once when coalesced manual checks actually begin', async () => {
+  const db = openDb(':memory:');
+  const service = new OrchestratorService(db, {} as AgentSupervisor, null);
+  let finish!: () => void;
+  const execute = vi
+    .spyOn(service as unknown as { execute(id?: string): Promise<void> }, 'execute')
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    )
+    .mockResolvedValue(undefined);
+  vi.mocked(readLimits).mockClear();
+  try {
+    const first = service.tick('master');
+    const next = service.tick('master');
+    for (let i = 0; i < 10; i++) expect(service.tick('master', { refreshQuota: true })).toBe(next);
+    expect(readLimits).not.toHaveBeenCalled();
+    finish();
+    await Promise.all([first, next]);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(readLimits).toHaveBeenCalledExactlyOnceWith(null, expect.any(Number), true);
+  } finally {
+    await service.stop();
     db.close();
   }
 });

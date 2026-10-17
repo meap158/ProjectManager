@@ -49,6 +49,7 @@ export class OrchestratorService {
   private currentExecution: Promise<void> | null = null;
   private pendingTick: {
     instanceId?: string;
+    refreshQuota: boolean;
     promise: Promise<void>;
     resolve: () => void;
     reject: (err: unknown) => void;
@@ -523,11 +524,9 @@ export class OrchestratorService {
   }
 
   tick(instanceId?: string, options: { refreshQuota?: boolean } = {}): Promise<void> {
-    // Manual checks refresh once; subsequent policy fences reuse that same bounded cache.
-    if (options.refreshQuota) readLimits(this.dataDir, Date.now(), true);
     if (!this.executing) {
       this.executing = true;
-      const execution = this.runTick(instanceId).finally(() => {
+      const execution = this.runTick(instanceId, options.refreshQuota).finally(() => {
         this.executing = false;
         this.currentExecution = null;
         this.checkPendingTick();
@@ -545,6 +544,7 @@ export class OrchestratorService {
       });
       this.pendingTick = {
         instanceId,
+        refreshQuota: options.refreshQuota === true,
         promise,
         resolve,
         reject,
@@ -554,6 +554,7 @@ export class OrchestratorService {
         this.pendingTick.instanceId = undefined;
       }
     }
+    this.pendingTick.refreshQuota ||= options.refreshQuota === true;
     return this.pendingTick.promise;
   }
 
@@ -562,7 +563,7 @@ export class OrchestratorService {
     const pending = this.pendingTick;
     this.pendingTick = null;
     this.executing = true;
-    const execution = this.runTick(pending.instanceId)
+    const execution = this.runTick(pending.instanceId, pending.refreshQuota)
       .finally(() => {
         this.executing = false;
         this.currentExecution = null;
@@ -573,7 +574,9 @@ export class OrchestratorService {
     this.currentExecution = execution;
   }
 
-  private async runTick(instanceId?: string) {
+  private async runTick(instanceId?: string, refreshQuota = false) {
+    // Refresh at execution time, once per coalesced tick rather than once per click.
+    if (refreshQuota) readLimits(this.dataDir, Date.now(), true);
     this.lastTickAt = new Date().toISOString();
     await this.execute(instanceId);
   }

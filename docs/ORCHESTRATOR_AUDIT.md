@@ -944,3 +944,14 @@ cached afterward; route tests verify global/scoped options. All 127 Orchestrator
 parser tests, server types and scoped lint pass. This closes the deliberate-refresh
 gap above for Check now. It reads local records only and does not query provider
 accounts, send terminal input or create quota evidence when no report exists.
+
+## Coalesced manual refresh intent, 2026-10-17
+
+Manual quota refresh now travels with the queued tick and occurs at execution
+time. Repeated manual requests during an active tick no longer force repeated
+rollout-file reads or refresh evidence prematurely while waiting. Any manual
+request upgrades the shared pending tick to refresh once; ordinary pending requests
+do not erase that intent. A deferred-execution regression verifies ten manual
+requests share one pending promise, two total ticks and one uncached read. All 32
+service/route tests, server types and scoped lint pass. Scope-coalescing semantics
+and the routine cache remain unchanged.
