@@ -48,3 +48,6 @@ desktop.ini
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Session handover: local working notes, not project history.
+AGENT_HANDOVER.md
