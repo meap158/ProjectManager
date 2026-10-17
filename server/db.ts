@@ -228,7 +228,63 @@ export function openDb(dataDir: string): Db {
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   migrate(db);
   repairSchema(db);
+  makeCardProjectOptional(db);
   return db;
+}
+
+/**
+ * Cards can belong to no project (PM-138, the "All projects" save target). Migration 1 created
+ * cards.project_id as NOT NULL and SQLite cannot drop that in place, so the table is rebuilt.
+ * Other tables reference cards(id), so the rebuild follows SQLite's documented procedure with
+ * foreign_keys OFF — which must run outside migrate()'s transaction, because toggling the pragma
+ * inside a transaction is a no-op. Idempotent: does nothing once project_id is already optional.
+ */
+function makeCardProjectOptional(db: Db): void {
+  const columns = db.prepare('PRAGMA table_info(cards)').all() as {
+    name: string;
+    notnull: number;
+  }[];
+  if (!columns.length) return;
+  const projectId = columns.find((c) => c.name === 'project_id');
+  if (!projectId || projectId.notnull === 0) return;
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    db.exec(`
+      CREATE TABLE cards_new (
+        id            INTEGER PRIMARY KEY,
+        project_id    INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+        title         TEXT NOT NULL,
+        description   TEXT NOT NULL DEFAULT '',
+        status        TEXT NOT NULL
+                      CHECK (status IN ('backlog', 'todo', 'in_progress', 'review', 'done')),
+        position      REAL NOT NULL,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        closed_at     TEXT,
+        linked_commit TEXT,
+        issue_url     TEXT
+      );
+      INSERT INTO cards_new
+        (id, project_id, title, description, status, position, created_at, updated_at, closed_at,
+         linked_commit, issue_url)
+        SELECT id, project_id, title, description, status, position, created_at, updated_at,
+               closed_at, linked_commit, issue_url
+        FROM cards;
+      DROP TABLE cards;
+      ALTER TABLE cards_new RENAME TO cards;
+      CREATE INDEX cards_by_column ON cards (project_id, status, position);
+    `);
+    const broken = db.prepare('PRAGMA foreign_key_check').all();
+    if (broken.length) throw new Error(`cards rebuild would break ${broken.length} reference(s)`);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+  console.warn('[db] rebuilt cards so a card can belong to no project');
 }
 
 /**
@@ -243,6 +299,27 @@ const LATE_COLUMNS: { table: string; column: string; definition: string }[] = [
 ];
 
 export function repairSchema(db: Db): void {
+  // Early execution tables predate per-attempt identities. Rebuild to replace their
+  // UNIQUE(run_id, run_log_path) constraint as well as adding the missing column.
+  const executionColumns = db.prepare('PRAGMA table_info(agent_run_executions)').all() as {
+    name: string;
+  }[];
+  if (executionColumns.length && !executionColumns.some((c) => c.name === 'attempt')) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(`ALTER TABLE agent_run_executions RENAME TO agent_run_executions_legacy`);
+      db.exec(MIGRATIONS.find((sql) => sql.startsWith('CREATE TABLE agent_run_executions ('))!);
+      db.exec(`INSERT INTO agent_run_executions
+        (nonce,run_id,run_log_path,attempt,fingerprint,host_instance,host_generation,dispatch_key,orchestrator_id,created_at)
+        SELECT nonce,run_id,run_log_path,1,fingerprint,host_instance,host_generation,dispatch_key,orchestrator_id,created_at
+        FROM agent_run_executions_legacy;
+        DROP TABLE agent_run_executions_legacy;`);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
   for (const { table, column, definition } of LATE_COLUMNS) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (columns.length === 0 || columns.some((c) => c.name === column)) continue;

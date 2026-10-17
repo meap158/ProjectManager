@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { Card } from '../../../shared/types';
+import type { Card, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { KanbanBoard } from './KanbanBoard';
 
@@ -17,6 +17,7 @@ vi.mock('../api', () => ({
     listRuns: vi.fn(async () => []),
     listSessions: vi.fn(async () => []),
     listAttachments: vi.fn(async () => []),
+    listProjects: vi.fn(async () => []),
   },
 }));
 
@@ -98,6 +99,18 @@ describe('KanbanBoard', () => {
     });
   });
 
+  it('closes the create flow after one click, with no second dialog to save (PM-142)', async () => {
+    renderBoard(5, []);
+    vi.mocked(api.addCard).mockImplementation(async (_projectId, input) =>
+      card(9, 5, input.title, input.status),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Add card to To do' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'One click' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create card' }));
+    await waitFor(() => expect(within(column('To do')).getByText('One click')).toBeTruthy());
+    expect(screen.queryByText(/Edit card/)).toBeNull();
+  });
+
   it('changes the column from the card dialog (keyboard alternative to dragging)', async () => {
     renderBoard(4, [card(5, 4, 'Edit me', 'todo')]);
     vi.mocked(api.updateCard).mockImplementation(async (id, patch) => ({
@@ -117,6 +130,46 @@ describe('KanbanBoard', () => {
       ),
     );
     await waitFor(() => expect(within(column('In progress')).getByText('Edit me')).toBeTruthy());
+  });
+
+  it('moves a card to another project from the dialog and drops it from this board (PM-154)', async () => {
+    renderBoard(6, [card(20, 6, 'Move me', 'todo')]);
+    vi.mocked(api.listProjects).mockResolvedValue([
+      { id: 6, name: 'Alpha' } as ProjectSummary,
+      { id: 7, name: 'Beta' } as ProjectSummary,
+    ]);
+    vi.mocked(api.updateCard).mockImplementation(async (id, patch) => ({
+      ...card(20, 6, 'Move me', 'todo'),
+      ...patch,
+    }));
+    fireEvent.click((await screen.findByText('Move me')).closest('button')!);
+    // The picker is offered on a project's own board too, opened on that project.
+    const picker = await screen.findByRole('button', { name: 'Project' });
+    expect(picker.textContent).toContain('Alpha');
+    fireEvent.click(picker);
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Beta'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    // It left this project, so it is no longer one of this board's cards.
+    await waitFor(() => expect(screen.queryByText('Move me')).toBeNull());
+    expect(api.updateCard).toHaveBeenCalledWith(20, expect.objectContaining({ projectId: 7 }));
+  });
+
+  it('keeps a card created for another project off this board (PM-154)', async () => {
+    renderBoard(8, []);
+    vi.mocked(api.listProjects).mockResolvedValue([
+      { id: 8, name: 'Alpha' } as ProjectSummary,
+      { id: 9, name: 'Beta' } as ProjectSummary,
+    ]);
+    vi.mocked(api.addCard).mockImplementation(async (projectId, input) =>
+      card(21, projectId, input.title, input.status),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Add card to To do' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Project' }));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Beta'));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Beta work' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create card' }));
+    await waitFor(() => expect(api.addCard).toHaveBeenCalledWith(9, expect.anything()));
+    expect(screen.queryByText('Beta work')).toBeNull();
   });
 
   it('shows only preset columns and counts cards hidden elsewhere', async () => {

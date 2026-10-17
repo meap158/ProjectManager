@@ -161,6 +161,7 @@ export interface CardAttachment {
 
 export interface Card {
   id: number;
+  /** Owning project, or 0 for an "All projects" card that belongs to no project (PM-138). */
   projectId: number;
   key: string;
   title: string;

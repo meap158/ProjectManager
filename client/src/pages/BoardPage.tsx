@@ -37,6 +37,10 @@ const SERIES_SLOTS = 7;
 
 const parseShow = (v: string | null): Show => (v === 'planned' || v === 'active' ? v : 'all');
 
+/** The project tag shown on a card; 0 is the cross-project "All projects" board (PM-138). */
+const projectNameOf = (projects: ProjectSummary[], projectId: number): string =>
+  projects.find((p) => p.id === projectId)?.name || (projectId ? '' : 'All projects');
+
 export function BoardPage() {
   const [params, setParams] = useSearchParams();
   const show = parseShow(params.get('show'));
@@ -121,8 +125,17 @@ export function BoardPage() {
     }
   }
 
+  // A saved card may have been moved to another project from the dialog, so its tag is refreshed
+  // from the project that now owns it (PM-154).
   const replace = (saved: Card) =>
-    setCards((prev) => prev?.map((c) => (c.id === saved.id ? { ...c, ...saved } : c)) ?? prev);
+    setCards(
+      (prev) =>
+        prev?.map((c) =>
+          c.id === saved.id
+            ? { ...c, ...saved, projectName: projectNameOf(projects, saved.projectId) }
+            : c,
+        ) ?? prev,
+    );
 
   return (
     <main className="page board-page">
@@ -201,7 +214,7 @@ export function BoardPage() {
                 className="project-tag"
                 style={{ ['--tag' as string]: colorOf.get(c.projectId) }}
               >
-                {c.projectName}
+                {c.projectName || 'All projects'}
               </span>
               <span className="mono">{c.key}</span>
               <span title={c.updatedAt}>{formatRelative(c.updatedAt)}</span>
@@ -280,7 +293,7 @@ export function BoardPage() {
                           className="project-tag"
                           style={{ ['--tag' as string]: colorOf.get(c.projectId) }}
                         >
-                          {c.projectName}
+                          {c.projectName || 'All projects'}
                         </span>
                         <span className="mono faint">{c.key}</span>
                         <span className="faint" title={c.updatedAt}>
@@ -306,22 +319,24 @@ export function BoardPage() {
       <NewCardDialog
         open={addingTo !== null}
         status={addingTo ?? 'backlog'}
-        {...(projectFilter ? { projectId: projectFilter } : { projects })}
+        projectId={projectFilter ?? 0}
+        projects={projects}
         onClose={() => setAddingTo(null)}
         onCreated={(created) => {
           const withProject: CardWithProject = {
             ...created,
-            projectName: projects.find((p) => p.id === created.projectId)?.name ?? '',
+            projectName: projectNameOf(projects, created.projectId),
           };
           setCards((prev) => [withProject, ...(prev ?? [])]);
           setAddingTo(null);
-          // Straight into the full dialog: images, notes, hand to an agent.
-          setOpenCard(withProject);
+          // The card is created and the dialog closes (PM-142): no second round to Save. Open
+          // the card from the board for images, notes or an agent hand-off.
         }}
       />
       <CardDialog
         card={openCard}
         projectId={openCard?.projectId ?? 0}
+        projects={projects}
         onClose={() => {
           setOpenCard(null);
           setParam('card', null);

@@ -1469,6 +1469,11 @@ a.t:hover {
   position: fixed;
   z-index: 100;
   pointer-events: none;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: var(--text);
   color: var(--bg);
   padding: 6px 8px;
@@ -2200,11 +2205,19 @@ dialog:modal {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
+.stack-tip b {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .stack-tip span {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .stack-legend {
   list-style: none;
@@ -5953,23 +5966,29 @@ span.path-link:hover .path-icon {
   border-top: 0;
 }
 
-/* Desktop row metadata shares stable columns regardless of badge or status length. */
+/* Desktop row metadata sizes to its content. Fixed 64/148px columns kept every
+   row's buttons aligned but left triple-digit dead space after short states
+   ("running" in a 148px column) and on rows without a card tag - the boxed
+   gap. Buttons now follow the state instead. */
 @media (min-width: 769px) {
   .work-list .work-side {
     display: grid;
-    grid-template-columns: 64px 148px auto;
+    grid-template-columns: auto auto auto;
     align-items: center;
     column-gap: 12px;
     padding-right: 6px;
   }
   .work-list .work-card-slot {
-    width: 64px;
+    width: auto;
     align-items: center;
     justify-content: flex-end;
   }
+  .work-list .work-card-slot:empty {
+    display: none;
+  }
   .work-list .work-state {
     min-width: 0;
-    width: 148px;
+    width: auto;
     margin: 0;
     text-align: left;
     white-space: nowrap;
@@ -5978,5 +5997,18 @@ span.path-link:hover .path-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+}
+
+/* Keep desktop action buttons in the final column when an empty card slot is hidden. */
+@media (min-width: 769px) {
+  .work-list .work-card-slot {
+    grid-column: 1;
+  }
+  .work-list .work-state {
+    grid-column: 2;
+  }
+  .work-list .work-actions {
+    grid-column: 3;
   }
 }

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { CardWithProject } from '../../../shared/types';
+import type { CardWithProject, ProjectSummary } from '../../../shared/types';
+import { api } from '../api';
 import { BoardPage } from './BoardPage';
 
 const card = (id: number, projectId: number, projectName: string, status: string, title: string) =>
@@ -32,6 +33,7 @@ vi.mock('../api', () => ({
     listSessions: vi.fn(async () => []),
     listRuns: vi.fn(async () => []),
     runSummaries: vi.fn(async () => []),
+    updateCard: vi.fn(),
   },
 }));
 
@@ -81,5 +83,34 @@ describe('BoardPage', () => {
     renderAt('/board?card=2');
     await screen.findByText('Fix login');
     expect(await screen.findByText('Edit card')).toBeTruthy();
+  });
+
+  it('re-tags a card moved to another project from its dialog (PM-154)', async () => {
+    vi.mocked(api.listProjects).mockResolvedValue([
+      { id: 1, name: 'Alpha' } as ProjectSummary,
+      { id: 2, name: 'Beta' } as ProjectSummary,
+    ]);
+    vi.mocked(api.updateCard).mockImplementation(
+      async (id, patch) =>
+        ({
+          ...card(1, 1, 'Alpha', 'todo', 'Plan the release'),
+          ...patch,
+        }) as unknown as CardWithProject,
+    );
+    renderAt('/board?card=1');
+    await screen.findByText('Edit card');
+    // The board header carries a "Project" filter of its own, so reach for the one inside the
+    // card dialog by its id.
+    const picker = document.getElementById('new-card-project')!;
+    expect(picker.textContent).toContain('Alpha');
+    fireEvent.click(picker);
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Beta'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(api.updateCard).toHaveBeenCalledWith(1, expect.objectContaining({ projectId: 2 })),
+    );
+    // The card is now tagged with the project it moved to, not the one it came from.
+    const todo = await screen.findByRole('region', { name: 'To do' });
+    await waitFor(() => expect(within(todo).getByText('Beta')).toBeTruthy());
   });
 });

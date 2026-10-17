@@ -41,3 +41,19 @@ it('reports stop failures and keeps lifecycle controls available', async () => {
     false,
   );
 });
+it('toggles full screen from the header and restores it with Escape (PM-138)', () => {
+  render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
+  expect(screen.queryByRole('button', { name: 'Restore layout' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Full screen' }));
+  const restore = screen.getByRole('button', { name: 'Restore layout' });
+  expect(restore.getAttribute('aria-pressed')).toBe('true');
+  expect(document.querySelector('.orchestrator-terminal.is-max')).toBeTruthy();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(document.querySelector('.orchestrator-terminal.is-max')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Full screen' })).toBeDefined();
+});
+it('toggles full screen by double-clicking the header', () => {
+  render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
+  fireEvent.doubleClick(screen.getByText('running').parentElement!);
+  expect(document.querySelector('.orchestrator-terminal.is-max')).toBeTruthy();
+});

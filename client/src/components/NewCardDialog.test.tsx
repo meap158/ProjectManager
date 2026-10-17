@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import type { AgentSession, Card, ProjectSummary } from '../../../shared/types';
+import type { OrchestratorState } from '../../../shared/orchestrator';
 import { api } from '../api';
 import { NewCardDialog } from './NewCardDialog';
 
@@ -17,6 +18,8 @@ vi.mock('../api', () => ({
     ]),
     listRuns: vi.fn(async () => []),
     listAttachments: vi.fn(async () => []),
+    orchestrators: vi.fn(async () => ({ instances: [], events: [] })),
+    tickOrchestrators: vi.fn(async () => ({ instances: [], events: [] })),
     addCard: vi.fn(
       async (projectId, input) => ({ id: 9, projectId, key: 'PM-9', ...input }) as Card,
     ),
@@ -69,7 +72,37 @@ it('offers the edit dialog session controls before saving, then creates and send
   expect(onCreated).toHaveBeenCalledOnce();
 });
 
-it('requires a project on the global board and does not create a card on cancel', async () => {
+it('creates a card with no project on the global board as an All projects card (PM-138)', async () => {
+  const onCreated = vi.fn();
+  render(
+    <MemoryRouter>
+      <NewCardDialog
+        open
+        status="backlog"
+        projects={[{ id: 1, name: 'Project' } as ProjectSummary]}
+        onClose={vi.fn()}
+        onCreated={onCreated}
+      />
+    </MemoryRouter>,
+  );
+  // The global board offers "All projects", so a title is all a card needs, and the picker
+  // says the card can be assigned later.
+  expect(screen.getByText(/belongs to no project yet/)).toBeTruthy();
+  const create = screen.getByRole('button', { name: 'Create card' });
+  expect(create.hasAttribute('disabled')).toBe(true);
+  fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Draft' } });
+  expect(create.hasAttribute('disabled')).toBe(false);
+  fireEvent.click(create);
+  await waitFor(() => expect(api.addCard).toHaveBeenCalledOnce());
+  expect(api.addCard).toHaveBeenCalledWith(0, {
+    title: 'Draft',
+    description: '',
+    status: 'backlog',
+  });
+  expect(onCreated).toHaveBeenCalledOnce();
+});
+
+it('does not create a card on cancel', () => {
   const close = vi.fn();
   render(
     <MemoryRouter>
@@ -83,8 +116,30 @@ it('requires a project on the global board and does not create a card on cancel'
     </MemoryRouter>,
   );
   fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Draft' } });
-  expect(screen.getByRole('button', { name: 'Create card' }).hasAttribute('disabled')).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(close).toHaveBeenCalledOnce();
   expect(api.addCard).not.toHaveBeenCalled();
+});
+
+it('queues a new card for the project orchestrator and ticks it (PM-142)', async () => {
+  vi.mocked(api.orchestrators).mockResolvedValue({
+    instances: [{ id: 'orch-1', name: 'All projects', enabled: true, projectIds: [1] }],
+    events: [],
+  } as unknown as OrchestratorState);
+  const onCreated = vi.fn();
+  render(
+    <MemoryRouter>
+      <NewCardDialog open status="backlog" projectId={1} onClose={vi.fn()} onCreated={onCreated} />
+    </MemoryRouter>,
+  );
+  fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Queue me' } });
+  fireEvent.click(await screen.findByRole('radio', { name: /Project orchestrator/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Create & queue' }));
+  await waitFor(() => expect(api.tickOrchestrators).toHaveBeenCalledWith('orch-1'));
+  expect(api.addCard).toHaveBeenCalledWith(1, {
+    title: 'Queue me',
+    description: '',
+    status: 'todo',
+  });
+  expect(onCreated).toHaveBeenCalledOnce();
 });

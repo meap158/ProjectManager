@@ -1,10 +1,15 @@
 /* Orchestrators page layout */
+.orchestrator-page {
+  min-width: 0;
+  max-width: 100%;
+}
 .orchestrator-page .page-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
 }
 .orchestrator-page .page-head h1 {
   margin: 0;
@@ -21,6 +26,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .orchestrator-page .panel-title-group h2 {
   margin: 0;
@@ -63,6 +70,8 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 .orchestrator-instance-title h3 {
   margin: 0;
@@ -135,6 +144,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .orchestrator-subheading {
   font-size: 11px;
@@ -255,6 +266,7 @@
   align-items: center;
   gap: 8px;
   font-size: 11px;
+  flex-wrap: wrap;
 }
 .worker-proj {
   color: var(--text-3);
@@ -575,6 +587,30 @@
 }
 
 @media (max-width: 768px) {
+  .orchestrator-page .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .orchestrator-page .page-head .btn {
+    min-height: 44px;
+    align-self: flex-start;
+  }
+  .orchestrator-page .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .orchestrator-page .panel-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .orchestrator-page .panel-actions .btn {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
   .orchestrator-form-grid {
     grid-template-columns: 1fr;
   }
@@ -604,6 +640,8 @@
   }
   .orchestrator-events .event-msg {
     white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 }
 
@@ -735,31 +773,189 @@ dialog.orchestrator-form-dialog > .orchestrator-form-panel {
   font-weight: 600;
 }
 @media (max-width: 768px) {
+  /* Long names, badges and Fix/Dismiss pairs must wrap instead of
+     overflowing a 360px viewport; actions land on their own
+     thumb-reachable row with 44px targets. */
+  .orchestrator-attention-item {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .orchestrator-attention-item .attention-item-info {
+    flex: 1 1 100%;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+  .orchestrator-attention-item .attention-proj {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .orchestrator-attention-item .attention-detail {
+    width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .orchestrator-attention-item .attention-item-actions {
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-start;
+  }
+  .orchestrator-attention-item .attention-item-actions .btn {
+    min-height: 44px;
+  }
+  .orchestrator-plan-decision-item {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .orchestrator-plan-decision-item .plan-decision-reason {
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
   .orchestrator-workspace {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
+    width: 100%;
   }
   .orchestrator-picker {
     position: static;
-    display: flex;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
     padding: 2px;
+    overflow-x: visible;
   }
   .orchestrator-picker button {
-    flex: 0 0 180px;
+    min-width: 0;
+    min-height: 52px;
+    padding: 10px;
+  }
+  .orchestrator-picker button strong,
+  .orchestrator-picker button span {
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .orchestrator-instance {
     padding: 12px;
+    min-width: 0;
+  }
+  .orchestrator-instance-title {
+    width: 100%;
+  }
+  .orchestrator-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .orchestrator-actions .btn {
     min-height: 44px;
+    flex: 1 1 auto;
   }
   .orchestrator-scope-section-head {
     flex-wrap: wrap;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .orchestrator-section-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .orchestrator-section-actions .btn {
+    min-height: 44px;
   }
   .orchestrator-owned-runs summary {
     min-height: 44px;
     display: flex;
     align-items: center;
+  }
+
+  /* Keep nested cards and content-sized flex/grid children inside the page
+     column. Wrapping is applied to user-controlled names and run details so
+     narrow phones never widen the document. */
+  .orchestrator-page {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+  .orchestrator-page .panel,
+  .orchestrator-page .orchestrator-workspace,
+  .orchestrator-page .orchestrator-instances-list,
+  .orchestrator-page .orchestrator-instance,
+  .orchestrator-page .orchestrator-chat,
+  .orchestrator-page .orchestrator-owned-runs,
+  .orchestrator-page .orchestrator-plan-preview,
+  .orchestrator-page .run-card {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .orchestrator-page .orchestrator-instance-title h3,
+  .orchestrator-page .orchestrator-instance-about,
+  .orchestrator-page .orchestrator-pills,
+  .orchestrator-page .orchestrator-chat-state,
+  .orchestrator-page .orchestrator-pending-list li strong,
+  .orchestrator-page .orchestrator-pending-list p,
+  .orchestrator-page .plan-decision-reason,
+  .orchestrator-page .plan-decision-meta,
+  .orchestrator-page .event-card-link,
+  .orchestrator-page .worker-proj {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+  .orchestrator-page .orchestrator-instance-title h3 {
+    max-width: 100%;
+  }
+  .orchestrator-page .orchestrator-attention-item .attention-proj {
+    white-space: normal;
+  }
+  .orchestrator-page .orchestrator-plan-preview-head,
+  .orchestrator-page .orchestrator-plan-preview-title {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .orchestrator-page .orchestrator-plan-decision-item > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .orchestrator-page .orchestrator-plan-decision-item > ul {
+    flex: 1 1 100%;
+    padding-inline-start: 20px;
+    overflow-wrap: anywhere;
+  }
+  .orchestrator-page .orchestrator-result-links .btn {
+    max-width: 100%;
+    white-space: normal;
+  }
+  .orchestrator-page .orchestrator-pending-list li > div:first-child {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .orchestrator-page .worker-card-head,
+  .orchestrator-page .worker-card-meta {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+  .orchestrator-page .orchestrator-workers-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .orchestrator-page .orchestrator-worker-card {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .orchestrator-page .orchestrator-quick-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

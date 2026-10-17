@@ -297,9 +297,11 @@ export function KanbanBoard({
         projectId={projectId}
         onClose={() => setAdding(null)}
         onCreated={(card) => {
-          updateCards((prev) => [...(prev ?? []), card]);
+          // One click creates the card and closes the dialog (PM-142): no second dialog to Save.
+          // Open it from the board when you want images or an agent hand-off. A card the Project
+          // picker assigned elsewhere is not this board's card (PM-154).
+          if (card.projectId === projectId) updateCards((prev) => [...(prev ?? []), card]);
           setAdding(null);
-          setEditing(card);
         }}
       />
       <CardDialog
@@ -308,7 +310,14 @@ export function KanbanBoard({
         liveSessionId={editing ? (runSummary.get(editing.id)?.liveSessionId ?? null) : null}
         onClose={() => setEditing(null)}
         onSaved={(saved) => {
-          updateCards((prev) => prev?.map((c) => (c.id === saved.id ? saved : c)) ?? prev);
+          // A card moved to another project leaves this board rather than lingering in a column it
+          // no longer belongs to; the board it moved to lists it when it is opened (PM-154).
+          updateCards(
+            (prev) =>
+              prev?.flatMap((c) =>
+                c.id === saved.id ? (saved.projectId === projectId ? [saved] : []) : [c],
+              ) ?? prev,
+          );
           setEditing(null);
         }}
         onDeleted={(id) => {

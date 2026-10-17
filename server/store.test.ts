@@ -8,6 +8,7 @@ import {
   insertCard,
   updateCard,
   listCardsInFlight,
+  listSchedulableCards,
 } from './store.js';
 
 const idle = () => ({ status: 'idle' as const });
@@ -68,6 +69,32 @@ it('loads only scoped in-flight cards while retaining all-project behavior and o
     expect(listCardsInFlight(db, [])).toEqual(all);
     expect(listCardsInFlight(db, [999])).toEqual([]);
     expect(all).toHaveLength(2);
+  } finally {
+    db.close();
+  }
+});
+
+it('loads only schedulable board cards in one all-project or scoped projection', () => {
+  const db = openDb(':memory:');
+  try {
+    const a = insertProject(db, 'One', '/one');
+    const b = insertProject(db, 'Two', '/two');
+    const todo = insertCard(db, a, { title: 'Todo', description: '', status: 'todo' });
+    const inProgress = insertCard(db, a, {
+      title: 'In progress',
+      description: '',
+      status: 'in_progress',
+    });
+    const review = insertCard(db, b, { title: 'Review', description: '', status: 'review' });
+    insertCard(db, b, { title: 'Done', description: '', status: 'done' });
+
+    const all = listSchedulableCards(db);
+    expect(new Set(all.map((card) => card.id))).toEqual(
+      new Set([todo.id, inProgress.id, review.id]),
+    );
+    expect(listSchedulableCards(db, [a])).toEqual(all.filter((card) => card.projectId === a));
+    expect(listSchedulableCards(db, [a, b])).toHaveLength(3);
+    expect(listSchedulableCards(db, [999])).toEqual([]);
   } finally {
     db.close();
   }

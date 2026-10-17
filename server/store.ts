@@ -34,7 +34,8 @@ interface ProjectRow {
 
 interface CardRow {
   id: number;
-  project_id: number;
+  /** NULL for a card that belongs to no project (the "All projects" save target, PM-138). */
+  project_id: number | null;
   title: string;
   description: string;
   status: CardStatus;
@@ -272,16 +273,32 @@ export function listCards(db: Db, projectId: number): Card[] {
   return rows.map(toCard);
 }
 
+/** Board tasks eligible for Orchestrator planning, loaded in one scoped query. */
+export function listSchedulableCards(db: Db, projectIds: readonly number[] = []): Card[] {
+  const scope = projectIds.length
+    ? ` AND project_id IN (${projectIds.map(() => '?').join(',')})`
+    : '';
+  // Cards with no project (project_id NULL) are not part of any orchestrator's scope.
+  const rows = db
+    .prepare(
+      `SELECT * FROM cards WHERE project_id IS NOT NULL
+       AND status IN ('todo', 'in_progress', 'review')${scope}
+       ORDER BY project_id, status, position, id`,
+    )
+    .all(...projectIds) as unknown as CardRow[];
+  return rows.map(toCard);
+}
+
 /** Cards being worked on (In progress / Review) across every project, oldest change first. */
 /** Every card in every project with its project name, most recently updated first (the global board; positions are per project). */
 export function listAllCards(db: Db): CardWithProject[] {
   const rows = db
     .prepare(
-      `SELECT c.*, p.name AS project_name FROM cards c JOIN projects p ON p.id = c.project_id
+      `SELECT c.*, p.name AS project_name FROM cards c LEFT JOIN projects p ON p.id = c.project_id
         ORDER BY c.updated_at DESC, c.id DESC`,
     )
-    .all() as unknown as (CardRow & { project_name: string })[];
-  return rows.map((r) => ({ ...toCard(r), projectName: r.project_name }));
+    .all() as unknown as (CardRow & { project_name: string | null })[];
+  return rows.map((r) => ({ ...toCard(r), projectName: r.project_name ?? '' }));
 }
 
 export function listCardsInFlight(db: Db, projectIds: readonly number[] = []): CardWithProject[] {
@@ -290,11 +307,11 @@ export function listCardsInFlight(db: Db, projectIds: readonly number[] = []): C
     : '';
   const rows = db
     .prepare(
-      `SELECT c.*, p.name AS project_name FROM cards c JOIN projects p ON p.id = c.project_id
+      `SELECT c.*, p.name AS project_name FROM cards c LEFT JOIN projects p ON p.id = c.project_id
         WHERE c.status IN ('in_progress', 'review')${scope} ORDER BY c.updated_at`,
     )
-    .all(...projectIds) as unknown as (CardRow & { project_name: string })[];
-  return rows.map((r) => ({ ...toCard(r), projectName: r.project_name }));
+    .all(...projectIds) as unknown as (CardRow & { project_name: string | null })[];
+  return rows.map((r) => ({ ...toCard(r), projectName: r.project_name ?? '' }));
 }
 
 export function getCard(db: Db, id: number): Card | null {
@@ -304,9 +321,11 @@ export function getCard(db: Db, id: number): Card | null {
 
 export function insertCard(
   db: Db,
+  /** Owning project, or 0 for an "All projects" card that belongs to no project (PM-138). */
   projectId: number,
   input: { title: string; description: string; status: CardStatus; issueUrl?: string | null },
 ): Card {
+  const stored = projectId > 0 ? projectId : null;
   const position = topPosition(db, projectId, input.status); // New cards go on top.
   const ts = now();
   const id = nextCardId(db);
@@ -315,7 +334,7 @@ export function insertCard(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
-    projectId,
+    stored,
     input.title,
     input.description,
     input.status,
@@ -344,22 +363,30 @@ export function updateCard(
   db: Db,
   id: number,
   patch: Partial<
-    Pick<Card, 'title' | 'description' | 'status' | 'position' | 'linkedCommit' | 'issueUrl'>
+    Pick<
+      Card,
+      'title' | 'description' | 'status' | 'position' | 'linkedCommit' | 'issueUrl' | 'projectId'
+    >
   >,
 ): Card | null {
   const existing = getCard(db, id);
   if (!existing) return null;
   const next = { ...existing, ...patch };
-  if (patch.status && patch.status !== existing.status && patch.position === undefined) {
-    next.position = topPosition(db, existing.projectId, patch.status);
+  const movedProject = patch.projectId !== undefined && patch.projectId !== existing.projectId;
+  if (
+    patch.position === undefined &&
+    ((patch.status && patch.status !== existing.status) || movedProject)
+  ) {
+    next.position = topPosition(db, next.projectId, next.status);
   }
   let closedAt = existing.closedAt;
   if (next.status === 'done' && existing.status !== 'done') closedAt = now();
   if (next.status !== 'done') closedAt = null;
   db.prepare(
-    `UPDATE cards SET title = ?, description = ?, status = ?, position = ?, linked_commit = ?,
-       closed_at = ?, updated_at = ?, issue_url = ? WHERE id = ?`,
+    `UPDATE cards SET project_id = ?, title = ?, description = ?, status = ?, position = ?,
+       linked_commit = ?, closed_at = ?, updated_at = ?, issue_url = ? WHERE id = ?`,
   ).run(
+    next.projectId > 0 ? next.projectId : null,
     next.title,
     next.description,
     next.status,
@@ -380,8 +407,8 @@ export function moveCardToTop(db: Db, id: number, status: CardStatus, commit: st
 
 function topPosition(db: Db, projectId: number, status: CardStatus): number {
   const { min } = db
-    .prepare('SELECT MIN(position) AS min FROM cards WHERE project_id = ? AND status = ?')
-    .get(projectId, status) as { min: number | null };
+    .prepare('SELECT MIN(position) AS min FROM cards WHERE project_id IS ? AND status = ?')
+    .get(projectId > 0 ? projectId : null, status) as { min: number | null };
   return min === null ? 1000 : min - 1000;
 }
 
@@ -392,7 +419,7 @@ export function deleteCard(db: Db, id: number): boolean {
 function toCard(row: CardRow): Card {
   return {
     id: row.id,
-    projectId: row.project_id,
+    projectId: row.project_id ?? 0,
     key: cardKey(row.id),
     title: row.title,
     description: row.description,

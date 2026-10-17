@@ -198,10 +198,14 @@ export const api = {
   addCard: (
     projectId: number,
     input: { title: string; description?: string; status: CardStatus; issueUrl?: string | null },
-  ) => request<Card>('POST', `/projects/${projectId}/cards`, input),
+  ) =>
+    // projectId 0 makes an "All projects" card that belongs to no project (PM-138).
+    request<Card>('POST', projectId > 0 ? `/projects/${projectId}/cards` : '/cards', input),
   updateCard: (
     id: number,
-    patch: Partial<Pick<Card, 'title' | 'description' | 'status' | 'position' | 'issueUrl'>>,
+    patch: Partial<
+      Pick<Card, 'title' | 'description' | 'status' | 'position' | 'issueUrl' | 'projectId'>
+    >,
   ) => request<Card>('PATCH', `/cards/${id}`, patch),
   deleteCard: (id: number) => request<void>('DELETE', `/cards/${id}`),
 

@@ -70,6 +70,8 @@ const updateCardBody = z
     description: z.string().max(20_000),
     status: z.enum(CARD_STATUSES),
     position: z.number().finite(),
+    // 0 moves the card to no project ("All projects"); a real id assigns it.
+    projectId: z.number().int().min(0),
     issueUrl: z
       .string()
       .regex(
@@ -360,9 +362,21 @@ export function createApp(
   app.get('/cards', (c) => c.json(store.listAllCards(db)));
   app.get('/cards/in-flight', (c) => c.json(store.listCardsInFlight(db)));
 
+  // A card that belongs to no project (the "All projects" save target, PM-138).
+  app.post('/cards', async (c) => {
+    const body = await parseBody(c, createCardBody);
+    return c.json(store.insertCard(db, 0, body), 201);
+  });
+
   app.patch('/cards/:id', async (c) => {
     const id = parseId(c);
     const body = await parseBody(c, updateCardBody);
+    if (
+      body.projectId !== undefined &&
+      body.projectId > 0 &&
+      !store.getProjectRow(db, body.projectId)
+    )
+      throw new HttpError(404, 'Project not found');
     const card = store.updateCard(db, id, body);
     if (!card) throw new HttpError(404, 'Card not found');
     return c.json(card);

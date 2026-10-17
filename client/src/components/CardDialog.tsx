@@ -2,12 +2,8 @@ import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from
 import { ProviderIcon } from './icons';
 import { Link, useNavigate } from 'react-router';
 import {
-  AGENT_AUTONOMY,
-  AGENT_AUTONOMY_LABELS,
   CARD_STATUSES,
   CARD_STATUS_LABELS,
-  type AgentAutonomy,
-  type AgentPermissions,
   type AgentProviderStatus,
   type AgentSession,
   type AgentRun,
@@ -16,6 +12,7 @@ import {
   type ProjectSummary,
 } from '../../../shared/types';
 import { api } from '../api';
+import type { OrchestratorConfig } from '../../../shared/orchestrator';
 import { formatDate, movedBy } from '../format';
 import { CardAgentAudit } from './CardAgentAudit';
 import { CardImages } from './CardImages';
@@ -23,8 +20,8 @@ import { Dropdown } from './Dropdown';
 import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
 
-// Three ways to hand a card to an agent: one choice + one button, each explained in place.
-type HandMode = 'terminal' | 'run' | 'send';
+// Ways to hand a card to an agent: one choice + one button, each explained in place.
+type HandMode = 'terminal' | 'run' | 'send' | 'orchestrator';
 const HAND_MODE_KEY = 'pm.card.handMode';
 function readHandMode(): HandMode {
   try {
@@ -59,11 +56,10 @@ const HAND_MODES: {
   },
   {
     value: 'run',
-    label: 'One-shot run',
-    hint: 'Runs the task once in the background. You review and accept its changes afterwards.',
-    action: 'Start run',
-    title:
-      'Move the card to In progress and run the task once in the background; accept or reject the result when it finishes',
+    label: 'Task session',
+    hint: 'Opens a full interactive CLI for this task. It stops when the CLI exits; output stays until you delete it.',
+    action: 'Open task session',
+    title: 'Start an interactive session for this card without automatic crash restarts',
   },
   {
     value: 'send',
@@ -72,13 +68,15 @@ const HAND_MODES: {
     action: 'Send to session',
     title: 'Submit this card\u2019s task to the chosen running session',
   },
+  {
+    value: 'orchestrator',
+    label: 'Project orchestrator',
+    hint: 'Queues the card in To do and asks the orchestrator that covers this project to pick it up.',
+    action: 'Create & queue',
+    title:
+      'Create or move the card to To do and tick the orchestrator whose scope includes this project, so it plans a worker',
+  },
 ];
-
-const AUTONOMY_HINTS: Record<AgentAutonomy, string> = {
-  read: 'Read-only: the agent can look around and answer, but not change files or run commands.',
-  edit: 'Edit files: the agent can change files in this project; risky commands still need approval or are blocked.',
-  full: 'Full access: no approvals. The agent can run any command as you. Use only on work you can revert.',
-};
 
 /** Edit a card's title, description and column. The column select is the keyboard alternative to drag-and-drop. */
 export function CardDialog({
@@ -104,8 +102,11 @@ export function CardDialog({
   liveSessionId?: number | null;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  // The project a card is created on, or the one it lives on, is only the *default*: the Project
+  // picker below can move it, so sessions, runs, dispatch and the save itself all follow the
+  // chosen project rather than the prop the board passed in.
   const [chosenProject, setChosenProject] = useState(projectId);
-  const effectiveProjectId = creating ? chosenProject : projectId;
+  const effectiveProjectId = chosenProject;
   const createdRef = useRef<Card | null>(null);
   const [hasCreated, setHasCreated] = useState(false);
   const [imagesBusy, setImagesBusy] = useState(false);
@@ -132,18 +133,7 @@ export function CardDialog({
     }
   };
   const [prompt, setPrompt] = useState('');
-  // A run's permission level: the user's pick, else the configured level for the chosen agent
-  // (Settings → Agent permissions), else Edit files.
-  const [chosenAutonomy, setAutonomy] = useState<AgentAutonomy | null>(null);
-  const [permissions, setPermissions] = useState<AgentPermissions | null>(null);
-  const configured = permissions
-    ? (() => {
-        const own = permissions.providers[dispatchProvider];
-        const level = own && own !== 'inherit' ? own : permissions.global;
-        return level === 'cli' ? null : level;
-      })()
-    : null;
-  const autonomy: AgentAutonomy = chosenAutonomy ?? configured ?? 'edit';
+  // Task sessions use the same permission policy as normal workspace sessions.
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   // Pasting a screenshot anywhere in the dialog attaches it (text pastes are left alone).
@@ -160,15 +150,20 @@ export function CardDialog({
   const [runs, setRuns] = useState<AgentRun[] | null>(null);
   const [now, setNow] = useState(0);
   const [shownCard, setShownCard] = useState<Card | null>(null);
+  // Which orchestrators this server has, fetched once (PM-142). The one covering this card's
+  // project is derived below; the "Project orchestrator" hand mode is hidden when there is none.
+  const [orchestrators, setOrchestrators] = useState<OrchestratorConfig[] | null>(null);
+  /** Projects fetched by the dialog itself when the board did not pass a list (PM-154). */
+  const [loadedProjects, setLoadedProjects] = useState<ProjectSummary[] | null>(null);
 
   // Reset the form during render when a different card opens (React's "adjusting state when a
   // prop changes" pattern), rather than in an effect.
   if (card !== shownCard) {
     setShownCard(card);
-    if (creating) {
-      setChosenProject(projectId);
-      setHasCreated(false);
-    }
+    // The card's own project wins over the board's: on the all-projects board every card carries
+    // its project, and an edit must open on the project the card is actually in.
+    setChosenProject(card ? card.projectId : projectId);
+    if (creating) setHasCreated(false);
     if (card) {
       setTitle(card.title);
       setDescription(card.description);
@@ -194,12 +189,6 @@ export function CardDialog({
     if (!dialog) return;
     if (card) {
       if (!dialog.open) dialog.showModal();
-      api.getPermissions().then(
-        (next) => {
-          if (active) setPermissions(next);
-        },
-        () => undefined,
-      );
       api.listProviders().then(
         (next) => {
           if (active) setProviders(next);
@@ -222,7 +211,7 @@ export function CardDialog({
           },
           () => setLiveSessions([]),
         );
-      if (!creating)
+      if (!creating && effectiveProjectId)
         api.listRuns(effectiveProjectId, card.id).then(
           (next) => {
             if (!active) return;
@@ -239,20 +228,68 @@ export function CardDialog({
     };
   }, [card, effectiveProjectId, creating]);
 
+  // Which orchestrator covers this card's project, for the "Project orchestrator" hand mode
+  // (PM-142). Fetched once; tolerant of an older server with no orchestrators API.
+  useEffect(() => {
+    if (typeof api.orchestrators !== 'function') return;
+    let active = true;
+    api.orchestrators().then(
+      (state) => {
+        if (active) setOrchestrators(state?.instances ?? []);
+      },
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
+  const scopedOrchestrator = effectiveProjectId
+    ? ((orchestrators ?? []).find(
+        (i) => i.enabled !== false && (i.projectIds ?? []).includes(effectiveProjectId),
+      ) ?? null)
+    : null;
+
+  // The Project picker needs the project list. Boards that know it (the all-projects board) pass
+  // it in; a project board does not, so fetch it here. Tolerant of an older server without the
+  // route: the picker then simply stays hidden.
+  useEffect(() => {
+    if (projects) return;
+    if (typeof api.listProjects !== 'function') return;
+    let active = true;
+    api.listProjects().then(
+      (all) => {
+        if (active) setLoadedProjects(all);
+      },
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [projects]);
+  const projectChoices = projects ?? loadedProjects;
+
   // One-shot dispatch needs a CLI with a prompt mode; Shell/Custom are for sessions.
   const aiProviders = (providers ?? []).filter((p) => p.binary !== null);
   const selectedProvider = aiProviders.find((p) => p.id === dispatchProvider);
-  const autonomySupported =
-    !selectedProvider?.autonomyArgs || selectedProvider.autonomyArgs[autonomy] !== undefined;
 
   const navigate = useNavigate();
   /** Interactive alternative to a one-shot run: a live session primed with the card task. */
-  const mode: HandMode = handMode === 'send' && liveSessions.length === 0 ? 'terminal' : handMode;
+  const mode: HandMode =
+    handMode === 'send' && liveSessions.length === 0
+      ? 'terminal'
+      : handMode === 'orchestrator' && !scopedOrchestrator
+        ? 'terminal'
+        : handMode;
   const modeInfo = HAND_MODES.find((m) => m.value === mode)!;
 
-  async function ensureCard(): Promise<Card> {
-    if (!card || !title.trim() || !effectiveProjectId)
-      throw new Error('Enter a title and choose a project.');
+  // The Project picker is shown whenever the dialog knows the projects, for a new card and for an
+  // existing one: a card must be assignable (and re-assignable) from wherever it is opened. Only
+  // the "All projects" entry (0) makes a card project-less (PM-138, PM-154).
+  const showProjectPicker = !!projectChoices && projectChoices.length > 0;
+
+  async function ensureCard(overrides?: { status?: CardStatus }): Promise<Card> {
+    if (!card || !title.trim()) throw new Error('Enter a title.');
+    const cardStatus = overrides?.status ?? status;
     const existing = creating ? createdRef.current : card;
     const saved = existing
       ? await api.updateCard(existing.id, {
@@ -261,12 +298,13 @@ export function CardDialog({
           ...(issueUrl.trim() !== (existing.issueUrl ?? '')
             ? { issueUrl: issueUrl.trim() || null }
             : {}),
-          ...(status !== existing.status ? { status } : {}),
+          ...(cardStatus !== existing.status ? { status: cardStatus } : {}),
+          ...(chosenProject !== existing.projectId ? { projectId: chosenProject } : {}),
         })
       : await api.addCard(effectiveProjectId, {
           title: title.trim(),
           description,
-          status,
+          status: cardStatus,
           ...(issueUrl.trim() ? { issueUrl: issueUrl.trim() } : {}),
         });
     if (creating) {
@@ -280,7 +318,7 @@ export function CardDialog({
     return saved;
   }
 
-  async function openInTerminal() {
+  async function openInTerminal(supervise = true) {
     if (!card) return;
     setDispatching(true);
     setDispatchError(null);
@@ -289,6 +327,10 @@ export function CardDialog({
       const session = await api.createSession(effectiveProjectId, {
         providerId: dispatchProvider,
         cardId: saved.id,
+        terminal: 'pty',
+        // A task session is a normal interactive PTY, but does not restart after the CLI exits.
+        // Keep its output/card link until the user deletes it so the result can be reviewed.
+        supervise,
         ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
       });
       onDispatched?.();
@@ -320,20 +362,17 @@ export function CardDialog({
     }
   }
 
-  async function dispatch() {
-    if (!card) return;
+  /** Queue the card for the project's orchestrator: create it in To do, then tick it (PM-142). */
+  async function sendToOrchestrator() {
+    if (!card || !scopedOrchestrator) return;
     setDispatching(true);
     setDispatchError(null);
     try {
-      const saved = await ensureCard();
-      const run = await api.dispatchCard(effectiveProjectId, saved.id, {
-        providerId: dispatchProvider,
-        autonomy,
-        ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
-      });
-      setRuns((prev) => [run, ...(prev ?? [])]);
+      const saved = await ensureCard({ status: 'todo' });
+      await api.tickOrchestrators(scopedOrchestrator.id);
       onDispatched?.();
-      if (creating) onSaved(saved);
+      onSaved(saved);
+      onClose();
     } catch (e) {
       setDispatchError((e as Error).message);
     } finally {
@@ -391,7 +430,7 @@ export function CardDialog({
                 </span>
               )}
             </div>
-            {creating && !projectId && (
+            {showProjectPicker && (
               <div className="field">
                 <label htmlFor="new-card-project">Project</label>
                 <Dropdown
@@ -399,12 +438,29 @@ export function CardDialog({
                   label="Project"
                   value={chosenProject}
                   options={[
-                    { value: 0, label: 'Choose a project...', disabled: true },
-                    ...(projects ?? []).map((p) => ({ value: p.id, label: p.name })),
+                    {
+                      value: 0,
+                      label: 'All projects',
+                      title:
+                        'A card with no project. Assign a project before handing it to an agent.',
+                    },
+                    ...(projectChoices ?? []).map((p) => ({ value: p.id, label: p.name })),
                   ]}
                   onChange={setChosenProject}
                   disabled={hasCreated || dispatching || saving}
                 />
+                {!effectiveProjectId ? (
+                  <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+                    This card belongs to no project yet. Pick one here before handing it to an
+                    agent.
+                  </p>
+                ) : (
+                  !creating && (
+                    <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+                      Changing the project moves the card to that board.
+                    </p>
+                  )
+                )}
               </div>
             )}
             <div className="field">
@@ -500,23 +556,25 @@ export function CardDialog({
                 </p>
               )}
               <div className="hand-modes" role="radiogroup" aria-labelledby="hand-label">
-                {HAND_MODES.filter((m) => m.value !== 'send' || liveSessions.length > 0).map(
-                  (m) => (
-                    <label key={m.value} className="hand-mode" title={m.title}>
-                      <input
-                        type="radio"
-                        name="hand-mode"
-                        value={m.value}
-                        checked={mode === m.value}
-                        onChange={() => setHandMode(m.value)}
-                      />
-                      <span>
-                        <b>{m.label}</b>
-                        <span className="faint">{m.hint}</span>
-                      </span>
-                    </label>
-                  ),
-                )}
+                {HAND_MODES.filter(
+                  (m) =>
+                    (m.value !== 'send' || liveSessions.length > 0) &&
+                    (m.value !== 'orchestrator' || scopedOrchestrator !== null),
+                ).map((m) => (
+                  <label key={m.value} className="hand-mode" title={m.title}>
+                    <input
+                      type="radio"
+                      name="hand-mode"
+                      value={m.value}
+                      checked={mode === m.value}
+                      onChange={() => setHandMode(m.value)}
+                    />
+                    <span>
+                      <b>{m.label}</b>
+                      <span className="faint">{m.hint}</span>
+                    </span>
+                  </label>
+                ))}
               </div>
               <div className="dispatch-row">
                 {mode === 'send' ? (
@@ -536,7 +594,7 @@ export function CardDialog({
                     })}
                     onChange={setAttachTo}
                   />
-                ) : (
+                ) : mode === 'orchestrator' ? null : (
                   <Dropdown
                     label="Agent"
                     value={dispatchProvider}
@@ -552,27 +610,6 @@ export function CardDialog({
                     onChange={setDispatchProvider}
                   />
                 )}
-                {mode === 'run' && (
-                  <Dropdown
-                    label="What the agent may do"
-                    value={autonomy}
-                    options={AGENT_AUTONOMY.map((level) => {
-                      const unsupported =
-                        !!selectedProvider?.autonomyArgs &&
-                        selectedProvider.autonomyArgs[level] === undefined;
-                      return {
-                        value: level,
-                        label: AGENT_AUTONOMY_LABELS[level],
-                        title: unsupported
-                          ? 'This agent has no flag for this level'
-                          : AUTONOMY_HINTS[level],
-                        disabled: unsupported,
-                        ...(unsupported ? { hint: 'not supported' } : {}),
-                      };
-                    })}
-                    onChange={setAutonomy}
-                  />
-                )}
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -585,16 +622,36 @@ export function CardDialog({
                     !effectiveProjectId ||
                     (mode === 'send'
                       ? liveSessions.length === 0
-                      : !selectedProvider?.available || (mode === 'run' && !autonomySupported))
+                      : mode === 'orchestrator'
+                        ? !scopedOrchestrator
+                        : !selectedProvider?.available)
                   }
                   onClick={
-                    mode === 'run' ? dispatch : mode === 'send' ? sendToSession : openInTerminal
+                    mode === 'run'
+                      ? () => openInTerminal(false)
+                      : mode === 'send'
+                        ? sendToSession
+                        : mode === 'orchestrator'
+                          ? sendToOrchestrator
+                          : () => openInTerminal(true)
                   }
                 >
                   {dispatching ? 'Working…' : modeInfo.action}
                 </button>
               </div>
-              {mode !== 'send' && (
+              {!effectiveProjectId && (
+                <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+                  This card belongs to no project, so it can't be handed to an agent yet. Assign one
+                  above first.
+                </p>
+              )}
+              {mode === 'orchestrator' && scopedOrchestrator && (
+                <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+                  “{scopedOrchestrator.name}” covers this project. Sending creates the card in To do
+                  and asks that orchestrator to pick it up now.
+                </p>
+              )}
+              {(mode === 'terminal' || mode === 'run') && (
                 <textarea
                   className="textarea"
                   style={{ minHeight: 70 }}
@@ -606,7 +663,9 @@ export function CardDialog({
               )}
               {mode === 'run' && (
                 <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
-                  {AUTONOMY_HINTS[autonomy]}
+                  Uses the agent permissions from Settings. You can type, paste images, resize, and
+                  use the other terminal controls as usual. The finished session stays available for
+                  review and can be removed from Agents.
                 </p>
               )}
               {dispatchError && (
@@ -625,6 +684,7 @@ export function CardDialog({
                       key={r.id}
                       run={r}
                       now={now}
+                      onOpenSession={(id) => navigate(`/workspace?open=${id}`)}
                       onChanged={(next) =>
                         setRuns((prev) => {
                           if (!prev) return [next];
@@ -665,9 +725,7 @@ export function CardDialog({
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={
-                  saving || dispatching || imagesBusy || !title.trim() || !effectiveProjectId
-                }
+                disabled={saving || dispatching || imagesBusy || !title.trim()}
               >
                 {creating ? 'Create card' : 'Save'}
               </button>
