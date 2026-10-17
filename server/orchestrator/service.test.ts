@@ -77,6 +77,115 @@ describe('orchestrator service', () => {
       db.close();
     }
   });
+  it('reuses planning inputs for masters with the same scope until scheduling state changes', async () => {
+    const db = openDb(':memory:');
+    const now = new Date().toISOString();
+    db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (1, ?, ?, ?)').run(
+      'Shared scope',
+      tmp,
+      now,
+    );
+    db.prepare(
+      "INSERT INTO cards (project_id, title, description, status, position, created_at, updated_at) VALUES (1, 'Task', '', 'todo', 0, ?, ?)",
+    ).run(now, now);
+    const service = new OrchestratorService(
+      db,
+      { listAllSessions: () => [], dispatchCard: vi.fn() } as unknown as AgentSupervisor,
+      null,
+    );
+    const first = service.save({
+      name: 'Observe one',
+      enabled: true,
+      strategy: 'observe',
+      projectIds: [],
+      providers: ['codex'],
+      maxWorkers: 1,
+      maxWorkersPerProject: 1,
+      maxWorkersPerProvider: 1,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
+    });
+    service.save({ ...first, id: undefined, name: 'Observe two' });
+    const readRuns = vi.spyOn(planning, 'planningRuns');
+    try {
+      await service.tick();
+      expect(readRuns).toHaveBeenCalledTimes(1);
+    } finally {
+      await service.stop();
+      db.close();
+    }
+  });
+  it('refreshes shared planning inputs after a worker is reserved and dispatched', async () => {
+    const db = openDb(':memory:');
+    const now = new Date().toISOString();
+    db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (1, ?, ?, ?)').run(
+      'Shared scope',
+      tmp,
+      now,
+    );
+    const insertCard = db.prepare(
+      "INSERT INTO cards (project_id, title, description, status, position, created_at, updated_at) VALUES (1, ?, '', 'todo', ?, ?, ?)",
+    );
+    insertCard.run('First', 0, now, now);
+    insertCard.run('Second', 1, now, now);
+    const runs: {
+      id: number;
+      projectId: number;
+      cardId: number;
+      providerId: string;
+      status: string;
+    }[] = [];
+    vi.spyOn(planning, 'planningRuns').mockImplementation(
+      () => runs as ReturnType<typeof planning.planningRuns>,
+    );
+    const dispatch = vi.fn(
+      async (projectId: number, cardId: number, input: { canCommit?: () => boolean }) => {
+        expect(input.canCommit?.()).toBe(true);
+        const run = {
+          id: runs.length + 1,
+          projectId,
+          cardId,
+          providerId: 'codex',
+          status: 'running',
+        };
+        runs.push(run);
+        return run;
+      },
+    );
+    const service = new OrchestratorService(
+      db,
+      { listAllSessions: () => [], dispatchCard: dispatch } as unknown as AgentSupervisor,
+      null,
+    );
+    service.save({
+      name: 'Autonomous one',
+      enabled: true,
+      projectIds: [],
+      providers: ['codex'],
+      maxWorkers: 1,
+      maxWorkersPerProject: 1,
+      maxWorkersPerProvider: 1,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 60000,
+    });
+    service.save({
+      ...service.state().instances[0]!,
+      id: undefined,
+      name: 'Autonomous two',
+    });
+    try {
+      await service.tick();
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      // Initial planning, the mandatory pre-insertion snapshot, then the next master's
+      // fresh view of the worker that was just started.
+      expect(planning.planningRuns).toHaveBeenCalledTimes(3);
+    } finally {
+      await service.stop();
+      db.close();
+    }
+  });
   it('keeps a slow provider check leased and releases its heartbeat on completion', async () => {
     vi.useFakeTimers();
     const db = openDb(':memory:');

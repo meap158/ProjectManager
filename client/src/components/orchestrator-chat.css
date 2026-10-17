@@ -21,6 +21,7 @@
 }
 .orchestrator-chat-open {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
@@ -40,6 +41,54 @@
 .orchestrator-chat-sent {
   margin: 0;
   font-size: 13px;
+}
+
+/* The master's chat CLI pane (PM-138). Full screen matches the Agents tab CLI dock: on desktop
+   the pane sticks to the bottom and grows to the window; on phones it covers the whole screen,
+   page header, tabs and bottom bar included, inside the safe areas. The header double-click or
+   the maximise button toggles it, Escape restores it. */
+.orchestrator-terminal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.orchestrator-terminal-head {
+  user-select: none;
+}
+.orchestrator-terminal-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.orchestrator-terminal.is-max {
+  position: sticky;
+  bottom: 8px;
+  z-index: 60;
+  box-sizing: border-box;
+  height: calc(100dvh - 120px);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.orchestrator-terminal.is-max > .orchestrator-terminal-body {
+  flex: 1;
+  overflow: hidden;
+}
+@media (max-width: 768px) {
+  .orchestrator-terminal.is-max {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  }
+  html:has(.orchestrator-terminal.is-max) .app-main {
+    overflow: hidden;
+  }
 }
 
 /* Collapse / expand. Collapsed panels keep only their heading row (and a master its summary). */
@@ -100,14 +149,41 @@
 .orchestrator-panel-head h2 {
   margin: 0;
 }
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .orchestrator-collapse {
     width: 32px;
     height: 32px;
   }
+  .orchestrator-chat-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
   .orchestrator-chat-open {
     width: 100%;
-    justify-content: space-between;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .orchestrator-chat-open .dropdown {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+  .orchestrator-chat-open .btn {
+    min-height: 44px;
+    flex: 0 0 auto;
+  }
+  .orchestrator-chat-state {
+    flex: 1 1 100%;
+    order: 3;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .orchestrator-chat-checks {
+    gap: 6px;
+  }
+  .orchestrator-chat-checks .btn {
+    min-height: 40px;
   }
 }
 
@@ -120,6 +196,8 @@
   margin: 2px 0 0;
   font-size: 13px;
   color: var(--text-2);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .orchestrator-instance-about strong {
   color: var(--text);

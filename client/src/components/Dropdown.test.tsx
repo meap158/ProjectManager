@@ -60,6 +60,8 @@ it('Ctrl+click selects only the clicked item in a multi-select dropdown', () => 
   // Ctrl+click on OpenCode should exclusively select OpenCode only
   fireEvent.click(screen.getByRole('button', { name: 'OpenCode' }), { ctrlKey: true });
   expect(screen.getAllByRole('option', { selected: true })).toHaveLength(1);
-  expect(screen.getByRole('option', { name: /OpenCode/i }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('option', { name: /OpenCode/i }).getAttribute('aria-selected')).toBe(
+    'true',
+  );
   expect(screen.getByRole('button', { name: 'Agent' }).textContent).toContain('OpenCode');
 });

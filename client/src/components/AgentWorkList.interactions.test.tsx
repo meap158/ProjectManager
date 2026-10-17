@@ -42,34 +42,39 @@ it('navigates between CLI sessions using Ctrl+ArrowDown and Ctrl+ArrowUp', () =>
   function TestHarness() {
     const [selected, setSelected] = useState<WorkKey | null>('session:10');
     return (
-      <AgentWorkList
-        items={items}
-        selected={selected}
-        onSelect={setSelected}
-        now={Date.now()}
-      />
+      <AgentWorkList items={items} selected={selected} onSelect={setSelected} now={Date.now()} />
     );
   }
 
   render(<TestHarness />);
 
-  expect(screen.getByRole('button', { name: 'Show Session 10' }).getAttribute('aria-current')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Show Session 10' }).getAttribute('aria-current')).toBe(
+    'true',
+  );
 
   // Press Ctrl+ArrowDown -> navigates to Session 20
   fireEvent.keyDown(window, { key: 'ArrowDown', ctrlKey: true });
-  expect(screen.getByRole('button', { name: 'Show Session 20' }).getAttribute('aria-current')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Show Session 20' }).getAttribute('aria-current')).toBe(
+    'true',
+  );
 
   // Press Ctrl+ArrowDown -> navigates to Session 30
   fireEvent.keyDown(window, { key: 'ArrowDown', ctrlKey: true });
-  expect(screen.getByRole('button', { name: 'Show Session 30' }).getAttribute('aria-current')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Show Session 30' }).getAttribute('aria-current')).toBe(
+    'true',
+  );
 
   // Press Ctrl+ArrowDown -> wraps to Session 10
   fireEvent.keyDown(window, { key: 'ArrowDown', ctrlKey: true });
-  expect(screen.getByRole('button', { name: 'Show Session 10' }).getAttribute('aria-current')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Show Session 10' }).getAttribute('aria-current')).toBe(
+    'true',
+  );
 
   // Press Ctrl+ArrowUp -> navigates back to Session 30
   fireEvent.keyDown(window, { key: 'ArrowUp', ctrlKey: true });
-  expect(screen.getByRole('button', { name: 'Show Session 30' }).getAttribute('aria-current')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Show Session 30' }).getAttribute('aria-current')).toBe(
+    'true',
+  );
 });
 
 it('uses onNavigate callback without toggling if provided', () => {

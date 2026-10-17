@@ -358,3 +358,51 @@ stable p95 or controlled production comparison. It is lower than the original
 9953.78 ms median but remains slow; memory grew relative to prior runs. All-master
 cache retention, initial snapshot cost and repeated fresh policy reads remain
 optimization targets. The result does not establish acceptable portfolio latency.
+
+## Bounded policy refresh in settled global sweeps (2026-10-17)
+
+Settled no-dispatch decisions previously reread persisted master policy for every
+card, although those decisions cannot start work. The service now checks policy at
+most once per 500 non-dispatch decisions and still reads it immediately for every
+dispatch proposal; the existing pre-insertion commit fence remains authoritative.
+This bounds pause/scope observation lag to one 500-decision batch without weakening
+the launch fence.
+
+Reproduced the exact five-sample command above after this change. All worker/card
+assertions passed: median 1610.53 ms, sample maximum 1647.30 ms, two row mutations,
+472 prepared statements and 211.0 MB whole-process RSS. The preceding run measured
+7290.25 ms median, 7352.89 ms maximum and 211.3 MB RSS. The medians differ by 77.9%
+in this sequential synthetic fixture; this is not a randomized production A/B or
+LAN latency guarantee. The fixture has 10,000 cards, 100,000 historical runs and
+20 global masters, and excludes committed WAL fsync, real worker execution, network
+and browser cost. The 1.61s settled global tick remains a material latency target.
+
+## Shared snapshots and amortized observation persistence (2026-10-17)
+
+Masters with an identical project scope now share one read-only scheduling snapshot
+per leased tick. Attention follow-up, claims and dispatch completion invalidate it;
+the pre-insertion authorization deliberately reads a fresh snapshot. Policy is still
+rechecked every 500 waiting decisions. Observation event queues flush at most 5,000
+events at once, and display-history retention now slices once per batch rather than
+shifting per transition. This keeps queued memory bounded while reducing repeated
+serialization and writes for large portfolios.
+
+Settled reproduction:
+`node --import tsx scripts/benchmark-orchestrator-ticks.mjs --samples=5 --scope=global --phase=settled --cards=10000 --masters=20`.
+Latest current-worktree result: 1859.99ms median, 2419.27ms sample maximum, two row
+mutations, 15 prepared statements and 217.3MB process RSS. The immediate pre-cache
+run used 72 statements and measured 2908.30ms median; an earlier query-projection run
+measured 1529.99ms, demonstrating that host timing varies. No percentage latency
+claim is made.
+
+Dispatch reproduction:
+`node --import tsx scripts/benchmark-orchestrator-ticks.mjs --samples=5 --scope=global --phase=dispatch --cards=10000 --masters=20`.
+It dispatches one worker under the shared global cap, with 10,000 cards, 100,000
+historical runs and 20 masters. The five-sample result was 1737.78ms median,
+2465.84ms sample maximum, 92 row mutations, 176 prepared statements and 208.1MB
+process RSS. A prior two-sample run before the larger write batch had 812 mutations,
+1256 preparations and 6500.73ms median. The mutation and preparation counts directly
+show fewer DB rewrites; unequal sample sizes and machine load make the timing
+comparison exploratory. Neither phase includes committed WAL fsync, actual provider
+execution, LAN or browser latency. These fixtures do not establish production p95,
+acceptable maximum portfolio latency, or a total memory bound.

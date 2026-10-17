@@ -1209,6 +1209,52 @@ it('shows a failed initial review load instead of claiming nothing needs attenti
   expect(screen.getByRole('navigation', { name: 'Live workers pages' })).toBeDefined();
 });
 
+it('renders multiple orchestrators in the picker nav for switching', async () => {
+  vi.mocked(api.orchestrators).mockResolvedValue({
+    instances: [
+      {
+        id: 'orch-1',
+        name: 'First Orchestrator',
+        enabled: true,
+        projectIds: [1],
+        providers: ['codex'],
+        maxWorkers: 2,
+        maxWorkersPerProject: 1,
+        maxWorkersPerProvider: 1,
+        reservePercent: 10,
+        allowUnknownQuota: false,
+        quotaMaxAgeMs: 60000,
+      },
+      {
+        id: 'orch-2',
+        name: 'Second Orchestrator',
+        enabled: false,
+        projectIds: [],
+        providers: ['claude'],
+        maxWorkers: 4,
+        maxWorkersPerProject: 2,
+        maxWorkersPerProvider: 2,
+        reservePercent: 10,
+        allowUnknownQuota: false,
+        quotaMaxAgeMs: 60000,
+      },
+    ],
+    events: [],
+  });
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  await screen.findAllByText('First Orchestrator');
+  const picker = screen.getByRole('navigation', { name: 'Choose orchestrator' });
+  expect(picker).toBeDefined();
+  expect(within(picker).getByRole('button', { name: /First Orchestrator/ })).toBeDefined();
+  expect(within(picker).getByRole('button', { name: /Second Orchestrator/ })).toBeDefined();
+  fireEvent.click(within(picker).getByRole('button', { name: /Second Orchestrator/ }));
+  await screen.findByTitle('Delete Second Orchestrator');
+});
+
 it('clears a recovered overview connection warning without retaining a stale action error', async () => {
   vi.useFakeTimers();
   try {

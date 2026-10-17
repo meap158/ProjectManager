@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ProviderIcon } from '../components/icons';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import {
   WORKSPACE_FONT_SIZES,
   WORKSPACE_PRESETS,
@@ -31,6 +31,7 @@ import {
   NO_FILTERS,
   WorkFilters,
   applyWorkFilters,
+  selectedFilters,
   useWorkFilters,
 } from '../components/WorkFilters';
 import { WorkSorter, sortWork, useWorkSort } from '../components/WorkSorter';
@@ -160,6 +161,7 @@ export function placeSession(layout: WorkspaceLayout, sessionId: number): Worksp
  * terminal and a live stream, so many sessions stay cheap.
  */
 export function WorkspacePage() {
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [layout, setLayout] = useState<WorkspaceLayout | null>(() => cachedWorkspaceLayout);
   const [sessions, setSessions] = useState<AgentSession[] | null>(
@@ -596,6 +598,7 @@ export function WorkspacePage() {
             setRuns((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? [next])
           }
           onRunDeleted={(id) => setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev)}
+          onOpenSession={(id) => navigate(`/workspace?open=${id}`)}
           onError={setError}
         />
       ) : (
@@ -1273,6 +1276,7 @@ function WorkList({
   onSessionDeleted,
   onRunChanged,
   onRunDeleted,
+  onOpenSession,
   onError,
 }: {
   sessions: AgentSession[] | null;
@@ -1295,6 +1299,7 @@ function WorkList({
   onSessionDeleted: (id: number) => void;
   onRunChanged: (r: AgentRun) => void;
   onRunDeleted: (id: number) => void;
+  onOpenSession: (id: number) => void;
   onError: (message: string) => void;
 }) {
   const [dockHeight, setDockHeight] = useState<number | null>(readDockHeight);
@@ -1374,7 +1379,12 @@ function WorkList({
   const items = sortWork(applyWorkFilters(allItems, filters, now), sort, projectName);
   const visibleSessions = items.flatMap((w) => (w.kind === 'session' ? [w.item] : []));
   const liveSessions = visibleSessions.filter((s) => s.status === 'running');
-  const bulk = async (targets: AgentSession[], action: 'stop' | 'restart' | 'delete') => {
+  const stoppedSessions = visibleSessions.filter((s) => s.status !== 'running');
+  const isEndedFilter =
+    filters.status === 'ended' ||
+    (Array.isArray(filters.status) && filters.status.length === 1 && filters.status[0] === 'ended');
+  const includesEndedFilter = selectedFilters(filters.status, 'all').includes('ended');
+  const bulk = async (targets: AgentSession[], action: 'start' | 'stop' | 'restart' | 'delete') => {
     if (bulkBusy) return;
     setBulkBusy(true);
     const failures: string[] = [];
@@ -1384,6 +1394,8 @@ function WorkList({
           if (action === 'delete') {
             await api.deleteSession(s.id);
             onSessionDeleted(s.id);
+          } else if (action === 'start') {
+            onSessionChanged(await api.startSession(s.id));
           } else {
             onSessionChanged(
               await (action === 'restart' ? api.restartSession(s.id) : api.stopSession(s.id)),
@@ -1491,6 +1503,17 @@ function WorkList({
                 Show in panes ({visibleSessions.length > 4 ? 'first 4' : visibleSessions.length})
               </button>
               <BatchSessionMessage sessions={visibleSessions} />
+              {includesEndedFilter && stoppedSessions.length > 0 && (
+                <button
+                  className="btn btn-sm"
+                  disabled={bulkBusy}
+                  onClick={() => void bulk(stoppedSessions, 'start')}
+                >
+                  {isEndedFilter
+                    ? `Start all sessions (${stoppedSessions.length})`
+                    : `Start stopped (${stoppedSessions.length})`}
+                </button>
+              )}
               <button
                 className="btn btn-sm"
                 disabled={bulkBusy || !liveSessions.length}
@@ -1624,6 +1647,7 @@ function WorkList({
             run={run}
             now={now}
             hideHeader
+            onOpenSession={onOpenSession}
             onChanged={onRunChanged}
             onDeleted={(id) => {
               onRunDeleted(id);

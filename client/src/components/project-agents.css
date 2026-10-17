@@ -30,7 +30,9 @@
   cursor: pointer;
   background: transparent;
   border: none;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 
 .info-btn:hover,

@@ -30,6 +30,7 @@ export function RunCard({
   now,
   onChanged,
   onDeleted,
+  onOpenSession,
   paused = false,
   hideHeader = false,
 }: {
@@ -37,6 +38,8 @@ export function RunCard({
   now: number;
   onChanged: (run: AgentRun) => void;
   onDeleted: (id: number) => void;
+  /** Opens the workspace directly after restarting a headless run as an interactive session. */
+  onOpenSession?: (id: number) => void;
   /** Stops output traffic while the surrounding tab is hidden. */
   paused?: boolean;
   /** Hides name + meta: the list row above already says it (workspace list view). */
@@ -46,8 +49,15 @@ export function RunCard({
   const [busy, setBusy] = useState(false);
   const [moveTo, setMoveTo] = useState<'review' | 'done'>('review');
   const [error, setError] = useState<string | null>(null);
+  const [interactiveSessionId, setInteractiveSessionId] = useState<number | null>(null);
   const active = run.status === 'queued' || run.status === 'running';
   const validatable = (run.status === 'succeeded' || run.status === 'failed') && !run.validation;
+  const canRestartInteractively =
+    active &&
+    run.executionState !== 'unknown' &&
+    run.cardId !== null &&
+    !run.orchestratorId &&
+    run.providerId !== 'custom';
 
   async function act(fn: () => Promise<AgentRun>) {
     setBusy(true);
@@ -69,6 +79,39 @@ export function RunCard({
       const next = await api.retryRun(run.id);
       onDeleted(run.id);
       onChanged(next);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** A pipe run cannot be attached to a PTY after launch. Stop it, then resume the task
+      in a regular non-supervised session with the complete interactive terminal UI. */
+  async function restartInteractively() {
+    if (!run.cardId) return;
+    setBusy(true);
+    setError(null);
+    setInteractiveSessionId(null);
+    try {
+      const stopped = await api.stopRun(run.id);
+      if (stopped.status === 'queued' || stopped.status === 'running') {
+        throw new Error('The run is still active. Try again after its stop is confirmed.');
+      }
+      const session = await api.createSession(run.projectId, {
+        providerId: run.providerId,
+        cardId: run.cardId,
+        name: run.name.slice(0, 80),
+        prompt: run.prompt,
+        terminal: 'pty',
+        supervise: false,
+      });
+      if (onOpenSession) {
+        onOpenSession(session.id);
+      } else {
+        setInteractiveSessionId(session.id);
+      }
+      onChanged(stopped);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -231,6 +274,22 @@ export function RunCard({
           >
             Stop
           </button>
+        )}
+        {canRestartInteractively && !interactiveSessionId && (
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={busy}
+            onClick={restartInteractively}
+            title="Stop this background run and restart the card task in a full interactive terminal. The run log will be kept."
+          >
+            Stop &amp; reopen interactively
+          </button>
+        )}
+        {interactiveSessionId !== null && (
+          <a className="btn btn-sm" href={`/workspace?open=${interactiveSessionId}`}>
+            Open interactive session
+          </a>
         )}
         {active && run.executionState === 'unknown' && run.executionNonce && (
           <ConfirmDelete

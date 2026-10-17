@@ -6,7 +6,7 @@ import {
   getSetting,
   setSetting,
   getCard,
-  listCards,
+  listSchedulableCards,
   listCardsInFlight,
   cardKey,
 } from '../store.js';
@@ -28,7 +28,7 @@ import {
   workspaceActionablePage,
   workspaceLiveAssignments,
 } from './workspaceRuns.js';
-import { planOrchestration } from './planner.js';
+import { planOrchestration, type OrchestratorPlanningSnapshot } from './planner.js';
 import { planningRuns } from './planningRuns.js';
 import { pendingDatabasePage } from './pendingPage.js';
 import { liveRunProjects } from './liveProjects.js';
@@ -43,6 +43,8 @@ import {
 import type { ProjectSummary } from '../../shared/types.js';
 
 const KEY = 'master-orchestrators';
+const POLICY_REFRESH_BATCH_SIZE = 500;
+const OBSERVATION_BATCH_SIZE = 5000;
 export class OrchestratorService {
   private owner = randomUUID();
   private executing = false;
@@ -291,7 +293,6 @@ export class OrchestratorService {
   async preview(id: string, offset = 0, limit = 100) {
     const instance = this.state().instances.find((i) => i.id === id);
     if (!instance) return null;
-    const projects = this.db.prepare('SELECT id FROM projects').all() as { id: number }[];
     const providers = await providerStatuses();
     const runs = planningRuns(this.db, instance.projectIds);
     const latestRuns = new Map<number, (typeof runs)[number]>();
@@ -307,9 +308,7 @@ export class OrchestratorService {
         activeRuns.set(run.cardId, run);
     }
     const decisions = planOrchestration(instance, {
-      cards: projects
-        .filter((p) => !instance.projectIds.length || instance.projectIds.includes(p.id))
-        .flatMap((p) => listCards(this.db, p.id)),
+      cards: listSchedulableCards(this.db, instance.projectIds),
       runs,
       sessions: this.supervisor.listAllSessions(),
       availableProviders: providers.filter((p) => p.available).map((p) => p.id),
@@ -529,12 +528,14 @@ export class OrchestratorService {
         if (identical && ['wait', 'review', 'observe'].includes(event.action)) continue;
         state ??= this.state();
         state.events.push({ ...event, count: 1, at: event.at ?? new Date().toISOString() });
-        if (state.events.length > 500) state.events.shift();
       }
       for (const [id, snapshot] of observations)
         if (snapshot.changed)
           setSetting(this.db, `orchestrator-observations:${id}`, snapshot.values);
-      if (state) setSetting(this.db, KEY, state);
+      if (state) {
+        if (state.events.length > 500) state.events = state.events.slice(-500);
+        setSetting(this.db, KEY, state);
+      }
       this.db.exec('RELEASE orchestrator_observations');
       for (const [id, snapshot] of observations)
         if (snapshot.changed)
@@ -666,6 +667,11 @@ export class OrchestratorService {
     assignments.reconcile();
     const providers = (await providerStatuses()).filter((p) => p.available).map((p) => p.id);
     if (generation !== this.generation || !assignments.isLeaseValid(this.owner, epoch)) return;
+    // Masters with the same scope share an immutable scheduling snapshot until this
+    // execution changes cards, claims, or runs. This avoids hydrating the same global
+    // portfolio once per master; dispatch checks below always bypass the cache.
+    const snapshotCache = new Map<string, OrchestratorPlanningSnapshot>();
+    const invalidateSnapshots = () => snapshotCache.clear();
     for (const initial of this.state().instances.filter(
       (i) =>
         i.enabled &&
@@ -711,47 +717,77 @@ export class OrchestratorService {
               });
           }
         }
+        // Attention follow-up can revise an existing card without returning its ID.
+        invalidateSnapshots();
       }
-      const projects = this.db.prepare('SELECT id FROM projects').all() as { id: number }[];
-
-      const snapshot = () => ({
-        cards: projects
-          .filter((p) => !initial.projectIds.length || initial.projectIds.includes(p.id))
-          .flatMap((p) => listCards(this.db, p.id)),
+      const scopeKey = [...new Set(initial.projectIds)].sort((a, b) => a - b).join(',');
+      const makeSnapshot = () => ({
+        cards: listSchedulableCards(this.db, initial.projectIds),
         runs: planningRuns(this.db, initial.projectIds),
         sessions: this.supervisor.listAllSessions(),
         availableProviders: providers,
         limits: readLimits(this.dataDir),
         blockedCardIds: assignments.blockedCards(),
       });
+      const snapshot = (fresh = false) => {
+        if (fresh) return makeSnapshot();
+        const cached = snapshotCache.get(scopeKey);
+        if (cached) return cached;
+        const next = makeSnapshot();
+        snapshotCache.set(scopeKey, next);
+        return next;
+      };
       const decisions = planOrchestration(initial, snapshot());
       const observations: (Omit<OrchestratorEvent, 'at'> & { at: string })[] = [];
       const observe = (event: Omit<OrchestratorEvent, 'at'>) => {
         observations.push({ ...event, at: new Date().toISOString() });
-        // Bound queued observation memory even for global scopes with huge boards.
-        if (observations.length >= 500) this.events(observations.splice(0));
+        // Keep the queue bounded while amortizing persisted snapshot/history rewrites.
+        if (observations.length >= OBSERVATION_BATCH_SIZE) this.events(observations.splice(0));
       };
+      let current = this.currentPolicy(initial.id);
+      if (!current?.enabled) continue;
+      let decisionsUntilPolicyRefresh = POLICY_REFRESH_BATCH_SIZE;
       for (const decision of decisions) {
         if (generation !== this.generation) return;
-        const current = this.currentPolicy(initial.id);
+        // Waiting/review proposals cannot launch work. Re-read expensive snapshots only
+        // for potential dispatches; refresh the policy every bounded observation batch.
+        if (decision.action !== 'dispatch') {
+          if (decisionsUntilPolicyRefresh <= 0) {
+            const latest = this.currentPolicy(initial.id);
+            if (!latest?.enabled) break;
+            current = latest;
+            decisionsUntilPolicyRefresh = POLICY_REFRESH_BATCH_SIZE;
+          }
+          if (current.strategy === 'observe') {
+            observe({
+              orchestratorId: initial.id,
+              cardId: decision.cardId,
+              action: 'observe',
+              message: `${decision.action}: ${decision.reason}`,
+            });
+          } else {
+            observe({
+              orchestratorId: initial.id,
+              cardId: decision.cardId,
+              action: decision.action,
+              message: decision.reason,
+            });
+          }
+          decisionsUntilPolicyRefresh--;
+          continue;
+        }
+
+        // Launch proposals always re-read persisted policy; a pause, scope change, or
+        // switch to observe-only must take effect before claim/dispatch.
+        current = this.currentPolicy(initial.id)!;
+        decisionsUntilPolicyRefresh = POLICY_REFRESH_BATCH_SIZE;
         if (!current?.enabled) break;
         if (current.strategy === 'observe') {
           observe({
             orchestratorId: initial.id,
             cardId: decision.cardId,
             action: 'observe',
-            message: `${decision.action === 'dispatch' ? 'Would dispatch' : decision.action}: ${decision.reason}`,
-          });
-          continue;
-        }
-        // Waiting/review proposals cannot launch work. Re-read expensive snapshots only
-        // for potential dispatches; a newly eligible wait is picked up on the next check.
-        if (decision.action !== 'dispatch') {
-          observe({
-            orchestratorId: initial.id,
-            cardId: decision.cardId,
-            action: decision.action,
-            message: decision.reason,
+            message: `Would dispatch: ${decision.reason}`,
           });
           continue;
         }
@@ -781,6 +817,7 @@ export class OrchestratorService {
         // Fenced lease renewal before claiming
         if (!assignments.renew(this.owner, epoch)) return;
         if (!assignments.claim(fresh.cardId, initial.id, Date.now(), this.owner, epoch)) {
+          invalidateSnapshots();
           this.event({
             orchestratorId: initial.id,
             cardId: fresh.cardId,
@@ -789,6 +826,7 @@ export class OrchestratorService {
           });
           continue;
         }
+        invalidateSnapshots();
         this.event({
           orchestratorId: initial.id,
           cardId: fresh.cardId,
@@ -817,7 +855,7 @@ export class OrchestratorService {
                 !policy.providers.includes(fresh.providerId!)
               )
                 return false;
-              const latest = snapshot();
+              const latest = snapshot(true);
               const latestTask = latest.cards.find((card) => card.id === fresh.cardId);
               if (
                 !latestTask ||
@@ -830,11 +868,13 @@ export class OrchestratorService {
                 return false;
               }
               // The current dispatch owns this reservation; all other claims stay blocked.
-              latest.blockedCardIds.delete(fresh.cardId);
+              const blockedCardIds = new Set(latest.blockedCardIds);
+              blockedCardIds.delete(fresh.cardId);
               const checked = planOrchestration(
                 { ...policy, providers: [fresh.providerId!] },
                 {
                   ...latest,
+                  blockedCardIds,
                   cards: latest.cards.filter((card) => card.id === fresh.cardId),
                 },
               )[0];
@@ -844,6 +884,7 @@ export class OrchestratorService {
           // Fenced lease renewal after dispatch completes
           if (!assignments.renew(this.owner, epoch)) return;
           assignments.assigned(fresh.cardId, run.id, this.owner, epoch);
+          invalidateSnapshots();
           this.event({
             orchestratorId: initial.id,
             cardId: fresh.cardId,
@@ -867,6 +908,7 @@ export class OrchestratorService {
             continue;
           }
           if (!assignments.failed(fresh.cardId, Date.now(), this.owner, epoch)) return;
+          invalidateSnapshots();
           this.event({
             orchestratorId: initial.id,
             cardId: fresh.cardId,
@@ -875,7 +917,8 @@ export class OrchestratorService {
           });
         }
       }
-      this.events(observations);
+      // A deleted master must not recreate orphan history from a buffered batch.
+      if (this.currentPolicy(initial.id)) this.events(observations);
     }
   }
 }

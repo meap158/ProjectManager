@@ -1120,8 +1120,8 @@ export function OrchestratorPage() {
                                   ) : null}
                                   {d.occupancy && d.occupancy.externalWorkers > 0 && (
                                     <span
-                                      className="faint"
-                                      style={{ fontSize: '11px', flex: 'none' }}
+                                      className="faint plan-decision-meta"
+                                      style={{ fontSize: '11px' }}
                                     >
                                       Managed: {d.occupancy.managedWorkers} · External:{' '}
                                       {d.occupancy.externalWorkers}
@@ -1129,8 +1129,8 @@ export function OrchestratorPage() {
                                   )}
                                   {d.retry && (
                                     <span
-                                      className="faint"
-                                      style={{ fontSize: '11px', flex: 'none' }}
+                                      className="faint plan-decision-meta"
+                                      style={{ fontSize: '11px' }}
                                     >
                                       {d.retry.attemptsUsed}/3 used
                                       {d.retry.blocker ? ` · ${d.retry.blocker}` : ''}

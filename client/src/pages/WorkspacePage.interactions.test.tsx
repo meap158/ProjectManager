@@ -209,6 +209,72 @@ it('bulk Stop applies only to sessions matching the search filter', async () => 
   expect(api.stopSession).toHaveBeenCalledTimes(1);
 });
 
+it('bulk Start all sessions in Ended tab', async () => {
+  localStorage.setItem('pm.workspace.view', 'list');
+  localStorage.setItem('pm.workspace.listFilters', JSON.stringify({ status: 'ended' }));
+  const stoppedSession = { ...session(1, 'Alpha'), status: 'killed' as const };
+  vi.mocked(api.getWorkspace).mockResolvedValue({ preset: '1', panes: [null], maximized: null });
+  vi.mocked(api.listAllSessions).mockResolvedValue([stoppedSession]);
+  vi.mocked(api.startSession).mockImplementation(async (id) => ({
+    ...session(id, 'Alpha'),
+    status: 'running',
+  }));
+  render(
+    <MemoryRouter>
+      <WorkspacePage />
+    </MemoryRouter>,
+  );
+  await screen.findByText('Alpha');
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for 1 filtered sessions' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Start all sessions (1)', hidden: true }));
+  await waitFor(() => expect(api.startSession).toHaveBeenCalledWith(1));
+  expect(api.startSession).toHaveBeenCalledTimes(1);
+});
+
+it('does not offer bulk Start stopped sessions in All tab', async () => {
+  localStorage.setItem('pm.workspace.view', 'list');
+  const running = session(1, 'Alpha');
+  const stopped = { ...session(2, 'Beta'), status: 'killed' as const };
+  vi.mocked(api.getWorkspace).mockResolvedValue({ preset: '1', panes: [null], maximized: null });
+  vi.mocked(api.listAllSessions).mockResolvedValue([running, stopped]);
+  vi.mocked(api.startSession).mockImplementation(async (id) => ({
+    ...session(id, 'Beta'),
+    status: 'running',
+  }));
+  render(
+    <MemoryRouter>
+      <WorkspacePage />
+    </MemoryRouter>,
+  );
+  await screen.findByText('Alpha');
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for 2 filtered sessions' }));
+  expect(screen.queryByRole('button', { name: 'Start stopped (1)', hidden: true })).toBeNull();
+  expect(api.startSession).not.toHaveBeenCalled();
+});
+
+it('offers bulk Start stopped when a multi-selected status set includes Ended', async () => {
+  localStorage.setItem('pm.workspace.view', 'list');
+  localStorage.setItem('pm.workspace.listFilters', JSON.stringify({ status: ['idle', 'ended'] }));
+  const running = session(1, 'Alpha');
+  const stopped = { ...session(2, 'Beta'), status: 'killed' as const };
+  vi.mocked(api.getWorkspace).mockResolvedValue({ preset: '1', panes: [null], maximized: null });
+  vi.mocked(api.listAllSessions).mockResolvedValue([running, stopped]);
+  vi.mocked(api.startSession).mockImplementation(async (id) => ({
+    ...session(id, 'Beta'),
+    status: 'running',
+  }));
+  render(
+    <MemoryRouter>
+      <WorkspacePage />
+    </MemoryRouter>,
+  );
+  await screen.findByRole('button', { name: 'Actions for 2 filtered sessions' });
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for 2 filtered sessions' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Start stopped (1)', hidden: true }));
+  await waitFor(() => expect(api.startSession).toHaveBeenCalledWith(2));
+  expect(api.startSession).toHaveBeenCalledTimes(1);
+});
+
 it('keeps the open terminal mounted when an Idle session becomes Running', async () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
   localStorage.setItem('pm.workspace.view', 'list');

@@ -37,17 +37,19 @@ export interface OrchestratorDecision {
   })[];
 }
 
+export interface OrchestratorPlanningSnapshot {
+  cards: Card[];
+  runs: PlanningRun[];
+  sessions: AgentSession[];
+  availableProviders: string[];
+  limits: ProviderLimits[];
+  blockedCardIds?: ReadonlySet<number>;
+}
+
 /** Pure scheduling: execution must revalidate the snapshot before dispatching. */
 export function planOrchestration(
   policy: OrchestratorPolicy,
-  snapshot: {
-    cards: Card[];
-    runs: PlanningRun[];
-    sessions: AgentSession[];
-    availableProviders: string[];
-    limits: ProviderLimits[];
-    blockedCardIds?: ReadonlySet<number>;
-  },
+  snapshot: OrchestratorPlanningSnapshot,
   now = Date.now(),
 ): OrchestratorDecision[] {
   const scope = (projectId: number) =>

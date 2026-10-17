@@ -1,15 +1,15 @@
 # Orchestrator audit and upgrade plan
 
-Implementation status, revalidated 2026-10-16. This table summarizes verified behavior;
+Implementation status, revalidated 2026-10-17. This table summarizes verified behavior;
 chronological findings below preserve earlier evidence and are not current completion claims.
 
-| Area                     | Verified implementation                                                                                                                                                                                                                                            | Remaining acceptance work                                                                                                                                 |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Durable execution        | Reservations, leases, heartbeats, insertion/revision fences, manual replay; opt-in authenticated hosted launch/replay, persisted logs and attempt identity, unknown occupancy and acknowledged stop                                                                | Scheduler request identity across attempts, durable task generations, remaining real crash boundaries, containment/platform checks, production enablement |
-| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated feeds, scoped chat selector, lifecycle controls, owner-linked active/failed recovery; persisted pre-launch interval evidence and live hosted CPU refresh                                        | Physical mobile/browser review, actionable typed provider/auth recovery and physical review of manual unknown-execution resolution                        |
-| Efficiency               | Indexed scoped SQL projections, narrow reconciliation, single-flight ticks, settled polling, round-robin fairness; unchanged hosted polls make zero row writes; measured batched events/policy parsing; consolidated compact overview and visibility-aware polling | Global/settled and committed-write benchmarks, bounded portfolio summaries and physical end-to-end latency                                                |
-| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget/cooldown, attention episode dedup, explicit idle-worker messaging                                                                                                                              | Classified provider/auth recovery, task dependencies, provider preferences and bounded managed-worker reuse                                               |
-| Evaluation               | Fresh direct whole-suite run: 649 tests / 128 files passed, exit 0; includes recovery links and overview/polling changes                                                                                                                                           | npm formatting gate in shared files, physical mobile/LAN and cross-platform execution                                                                     |
+| Area                     | Verified implementation                                                                                                                                                                                                                               | Remaining acceptance work                                                                                                                                 |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Durable execution        | Reservations, heartbeats and SQLite write-time lease/epoch fences on claims, assignment acknowledgements, failures and superseded-intent refunds; insertion/revision fences, manual replay, opt-in authenticated hosted launch/replay, persisted logs and attempt identity, unknown occupancy and acknowledged stop | Scheduler request identity across attempts, durable task generations, remaining real crash boundaries, containment/platform checks, production enablement |
+| Controls and convenience | Scoped Check now, paged preview/pending inspection, owner-isolated feeds, scoped chat selector, lifecycle controls, owner-linked active/failed recovery; Orchestrators responsive-browser layout fits 320px and 400px viewports without page overflow | Physical-device/LAN review, typed provider/auth recovery and physical review of manual unknown-execution resolution                                       |
+| Efficiency               | Indexed scoped projections, bounded observation writes, shared same-scope snapshots, narrow reconciliation, single-flight ticks and visibility-aware polling; latest 10k-card/20-master exploratory medians: 1.86s settled, 1.74s dispatch            | Reduce portfolio latency and memory; measure committed writes, end-to-end and physical-client performance                                                 |
+| Follow-through           | Shared planner/quota/capacity/review policy, persisted retry budget/cooldown, attention episode dedup, explicit idle-worker messaging                                                                                                                 | Classified provider/auth recovery, task dependencies, provider preferences and bounded managed-worker reuse                                               |
+| Evaluation               | 42 focused Orchestrator assignment/service tests pass; server typecheck, scoped ESLint and formatting pass; responsive browser checks at 320px/400px                                                                                                  | Full suite still has 33 agent/host lifecycle failures and worker errors from the last recorded run; physical mobile/LAN checks remain open                  |
 
 Planning reads only global live workers, latest eligible-card runs and last-served scoped
 projects. Situation inspection loads scoped live and unreviewed work plus latest active-card
@@ -51,10 +51,12 @@ assignment history is backfilled.
    separately budgeted. Compare validated completions, manual interventions and token cost;
    convenience must not weaken scope, permissions or review controls.
 
-Full `npm run check` currently passes typechecking and lint but stops at formatting in shared
-UI files, before the whole test suite. Those edits are owned by another agent and were not
-included in the Orchestrator commits. Physical mobile and runtime crash evidence is missing.
-The full upgrade is therefore not yet proven complete; the remaining gates above are explicit.
+The latest `npm run check` passes typecheck, ESLint and formatting, then fails in the
+Vitest stage: 646/679 tests pass, 33 fail and three worker errors occur. A separate run
+with `--maxWorkers=4` has the same 33 failures and two worker errors, mostly in agent-host
+and process-lifecycle tests; it also reproduces a Windows temp-directory cleanup `EBUSY`.
+The full suite is not accepted as green. Responsive Chrome emulation is layout evidence,
+not physical mobile/LAN evidence, so the full upgrade is not yet proven complete.
 
 Audited against the current worktree on 2026-10-11. No masters were enabled and no
 worker input was sent. Findings below derive from code; they are not live incident claims.
@@ -1046,3 +1048,72 @@ scoped lint pass. The 4 MiB combined serialized eligibility limit is not a total
 heap bound: parsed objects, active batches and other app state have overhead. The
 prior 320.8 MB RSS measurement predates this bound; a post-change RSS/latency run
 is still required, and persisted map retention remains separate work.
+
+## Bounded policy refresh and responsive mobile review, 2026-10-17
+
+Settled non-dispatch decisions no longer reread persisted policy for every card.
+The service checks for pause/scope/strategy changes once per 500-decision observation
+batch, while dispatch proposals still read current policy immediately and retain the
+existing fresh insertion fence. Initial and final policy reads also prevent buffered
+history from being written for a master deleted mid-sweep. The existing service regression
+file passes all 27 tests; typecheck, scoped ESLint and Prettier checks pass. In the same
+isolated 10k-card/100k-history/20-global-master benchmark, settled tick median fell from
+7290.25ms to 1610.53ms (77.9%), with two row mutations and whole-process RSS changing
+from 211.3MB to 211MB. This is exploratory fixture evidence; 1.61s remains too slow
+for a responsive global check, and no network, committed-fsync or real-worker latency
+is included.
+
+The Orchestrators page was also checked in Chrome responsive emulation at 400px and
+320px. `document.documentElement.scrollWidth` and the app-main width matched the
+viewport at both sizes; the worker grid also fit its client width at 320px. Worker
+cards now stay single-column at phone widths, and long project/task/provider metadata
+can wrap. This closes the responsive-browser overflow check only; physical mobile,
+LAN transport and on-device keyboard/safe-area review remain open.
+
+## Single-query schedulable card projection, 2026-10-17
+
+Preview and service tick snapshots now use one project-scoped SQL query for cards in
+`todo`, `in_progress` or `review`, excluding completed cards before row hydration.
+The prior per-project reads issued 400 card queries in the 10k-card/20-master global
+fixture. All 31 focused service/store tests pass, along with typecheck, scoped lint and
+format checks. The same isolated global settled benchmark reduced prepared statements
+from 472 to 72 and median latency from 1610.53ms to 1529.99ms; two row mutations were
+preserved. Whole-process RSS measured 212.9MB versus 211MB, so this query-shape change
+does not claim a memory improvement. The 1.53s global tick remains a latency target.
+
+## Shared scheduling snapshots and bounded event writes, 2026-10-17
+
+During one leased tick, masters with an identical project scope now share the same
+read-only cards, runs, sessions, quota and assignment snapshot. Attention follow-up
+work and claims invalidate it; every dispatch authorization still reads a fresh
+snapshot, and a successful or failed launch invalidates it before another master
+plans. Regressions assert reuse for two observe-only global masters and a fresh read
+after dispatch. Event policy refresh remains every 500 decisions; the in-memory event
+queue and atomic persistence batches are bounded at 5,000. Retention trims display
+history once per batch instead of shifting it for every appended event.
+
+In the 10k-card/20-global-master settled fixture, the latest five-sample rerun used
+15 prepared statements and had a 1859.99ms median (2419.27ms sample maximum, two row
+mutations, 217.3MB process RSS). An immediate pre-cache run under the same current
+worktree measured 72 statements and 2908.30ms median; an earlier load-sensitive run
+measured 1529.99ms, so timing variance prevents a strong percentage claim. In the
+dispatch fixture, the prior two-sample run had 812 mutations and 1256 preparations;
+after the 5,000-event bounded batch, a five-sample run had 92 mutations and 176
+preparations (1737.78ms median, 2465.84ms sample maximum, 208.1MB RSS). Because the
+sample sizes and machine load differ, timing is exploratory; the reductions in row
+mutations and SQL preparations are direct fixture counts. Both benchmark phases
+exclude commit fsync, provider execution, network and browser latency. Portfolio
+latency and memory remain open acceptance work.
+
+## Atomic lease fencing for assignment writes, 2026-10-17
+
+Lease validation now participates in the same SQLite statement as each fenced claim,
+assignment acknowledgement, failure transition and superseded-intent refund. Renewal
+also requires the existing lease to still be unexpired, including at the exact expiry
+boundary; a check in a preceding query can no longer authorize a write after another
+process has acquired a newer epoch. The assignment and service suites pass 42 tests,
+server typecheck, scoped ESLint and Prettier pass. A combined run including the process
+recovery suite had 48 passing tests and one Windows temp-directory cleanup failure
+(`EBUSY` in test cleanup); process-crash recovery needs a clean isolated rerun. This
+closes a SQL-level stale-owner race, not the remaining crash-boundary, durable task
+generation or cross-attempt request-identity acceptance gates.

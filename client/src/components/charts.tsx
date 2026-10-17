@@ -1,4 +1,5 @@
 import {
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -13,9 +14,57 @@ import type { Contribution, ContributionLevel } from './ui/github-activity';
 
 // ---- Tooltip ----------------------------------------------------------------------------------
 
+const TOOLTIP_EDGE = 8;
+const TOOLTIP_GAP = 10;
+
+/**
+ * Clamps a centered-above tooltip (`transform: translate(-50%, calc(-100% - 10px))`) so its box
+ * stays at least `TOOLTIP_EDGE` px inside the viewport on narrow screens and edge columns.
+ */
+export function clampTooltipPosition(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  viewportWidth: number,
+  viewportHeight?: number,
+): { left: number; top: number } {
+  const half = width / 2;
+  const minX = TOOLTIP_EDGE + half;
+  const maxX = Math.max(minX, viewportWidth - TOOLTIP_EDGE - half);
+  const left = Math.min(Math.max(x, minX), maxX);
+
+  const minY = TOOLTIP_EDGE + height + TOOLTIP_GAP;
+  const maxY =
+    viewportHeight !== undefined ? Math.max(minY, viewportHeight - TOOLTIP_EDGE) : Infinity;
+  const top = Math.min(Math.max(y, minY), maxY);
+
+  return { left, top };
+}
+
 /** Hover/focus tooltip anchored above the target element. Render `node` once per chart. */
 export function useTooltip() {
   const [tip, setTip] = useState<{ x: number; y: number; content: ReactNode } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !tip) return;
+    const rect = el.getBoundingClientRect();
+    const width = rect.width || el.offsetWidth;
+    const height = rect.height || el.offsetHeight;
+    const { left, top } = clampTooltipPosition(
+      tip.x,
+      tip.y,
+      width,
+      height,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  }, [tip]);
+
   /** Anchors above `anchor` when given (e.g. the visible mark inside a larger hit target). */
   const show = (
     event: MouseEvent<Element> | FocusEvent<Element> | PointerEvent<Element>,
@@ -27,7 +76,7 @@ export function useTooltip() {
   };
   const hide = () => setTip(null);
   const node = tip ? (
-    <div className="tooltip" role="tooltip" style={{ left: tip.x, top: tip.y }}>
+    <div ref={ref} className="tooltip" role="tooltip" style={{ left: tip.x, top: tip.y }}>
       {tip.content}
     </div>
   ) : null;

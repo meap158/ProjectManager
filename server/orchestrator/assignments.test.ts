@@ -192,6 +192,26 @@ it('preserves fencing epochs across release and rejects expired renewal and stal
   expect(a.currentLease()?.epoch).toBe(3);
 });
 
+it('does not renew or mutate assignments at the lease expiry boundary', () => {
+  const a = new OrchestratorAssignments(db);
+  expect(a.lease('owner', 1000)).toBe(true);
+  expect(a.claim(1, 'master', 1001, 'owner', 1)).toBe(true);
+  const key = a.dispatchKey(1)!;
+
+  // Lease expiry is exclusive: equality is expired even before another owner takes it over.
+  expect(a.renew('owner', 1, 121000)).toBe(false);
+  expect(a.claim(2, 'master', 121000, 'owner', 1)).toBe(false);
+  expect(a.assigned(1, 99, 'owner', 1, 121000)).toBe(false);
+  expect(a.failed(1, 121000, 'owner', 1)).toBe(false);
+  expect(a.superseded(1, key, 'owner', 1, 121000)).toBe(false);
+  expect(
+    db.prepare('SELECT state, run_id FROM orchestrator_assignments WHERE card_id = 1').get(),
+  ).toMatchObject({ state: 'dispatching', run_id: null });
+  expect(db.prepare('SELECT card_id FROM orchestrator_assignments WHERE card_id = 2').get()).toBe(
+    undefined,
+  );
+});
+
 it('limits retry metadata to requested preview cards and skips empty pages', () => {
   const assignments = new OrchestratorAssignments(db);
   expect(assignments.claim(1, 'master', Date.now())).toBe(true);

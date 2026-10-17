@@ -4,7 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { AgentRun } from '../../../shared/types';
 import { RunCard } from './RunCard';
 import { api } from '../api';
-vi.mock('../api', () => ({ api: { resolveUnknownRun: vi.fn() } }));
+vi.mock('../api', () => ({
+  api: { resolveUnknownRun: vi.fn(), stopRun: vi.fn(), createSession: vi.fn() },
+}));
 vi.mock('./TerminalView', () => ({ TerminalView: () => null }));
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
@@ -73,4 +75,40 @@ it('discards an open confirmation when the execution identity changes', () => {
   rerender(<RunCard run={run('00000000-0000-4000-8000-000000000002')} {...props} />);
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(api.resolveUnknownRun).not.toHaveBeenCalled();
+});
+
+it('restarts an active manual card run as an interactive session after stop is confirmed', async () => {
+  const item = {
+    ...run(),
+    cardId: 42,
+    providerId: 'codex',
+    prompt: 'Finish the card and report back.',
+    executionState: 'active' as const,
+  };
+  const changed = vi.fn();
+  const opened = vi.fn();
+  vi.mocked(api.stopRun).mockResolvedValue({ ...item, status: 'killed' });
+  vi.mocked(api.createSession).mockResolvedValue({ id: 73 } as never);
+  render(
+    <RunCard
+      run={item}
+      now={Date.now()}
+      onChanged={changed}
+      onDeleted={vi.fn()}
+      onOpenSession={opened}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: 'Stop & reopen interactively' }));
+  await waitFor(() => expect(opened).toHaveBeenCalledWith(73));
+  expect(api.stopRun).toHaveBeenCalledWith(item.id);
+  expect(api.createSession).toHaveBeenCalledWith(1, {
+    providerId: 'codex',
+    cardId: 42,
+    terminal: 'pty',
+    name: 'Unknown worker',
+    prompt: 'Finish the card and report back.',
+    supervise: false,
+  });
+  expect(changed).toHaveBeenCalledWith({ ...item, status: 'killed' });
 });

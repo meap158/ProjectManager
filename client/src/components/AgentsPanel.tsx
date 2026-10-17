@@ -8,7 +8,7 @@ import type {
   AgentSession,
   AgentTokenUsage,
 } from '../../../shared/types';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
 import { InlineRename } from './InlineRename';
@@ -61,6 +61,7 @@ export function AgentsPanel({
   projectName?: string;
   visible: boolean;
 }) {
+  const navigate = useNavigate();
   const [providers, setProviders] = useState<AgentProviderStatus[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[] | null>(
     () => sessionsCache.get(projectId)?.filter((s) => !s.orchestratorId) ?? null,
@@ -807,6 +808,7 @@ export function AgentsPanel({
                 run={activeRun}
                 now={now}
                 paused={!visible}
+                onOpenSession={(id) => navigate(`/workspace?open=${id}`)}
                 onChanged={upsertRun}
                 onDeleted={(id) => {
                   setRuns((prev) => prev?.filter((x) => x.id !== id) ?? prev);

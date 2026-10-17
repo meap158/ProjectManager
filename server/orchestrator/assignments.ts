@@ -49,20 +49,21 @@ export class OrchestratorAssignments {
   }
 
   renew(owner: string, epoch?: number, now = Date.now()): boolean {
-    if (!this.isLeaseValid(owner, epoch, now)) return false;
     if (epoch !== undefined) {
       return (
         this.db
           .prepare(
-            'UPDATE orchestrator_lease SET expires_at = ? WHERE id = 1 AND owner = ? AND epoch = ?',
+            'UPDATE orchestrator_lease SET expires_at = ? WHERE id = 1 AND owner = ? AND epoch = ? AND expires_at > ?',
           )
-          .run(now + 120000, owner, epoch).changes > 0
+          .run(now + 120000, owner, epoch, now).changes > 0
       );
     }
     return (
       this.db
-        .prepare('UPDATE orchestrator_lease SET expires_at = ? WHERE id = 1 AND owner = ?')
-        .run(now + 120000, owner).changes > 0
+        .prepare(
+          'UPDATE orchestrator_lease SET expires_at = ? WHERE id = 1 AND owner = ? AND expires_at > ?',
+        )
+        .run(now + 120000, owner, now).changes > 0
     );
   }
 
@@ -136,21 +137,40 @@ export class OrchestratorAssignments {
     owner?: string,
     epoch?: number,
   ): boolean {
-    if (owner !== undefined && !this.isLeaseValid(owner, epoch, now)) {
-      return false;
-    }
+    const dispatchKey = randomUUID();
+    const fenced = owner !== undefined;
+    const leaseFilter = fenced
+      ? `AND EXISTS (SELECT 1 FROM orchestrator_lease
+          WHERE id = 1 AND owner = ? AND expires_at > ?${epoch === undefined ? '' : ' AND epoch = ?'})`
+      : '';
+    const values: (string | number)[] = [cardId, orchestratorId, now, dispatchKey];
+    if (fenced) values.push(owner!, now, ...(epoch === undefined ? [] : [epoch]));
+    values.push(now);
+    if (fenced) values.push(owner!, now, ...(epoch === undefined ? [] : [epoch]));
     return (
       this.db
         .prepare(
-          `INSERT INTO orchestrator_assignments (card_id, orchestrator_id, state, attempts, updated_at, dispatch_key)
-      VALUES (?, ?, 'dispatching', 1, ?, ?)
-      ON CONFLICT(card_id) DO UPDATE SET orchestrator_id = excluded.orchestrator_id, state = 'dispatching',
-      attempts = orchestrator_assignments.attempts + 1, updated_at = excluded.updated_at,
-      dispatch_key = excluded.dispatch_key, run_id = NULL
-      WHERE orchestrator_assignments.state = 'error' AND orchestrator_assignments.retry_after <= ?
-      AND orchestrator_assignments.attempts < 3`,
+          `INSERT INTO orchestrator_assignments
+           (card_id, orchestrator_id, state, attempts, updated_at, dispatch_key)
+         SELECT ?, ?, 'dispatching', 1, ?, ? WHERE 1 ${leaseFilter}
+         ON CONFLICT(card_id) DO UPDATE SET
+           orchestrator_id = excluded.orchestrator_id,
+           state = 'dispatching',
+           attempts = orchestrator_assignments.attempts + 1,
+           updated_at = excluded.updated_at,
+           dispatch_key = excluded.dispatch_key,
+           run_id = NULL
+         WHERE orchestrator_assignments.state = 'error'
+           AND orchestrator_assignments.retry_after <= ?
+           AND orchestrator_assignments.attempts < 3
+           ${
+             fenced
+               ? `AND EXISTS (SELECT 1 FROM orchestrator_lease
+             WHERE id = 1 AND owner = ? AND expires_at > ?${epoch === undefined ? '' : ' AND epoch = ?'})`
+               : ''
+           }`,
         )
-        .run(cardId, orchestratorId, now, randomUUID(), now).changes > 0
+        .run(...values).changes > 0
     );
   }
 
@@ -169,41 +189,54 @@ export class OrchestratorAssignments {
     epoch?: number,
     now = Date.now(),
   ): boolean {
-    if (owner !== undefined && !this.isLeaseValid(owner, epoch, now)) {
-      return false;
-    }
+    const leaseFence =
+      owner === undefined
+        ? ''
+        : ` AND EXISTS (SELECT 1 FROM orchestrator_lease
+            WHERE id = 1 AND owner = ? AND expires_at > ?${epoch === undefined ? '' : ' AND epoch = ?'})`;
+    const leaseValues =
+      owner === undefined ? [] : [owner, now, ...(epoch === undefined ? [] : [epoch])];
     return (
       this.db
         .prepare(
-          "UPDATE orchestrator_assignments SET state = 'assigned', run_id = ?, updated_at = ? WHERE card_id = ?",
+          `UPDATE orchestrator_assignments SET state = 'assigned', run_id = ?, updated_at = ?
+           WHERE card_id = ?${leaseFence}`,
         )
-        .run(runId, now, cardId).changes > 0
+        .run(runId, now, cardId, ...leaseValues).changes > 0
     );
   }
 
   /** Refund only an intent proven not to have inserted a run. Never refund real execution. */
   superseded(cardId: number, dispatchKey: string, owner: string, epoch: number, now = Date.now()) {
-    if (!this.isLeaseValid(owner, epoch, now)) return false;
     return (
       this.db
         .prepare(
           `UPDATE orchestrator_assignments
       SET state = 'error', attempts = MAX(0, attempts - 1), retry_after = 0, updated_at = ?
       WHERE card_id = ? AND state = 'dispatching' AND dispatch_key = ?
+      AND EXISTS (SELECT 1 FROM orchestrator_lease
+        WHERE id = 1 AND owner = ? AND epoch = ? AND expires_at > ?)
       AND NOT EXISTS (SELECT 1 FROM agent_runs WHERE dispatch_key = ?)`,
         )
-        .run(now, cardId, dispatchKey, dispatchKey).changes > 0
+        .run(now, cardId, dispatchKey, owner, epoch, now, dispatchKey).changes > 0
     );
   }
 
   failed(cardId: number, now = Date.now(), owner?: string, epoch?: number) {
-    if (owner !== undefined && !this.isLeaseValid(owner, epoch, now)) return false;
-    this.db
+    const leaseFence =
+      owner === undefined
+        ? ''
+        : ` AND EXISTS (SELECT 1 FROM orchestrator_lease
+            WHERE id = 1 AND owner = ? AND expires_at > ?${epoch === undefined ? '' : ' AND epoch = ?'})`;
+    const leaseValues =
+      owner === undefined ? [] : [owner, now, ...(epoch === undefined ? [] : [epoch])];
+    const changes = this.db
       .prepare(
-        "UPDATE orchestrator_assignments SET state = 'error', retry_after = ?, updated_at = ? WHERE card_id = ?",
+        `UPDATE orchestrator_assignments SET state = 'error', retry_after = ?, updated_at = ?
+         WHERE card_id = ?${leaseFence}`,
       )
-      .run(now + 300000, now, cardId);
-    return true;
+      .run(now + 300000, now, cardId, ...leaseValues).changes;
+    return owner === undefined ? true : changes > 0;
   }
 
   /** Reconcile a crash between run creation and recording its id; recover orphan dispatches without blind redispatch. */
