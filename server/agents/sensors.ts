@@ -15,6 +15,7 @@ import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { MachineSensors, SensorFan } from '../../shared/types.js';
+import { sampleCpuUsage } from './cpuBudget.js';
 
 const CACHE_MS = 2_500;
 const MAX_FANS = 8;
@@ -234,15 +235,17 @@ function runPowerShell(): Promise<{
 
 async function measure(): Promise<MachineSensors> {
   const at = new Date().toISOString();
+  const cpuUsagePercent = sampleCpuUsage();
   if (process.platform === 'win32') {
     const raw = await runPowerShell();
     const reading =
       fromHwinfo(raw.hwinfo ?? []) ?? fromLhm(raw.lhm ?? []) ?? fromThermalZones(raw.zones ?? []);
-    if (reading) return { ...reading, at };
+    if (reading) return { ...reading, cpuUsagePercent, at };
     return {
       source: null,
       cpuTempC: null,
       cpuTempLabel: null,
+      cpuUsagePercent,
       fans: [],
       note: 'No sensors available.',
       at,
@@ -250,11 +253,12 @@ async function measure(): Promise<MachineSensors> {
   }
   if (process.platform === 'linux') {
     const reading = await fromHwmon();
-    if (reading) return { ...reading, at };
+    if (reading) return { ...reading, cpuUsagePercent, at };
     return {
       source: null,
       cpuTempC: null,
       cpuTempLabel: null,
+      cpuUsagePercent,
       fans: [],
       note: 'No sensors available.',
       at,
@@ -264,6 +268,7 @@ async function measure(): Promise<MachineSensors> {
     source: null,
     cpuTempC: null,
     cpuTempLabel: null,
+    cpuUsagePercent,
     fans: [],
     note: 'No sensors available.',
     at,

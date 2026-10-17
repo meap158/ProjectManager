@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CpuBudget, MachineSensors } from '../../../shared/types';
 import { api } from '../api';
 import { serialPoll } from '../lib/serialPoll';
@@ -10,6 +10,41 @@ export function budgetChoices(total: number): number[] {
   return Array.from({ length: total }, (_, i) => i + 1).filter(
     (n) => n === 1 || n % 2 === 0 || n === total,
   );
+}
+
+export interface BudgetUsageMetrics {
+  clampedPercent: number;
+  targetPercent: number;
+  usedThreads: number;
+  budgetSharePercent: number;
+  level: 'cool' | 'warm' | 'hot';
+}
+
+/** Computes current CPU usage against the configured thread budget target. */
+export function budgetUsageMetrics(
+  usagePercent: number,
+  budget: Pick<CpuBudget, 'threads' | 'totalThreads'>,
+): BudgetUsageMetrics {
+  const total = Math.max(1, budget.totalThreads);
+  const threads = Math.min(Math.max(1, budget.threads), total);
+  const clampedPercent = Math.max(0, Math.min(100, Math.round(usagePercent * 10) / 10));
+  const targetPercent = Math.round((threads / total) * 100);
+  const usedThreads = Math.round((clampedPercent / 100) * total * 10) / 10;
+  const budgetSharePercent =
+    targetPercent > 0 ? Math.round((clampedPercent / targetPercent) * 100) : 0;
+  const overTarget = threads < total ? clampedPercent > targetPercent : clampedPercent >= 90;
+  const level: 'cool' | 'warm' | 'hot' = overTarget
+    ? 'hot'
+    : budgetSharePercent >= 75
+      ? 'warm'
+      : 'cool';
+  return {
+    clampedPercent,
+    targetPercent,
+    usedThreads,
+    budgetSharePercent,
+    level,
+  };
 }
 
 function label(n: number, budget: CpuBudget): string {
@@ -24,6 +59,7 @@ function label(n: number, budget: CpuBudget): string {
  */
 export function CpuBudgetPanel({ onError }: { onError: (message: string) => void }) {
   const [budget, setBudget] = useState<CpuBudget | null>(null);
+  const [liveUsagePercent, setLiveUsagePercent] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -44,6 +80,14 @@ export function CpuBudgetPanel({ onError }: { onError: (message: string) => void
       onError(e.message);
     });
   };
+
+  const handleSensorReading = useCallback((s: MachineSensors) => {
+    if (s.cpuUsagePercent != null) setLiveUsagePercent(s.cpuUsagePercent);
+  }, []);
+
+  const effectiveUsage = liveUsagePercent ?? budget?.usagePercent ?? null;
+  const metrics =
+    budget && effectiveUsage != null ? budgetUsageMetrics(effectiveUsage, budget) : null;
 
   return (
     <section className="panel" aria-label="CPU budget">
@@ -80,7 +124,57 @@ export function CpuBudgetPanel({ onError }: { onError: (message: string) => void
           </li>
         </ul>
       )}
-      <SensorTable />
+      {budget && metrics && (
+        <div className="cpu-budget-usage" aria-label="Current CPU usage against target budget">
+          <div className="cpu-budget-usage-head">
+            <span className="cpu-budget-usage-current">
+              <span className={`cpu-temp-dot is-${metrics.level}`} aria-hidden="true" />
+              <span>Current usage:</span>{' '}
+              <b className={`num cpu-temp is-${metrics.level}`}>
+                {metrics.usedThreads.toFixed(1)} / {budget.threads} threads
+              </b>{' '}
+              <span className="faint num">
+                ({metrics.clampedPercent.toFixed(1)}% of CPU · {metrics.budgetSharePercent}% of
+                target)
+              </span>
+            </span>
+            <span className="cpu-budget-usage-target faint num">
+              Target:{' '}
+              {budget.threads === budget.totalThreads
+                ? `All ${budget.totalThreads} threads (100% · no limit)`
+                : `${budget.threads} of ${budget.totalThreads} threads (${metrics.targetPercent}%)`}
+            </span>
+          </div>
+          <div
+            className="cpu-budget-meter"
+            role="meter"
+            aria-label="CPU usage against target budget"
+            aria-valuenow={metrics.clampedPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuetext={`${metrics.usedThreads.toFixed(1)} of ${budget.threads} threads (${metrics.clampedPercent.toFixed(1)}% of CPU, ${metrics.budgetSharePercent}% of target budget)`}
+          >
+            <div
+              className="cpu-budget-meter-target-zone"
+              style={{ width: `${metrics.targetPercent}%` }}
+              aria-hidden="true"
+            />
+            <div
+              className={`cpu-budget-meter-fill is-${metrics.level}`}
+              style={{ width: `${metrics.clampedPercent}%` }}
+            />
+            {budget.threads < budget.totalThreads && (
+              <div
+                className="cpu-budget-meter-marker"
+                style={{ left: `${metrics.targetPercent}%` }}
+                title={`Target budget: ${budget.threads} of ${budget.totalThreads} threads (${metrics.targetPercent}%)`}
+                aria-hidden="true"
+              />
+            )}
+          </div>
+        </div>
+      )}
+      <SensorTable onReading={handleSensorReading} />
     </section>
   );
 }
@@ -108,10 +202,18 @@ const widen = (range: Range | undefined, value: number): Range =>
  * value with the minimum and maximum seen since the panel opened. Polls every 2 s while the
  * page is visible; the server reads HWiNFO, LibreHardwareMonitor, hwmon or the ACPI zone.
  */
-export function SensorTable() {
+export function SensorTable({
+  onReading,
+}: {
+  onReading?: (reading: MachineSensors) => void;
+} = {}) {
   const [reading, setReading] = useState<MachineSensors | null>(null);
   const [failed, setFailed] = useState(false);
   const [ranges, setRanges] = useState<Record<string, Range>>({});
+  const onReadingRef = useRef(onReading);
+  useEffect(() => {
+    onReadingRef.current = onReading;
+  }, [onReading]);
 
   useEffect(() => {
     let active = true;
@@ -122,6 +224,7 @@ export function SensorTable() {
           if (!active) return;
           setFailed(false);
           setReading(next);
+          onReadingRef.current?.(next);
           setRanges((prev) => {
             const out = { ...prev };
             if (next.cpuTempC !== null) out.cpu = widen(prev.cpu, next.cpuTempC);

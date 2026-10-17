@@ -287,6 +287,8 @@ export interface CpuBudget {
   totalThreads: number;
   threads: number;
   defaultThreads: number;
+  /** Current overall CPU utilization (0–100%), sampled via os.cpus() delta without spawning a process. */
+  usagePercent?: number | null;
 }
 
 /** One entry of a session's chat view (mobile): a message, a tool call or its result. */
@@ -336,6 +338,8 @@ export interface MachineSensors {
   /** Degrees Celsius: the CPU package / Tctl / hottest core where known. */
   cpuTempC: number | null;
   cpuTempLabel: string | null;
+  /** Current overall CPU utilization (0–100%), sampled via os.cpus() delta. */
+  cpuUsagePercent?: number | null;
   /** The CPU fan (and pump) first. */
   fans: SensorFan[];
   /** What the reading is or how to get better ones (e.g. ACPI zone, enable HWiNFO). */

@@ -38,6 +38,64 @@ export function affinityMask(threads: number, total = totalThreads()): bigint {
   return ((1n << BigInt(n)) - 1n) << BigInt(total - n);
 }
 
+export interface CpuTimesSnapshot {
+  idle: number;
+  total: number;
+}
+
+/** Sums user/nice/sys/idle/irq ticks across all logical CPUs without spawning a process. */
+export function readCpuTotals(
+  cpus: readonly { times: { user: number; nice: number; sys: number; idle: number; irq: number } }[] = os.cpus(),
+): CpuTimesSnapshot {
+  let idle = 0;
+  let total = 0;
+  for (const cpu of cpus) {
+    const { user, nice, sys, idle: cIdle, irq } = cpu.times;
+    idle += cIdle;
+    total += user + nice + sys + cIdle + irq;
+  }
+  return { idle, total };
+}
+
+/** Utilization percentage (0–100, one decimal place) between two os.cpus() snapshots. */
+export function calcCpuUsagePercent(
+  prev: CpuTimesSnapshot,
+  next: CpuTimesSnapshot,
+): number | null {
+  const dTotal = next.total - prev.total;
+  const dIdle = next.idle - prev.idle;
+  if (dTotal <= 0) return null;
+  const busy = Math.max(0, Math.min(dTotal, dTotal - dIdle));
+  return Math.round((busy / dTotal) * 1000) / 10;
+}
+
+let cpuSample: { at: number; snap: CpuTimesSnapshot; lastPercent: number | null } = {
+  at: Date.now(),
+  snap: readCpuTotals(),
+  lastPercent: null,
+};
+
+/**
+ * Current overall CPU utilization (0–100%), computed from os.cpus() deltas since the last sample.
+ * Reuses the previous reading when sampled again within 250ms so back-to-back requests never divide
+ * by a near-zero tick window.
+ */
+export function sampleCpuUsage(now = Date.now()): number {
+  const current = readCpuTotals();
+  const elapsed = now - cpuSample.at;
+  const delta = calcCpuUsagePercent(cpuSample.snap, current);
+  if (elapsed >= 250 && delta !== null) {
+    cpuSample = { at: now, snap: current, lastPercent: delta };
+    return delta;
+  }
+  if (cpuSample.lastPercent !== null) return cpuSample.lastPercent;
+  if (delta !== null) {
+    cpuSample = { at: now, snap: current, lastPercent: delta };
+    return delta;
+  }
+  return 0;
+}
+
 export function getCpuBudget(db: Db): CpuBudget {
   const total = totalThreads();
   const saved = getSetting<number>(db, KEY);
@@ -48,6 +106,7 @@ export function getCpuBudget(db: Db): CpuBudget {
     totalThreads: total,
     threads,
     defaultThreads: defaultThreads(total),
+    usagePercent: sampleCpuUsage(),
   };
 }
 

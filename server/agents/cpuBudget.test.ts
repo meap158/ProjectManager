@@ -5,9 +5,11 @@ import { openDb } from '../db.js';
 import {
   affinityMask,
   applyCpuBudget,
+  calcCpuUsagePercent,
   cpuBudgetSupported,
   defaultThreads,
   getCpuBudget,
+  readCpuTotals,
   setCpuBudget,
   totalThreads,
 } from './cpuBudget.js';
@@ -30,10 +32,26 @@ describe('CPU budget', () => {
 
   it('stores a chosen budget and falls back to the default', () => {
     const db = openDb(':memory:');
-    expect(getCpuBudget(db).threads).toBe(defaultThreads());
+    const initial = getCpuBudget(db);
+    expect(initial.threads).toBe(defaultThreads());
+    expect(typeof initial.usagePercent).toBe('number');
     expect(setCpuBudget(db, 1).threads).toBe(1);
     expect(getCpuBudget(db).totalThreads).toBe(totalThreads());
     db.close();
+  });
+
+  it('computes CPU usage percentage from os.cpus() tick deltas', () => {
+    const prev = readCpuTotals([
+      { times: { user: 100, nice: 0, sys: 50, idle: 850, irq: 0 } },
+      { times: { user: 100, nice: 0, sys: 50, idle: 850, irq: 0 } },
+    ]);
+    const next = readCpuTotals([
+      { times: { user: 160, nice: 0, sys: 90, idle: 950, irq: 0 } },
+      { times: { user: 140, nice: 0, sys: 60, idle: 1000, irq: 0 } },
+    ]);
+    // Total delta = 400, Idle delta = 250 -> busy = 150 -> 37.5%
+    expect(calcCpuUsagePercent(prev, next)).toBe(37.5);
+    expect(calcCpuUsagePercent(next, next)).toBeNull();
   });
 });
 
