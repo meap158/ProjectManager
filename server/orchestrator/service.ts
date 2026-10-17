@@ -48,7 +48,7 @@ export class OrchestratorService {
   private executing = false;
   private currentExecution: Promise<void> | null = null;
   private pendingTick: {
-    instanceId?: string;
+    instanceIds: Set<string> | null;
     refreshQuota: boolean;
     promise: Promise<void>;
     resolve: () => void;
@@ -543,16 +543,15 @@ export class OrchestratorService {
         reject = rej;
       });
       this.pendingTick = {
-        instanceId,
+        instanceIds: instanceId ? new Set([instanceId]) : null,
         refreshQuota: options.refreshQuota === true,
         promise,
         resolve,
         reject,
       };
     } else {
-      if (!instanceId || this.pendingTick.instanceId !== instanceId) {
-        this.pendingTick.instanceId = undefined;
-      }
+      if (!instanceId) this.pendingTick.instanceIds = null;
+      else this.pendingTick.instanceIds?.add(instanceId);
     }
     this.pendingTick.refreshQuota ||= options.refreshQuota === true;
     return this.pendingTick.promise;
@@ -563,7 +562,7 @@ export class OrchestratorService {
     const pending = this.pendingTick;
     this.pendingTick = null;
     this.executing = true;
-    const execution = this.runTick(pending.instanceId, pending.refreshQuota)
+    const execution = this.runTick(pending.instanceIds ?? undefined, pending.refreshQuota)
       .finally(() => {
         this.executing = false;
         this.currentExecution = null;
@@ -574,16 +573,23 @@ export class OrchestratorService {
     this.currentExecution = execution;
   }
 
-  private async runTick(instanceId?: string, refreshQuota = false) {
+  private async runTick(instanceId?: string | ReadonlySet<string>, refreshQuota = false) {
     // Refresh at execution time, once per coalesced tick rather than once per click.
     if (refreshQuota) readLimits(this.dataDir, Date.now(), true);
     this.lastTickAt = new Date().toISOString();
     await this.execute(instanceId);
   }
 
-  private async execute(instanceId?: string) {
+  private async execute(instanceId?: string | ReadonlySet<string>) {
     // Paused masters need no provider subprocesses, run-history scans or lease writes.
-    if (!this.state().instances.some((i) => i.enabled && (!instanceId || i.id === instanceId)))
+    if (
+      !this.state().instances.some(
+        (i) =>
+          i.enabled &&
+          (!instanceId ||
+            (typeof instanceId === 'string' ? i.id === instanceId : instanceId.has(i.id))),
+      )
+    )
       return;
     const assignments = new OrchestratorAssignments(this.db);
     if (!assignments.lease(this.owner)) return;
@@ -601,13 +607,16 @@ export class OrchestratorService {
   private async executeLeased(
     assignments: OrchestratorAssignments,
     epoch: number,
-    instanceId?: string,
+    instanceId?: string | ReadonlySet<string>,
   ) {
     assignments.reconcile();
     const providers = (await providerStatuses()).filter((p) => p.available).map((p) => p.id);
     if (!assignments.isLeaseValid(this.owner, epoch)) return;
     for (const initial of this.state().instances.filter(
-      (i) => i.enabled && (!instanceId || i.id === instanceId),
+      (i) =>
+        i.enabled &&
+        (!instanceId ||
+          (typeof instanceId === 'string' ? i.id === instanceId : instanceId.has(i.id))),
     )) {
       if (
         initial.strategy !== 'observe' &&

@@ -1044,3 +1044,62 @@ it('refreshes quota once when coalesced manual checks actually begin', async () 
     db.close();
   }
 });
+
+it.each([false, true])(
+  'preserves overlapping check scopes; explicit global request: %s',
+  async (includeGlobal) => {
+    const db = openDb(':memory:');
+    const dispatch = vi.fn(async (projectId: number, cardId: number) => ({
+      id: cardId + 100,
+      projectId,
+      cardId,
+      providerId: 'codex',
+      status: 'running',
+    }));
+    const service = new OrchestratorService(
+      db,
+      { listAllSessions: () => [], dispatchCard: dispatch } as unknown as AgentSupervisor,
+      null,
+    );
+    try {
+      const masters = [1, 2, 3].map((id) => {
+        db.prepare("INSERT INTO projects(id,name,path,created_at) VALUES(?,?,?,'now')").run(
+          id,
+          `Project ${id}`,
+          `/fixture-${id}`,
+        );
+        db.prepare(
+          "INSERT INTO cards(id,project_id,title,status,position,created_at,updated_at) VALUES(?,?,'Task','todo',0,'now','now')",
+        ).run(id, id);
+        return service.save({
+          name: `Master ${id}`,
+          enabled: true,
+          projectIds: [id],
+          providers: ['codex'],
+          maxWorkers: 3,
+          maxWorkersPerProject: 1,
+          maxWorkersPerProvider: 3,
+          reservePercent: 10,
+          allowUnknownQuota: false,
+          quotaMaxAgeMs: 60000,
+        });
+      });
+      // This first no-op still holds the single-flight execution until its promise settles.
+      const first = service.tick('not-configured');
+      const second = service.tick(masters[0]!.id);
+      expect(service.tick(masters[1]!.id)).toBe(second);
+      if (includeGlobal) expect(service.tick()).toBe(second);
+      expect(service.tick(masters[0]!.id)).toBe(second);
+      await Promise.all([first, second]);
+      expect(dispatch.mock.calls.map((call) => call[0])).toEqual(
+        includeGlobal ? [1, 2, 3] : [1, 2],
+      );
+      expect(
+        db.prepare('SELECT card_id FROM orchestrator_assignments ORDER BY card_id').all(),
+      ).toEqual((includeGlobal ? [1, 2, 3] : [1, 2]).map((card_id) => ({ card_id })));
+    } finally {
+      await service.stop();
+      db.close();
+    }
+  },
+);

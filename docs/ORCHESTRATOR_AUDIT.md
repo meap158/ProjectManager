@@ -955,3 +955,16 @@ do not erase that intent. A deferred-execution regression verifies ten manual
 requests share one pending promise, two total ticks and one uncached read. All 32
 service/route tests, server types and scoped lint pass. Scope-coalescing semantics
 and the routine cache remain unchanged.
+
+## Scope-preserving tick coalescing, 2026-10-17
+
+Pending scoped checks now retain a set of requested Orchestrators instead of
+promoting differing IDs to a global tick. This prevents checks for A and B from
+launching unrelated C. An explicit global request still promotes the pending
+batch to all masters and cannot be narrowed by later scoped requests. The union
+runs through the existing single execution, lease, quota refresh and fresh policy
+fences. Real database/reservation regressions verify dispatch projects and claims
+for scoped and explicit-global cases. The 117-test Orchestrator suite passed before
+the added global variant; all 24 service tests then passed with that variant.
+Server types and scoped lint passed for the production change. This closes the
+coalescing scope escalation found during this audit.
