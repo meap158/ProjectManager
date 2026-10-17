@@ -13,9 +13,18 @@ const scope = process.argv.find((a) => a.startsWith('--scope='))?.split('=')[1] 
 const phase = process.argv.find((a) => a.startsWith('--phase='))?.split('=')[1] ?? 'dispatch';
 assert(['project', 'global'].includes(scope));
 assert(['dispatch', 'settled'].includes(phase));
+const select = (name, allowed) => {
+  const raw = process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
+  if (raw === undefined) return allowed;
+  const value = Number(raw);
+  assert(allowed.includes(value), `Unsupported ${name} fixture`);
+  return [value];
+};
+const cardFixtures = select('cards', [1000, 10000]);
+const masterFixtures = select('masters', [1, 5, 20]);
 const results = [];
-for (const cards of [1000, 10000])
-  for (const masters of [1, 5, 20]) {
+for (const cards of cardFixtures)
+  for (const masters of masterFixtures) {
     const dir = mkdtempSync(path.join(tmpdir(), 'pm-tick-bench-'));
     const db = openDb(path.join(dir, 'db'));
     const supervisor = new AgentSupervisor(db, path.join(dir, 'logs'));

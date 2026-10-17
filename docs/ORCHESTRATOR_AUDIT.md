@@ -1024,3 +1024,13 @@ The intermediate global benchmark cut largest-case mutations 402 to 2 but did no
 improve latency; the final parse cache still needs benchmark validation. Snapshot
 storage grows with observed subjects until master/history cleanup, so portfolio
 retention and initial-transition cost remain explicit limitations.
+
+## Final observation cache measured, 2026-10-17
+
+The selected largest global/settled fixture now has a verified post-cache result:
+7559.66 ms median, 8057.82 ms maximum, two mutations and 320.8 MB whole-process RSS
+in five samples, exit 0. Assertions prove zero additional launches and preserved
+active-card count. This removes the pending benchmark claim for that fixture but
+does not close global performance: latency remains high and cache memory needs
+review. The benchmark's new validated fixture selectors retain full-matrix defaults.
+See the benchmark document for exact command, sampling limits and remaining costs.

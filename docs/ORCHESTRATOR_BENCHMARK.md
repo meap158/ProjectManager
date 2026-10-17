@@ -344,3 +344,17 @@ caches observation parsing only while freshly read persisted JSON bytes match,
 with copy-on-write and rollback coverage. That cache version has not yet had this
 benchmark rerun; no timing improvement is claimed for it. Initial transition writes,
 map size/cleanup and committed fsync remain separate measurement/scaling work.
+
+## Final parse-cache largest-case rerun (2026-10-17)
+
+The benchmark accepts optional `--cards=1000|10000` and `--masters=1|5|20` selectors;
+no selectors still runs the complete matrix. Reproduction:
+`node --import tsx scripts/benchmark-orchestrator-ticks.mjs --samples=5 --scope=global --phase=settled --cards=10000 --masters=20`.
+The final fresh-byte observation cache completed with exit 0 and all worker/card
+assertions passing: median 7559.66 ms, sample maximum 8057.82 ms, two row mutations,
+472 SQL preparations and whole-process RSS 320.8 MB. No concurrent test run was
+started during this measurement. This is five-sample exploratory evidence, not a
+stable p95 or controlled production comparison. It is lower than the original
+9953.78 ms median but remains slow; memory grew relative to prior runs. All-master
+cache retention, initial snapshot cost and repeated fresh policy reads remain
+optimization targets. The result does not establish acceptable portfolio latency.
