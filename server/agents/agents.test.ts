@@ -426,6 +426,24 @@ describe('runs and card lifecycle', () => {
       const first = await app.supervisor.dispatchCard(projectId, card.id, input);
       const again = await app.supervisor.dispatchCard(projectId, card.id, input);
       expect(again.id).toBe(first.id);
+      for (const changed of [
+        { command: [NODE, '-e', "console.log('different')"] },
+        { command: undefined, providerId: 'custom' },
+        { prompt: 'Different instructions' },
+        { context: 'Different context' },
+        { providerId: 'codex' },
+        { autonomy: 'read' as const },
+        { timeoutMin: 1 },
+        { maxAttempts: 1 },
+      ]) {
+        await expect(
+          app.supervisor.dispatchCard(projectId, card.id, { ...input, ...changed }),
+        ).rejects.toMatchObject({
+          status: 409,
+          message: 'Dispatch key conflicts with different execution inputs',
+        });
+      }
+
       await expect(
         app.supervisor.dispatchCard(projectId, card.id, {
           ...input,

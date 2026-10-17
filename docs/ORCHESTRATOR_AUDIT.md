@@ -979,3 +979,18 @@ stops the service, then releases discovery: no worker launches, no reservation i
 created and the task remains Todo. All 119 Orchestrator tests, server types and
 scoped lint pass. This controls scheduling after stop; it does not terminate
 already running workers or claim OS-level process containment.
+
+## Dispatch input conflict detection, 2026-10-17
+
+Dispatch-key replay now compares persisted provider, materialized prompt (including
+default card/context/images), autonomy, retry limit, timeout and command against
+the requested execution. Both early and post-await replay paths reject differences
+with 409 before returning an unrelated old result. Generated command defaults are
+compared as well as explicit commands. Manual/master real-worker fixtures exercise
+changed command, omitted command, prompt, context, provider, autonomy, timeout and
+attempt budget while retaining one worker and successful identical replay after
+completion. The combined agent/Orchestrator suite passed 141 tests before the
+additional omitted-command variant; all 22 agent lifecycle tests then passed with
+that variant, plus server types/scoped lint. This validates same-key input identity
+against stored execution, not a persisted logical request across attempts or task
+generations. Those remain separate lifecycle work.

@@ -1326,21 +1326,46 @@ export class AgentSupervisor {
     if (!project) throw new AgentError(404, 'Project not found');
     const card = getCard(this.db, cardId);
     if (!card || card.projectId !== projectId) throw new AgentError(404, 'Card not found');
+    const providerId = input.providerId ?? (input.command ? 'custom' : 'claude');
+    const prompt = this.withImages(
+      input.prompt ??
+        defaultPrompt(card.key, card.title, card.description, input.context, card.issueUrl),
+      card.id,
+      providerId,
+    ).slice(0, 20_000);
     const existingDispatch = () =>
       input.dispatchKey
         ? (this.db
             .prepare('SELECT * FROM agent_runs WHERE dispatch_key = ?')
             .get(input.dispatchKey) as unknown as RunRow | undefined)
         : undefined;
-    const validateDispatchOwner = (run: RunRow) => {
+    const validateDispatchReplay = (run: RunRow) => {
       if (run.project_id !== projectId || run.card_id !== cardId)
         throw new AgentError(409, 'Dispatch key belongs to another task');
       if ((run.orchestrator_id ?? null) !== (input.orchestratorId ?? null))
         throw new AgentError(409, 'Dispatch key belongs to another orchestrator');
+      const stored = JSON.parse(run.command_json) as { command: string[]; timeoutMs: number };
+      const provider = getProvider(providerId);
+      const requestedCommand =
+        input.command ??
+        (provider
+          ? buildDispatchArgv(provider, prompt, input.autonomy ?? 'edit', this.imagePaths(card.id))
+          : []);
+
+      if (
+        run.provider_id !== providerId ||
+        run.prompt !== prompt ||
+        run.autonomy !== (input.autonomy ?? 'edit') ||
+        run.max_attempts !== (input.maxAttempts ?? 3) ||
+        stored.timeoutMs !==
+          (input.timeoutMin === undefined ? RUN_DEFAULT_TIMEOUT_MS : input.timeoutMin * 60_000) ||
+        JSON.stringify(stored.command) !== JSON.stringify(requestedCommand)
+      )
+        throw new AgentError(409, 'Dispatch key conflicts with different execution inputs');
     };
     const existing = existingDispatch();
     if (existing) {
-      validateDispatchOwner(existing);
+      validateDispatchReplay(existing);
       return this.toRun(existing);
     }
     const running = (
@@ -1357,7 +1382,6 @@ export class AgentSupervisor {
       );
     }
 
-    const providerId = input.providerId ?? (input.command ? 'custom' : 'claude');
     const provider = getProvider(providerId);
     if (!provider) throw new AgentError(400, `Unknown provider: ${providerId}`);
     if (provider.binary && !(await providerAvailable(providerId))) {
@@ -1372,12 +1396,6 @@ export class AgentSupervisor {
     ) {
       throw new AgentError(400, `${provider.name} needs an explicit command for a one-shot run`);
     }
-    const prompt = this.withImages(
-      input.prompt ??
-        defaultPrompt(card.key, card.title, card.description, input.context, card.issueUrl),
-      card.id,
-      providerId,
-    ).slice(0, 20_000);
     if (!prompt.trim()) throw new AgentError(400, 'Prompt is empty');
     const autonomy = input.autonomy ?? 'edit';
     if (!input.command && !supportsAutonomy(provider, autonomy)) {
@@ -1399,7 +1417,7 @@ export class AgentSupervisor {
 
     const repeated = existingDispatch();
     if (repeated) {
-      validateDispatchOwner(repeated);
+      validateDispatchReplay(repeated);
       return this.toRun(repeated);
     }
     if (input.canCommit && !input.canCommit())
