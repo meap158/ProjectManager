@@ -1007,3 +1007,20 @@ than establishing acceptable global efficiency. Full reproduction and sampling
 limits are in ORCHESTRATOR_BENCHMARK.md. The next optimization should separate
 last-observed task state from the 500-entry display history before claiming unchanged
 ticks are cheap at global portfolio scale.
+
+## Persistent last observations, 2026-10-17
+
+Last action/message per master and subject now persists in separate existing
+settings entries, independent of the bounded display history. Atomic savepoints
+cover snapshot/history updates; unchanged snapshots do not write. Clear-history
+and master deletion remove the corresponding snapshots/cache. A fresh-byte parse
+cache avoids repeated hydration without hiding external writes; changed snapshots
+copy before mutation so rollback cannot poison private cache state. Large sweeps
+remain deduplicated after service recreation, repeated errors remain visible, and
+intervening changes produce transitions. Trigger-induced write failure/external
+snapshot-edit regressions pass. The 119-test suite passed before the final additional
+regression, then all 26 service tests passed; server types/scoped lint passed.
+The intermediate global benchmark cut largest-case mutations 402 to 2 but did not
+improve latency; the final parse cache still needs benchmark validation. Snapshot
+storage grows with observed subjects until master/history cleanup, so portfolio
+retention and initial-transition cost remain explicit limitations.

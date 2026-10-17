@@ -329,3 +329,18 @@ third ticks with zero additional launches. The 402 mutations in the largest
 fixture reveal remaining event retention/dedup write amplification: 500 retained
 events cannot remember every task observation across a 200,000-decision portfolio
 sweep. This remains an optimization target, not a completed settled-efficiency gate.
+
+## Observation state separate from display history (2026-10-17)
+
+A first implementation persisted last action/message per master/subject separately
+from the 500 display events. In the identical five-sample global/settled fixture,
+all measured ticks made only two lease mutations. Median/max ms were respectively:
+1k/1: 34.90/39.10; 1k/5: 172.67/180.19; 1k/20: 744.96/938.00;
+10k/1: 535.99/1297.04; 10k/5: 2389.19/4563.39; 10k/20: 10469.07/19749.59.
+Thus writes fell 402 to 2 in the largest case, but timing did not improve there.
+A short service regression also ran during this exploratory measurement; these
+numbers are not controlled latency comparisons. The final implementation additionally
+caches observation parsing only while freshly read persisted JSON bytes match,
+with copy-on-write and rollback coverage. That cache version has not yet had this
+benchmark rerun; no timing improvement is claimed for it. Initial transition writes,
+map size/cleanup and committed fsync remain separate measurement/scaling work.

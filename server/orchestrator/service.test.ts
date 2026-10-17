@@ -784,6 +784,24 @@ it('batched observation history matches sequential retention and duplicate suppr
       }
     ).events([events[619]!]);
     expect(Number(b.prepare('SELECT total_changes() AS n').get()!.n)).toBe(before);
+    // Rehydrate a new service and repeat the whole sweep, including evicted display entries.
+    const restored = new OrchestratorService(b, supervisor, null);
+    (restored as unknown as { events(batch: typeof events): void }).events(events);
+    expect(Number(b.prepare('SELECT total_changes() AS n').get()!.n)).toBe(before);
+    restored.record({ ...events[0]!, message: 'Changed while outside display history' });
+    expect(restored.state().events.at(-1)?.message).toBe('Changed while outside display history');
+    restored.clearEvents();
+    restored.record(events[0]!);
+    expect(restored.state().events).toHaveLength(1);
+    restored.record({ ...events[0]!, action: 'error', message: 'Repeated failure' });
+    restored.record({ ...events[0]!, action: 'error', message: 'Repeated failure' });
+    restored.record(events[0]!);
+    expect(restored.state().events.map((event) => event.action)).toEqual([
+      'wait',
+      'error',
+      'error',
+      'wait',
+    ]);
   } finally {
     a.close();
     b.close();
@@ -1152,6 +1170,36 @@ it('stops active and queued scheduling after a delayed provider probe without cl
   } finally {
     release();
     await service.stop();
+    db.close();
+  }
+});
+
+it('keeps observation cache consistent with rollback and external snapshot edits', () => {
+  const db = openDb(':memory:');
+  const service = new OrchestratorService(db, {} as AgentSupervisor, null);
+  const event = { orchestratorId: 'fixture', cardId: 1, action: 'wait', message: 'First' };
+  try {
+    service.record(event);
+    const before = db
+      .prepare("SELECT value FROM settings WHERE key='orchestrator-observations:fixture'")
+      .get()!.value;
+    db.exec(
+      "CREATE TEMP TRIGGER fail_history BEFORE UPDATE ON settings WHEN NEW.key='master-orchestrators' BEGIN SELECT RAISE(ABORT,'fixture failure'); END;",
+    );
+    expect(() => service.record({ ...event, message: 'Second' })).toThrow('fixture failure');
+    expect(
+      db.prepare("SELECT value FROM settings WHERE key='orchestrator-observations:fixture'").get()!
+        .value,
+    ).toBe(before);
+    db.exec('DROP TRIGGER fail_history');
+    service.record({ ...event, message: 'Second' });
+    expect(service.state().events.map((item) => item.message)).toEqual(['First', 'Second']);
+    db.prepare(
+      "UPDATE settings SET value='{}' WHERE key='orchestrator-observations:fixture'",
+    ).run();
+    service.record({ ...event, message: 'Second' });
+    expect(service.state().events).toHaveLength(3);
+  } finally {
     db.close();
   }
 });

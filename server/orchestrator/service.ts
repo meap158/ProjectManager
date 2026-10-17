@@ -58,6 +58,11 @@ export class OrchestratorService {
   private timer?: ReturnType<typeof setTimeout>;
   private started = false;
   private generation = 0;
+  private observationQuery?: ReturnType<Db['prepare']>;
+  private observationCache = new Map<
+    string,
+    { raw: string | null; values: Record<string, { action: string; message: string }> }
+  >();
   private policyQuery?: ReturnType<Db['prepare']>;
   private policyCache?: { raw: string | null; byId: Map<string, OrchestratorConfig> };
   /** Read the persisted value every time; only reuse parsing when its exact bytes match. */
@@ -366,6 +371,8 @@ export class OrchestratorService {
   clearEvents(): void {
     const state = this.state();
     state.events = [];
+    this.db.prepare("DELETE FROM settings WHERE key LIKE 'orchestrator-observations:%'").run();
+    this.observationCache.clear();
     setSetting(this.db, KEY, state);
   }
   delete(id: string): boolean {
@@ -373,6 +380,8 @@ export class OrchestratorService {
     const index = state.instances.findIndex((i) => i.id === id);
     if (index < 0) return false;
     state.instances.splice(index, 1);
+    this.db.prepare('DELETE FROM settings WHERE key = ?').run(`orchestrator-observations:${id}`);
+    this.observationCache.delete(id);
     setSetting(this.db, KEY, state);
     return true;
   }
@@ -471,31 +480,64 @@ export class OrchestratorService {
   private event(event: Omit<OrchestratorEvent, 'at'>) {
     this.events([event]);
   }
-  /** Apply observations in order against the same bounded history, persisting once. */
+  /** Deduplication state outlives the bounded display history. */
   private events(events: (Omit<OrchestratorEvent, 'at'> & { at?: string })[]) {
     if (!events.length) return;
-    const state = this.state();
-    let changed = false;
-    for (const event of events) {
-      const last = [...state.events]
-        .reverse()
-        .find(
-          (previous) =>
-            previous.orchestratorId === event.orchestratorId && previous.cardId === event.cardId,
-        );
-      if (
-        last &&
-        last.action === event.action &&
-        last.message === event.message &&
-        ['wait', 'review', 'observe'].includes(event.action)
-      )
-        continue;
-      state.events.push({ ...event, count: 1, at: event.at ?? new Date().toISOString() });
-      if (state.events.length > 500) state.events.shift();
-      changed = true;
+    const observations = new Map<
+      string,
+      { values: Record<string, { action: string; message: string }>; changed: boolean }
+    >();
+    let state: OrchestratorState | undefined;
+    this.db.exec('SAVEPOINT orchestrator_observations');
+    try {
+      for (const event of events) {
+        let snapshot = observations.get(event.orchestratorId);
+        if (!snapshot) {
+          this.observationQuery ??= this.db.prepare('SELECT value FROM settings WHERE key = ?');
+          const raw =
+            (
+              this.observationQuery.get(`orchestrator-observations:${event.orchestratorId}`) as
+                { value: string } | undefined
+            )?.value ?? null;
+          let cached = this.observationCache.get(event.orchestratorId);
+          if (!cached || cached.raw !== raw) {
+            cached = { raw, values: raw ? JSON.parse(raw) : {} };
+            this.observationCache.set(event.orchestratorId, cached);
+          }
+          snapshot = { values: cached.values, changed: false };
+          observations.set(event.orchestratorId, snapshot);
+        }
+        const key = event.cardId === undefined ? 'master' : `card:${event.cardId}`;
+        const last = snapshot.values[key];
+        const identical = last?.action === event.action && last.message === event.message;
+        if (!identical) {
+          if (!snapshot.changed) snapshot.values = { ...snapshot.values };
+          snapshot.values[key] = { action: event.action, message: event.message };
+          snapshot.changed = true;
+        }
+        if (identical && ['wait', 'review', 'observe'].includes(event.action)) continue;
+        state ??= this.state();
+        state.events.push({ ...event, count: 1, at: event.at ?? new Date().toISOString() });
+        if (state.events.length > 500) state.events.shift();
+      }
+      for (const [id, snapshot] of observations)
+        if (snapshot.changed)
+          setSetting(this.db, `orchestrator-observations:${id}`, snapshot.values);
+      if (state) setSetting(this.db, KEY, state);
+      this.db.exec('RELEASE orchestrator_observations');
+      for (const [id, snapshot] of observations)
+        if (snapshot.changed)
+          this.observationCache.set(id, {
+            raw: JSON.stringify(snapshot.values),
+            values: snapshot.values,
+          });
+    } catch (error) {
+      this.db.exec('ROLLBACK TO orchestrator_observations');
+      this.db.exec('RELEASE orchestrator_observations');
+      throw error;
     }
-    if (changed) setSetting(this.db, KEY, state);
   }
+
   start() {
     if (this.started) return;
     this.started = true;
