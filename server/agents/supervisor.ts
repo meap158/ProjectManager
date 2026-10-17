@@ -85,12 +85,7 @@ import {
 import { codexLimits, readLimits } from './limits.js';
 import { applyCpuBudget, getCpuBudget } from './cpuBudget.js';
 import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
-import {
-  claudeSessionId,
-  codexSessionFor,
-  findCodexRolloutFile,
-  staleClaudeResume,
-} from './usage.js';
+import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
 import {
   antigravityConversationFor,
   claudeCustomTitle,
@@ -476,7 +471,31 @@ export class AgentSupervisor {
   }
 
   setActiveCodexAccount(id: string | null): CodexAccountsState {
-    return this.withCodexAccounts((accounts) => accounts.setActive(id));
+    const state = this.withCodexAccounts((accounts) => accounts.setActive(id));
+    // Settings → Switch to account. Sessions already stopped on a usage limit move onto this
+    // login. Sessions that are still working keep the account they started with.
+    this.moveLimitedCodexSessions(id);
+    return state;
+  }
+
+  /** Restarts Codex sessions that are showing a usage limit onto `id` (`null` = default). */
+  private moveLimitedCodexSessions(id: string | null): void {
+    const targetKey = id === null || id === 'default' ? 'default' : id;
+    for (const sessionId of this.usageLimits.keys()) {
+      if (this.switchingCodexSession.has(sessionId)) continue;
+      const row = this.getSessionRow(sessionId);
+      if (!row || row.provider_id !== 'codex' || row.status !== 'running') continue;
+      const current = this.sessionCodexProfile(row);
+      if (current?.id === targetKey) continue;
+      this.switchingCodexSession.add(sessionId);
+      void this.switchSessionCodexAccount(sessionId, id, {
+        continuePrompt: true,
+        setGlobal: false,
+      }).catch((error: Error) => {
+        this.switchingCodexSession.delete(sessionId);
+        console.error('[agents] codex account switch:', error);
+      });
+    }
   }
 
   setCodexAutoSwitch(enabled: boolean): CodexAccountsState {
@@ -484,9 +503,10 @@ export class AgentSupervisor {
   }
 
   /**
-   * Switches a Codex session to the specified account profile (`null` or `'default'` for the
-   * default CODEX_HOME login), migrating its rollout transcript so `codex resume` keeps the
-   * conversation intact, and restarts the session if it is running.
+   * Switches a Codex session onto another saved login (`null` or `'default'` for the default
+   * CODEX_HOME). A different account starts a new conversation: Codex will not resume a thread
+   * that belongs to the previous login, and doing so fails with "you have since logged out or
+   * signed in to another account". Restarts the session when it is running.
    */
   async switchSessionCodexAccount(
     id: number,
@@ -499,33 +519,34 @@ export class AgentSupervisor {
       throw new AgentError(400, 'Account switching is only supported for Codex sessions');
     const targetKey = profileId === null || profileId === 'default' ? 'default' : profileId;
     const target = this.withCodexAccounts((accounts) => accounts.profile(targetKey));
+    // Read the login this session is on before changing the global default. Sessions that
+    // have never stored an account fall back to that default, so reading afterwards would
+    // look like the session was already on the new login and `codex resume` would keep going.
+    const previous = this.sessionCodexProfile(row);
     if (options.setGlobal !== false) {
       this.withCodexAccounts((accounts) =>
         accounts.setActive(target.id === 'default' ? null : target.id),
       );
     }
-    const previous = this.sessionCodexProfile(row);
-    const convId = this.conversationOf(row);
-    if (this.codexAccounts && previous && previous.home !== target.home) {
-      const rollout = findCodexRolloutFile(
-        row.cwd,
-        row.started_at,
-        convId,
-        os.homedir(),
-        previous.home,
-      );
-      this.codexAccounts.copyRolloutToHome(previous.home, target.home, rollout);
-    }
+    const switchedAccount = previous != null && previous.home !== target.home;
     const parsed = JSON.parse(row.command_json) as {
       command: string[];
       env?: Record<string, string>;
       codexAccountId?: string;
+      codexFreshStart?: boolean;
     };
     const nextEnv = { ...(parsed.env ?? {}), CODEX_HOME: target.home };
     this.db
-      .prepare('UPDATE agent_sessions SET command_json = ? WHERE id = ?')
+      .prepare(
+        `UPDATE agent_sessions SET command_json = ?${switchedAccount ? ', resume_json = NULL' : ''} WHERE id = ?`,
+      )
       .run(
-        JSON.stringify({ ...parsed, env: nextEnv, codexAccountId: target.id }),
+        JSON.stringify({
+          ...parsed,
+          env: nextEnv,
+          codexAccountId: target.id,
+          ...(switchedAccount ? { codexFreshStart: true } : {}),
+        }),
         id,
       );
     this.usageLimits.delete(id);
@@ -536,7 +557,9 @@ export class AgentSupervisor {
     this.switchingCodexSession.add(id);
     try {
       this.outputFor(`session:${id}`, row.log_path).append(
-        `\r\n[supervisor] switching Codex account to ${target.name}\r\n`,
+        switchedAccount
+          ? `\r\n[supervisor] switching Codex account to ${target.name} — starting a new conversation (this thread stays on the previous login)\r\n`
+          : `\r\n[supervisor] switching Codex account to ${target.name}\r\n`,
       );
       await this.stopSession(id);
       if (options.continuePrompt) {
@@ -550,9 +573,7 @@ export class AgentSupervisor {
     }
   }
 
-  private sessionCodexProfile(
-    row: SessionRow,
-  ): { id: string; name: string; home: string } | null {
+  private sessionCodexProfile(row: SessionRow): { id: string; name: string; home: string } | null {
     if (row.provider_id !== 'codex' || !this.codexAccounts) return null;
     try {
       const parsed = JSON.parse(row.command_json) as {
@@ -580,8 +601,7 @@ export class AgentSupervisor {
     try {
       return run(this.codexAccounts);
     } catch (error) {
-      if (error instanceof CodexAccountError)
-        throw new AgentError(error.status, error.message);
+      if (error instanceof CodexAccountError) throw new AgentError(error.status, error.message);
       throw error;
     }
   }
@@ -1238,11 +1258,7 @@ export class AgentSupervisor {
     );
     if (!state?.enabled || state.resumesAt) return;
     const windows = this.codexWindowsForSession(row);
-    const resumesAt = allowanceReset(
-      this.logTail(row.log_path) ?? '',
-      windows,
-      Date.now(),
-    );
+    const resumesAt = allowanceReset(this.logTail(row.log_path) ?? '', windows, Date.now());
     if (!resumesAt) return;
     setSetting(this.db, key, { ...state, resumesAt, message: 'Waiting for allowance reset' });
   }
@@ -1983,6 +1999,7 @@ export class AgentSupervisor {
         command: string[];
         env: Record<string, string>;
         codexAccountId?: string;
+        codexFreshStart?: boolean;
       };
       const command = parsedCmd.command;
       const codexProfile = this.sessionCodexProfile(row);
@@ -1992,8 +2009,18 @@ export class AgentSupervisor {
           : { ...parsedCmd.env };
       // Relaunching prefers the stored resume argv (e.g. `claude --continue`),
       // so an AI conversation picks up instead of starting cold. Shells and
-      // custom commands simply respawn.
+      // custom commands simply respawn. Crossing Codex accounts is the exception:
+      // the previous thread's id belongs to the other login.
       let resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
+      const freshStart = parsedCmd.codexFreshStart === true;
+      if (freshStart) {
+        resume = null;
+        const rest = { ...parsedCmd };
+        delete rest.codexFreshStart;
+        this.db
+          .prepare('UPDATE agent_sessions SET command_json = ?, resume_json = NULL WHERE id = ?')
+          .run(JSON.stringify(rest), row.id);
+      }
       const launch = command;
       const note = (text: string) =>
         this.outputFor(key, row.log_path).append(`
@@ -2017,7 +2044,13 @@ export class AgentSupervisor {
           resume = null;
         }
       }
-      if (isRelaunch && !resume && row.provider_id === 'codex' && command[0] === 'codex') {
+      if (
+        !freshStart &&
+        isRelaunch &&
+        !resume &&
+        row.provider_id === 'codex' &&
+        command[0] === 'codex'
+      ) {
         const id = codexSessionFor(
           row.cwd,
           row.created_at,
@@ -2064,11 +2097,13 @@ export class AgentSupervisor {
         );
       }
       if (isRelaunch && resumeFailed) note('the last resume failed right away — starting fresh');
-      const baseArgv = isRelaunch
-        ? resumeFailed
-          ? launch
-          : (resume ?? this.resumeLatestArgv(row) ?? launch)
-        : launch;
+      const baseArgv = freshStart
+        ? launch
+        : isRelaunch
+          ? resumeFailed
+            ? launch
+            : (resume ?? this.resumeLatestArgv(row) ?? launch)
+          : launch;
       this.lastSpawn.set(key, { at: Date.now(), resumed: baseArgv !== launch, byUser });
       forgetTurn(row.id); // A new process: its hooks report afresh.
       const connection = this.dataDir
@@ -2502,9 +2537,7 @@ export class AgentSupervisor {
       };
       const { command, timeoutMs } = storedCmd;
       const codexProfile = this.runCodexProfile(row);
-      const runEnv: Record<string, string> = codexProfile
-        ? { CODEX_HOME: codexProfile.home }
-        : {};
+      const runEnv: Record<string, string> = codexProfile ? { CODEX_HOME: codexProfile.home } : {};
       const project = getProjectRow(this.db, row.project_id);
       const cwd = project?.path ?? process.cwd();
       const log = this.outputFor(key, row.log_path);

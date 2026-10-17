@@ -1,9 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../db.js';
+import { insertProject } from '../store.js';
 import { CodexAccounts } from './codexAccounts.js';
+import { AgentSupervisor } from './supervisor.js';
 
 function makeJwt(payload: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
@@ -156,19 +158,97 @@ describe('CodexAccounts (PM-164)', () => {
     const next = accounts.nextUnused('default', ['default'], nowMs);
     expect(next?.id).toBe(id2);
 
-    // Copy a rollout file from default home to Acc 2 so `codex resume` keeps conversation history.
+    // The helper can still copy a rollout file. Account switching does not: Codex rejects
+    // resuming another login's thread.
     const rolloutRel = path.join('sessions', '2026', '10', '17', 'rollout-conv-123.jsonl');
     const srcRollout = path.join(defaultCodexHome, rolloutRel);
     mkdirSync(path.dirname(srcRollout), { recursive: true });
     writeFileSync(srcRollout, '{"id":"conv-123"}\n', 'utf8');
-    writeFileSync(path.join(defaultCodexHome, 'session_index.jsonl'), '{"id":"conv-123"}\n', 'utf8');
+    writeFileSync(
+      path.join(defaultCodexHome, 'session_index.jsonl'),
+      '{"id":"conv-123"}\n',
+      'utf8',
+    );
 
     accounts.copyRolloutToHome(defaultCodexHome, accounts.profile(id2).home, srcRollout);
-    expect(
-      readFileSync(path.join(accounts.profile(id2).home, rolloutRel), 'utf8'),
-    ).toBe('{"id":"conv-123"}\n');
-    expect(
-      readFileSync(path.join(accounts.profile(id2).home, 'session_index.jsonl'), 'utf8'),
-    ).toBe('{"id":"conv-123"}\n');
+    expect(readFileSync(path.join(accounts.profile(id2).home, rolloutRel), 'utf8')).toBe(
+      '{"id":"conv-123"}\n',
+    );
+    expect(readFileSync(path.join(accounts.profile(id2).home, 'session_index.jsonl'), 'utf8')).toBe(
+      '{"id":"conv-123"}\n',
+    );
+  });
+
+  it('stores saved-profile credentials in that profile, not the shared keyring', () => {
+    writeFileSync(
+      path.join(defaultCodexHome, 'config.toml'),
+      'model = "gpt-5-codex"\ncli_auth_credentials_store = "keyring"\n',
+      'utf8',
+    );
+    const accounts = new CodexAccounts(tmpDir, db);
+    const state = accounts.importAccount('Genzy', JSON.stringify({ OPENAI_API_KEY: 'sk-genzy' }));
+    const home = accounts.profile(state.accounts[0]!.id).home;
+    const saved = readFileSync(path.join(home, 'config.toml'), 'utf8');
+    expect(saved).toContain('cli_auth_credentials_store = "file"');
+    expect(saved).not.toContain('keyring');
+    expect(readFileSync(path.join(defaultCodexHome, 'config.toml'), 'utf8')).toContain('keyring');
+  });
+
+  it('does not resume the previous account thread when switching Codex accounts', async () => {
+    const supervisor = new AgentSupervisor(db, path.join(tmpDir, 'logs'), { dataDir: tmpDir });
+    try {
+      await supervisor.ready;
+      writeFileSync(path.join(defaultCodexHome, 'auth.json'), '{"OPENAI_API_KEY":"sk-default"}\n');
+      const imported = supervisor.importCodexAccount(
+        'Genzy',
+        JSON.stringify({ OPENAI_API_KEY: 'sk-genzy' }),
+      );
+      const accountId = imported.accounts[0]!.id;
+      const projectId = insertProject(db, 'switch', path.join(tmpDir, 'proj'));
+      const resumeId = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12';
+      const rolloutDir = path.join(defaultCodexHome, 'sessions', '2026', '10', '18');
+      mkdirSync(rolloutDir, { recursive: true });
+      writeFileSync(path.join(rolloutDir, 'rollout-old.jsonl'), '{"id":"old"}\n');
+      const sessionId = Number(
+        db
+          .prepare(
+            `INSERT INTO agent_sessions
+               (project_id, name, provider_id, command_json, resume_json, cwd, status,
+                desired_state, supervise, created_at, started_at, log_path)
+             VALUES (?, 'Codex', 'codex', ?, ?, ?, 'exited', 'stopped', 0, ?, ?, ?)`,
+          )
+          .run(
+            projectId,
+            JSON.stringify({
+              command: ['codex'],
+              env: { CODEX_HOME: defaultCodexHome },
+              codexAccountId: 'default',
+            }),
+            JSON.stringify(['codex', 'resume', resumeId]),
+            path.join(tmpDir, 'proj'),
+            '2026-10-18T00:00:00.000Z',
+            '2026-10-18T00:00:00.000Z',
+            path.join(tmpDir, 'logs', 'session.log'),
+          ).lastInsertRowid,
+      );
+
+      await supervisor.switchSessionCodexAccount(sessionId, accountId);
+
+      const row = db
+        .prepare('SELECT command_json, resume_json FROM agent_sessions WHERE id = ?')
+        .get(sessionId) as { command_json: string; resume_json: string | null };
+      const command = JSON.parse(row.command_json) as {
+        codexAccountId?: string;
+        codexFreshStart?: boolean;
+        env?: { CODEX_HOME?: string };
+      };
+      expect(row.resume_json).toBeNull();
+      expect(command.codexFreshStart).toBe(true);
+      expect(command.codexAccountId).toBe(accountId);
+      expect(command.env?.CODEX_HOME).toBe(path.join(tmpDir, 'codex-accounts', accountId));
+      expect(existsSync(path.join(tmpDir, 'codex-accounts', accountId, 'sessions'))).toBe(false);
+    } finally {
+      await supervisor.shutdown();
+    }
   });
 });

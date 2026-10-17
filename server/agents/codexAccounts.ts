@@ -271,8 +271,8 @@ export class CodexAccounts {
   }
 
   /**
-   * Copies a session's rollout file (and session_index.jsonl if present) from `fromHome` into
-   * `toHome` so `codex resume <conversationId>` continues seamlessly after switching accounts.
+   * Copies a rollout into another Codex home. Do not use this to resume a thread on a different
+   * ChatGPT account: Codex refuses that resume and reports that the access token was revoked.
    */
   copyRolloutToHome(fromHome: string, toHome: string, rolloutFile: string | null): void {
     if (normalPath(fromHome) === normalPath(toHome)) return;
@@ -310,6 +310,10 @@ export class CodexAccounts {
   }
 
   private syncConfigToml(targetHome: string): void {
+    // The default login keeps the user's own credential store (often the OS keyring). A saved
+    // profile must read the auth.json in its own CODEX_HOME, or Codex keeps the other account
+    // and then fails the refresh with "signed in to another account".
+    if (normalPath(targetHome) === normalPath(this.defaultHome())) return;
     const config = path.join(this.defaultHome(), 'config.toml');
     const destination = path.join(targetHome, 'config.toml');
     if (existsSync(config) && !existsSync(destination)) {
@@ -318,9 +322,27 @@ export class CodexAccounts {
         copyFileSync(config, destination);
         chmodSync(destination, 0o600);
       } catch {
-        // Best-effort config copy.
+        // Best-effort config copy. The credential-store line below still has to land.
       }
     }
+    try {
+      this.ensureFileCredentialStore(destination);
+    } catch {
+      // A profile Codex cannot configure falls back to its existing config.
+    }
+  }
+
+  /** Saved profiles authenticate from their own auth.json, not the machine keyring. */
+  private ensureFileCredentialStore(configPath: string): void {
+    const current = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
+    const line = 'cli_auth_credentials_store = "file"';
+    const hasKey = /^[ \t]*cli_auth_credentials_store[ \t]*=/m.test(current);
+    const next = hasKey
+      ? current.replace(/^[ \t]*cli_auth_credentials_store[ \t]*=.*$/m, line)
+      : `${current}${current.endsWith('\n') || current.length === 0 ? '' : '\n'}${line}\n`;
+    if (next === current) return;
+    mkdirSync(path.dirname(configPath), { recursive: true, mode: 0o700 });
+    this.writePrivate(configPath, next.endsWith('\n') ? next : `${next}\n`);
   }
 
   private readAuthMeta(authFile: string): { email: string | null; plan: string | null } {
@@ -474,8 +496,7 @@ export function extractCodexAuthMeta(
     if (!claims) continue;
     if (!email) {
       const profile = claims['https://api.openai.com/profile'] as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       const candidate =
         typeof claims.email === 'string'
           ? claims.email
@@ -486,8 +507,7 @@ export function extractCodexAuthMeta(
     }
     if (!plan) {
       const authClaim = claims['https://api.openai.com/auth'] as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       const candidate =
         typeof authClaim?.chatgpt_plan_type === 'string'
           ? authClaim.chatgpt_plan_type
