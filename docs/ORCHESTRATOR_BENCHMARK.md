@@ -296,3 +296,36 @@ runs were sequential and may differ in host load; no production/LAN or committed
 claim follows. All 99 Orchestrator tests, server types, scoped lint and formatting pass.
 Global scopes, settled repeated ticks, current provider/quota IO and physical clients
 remain separate measurement gates.
+
+## Global and settled tick modes (2026-10-17)
+
+`benchmark-orchestrator-ticks.mjs` now accepts `--scope=project|global` and
+`--phase=dispatch|settled`; defaults retain the original project/dispatch case.
+For example: `node --import tsx scripts/benchmark-orchestrator-ticks.mjs --samples=5 --scope=global --phase=settled`.
+Global masters all cover the portfolio, so their shared one-worker scoped cap
+permits one worker total, not one per master. Settled samples first run dispatch
+and a second tick to establish waiting observations outside the measured interval.
+The measured third tick must launch zero workers and preserve the expected active
+card count. Samples remain rollback-isolated; OS execution is replaced, provider
+and quota discovery remain production code, and committed fsync/network/browser
+costs remain excluded. Five-sample exploratory tails must not be represented as
+production percentiles or compared as equivalent to twenty-sample baselines.
+
+Five-sample global/settled exploratory result (2026-10-17), all six fixture
+launch-count/card-count assertions passed, process exit 0:
+
+| Cards | Masters | Median ms | Sample maximum ms | Row mutations | SQL preparations |
+| ----: | ------: | --------: | ----------------: | ------------: | ---------------: |
+|  1000 |       1 |     44.43 |             59.34 |             4 |               39 |
+|  1000 |       5 |    273.60 |            281.77 |            12 |              147 |
+|  1000 |      20 |   1205.37 |           1326.24 |            42 |              552 |
+| 10000 |       1 |    379.88 |            626.18 |            22 |               75 |
+| 10000 |       5 |   1954.60 |           2830.82 |           102 |              327 |
+| 10000 |      20 |   9953.78 |          13373.23 |           402 |             1272 |
+
+Whole-process RSS ranged 138.5?206.3 MB. With five samples, the computed sample
+p95 is simply the maximum; no stable tail claim follows. These are unchanged
+third ticks with zero additional launches. The 402 mutations in the largest
+fixture reveal remaining event retention/dedup write amplification: 500 retained
+events cannot remember every task observation across a 200,000-decision portfolio
+sweep. This remains an optimization target, not a completed settled-efficiency gate.

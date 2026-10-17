@@ -994,3 +994,16 @@ additional omitted-command variant; all 22 agent lifecycle tests then passed wit
 that variant, plus server types/scoped lint. This validates same-key input identity
 against stored execution, not a persisted logical request across attempts or task
 generations. Those remain separate lifecycle work.
+
+## Global settled measurement gap now reproduced, 2026-10-17
+
+The tick benchmark now supports explicit project/global and dispatch/settled modes
+and uses the current autonomous strategy literal. Settled mode verifies expected
+active cards outside timing and zero new launches inside timing. Five samples over
+all six global fixtures passed with exit 0 and scoped lint. The largest unchanged
+10k-card/20-global-master case measured median 9953.78 ms, maximum 13373.23 ms and
+402 row mutations. This demonstrates unresolved retention/dedup amplification rather
+than establishing acceptable global efficiency. Full reproduction and sampling
+limits are in ORCHESTRATOR_BENCHMARK.md. The next optimization should separate
+last-observed task state from the 500-entry display history before claiming unchanged
+ticks are cheap at global portfolio scale.

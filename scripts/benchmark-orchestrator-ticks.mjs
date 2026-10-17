@@ -9,6 +9,10 @@ import { OrchestratorService } from '../server/orchestrator/service.ts';
 
 const samples = Number(process.argv.find((a) => a.startsWith('--samples='))?.split('=')[1] ?? 20);
 assert(Number.isSafeInteger(samples) && samples >= 2 && samples <= 100);
+const scope = process.argv.find((a) => a.startsWith('--scope='))?.split('=')[1] ?? 'project';
+const phase = process.argv.find((a) => a.startsWith('--phase='))?.split('=')[1] ?? 'dispatch';
+assert(['project', 'global'].includes(scope));
+assert(['dispatch', 'settled'].includes(phase));
 const results = [];
 for (const cards of [1000, 10000])
   for (const masters of [1, 5, 20]) {
@@ -63,8 +67,8 @@ for (const cards of [1000, 10000])
             service.save({
               name: 'Fixture ' + index,
               enabled: true,
-              strategy: 'dispatch',
-              projectIds: [index + 1],
+              strategy: 'autonomous',
+              projectIds: scope === 'global' ? [] : [index + 1],
               providers: ['custom'],
               maxWorkers: 1,
               maxWorkersPerProject: 1,
@@ -75,6 +79,15 @@ for (const cards of [1000, 10000])
               followDashboardAttention: false,
               pruneDashboardAttention: false,
             });
+          const expectedWorkers = scope === 'global' ? 1 : masters;
+          if (phase === 'settled') {
+            await service.tick();
+            await service.tick(); // Establish waiting observations before timing unchanged work.
+            assert.equal(
+              Number(prepare("SELECT COUNT(*) AS n FROM cards WHERE status='in_progress'").get().n),
+              expectedWorkers,
+            );
+          }
           const before = changes(),
             sqlBefore = statements,
             launchedBefore = launches;
@@ -84,10 +97,10 @@ for (const cards of [1000, 10000])
           const elapsed = performance.now() - start;
           const mutations = changes() - before;
           const prepared = statements - sqlBefore;
-          assert.equal(launches - launchedBefore, masters);
+          assert.equal(launches - launchedBefore, phase === 'settled' ? 0 : expectedWorkers);
           assert.equal(
             Number(prepare("SELECT COUNT(*) AS n FROM cards WHERE status='in_progress'").get().n),
-            masters,
+            expectedWorkers,
           );
           if (sample >= 0) {
             times.push(elapsed);
@@ -103,6 +116,8 @@ for (const cards of [1000, 10000])
       assert(preparations.every((n) => n === preparations[0]));
       results.push({
         cards,
+        scope,
+        phase,
         history: 100000,
         masters,
         samples,
