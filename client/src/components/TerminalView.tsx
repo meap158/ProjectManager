@@ -67,6 +67,8 @@ export function TerminalView({
   const [connection, setConnection] = useState<'loading' | 'ready' | 'empty' | 'reconnecting'>(
     historyBytes > 0 ? 'loading' : 'empty',
   );
+  // True once the CLI screen has been shown. Reconnects after that stay in the corner.
+  const [cliShown, setCliShown] = useState(false);
 
   const [extraKeys, setExtraKeys] = useState(false);
 
@@ -266,6 +268,10 @@ export function TerminalView({
     // xterm throws if written to or resized after dispose.
     let cancelled = false;
     let opened = false;
+    const markConnection = (next: 'ready' | 'empty' | 'reconnecting') => {
+      if (next === 'ready') setCliShown(true);
+      setConnection(next);
+    };
     const reveal = () => {
       if (cancelled || !restoring || revealFrame !== null) return;
       term.scrollToBottom();
@@ -278,7 +284,7 @@ export function TerminalView({
         host.removeAttribute('aria-busy');
         term.options.smoothScrollDuration = scrollDuration;
         term.refresh(0, term.rows - 1);
-        setConnection(receivedOutput ? 'ready' : 'empty');
+        markConnection(receivedOutput ? 'ready' : 'empty');
         if (interactive && !callbacks.current.paused) term.focus();
       });
     };
@@ -291,7 +297,7 @@ export function TerminalView({
         if (cancelled) return;
         if (restoring) historyRef.current = drainedThrough;
         if (restoring) reveal();
-        else setConnection(receivedOutput ? 'ready' : 'empty');
+        else markConnection(receivedOutput ? 'ready' : 'empty');
       });
     };
     let lastSize = '';
@@ -642,7 +648,7 @@ export function TerminalView({
         const shouldStick = interactive && !userScrolling && following;
         term.write(cleanData, () => {
           if (cancelled) return;
-          setConnection('ready');
+          markConnection('ready');
           if (shouldStick) {
             scrollToBottomAndSync();
           }
@@ -677,7 +683,7 @@ export function TerminalView({
         source.close();
         if (controller.source === source) controller.source = null;
         stopLoop();
-        setConnection('reconnecting');
+        markConnection('reconnecting');
         controller.timer = setTimeout(poll, 1000);
       };
     }
@@ -713,14 +719,14 @@ export function TerminalView({
         );
       } catch {
         if (cancelled || callbacks.current.paused) return;
-        setConnection('reconnecting');
+        markConnection('reconnecting');
         // Preserve any parsed output instead of leaving a permanently hidden terminal.
         if (restoring)
           term.write('', () => {
             if (!cancelled) {
               reveal();
               requestAnimationFrame(() => {
-                if (!cancelled) setConnection('reconnecting');
+                if (!cancelled) markConnection('reconnecting');
               });
             }
           });
@@ -833,7 +839,7 @@ export function TerminalView({
       style={{ height }}
     >
       {connection !== 'ready' && (
-        <div className="terminal-notice" role="status">
+        <div className={`terminal-notice${cliShown ? '' : ' is-centered'}`} role="status">
           {connection === 'loading'
             ? 'Loading terminal…'
             : connection === 'reconnecting'

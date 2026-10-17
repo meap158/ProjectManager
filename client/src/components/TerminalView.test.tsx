@@ -188,7 +188,25 @@ describe('TerminalView', () => {
     FakeEventSource.last!.emit('state', { running: false, logBytes: 0, nextOffset: 0 });
     terms.at(-1)!.pendingWrites.shift()!();
     await waitFor(() => expect(screen.getByRole('log').style.visibility).toBe(''));
-    expect(screen.getByText('Waiting for CLI output…')).toBeTruthy();
+    const waiting = screen.getByText('Waiting for CLI output…');
+    expect(waiting.closest('.terminal-notice')?.classList.contains('is-centered')).toBe(true);
+  });
+
+  it('centers the notice until the CLI draws, then keeps a reconnect in the corner', async () => {
+    render(<TerminalView fetchOutput={noFetch} streamUrl={() => '/stream'} historyBytes={0} />);
+    expect(
+      screen
+        .getByText('Waiting for CLI output…')
+        .closest('.terminal-notice')
+        ?.classList.contains('is-centered'),
+    ).toBe(true);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    FakeEventSource.last!.emit('output', { data: 'cli', nextOffset: 3 });
+    terms.at(-1)!.pendingWrites.shift()!();
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    FakeEventSource.last!.onerror!();
+    const reconnecting = await screen.findByText('Reconnecting…');
+    expect(reconnecting.closest('.terminal-notice')?.classList.contains('is-centered')).toBe(false);
   });
 
   it('recovers streaming failures with a successful output fetch', async () => {

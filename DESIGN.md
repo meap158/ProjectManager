@@ -429,7 +429,8 @@ tokens and touch targets.
 
 - Terminal history stays hidden only while it is being parsed. A server drain notification
   overrides stale log-byte estimates; stalled streams recover through an HTTP read after 8s.
-  Loading, empty-output and reconnecting states have compact notices with Retry on failures.
+  Loading and empty-output notices sit in the center of the terminal until the CLI has drawn.
+  Once it has, a reconnecting notice stays in the top-right, with Retry.
   Network recovery preserves the CLI process and existing terminal output.
 - Restart progress appears independently of terminal action menus. Phone headers use short
   labels (Stopping, Starting, Restoring, Restart failed) in a 16px status line below identity;

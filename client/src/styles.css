@@ -5384,6 +5384,12 @@ span.path-link:hover .path-icon {
   font-size: 12px;
   max-width: calc(100% - 16px);
 }
+.terminal-notice.is-centered {
+  inset: 0;
+  width: fit-content;
+  height: fit-content;
+  margin: auto;
+}
 .session-restart-status {
   display: inline-flex;
   align-items: center;
