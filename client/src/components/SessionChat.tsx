@@ -26,7 +26,7 @@ import './session-chat.css';
 /** Kept in memory; older items stay in the transcript file (the terminal shows them all too). */
 const MAX_ITEMS = 1500;
 const POLL_MS = 1500;
-const CHAT_PROVIDERS = new Set(['claude', 'codex']);
+const CHAT_PROVIDERS = new Set(['claude', 'codex', 'opencode', 'grok']);
 
 /** Sessions whose CLI writes a transcript the chat view can read. */
 export const chatSupported = (session: AgentSession) =>

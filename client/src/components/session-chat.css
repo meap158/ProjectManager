@@ -796,3 +796,17 @@
 .chat-subagent-load {
   margin: 4px 0 6px;
 }
+
+/* Provider transcripts must not widen mobile panes. */
+.session-chat,
+.chat-list,
+.chat-msg,
+.chat-tool {
+  min-width: 0;
+  max-width: 100%;
+}
+.chat-live,
+.chat-prompt-screen {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

@@ -21,6 +21,7 @@ import { getCpuBudget, setCpuBudget, totalThreads } from './cpuBudget.js';
 import { slashCommands, suggestFiles } from './completions.js';
 import { findTranscript, readSubagent, readTranscript, transcriptSource } from './transcript.js';
 import { readSensors } from './sensors.js';
+import { readProviderTranscript } from './providerTranscripts.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
 import { removeSessionImages } from '../attachments.js';
 
@@ -351,6 +352,13 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     const offset = after === undefined ? undefined : Number(after);
     if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0))
       throw new AgentError(400, 'Invalid offset');
+    if (resume.providerId === 'opencode' || resume.providerId === 'grok') {
+      const session = supervisor.getSession(parseId(c));
+      if (!session) throw new AgentError(404, 'Session not found');
+      return c.json(
+        await readProviderTranscript(resume.providerId, resume.resumeJson, session.cwd, offset),
+      );
+    }
     const source = transcriptSource(resume.providerId, resume.resumeJson, resume.codexHome);
     const file = source ? await findTranscript(source) : null;
     if (!file) return c.json({ supported: !!source, items: [], next: 0, reset: false });

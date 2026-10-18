@@ -447,3 +447,5 @@ GitHub issue state is Open/Closed, whereas a Project's status field holds workfl
 This integration reads commit/PR evidence into the local board; dragging local cards does
 not yet write GitHub Project status or request reviewers. Those remote actions need a
 separate opt-in synchronization policy with durable retries and visible failures.
+
+Mobile chat is available for Claude Code, Codex, OpenCode and Grok PTY sessions. OpenCode/Grok chat reads the exact saved conversation, including tool results. Use CLI view for the original screen and full history. New server code requires restarting ProjectManager; this update does not restart running agents.

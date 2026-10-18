@@ -115,7 +115,9 @@ describe('SessionChat (mobile chat view)', () => {
   it('is offered for terminal sessions of CLIs that keep a transcript', () => {
     expect(chatSupported(session())).toBe(true);
     expect(chatSupported(session({ providerId: 'codex' }))).toBe(true);
-    expect(chatSupported(session({ providerId: 'grok' }))).toBe(false);
+    expect(chatSupported(session({ providerId: 'grok' }))).toBe(true);
+    expect(chatSupported(session({ providerId: 'opencode' }))).toBe(true);
+    expect(chatSupported(session({ providerId: 'shell' }))).toBe(false);
     expect(chatSupported(session({ terminal: 'pipe' }))).toBe(false);
   });
 });

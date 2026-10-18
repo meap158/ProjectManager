@@ -788,3 +788,5 @@ The Sessions and runs information button opens a native modal dialog in the top 
 Orchestrator chat shows its explicitly reported card or repository task above the terminal, linked to its project. Idle chats label it Last reported task; stopped or replaced sessions cannot show live work.
 
 Dashboard API reads share identical in-flight GETs and fetch fresh data after completion. JSON responses negotiate compression; terminal event streams remain uncompressed to preserve immediate updates.
+
+OpenCode and Grok PTY sessions now share the mobile Chat/CLI switch, message composer, image attachments, quick keys and expandable tool details. OpenCode reads its pinned SQLite conversation; Grok reads pinned JSONL updates. Provider snapshots replace changed streamed parts without duplicate messages; long history remains available in CLI view.

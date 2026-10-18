@@ -102,3 +102,5 @@ anything.
 - The `S:` drive is slow: ESLint takes about 70s and `tsc` about 60s. Run long checks in the background.
 - `npx shadcn add` may inject stray dependencies or `next/*` imports. Review its diff.
 - `node:sqlite` is "experimental" in Node 22. Its warning is suppressed in the launcher, not removed.
+
+- PM-171: `server/agents/providerTranscripts.ts` adapts pinned OpenCode SQLite and Grok JSONL conversations to shared chat items. Reads are read-only and scoped to both conversation ID and working directory; never infer the latest conversation. OpenCode snapshots capture in-place changes, Grok snapshots coalesce text chunks. `next` is a content revision for these providers, not a byte offset; changed snapshots set `reset`.
