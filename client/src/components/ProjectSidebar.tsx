@@ -76,6 +76,9 @@ function readSortPreference<T extends string>(key: string, choices: T[], fallbac
   }
 }
 
+/** How often the sidebar re-reads the (large) projects list while only sessions are changing. */
+const PROJECTS_EVERY_MS = 8000;
+
 function firstCommitTime(p: ProjectSummary): number | null {
   return p.git?.firstCommitAt ? Date.parse(p.git.firstCommitAt) : null;
 }
@@ -197,14 +200,25 @@ export function ProjectSidebar({
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // The projects list is big (stats, heatmaps) and changes slowly; the sessions drive the
+    // working/idle badges. So sessions follow the fast cadence and projects are re-read only
+    // while a scan runs or every PROJECTS_EVERY_MS.
+    let projectsAt = 0;
+    let latest: ProjectSummary[] = [];
     async function load() {
       try {
+        const scanningNow = latest.some((p) => p.scan.status === 'scanning');
+        const refreshProjects = scanningNow || Date.now() - projectsAt >= PROJECTS_EVERY_MS;
         const [list, all] = await Promise.all([
-          api.listProjects(),
+          refreshProjects ? api.listProjects() : Promise.resolve(latest),
           api.listAllSessions().catch(() => [] as AgentSession[]),
         ]);
+        if (refreshProjects) {
+          projectsAt = Date.now();
+          latest = list;
+        }
         if (!cancelled) {
-          setProjects(list);
+          if (refreshProjects) setProjects(list);
           setSessions(all);
           setNow(Date.now());
         }
