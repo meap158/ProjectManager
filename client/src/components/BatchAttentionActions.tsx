@@ -3,7 +3,13 @@ import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
 import { splitSessionInput } from '../lib/sessionInput';
 
-export type AttentionCommand = { kind: 'key'; data: string } | { kind: 'line'; text: string };
+export type AttentionCommand =
+  | { kind: 'key'; data: string }
+  | { kind: 'line'; text: string }
+  /** Codex terminals at their usage limit (PM-58): opt in to continuing once at the reset. */
+  | { kind: 'auto-continue' }
+  /** Codex terminals at their usage limit: send the continuation now, into an empty prompt. */
+  | { kind: 'continue-now' };
 
 export interface AttentionOption {
   key: string;
@@ -34,21 +40,25 @@ function normalizeChoiceKey(num: number, rawLabel: string): string {
 function parseNumberedLine(
   line: string,
   expectedNum: number,
-): { label: string; detail?: string; hasCursor: boolean } | null {
+): { label: string; detail?: string; hasCursor: boolean; column: number } | null {
   // Handle right-hand TUI overlays drawn over background text (e.g. "... visit h› 1. Resume goal   Mark it active ...").
-  const cursorMatch = new RegExp(`[❯›>*]\\s*${expectedNum}[.)]\\s+(\\S.*)$`).exec(line);
+  const cursorMatch = new RegExp(`[❯›>*▸►]\\s*${expectedNum}[.)]\\s+(\\S.*)$`).exec(line);
   let rest: string | null = null;
   let hasCursor = false;
+  let column = 0;
   if (cursorMatch) {
     rest = cursorMatch[1]!;
     hasCursor = true;
+    column = cursorMatch.index;
   } else {
+    // A scrolling menu marks its first or last visible option with ↑ / ↓ (Claude Code).
     const plainMatch = new RegExp(
-      `(?:^|\\s{2,})([❯›>*]\\s*)?${expectedNum}(?:[.)]|\\s*\\([○●]\\))\\s+(\\S.*)$`,
+      `(?:^|\\s{2,})([❯›>*▸►]\\s*|[↑↓]\\s*)?${expectedNum}(?:[.)]|\\s*\\([○●]\\))\\s+(\\S.*)$`,
     ).exec(line);
     if (plainMatch) {
-      hasCursor = Boolean(plainMatch[1]);
+      hasCursor = Boolean(plainMatch[1]) && !/[↑↓]/.test(plainMatch[1]!);
       rest = plainMatch[2]!;
+      column = line.length - plainMatch[0].trimStart().length;
     }
   }
   if (!rest) return null;
@@ -58,24 +68,71 @@ function parseNumberedLine(
   const parts = insideBox.split(/\s{2,}/);
   const label = parts[0]!.trim();
   const detail = parts.slice(1).join(' ').trim() || undefined;
-  return { label, detail, hasCursor };
+  return { label, detail, hasCursor, column };
 }
 
+const BOX_CHARS_RE = /[▔─━│┃┌┐└┘├┤┬┴┼╭╮╰╯]+/g;
+
+/**
+ * The question a menu asks: the last sentence ending in "?" in the lines above it, not the
+ * whole paragraph ("…would change live budgets. What do you want?" → "What do you want?").
+ * A question wrapped onto two lines keeps its start from the line above.
+ */
 function extractOverlayTitle(lines: string[], firstChoiceIdx: number): string {
-  for (let i = firstChoiceIdx - 1; i >= Math.max(0, firstChoiceIdx - 6); i--) {
+  for (let i = firstChoiceIdx - 1; i >= Math.max(0, firstChoiceIdx - 8); i--) {
     const raw = lines[i]!;
     if (/resume\s+paused\s+goal\?/i.test(raw)) return 'Resume paused goal?';
     if (/what\s+do\s+you\s+want\s+to\s+do\?/i.test(raw)) return 'What do you want to do?';
     const segments = raw
-      .replace(/[▔─━│┌┐└┘├┤┬┴┼]+/g, ' ')
+      .replace(BOX_CHARS_RE, ' ')
       .split(/\s{4,}/)
       .map((s) => s.trim())
       .filter(Boolean);
     for (let s = segments.length - 1; s >= 0; s--) {
-      if (segments[s]!.endsWith('?')) return segments[s]!;
+      const text = segments[s]!;
+      const end = text.lastIndexOf('?');
+      if (end < 0) continue;
+      const upTo = text.slice(0, end + 1);
+      const start = Math.max(upTo.lastIndexOf('. ', end - 1), upTo.lastIndexOf('! ', end - 1));
+      let question = (start >= 0 ? upTo.slice(start + 2) : upTo).trim();
+      // Started on the line above: take that line's last unfinished sentence too.
+      if (start < 0 && s === 0 && i > 0) {
+        const above = lines[i - 1]!.replace(BOX_CHARS_RE, ' ').trim();
+        const cut = Math.max(
+          above.lastIndexOf('. '),
+          above.lastIndexOf('? '),
+          above.lastIndexOf('! '),
+        );
+        const tail = (cut >= 0 ? above.slice(cut + 2) : above).trim();
+        if (tail && !/[.?!:]$/.test(tail) && tail.length + question.length <= 160)
+          question = `${tail} ${question}`;
+      }
+      if (question.length >= 3)
+        return question.length > 160 ? `…${question.slice(-159)}` : question;
     }
   }
   return 'CLI choice overlay';
+}
+
+/** How far the numbering may skip (options scrolled out of a menu's visible window). */
+const MAX_NUMBER_GAP = 2;
+
+/** Codex terminals at their usage limit (PM-58): the batch choices it offers there. */
+function usageLimitOptions(): AttentionOption[] {
+  return [
+    {
+      key: 'limit:auto-continue',
+      label: 'Auto-continue when the limit resets',
+      detail: 'Continue once after the reset; typing in the terminal cancels it',
+      command: { kind: 'auto-continue' },
+    },
+    {
+      key: 'limit:try-again',
+      label: 'Try again now',
+      detail: 'Send the continuation once, only into an empty prompt',
+      command: { kind: 'continue-now' },
+    },
+  ];
 }
 
 /**
@@ -83,10 +140,14 @@ function extractOverlayTitle(lines: string[], firstChoiceIdx: number): string {
  * Codex's "Resume paused goal?", Claude Code's "What do you want to do?" usage-limit menu, tool
  * approval prompts, [y/n] questions, or paused-goal footers) and returns structured batch options.
  */
-export function detectAttentionOverlay(screen: string): DetectedAttentionOverlay | null {
+export function detectAttentionOverlay(
+  screen: string,
+  session?: Pick<AgentSession, 'providerId' | 'terminal' | 'usageLimit'>,
+): DetectedAttentionOverlay | null {
   if (!screen.trim()) return null;
   const lines = screen.split(/\r?\n/);
-  const tailLines = lines.slice(-30);
+  // Long menus (an option per line plus a description line each) need more than one screenful.
+  const tailLines = lines.slice(-40);
 
   let firstChoiceIdx = -1;
   let firstChoiceHasCursor = false;
@@ -98,19 +159,52 @@ export function detectAttentionOverlay(screen: string): DetectedAttentionOverlay
       break;
     }
   }
+  // Scrolled past option 1: the menu's first visible option is marked "↑ 3. …".
+  let startNum = 1;
+  if (firstChoiceIdx < 0) {
+    for (let i = tailLines.length - 1; i >= 0; i--) {
+      const scrolled = /(?:^|\s{2,})↑\s*(\d{1,2})[.)]\s+\S/.exec(tailLines[i]!);
+      if (scrolled) {
+        firstChoiceIdx = i;
+        startNum = Number(scrolled[1]);
+        break;
+      }
+    }
+  }
 
   const options: AttentionOption[] = [];
   let title = '';
 
   if (firstChoiceIdx >= 0) {
-    const parsedChoices: { num: number; label: string; detail?: string; hasCursor: boolean }[] = [];
-    let nextNum = 1;
-    for (let i = firstChoiceIdx; i < tailLines.length && nextNum <= 9; i++) {
-      const parsed = parseNumberedLine(tailLines[i]!, nextNum);
-      if (parsed) {
-        parsedChoices.push({ num: nextNum, ...parsed });
-        nextNum++;
+    const parsedChoices: {
+      num: number;
+      label: string;
+      detail?: string;
+      hasCursor: boolean;
+      column: number;
+      line: number;
+    }[] = [];
+    let nextNum = startNum;
+    for (let i = firstChoiceIdx; i < tailLines.length && nextNum <= 19; i++) {
+      // Options scrolled out of view leave gaps ("↓ 4. Keep 10", then "6. Chat about this").
+      for (let num = nextNum; num <= nextNum + (nextNum === startNum ? 0 : MAX_NUMBER_GAP); num++) {
+        const parsed = parseNumberedLine(tailLines[i]!, num);
+        if (parsed) {
+          parsedChoices.push({ num, ...parsed, line: i });
+          nextNum = num + 1;
+          break;
+        }
       }
+    }
+    // A description on its own indented line under an option (Claude Code's menus) is its detail.
+    for (const choice of parsedChoices) {
+      if (choice.detail || choice.column > 12) continue;
+      const below = tailLines[choice.line + 1];
+      if (!below || parsedChoices.some((c) => c.line === choice.line + 1)) continue;
+      const indent = below.length - below.trimStart().length;
+      const text = below.replace(BOX_CHARS_RE, ' ').trim();
+      if (text && indent > choice.column && !CHOICE_HINT_RE.test(text))
+        choice.detail = text.length > 160 ? `${text.slice(0, 159)}…` : text;
     }
     const afterText = tailLines.slice(Math.max(0, firstChoiceIdx - 3)).join('\n');
     const isMenu =
@@ -150,6 +244,18 @@ export function detectAttentionOverlay(screen: string): DetectedAttentionOverlay
       detail: 'Keep it paused; use /goal resume later',
       command: { kind: 'line', text: '/goal pause' },
     });
+  }
+
+  // A Codex terminal at its usage limit with no menu open: auto-continue at the reset, or try
+  // again now. Not when a paused goal is showing: /goal resume is the way back there.
+  if (
+    !options.length &&
+    session?.providerId === 'codex' &&
+    session.terminal === 'pty' &&
+    (session.usageLimit || /you[’']ve hit your usage limit/i.test(tailLines.slice(-20).join('\n')))
+  ) {
+    title = 'Usage limit reached';
+    options.push(...usageLimitOptions());
   }
 
   if (!options.length) {
@@ -209,7 +315,8 @@ export function BatchAttentionActions({
     (s) =>
       s.status === 'running' &&
       !s.restartProgress &&
-      (isAttentionFilter || s.tailState === 'input'),
+      // Waiting for you, or stopped at its usage limit (which it shows rather than asks).
+      (isAttentionFilter || s.tailState === 'input' || !!s.usageLimit),
   );
 
   async function inspectScreens(targets: AgentSession[]) {
@@ -230,7 +337,7 @@ export function BatchAttentionActions({
             session,
             loading: false,
             screen: text,
-            overlay: detectAttentionOverlay(text),
+            overlay: detectAttentionOverlay(text, session),
           };
         } catch {
           return {
@@ -246,6 +353,14 @@ export function BatchAttentionActions({
   }
 
   async function sendCommand(target: AgentSession, cmd: AttentionCommand): Promise<boolean> {
+    if (cmd.kind === 'auto-continue') {
+      await api.setAutoContinue(target.id, true);
+      return false;
+    }
+    if (cmd.kind === 'continue-now') {
+      await api.continueSessionNow(target.id);
+      return false;
+    }
     if (cmd.kind === 'key') {
       const ack = await api.sendSessionInput(target.id, cmd.data);
       return ack.queued;
@@ -305,7 +420,9 @@ export function BatchAttentionActions({
             name: session.name,
             detail: queued
               ? `Queued "${label}" for reconnection.`
-              : `Applied "${label}" (${cmd.kind === 'key' ? `key ${JSON.stringify(cmd.data)}` : cmd.text}).`,
+              : cmd.kind === 'key' || cmd.kind === 'line'
+                ? `Applied "${label}" (${cmd.kind === 'key' ? `key ${JSON.stringify(cmd.data)}` : cmd.text}).`
+                : `Applied "${label}".`,
           },
         ]);
       } catch (error) {

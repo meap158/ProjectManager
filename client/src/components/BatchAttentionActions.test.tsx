@@ -9,6 +9,8 @@ vi.mock('../api', () => ({
   api: {
     sessionScreen: vi.fn(),
     sendSessionInput: vi.fn(),
+    setAutoContinue: vi.fn(),
+    continueSessionNow: vi.fn(),
   },
 }));
 
@@ -118,7 +120,109 @@ describe('detectAttentionOverlay (PM-165)', () => {
   });
 });
 
+// The shapes seen on real Needs attention screens (made-up text): a long Claude Code menu that
+// scrolls (↓ on the last visible option, option 5 out of view), each option's description on
+// the line below, and the question in the middle of a paragraph line.
+const CLAUDE_SCROLLED_MENU_SCREEN = [
+  '│ The optimizer cuts campaigns below a floor. What floor should it hold? (Last month: 3.5.)',
+  '',
+  '❯ 1. 3 (aggressive)',
+  '     Most orders; thin margin per order.',
+  '  2. 4 (balanced, recommended)',
+  '     Matches what working campaigns reach now.',
+  '  3. 5 (careful)',
+  '     Fewer campaigns qualify to grow.',
+  '↓ 4. Keep 10',
+  "     Today's setting.",
+  '────────────────────────────────────────',
+  '  6. Chat about this',
+  '',
+  'Enter to select · ↑/↓ to navigate · Esc to cancel',
+].join('\n');
+
+const CODEX_LIMIT_SCREEN = [
+  '• Ran npm test',
+  '',
+  '■ You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 5:53 PM.',
+  '',
+  '› Ask Codex to do anything',
+  '',
+  '  ? for shortcuts',
+].join('\n');
+
+describe('detectAttentionOverlay on real screen shapes (PM-165)', () => {
+  it('reads a scrolling menu whole: arrows, gaps, descriptions and the actual question', () => {
+    const parsed = detectAttentionOverlay(CLAUDE_SCROLLED_MENU_SCREEN);
+    expect(parsed?.title).toBe('What floor should it hold?');
+    expect(parsed?.options.map((o) => o.label)).toEqual([
+      '1. 3 (aggressive)',
+      '2. 4 (balanced, recommended)',
+      '3. 5 (careful)',
+      '4. Keep 10',
+      '6. Chat about this',
+    ]);
+    expect(parsed?.options[0]?.detail).toBe('Most orders; thin margin per order.');
+    expect(parsed?.options[4]?.command).toEqual({ kind: 'key', data: '6' });
+  });
+
+  it('starts from the first visible option when the menu has scrolled past option 1', () => {
+    const parsed = detectAttentionOverlay(
+      ['Pick one?', '↑ 3. Third', '  4. Fourth', '❯ 5. Fifth', '', 'Enter to select'].join('\n'),
+    );
+    expect(parsed?.options.map((o) => o.label)).toEqual(['3. Third', '4. Fourth', '5. Fifth']);
+  });
+
+  it('shortens a question to its last sentence, joining one that wraps', () => {
+    const parsed = detectAttentionOverlay(
+      [
+        'Running it would change live budgets and campaigns. What would you',
+        'like me to do?',
+        '',
+        '❯ 1. Dry run',
+        '  2. Run for real',
+      ].join('\n'),
+    );
+    expect(parsed?.title).toBe('What would you like me to do?');
+  });
+
+  it('offers auto-continue and try again for a Codex terminal at its usage limit', () => {
+    const codex = { providerId: 'codex', terminal: 'pty' as const, usageLimit: null };
+    const parsed = detectAttentionOverlay(CODEX_LIMIT_SCREEN, codex);
+    expect(parsed?.title).toBe('Usage limit reached');
+    expect(parsed?.options.map((o) => o.command)).toEqual([
+      { kind: 'auto-continue' },
+      { kind: 'continue-now' },
+    ]);
+    // Other CLIs can't take these, and a paused goal keeps its own choices.
+    expect(
+      detectAttentionOverlay(CODEX_LIMIT_SCREEN, { ...codex, providerId: 'claude' }),
+    ).toBeNull();
+    expect(detectAttentionOverlay(CODEX_GOAL_FOOTER_SCREEN, codex)?.options[0]?.key).toBe(
+      'resume-goal',
+    );
+  });
+});
+
 describe('BatchAttentionActions (PM-165)', () => {
+  it('batch-applies usage-limit choices through the session actions, not keystrokes', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    const limited = {
+      ...makeSession(76, 'Limited', null),
+      providerId: 'codex',
+      usageLimit: { resetsAt: null },
+    } as AgentSession;
+    vi.mocked(api.sessionScreen).mockResolvedValue({ text: CODEX_LIMIT_SCREEN });
+    vi.mocked(api.setAutoContinue).mockResolvedValue(limited);
+    // Eligible outside the attention filter too: at its limit, it shows rather than asks.
+    render(<BatchAttentionActions sessions={[limited]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Batch CLI choices (1)' }));
+    await screen.findByText('Auto-continue when the limit resets');
+    fireEvent.click(screen.getAllByText('Apply (1)')[0]!);
+    await waitFor(() => expect(api.setAutoContinue).toHaveBeenCalledWith(76, true));
+    expect(api.sendSessionInput).not.toHaveBeenCalled();
+  });
+
   it('retries only failed recipients and keeps queued delivery visible', async () => {
     HTMLDialogElement.prototype.showModal = vi.fn();
     HTMLDialogElement.prototype.close = vi.fn();
