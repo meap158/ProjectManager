@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CodexAccountsState } from '../../../shared/types';
 import { api } from '../api';
@@ -255,4 +255,27 @@ it('reads usage for every saved profile in the background and follows it (PM-173
   expect(
     screen.getByRole('meter', { name: '5-hour limit used' }).getAttribute('aria-valuenow'),
   ).toBe('42');
+});
+
+it('revalidates usage while open and stops polling after closing the panel', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(api.getCodexAccountsRefreshing).mockResolvedValue(baseState);
+    const { unmount } = render(<CodexAccountsPanel onError={vi.fn()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.getCodexAccountsRefreshing).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(api.getCodexAccountsRefreshing).toHaveBeenCalledTimes(2);
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(api.getCodexAccountsRefreshing).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
 });

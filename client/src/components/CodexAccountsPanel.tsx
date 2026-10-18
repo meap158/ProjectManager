@@ -5,6 +5,7 @@ import { formatDate, formatRelative } from '../format';
 import { InfoIcon, ProviderIcon } from './icons';
 import './project-agents.css';
 import { UsageLimits } from './UsageLimits';
+import { serialPoll } from '../lib/serialPoll';
 
 function AccountActionIcon({
   action,
@@ -69,10 +70,10 @@ export function CodexAccountsPanel({
   const [now, setNow] = useState(() => Date.now());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     // Codex: opening the panel also re-reads missing or old usage in the background (PM-173).
     const fetchState = isClaude ? api.getClaudeAccounts : api.getCodexAccountsRefreshing;
-    fetchState().then(
+    await fetchState().then(
       (s) => {
         setState(s);
         setNow(Date.now());
@@ -82,23 +83,32 @@ export function CodexAccountsPanel({
   }, [isClaude, onError]);
 
   useEffect(() => {
-    load();
+    return serialPoll(load, 60_000, { pauseWhenHidden: true });
   }, [load]);
 
   // While the server re-reads usage in the background, follow it until it is done.
   const backgroundRefresh = !!state?.usageRefreshing;
   useEffect(() => {
     if (!backgroundRefresh || isClaude) return;
-    const timer = setInterval(() => {
-      api.getCodexAccounts().then(
-        (s) => {
-          setState(s);
-          setNow(Date.now());
-        },
-        () => {},
-      );
-    }, 2500);
-    return () => clearInterval(timer);
+    let active = true;
+    const stop = serialPoll(
+      async () => {
+        await api.getCodexAccounts().then(
+          (s) => {
+            if (!active) return;
+            setState(s);
+            setNow(Date.now());
+          },
+          () => {},
+        );
+      },
+      2500,
+      { pauseWhenHidden: true },
+    );
+    return () => {
+      active = false;
+      stop();
+    };
   }, [backgroundRefresh, isClaude]);
   const loadingUsage = refreshingUsage || backgroundRefresh;
 

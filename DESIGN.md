@@ -7,6 +7,9 @@ or chat history.
 ## 1. Principles
 
 Settings > Agent CLIs keeps saved accounts inside each Codex/Claude entry's Accounts drawer.
+Usage status and meters sit in a separate block with an 8px gap below account details and
+6px between status and meters. The open drawer revalidates usage each minute; server-side
+freshness limits account reads, and polling pauses in hidden tabs and stops on unmount.
 Codex offers automatic quota rotation; Claude switching is manual. Account names that equal
 the email appear once, with saved time and an Add nickname action.
 Codex usage refresh reports fresh, expired, unavailable or unsupported results explicitly;
