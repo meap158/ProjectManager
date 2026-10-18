@@ -39,7 +39,19 @@ describe('chat composer suggestions (PM-117)', () => {
     const codex = await slashCommands('codex', project, codexHome);
     expect(codex.find((c) => c.name === 'prompts:triage')).toMatchObject({ source: 'user' });
     expect(codex.some((c) => c.name === 'approvals')).toBe(true);
-    expect(await slashCommands('grok', project, home)).toEqual([]);
+    // OpenCode, Grok and Antigravity have their built-ins too (PM-190); OpenCode adds its own
+    // markdown commands.
+    write(path.join(project, '.opencode', 'command', 'release.md'), 'Cut a release');
+    const opencode = await slashCommands('opencode', project, home);
+    expect(opencode[0]).toMatchObject({ name: 'new', source: 'builtin' });
+    expect(opencode.find((c) => c.name === 'release')).toMatchObject({ source: 'project' });
+    expect((await slashCommands('grok', project, home)).some((c) => c.name === 'compact')).toBe(
+      true,
+    );
+    expect((await slashCommands('antigravity', project, home)).some((c) => c.name === 'goal')).toBe(
+      true,
+    );
+    expect(await slashCommands('shell', project, home)).toEqual([]);
   });
 
   it('matches files by name first, then by path', async () => {
