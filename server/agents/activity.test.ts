@@ -138,6 +138,17 @@ ${ESC}[0mThinking…`),
     expect(tailState('> Yes, I trust this folder\n  No, exit  ↑/↓ Navigate · enter Confirm')).toBe(
       'input',
     );
+    // Codex paused-goal overlay and usage-limit goal footer (PM-165).
+    expect(
+      tailState(
+        'Resume paused goal?\n› 1. Resume goal   Mark it active and continue when idle\n  2. Leave paused  Keep it paused; use /goal resume later\n› Ask Codex to do anything   enter select · esc back\nGoal hit usage limits (/goal resume)',
+      ),
+    ).toBe('input');
+    expect(
+      tailState(
+        '■ You’ve hit your usage limit.\n› Ask Codex to do anything\nGoal hit usage lim ts (/goal resume',
+      ),
+    ).toBe('input');
   });
 
   it('plain numbered lists in an answer are not a choice', () => {

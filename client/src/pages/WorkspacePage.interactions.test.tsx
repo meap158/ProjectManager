@@ -27,6 +27,7 @@ vi.mock('../api', () => ({
     sendSessionInput: vi.fn(),
     stopSession: vi.fn(),
     startSession: vi.fn(),
+    deleteSession: vi.fn(async () => ({ ok: true })),
     updateCard: vi.fn(),
     attachCardToSession: vi.fn(),
   },
@@ -76,6 +77,38 @@ const paneNames = () =>
   );
 
 describe('Agents workspace interactions', () => {
+  it('disposes an ended task session after confirmation and clears its maximized pane', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    localStorage.setItem('pm.workspace.view', 'panes');
+    vi.mocked(api.getWorkspace).mockResolvedValue({ preset: '1', panes: [1], maximized: 0 });
+    vi.mocked(api.listAllSessions).mockResolvedValue([
+      {
+        ...session(1, 'Finished task'),
+        status: 'exited',
+        cardId: 10,
+        cardKey: 'PM-10',
+        supervise: false,
+      },
+    ]);
+    render(
+      <MemoryRouter>
+        <WorkspacePage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Dispose Finished task' }));
+    expect(api.deleteSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Dispose session', hidden: true }));
+    await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(paneNames()).toEqual(['empty']));
+    await waitFor(() =>
+      expect(api.saveWorkspace).toHaveBeenLastCalledWith(
+        expect.objectContaining({ panes: [null], maximized: null }),
+      ),
+    );
+    expect(api.updateCard).not.toHaveBeenCalled();
+  });
+
   it('an empty pane has a close button that shrinks the grid by one (PM-63, PM-68)', async () => {
     localStorage.setItem('pm.workspace.view', 'panes');
     await renderWorkspace({ preset: '2v', panes: [1, null], maximized: null });

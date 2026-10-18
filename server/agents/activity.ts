@@ -48,6 +48,8 @@ const CHOICE_PATTERNS = [
   /↑\s*\/\s*↓\s*(?:to\s*)?(?:navigate|select|choose)/i,
   /\((?:○|●)\)/,
   /[[(]\s*y\s*\/\s*n\s*[\])]/i,
+  /resume\s+paused\s+goal\?/i,
+  /goal\s+(?:hit\s+usage\s+lim\S*|paused)[^\n]*\/goal\s+resume/i,
 ];
 /** Choices count only near the end of the tail (the current screen, not scrollback). */
 const CHOICE_TAIL_CHARS = 900;

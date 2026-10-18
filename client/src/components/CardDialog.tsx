@@ -26,9 +26,9 @@ const HAND_MODE_KEY = 'pm.card.handMode';
 function readHandMode(): HandMode {
   try {
     const v = localStorage.getItem(HAND_MODE_KEY);
-    return v === 'run' || v === 'send' ? v : 'terminal';
+    return v === 'run' || v === 'send' || v === 'terminal' ? v : 'run';
   } catch {
-    return 'terminal';
+    return 'run';
   }
 }
 /** The CLI last chosen for handing a card over (PM-8), kept like the hand mode. */
@@ -56,10 +56,10 @@ const HAND_MODES: {
   },
   {
     value: 'run',
-    label: 'Task session',
-    hint: 'Opens a full interactive CLI for this task. It stops when the CLI exits; output stays until you delete it.',
+    label: 'Task session (interactive)',
+    hint: 'Opens the full session CLI for this task. It will not restart after exit; output stays available until you dispose it.',
     action: 'Open task session',
-    title: 'Start an interactive session for this card without automatic crash restarts',
+    title: 'Start a full interactive session for this card without automatic crash restarts',
   },
   {
     value: 'send',
@@ -273,7 +273,7 @@ export function CardDialog({
   const selectedProvider = aiProviders.find((p) => p.id === dispatchProvider);
 
   const navigate = useNavigate();
-  /** Interactive alternative to a one-shot run: a live session primed with the card task. */
+  /** Regular interactive session for a card task, configured not to restart after exit. */
   const mode: HandMode =
     handMode === 'send' && liveSessions.length === 0
       ? 'terminal'

@@ -43,6 +43,7 @@ import { serialPoll } from '../lib/serialPoll';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
+import { BatchAttentionActions } from '../components/BatchAttentionActions';
 import { BatchSessionMessage } from '../components/BatchSessionMessage';
 import { SessionToggle } from '../components/SessionToggle';
 import { RunCard } from '../components/RunCard';
@@ -287,6 +288,26 @@ export function WorkspacePage() {
     return () => clearTimeout(timer);
   }, [layout]);
   const update = setLayout;
+
+  /** Remove a task session and its log from the workspace after the user confirms disposal. */
+  const disposeSession = async (id: number) => {
+    try {
+      await api.deleteSession(id);
+      setSessions((prev) => prev?.filter((session) => session.id !== id) ?? prev);
+      if (selectedWork === `session:${id}`) setSelectedWork(null);
+      setLayout((prev) => {
+        if (!prev || !prev.panes.includes(id)) return prev;
+        const maxedPaneWasDeleted = prev.maximized !== null && prev.panes[prev.maximized] === id;
+        return {
+          ...prev,
+          panes: prev.panes.map((sessionId) => (sessionId === id ? null : sessionId)),
+          maximized: maxedPaneWasDeleted ? null : prev.maximized,
+        };
+      });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   // `?open=<sessionId>` (from a Kanban card or the Agents tab) puts that session in a pane.
   // Applied while rendering (React's "adjust state on prop change" pattern), then the param is
@@ -577,6 +598,7 @@ export function WorkspacePage() {
               onChanged={(next) =>
                 setSessions((prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev)
               }
+              onDeleted={disposeSession}
               onError={setError}
             />
           )}
@@ -648,6 +670,7 @@ export function WorkspacePage() {
                 onChanged={(next) =>
                   setSessions((prev) => prev?.map((s) => (s.id === next.id ? next : s)) ?? prev)
                 }
+                onDeleted={disposeSession}
                 onError={setError}
               />
             ) : (
@@ -693,6 +716,7 @@ function Pane({
   onToggleMaximize,
   onClose,
   onChanged,
+  onDeleted,
   onError,
 }: DropTargetProps & {
   index: number;
@@ -708,6 +732,7 @@ function Pane({
   onToggleMaximize: () => void;
   onClose: () => void;
   onChanged: (s: AgentSession) => void;
+  onDeleted?: (id: number) => void;
   onError: (message: string) => void;
 }) {
   const running = s.status === 'running';
@@ -931,6 +956,16 @@ function Pane({
               >
                 ▶
               </button>
+            )}
+            {!running && s.cardId && !s.supervise && onDeleted && (
+              <ConfirmDelete
+                small
+                label={`Dispose ${s.name}`}
+                heading={`Dispose task session ${s.name}?`}
+                message="This removes the ended session and its recorded output. The linked task stays on the board."
+                confirmLabel="Dispose session"
+                onConfirm={() => onDeleted(s.id)}
+              />
             )}
           </div>
         </div>
@@ -1384,6 +1419,7 @@ function WorkList({
     filters.status === 'ended' ||
     (Array.isArray(filters.status) && filters.status.length === 1 && filters.status[0] === 'ended');
   const includesEndedFilter = selectedFilters(filters.status, 'all').includes('ended');
+  const includesAttentionFilter = selectedFilters(filters.status, 'all').includes('attention');
   const bulk = async (targets: AgentSession[], action: 'start' | 'stop' | 'restart' | 'delete') => {
     if (bulkBusy) return;
     setBulkBusy(true);
@@ -1503,6 +1539,10 @@ function WorkList({
                 Show in panes ({visibleSessions.length > 4 ? 'first 4' : visibleSessions.length})
               </button>
               <BatchSessionMessage sessions={visibleSessions} />
+              <BatchAttentionActions
+                sessions={visibleSessions}
+                isAttentionFilter={includesAttentionFilter}
+              />
               {includesEndedFilter && stoppedSessions.length > 0 && (
                 <button
                   className="btn btn-sm"
