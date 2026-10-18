@@ -190,7 +190,10 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   });
 
   // ---- Codex accounts (PM-164: saved auth.json profiles + automatic usage-limit rotation) ----
-  app.get('/agents/codex-accounts', (c) => c.json(supervisor.codexAccountsState()));
+  // ?refresh=stale (the accounts panel): also re-read missing or old usage in the background.
+  app.get('/agents/codex-accounts', (c) =>
+    c.json(supervisor.codexAccountsState(c.req.query('refresh') === 'stale')),
+  );
   app.post('/agents/codex-accounts/usage', async (c) =>
     c.json(await supervisor.refreshCodexAccountsUsage()),
   );

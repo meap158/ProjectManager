@@ -412,6 +412,8 @@ export interface CodexAccountsState {
   /** null selects the user's normal CODEX_HOME login. */
   activeProfileId: string | null;
   autoSwitch: boolean;
+  /** Usage is being re-read in the background (PM-173); poll until false. */
+  usageRefreshing?: boolean;
   /** Non-secret metadata for the default CODEX_HOME login, if auth.json exists there. */
   defaultAccount?: {
     usageStatus?: AccountUsageStatus;

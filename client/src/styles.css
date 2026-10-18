@@ -1450,6 +1450,18 @@ a.t:hover {
   flex: 1 1 200px;
   min-width: 0;
 }
+/* Each account's usage sits on its own lines under its name (PM-173), never run into it. */
+.codex-account-usage {
+  display: block;
+  margin-top: 4px;
+}
+.codex-account-usage-status {
+  display: block;
+  font-size: 12px;
+}
+.codex-account-usage > .usage-limits {
+  margin-top: 3px;
+}
 .codex-account-actions {
   display: inline-flex;
   align-items: center;

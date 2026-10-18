@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CodexAccountsState } from '../../../shared/types';
 import { api } from '../api';
 import { SettingsPage } from '../pages/SettingsPage';
@@ -26,6 +26,7 @@ vi.mock('../api', () => ({
     listInstalls: vi.fn(),
     listProjects: vi.fn(),
     getCodexAccounts: vi.fn(),
+    getCodexAccountsRefreshing: vi.fn(),
     refreshCodexAccountsUsage: vi.fn(),
     importCodexAccount: vi.fn(),
     saveCurrentCodexAccount: vi.fn(),
@@ -43,6 +44,11 @@ vi.mock('../api', () => ({
   },
 }));
 
+beforeEach(() => {
+  // The panel's first load also asks for a background usage refresh (PM-173); tests set
+  // the state through getCodexAccounts.
+  vi.mocked(api.getCodexAccountsRefreshing).mockImplementation(() => api.getCodexAccounts());
+});
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
@@ -218,6 +224,35 @@ it('refreshes account usage without switching accounts and displays expired logi
   });
   render(<CodexAccountsPanel onError={vi.fn()} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Refresh usage' }));
-  expect(await screen.findByText('Sign in again to refresh usage')).toBeDefined();
+  expect(await screen.findByText(/^Signed out: run codex login/)).toBeDefined();
   expect(api.setActiveCodexAccount).not.toHaveBeenCalled();
+});
+
+it('reads usage for every saved profile in the background and follows it (PM-173)', async () => {
+  const limits = {
+    providerId: 'codex',
+    windows: [{ label: '5-hour', windowMinutes: 300, usedPercent: 42, resetsAt: null }],
+    asOf: '2026-10-18T00:00:00Z',
+    source: 'Codex account service',
+  };
+  vi.mocked(api.getCodexAccountsRefreshing).mockResolvedValue({
+    ...baseState,
+    usageRefreshing: true,
+  });
+  vi.mocked(api.getCodexAccounts).mockResolvedValue({
+    ...baseState,
+    usageRefreshing: false,
+    accounts: baseState.accounts.map((a) => ({
+      ...a,
+      usageStatus: 'fresh',
+      usageCheckedAt: new Date().toISOString(),
+      limits,
+    })),
+  });
+  render(<CodexAccountsPanel onError={vi.fn()} />);
+  expect((await screen.findAllByText('Loading usage…')).length).toBeGreaterThan(0);
+  expect(await screen.findByText('Usage checked just now', {}, { timeout: 4000 })).toBeDefined();
+  expect(
+    screen.getByRole('meter', { name: '5-hour limit used' }).getAttribute('aria-valuenow'),
+  ).toBe('42');
 });

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDb, type Db } from '../db.js';
 import { insertProject } from '../store.js';
 import { CodexAccounts } from './codexAccounts.js';
@@ -357,5 +357,102 @@ describe('CodexAccounts (PM-164)', () => {
     expect(state.accounts[0]?.usageStatus).toBe('expired');
     expect(state.accounts[0]?.limits).toBeNull();
     expect(existsSync(path.join(defaultCodexHome, 'auth.json'))).toBe(false);
+  });
+
+  it('keeps usage for every profile across restarts and re-reads only stale ones (PM-173)', async () => {
+    const accounts = new CodexAccounts(tmpDir, db);
+    for (const name of ['One', 'Two'])
+      accounts.importAccount(name, JSON.stringify({ OPENAI_API_KEY: `fake-${name}` }));
+    const [one, two] = accounts
+      .state()
+      .accounts.map((a) => path.join(tmpDir, 'codex-accounts', a.id));
+    const limits = (used: number) => ({
+      providerId: 'codex',
+      windows: [{ label: '5-hour', windowMinutes: 300, usedPercent: used, resetsAt: null }],
+      asOf: new Date().toISOString(),
+      source: 'test',
+    });
+    const now = Date.now();
+    const done = await accounts.refreshUsage(async (home) => ({
+      status: 'fresh',
+      limits: limits(home === one ? 40 : 70),
+      checkedAt: new Date(now).toISOString(),
+    }));
+    expect(done.usageRefreshing).toBe(false);
+    expect(done.accounts.map((a) => a.limits?.windows[0]?.usedPercent)).toEqual([40, 70]);
+
+    // A restart: a new instance has the same usage from the database.
+    const restarted = new CodexAccounts(tmpDir, db);
+    expect(restarted.state().accounts.map((a) => a.limits?.windows[0]?.usedPercent)).toEqual([
+      40, 70,
+    ]);
+
+    // Nothing is older than the limit: no background read starts.
+    const visited: string[] = [];
+    const reader = async (home: string) => {
+      visited.push(home);
+      return { status: 'unavailable' as const, limits: null, checkedAt: new Date().toISOString() };
+    };
+    restarted.refreshUsageIfStale(10 * 60_000, now + 60_000, reader);
+    expect(restarted.state().usageRefreshing).toBe(false);
+
+    // Later, both are stale: a background read starts; a failed read keeps the known numbers.
+    restarted.refreshUsageIfStale(10 * 60_000, now + 11 * 60_000, reader);
+    expect(restarted.state().usageRefreshing).toBe(true);
+    await vi.waitFor(() => expect(restarted.state().usageRefreshing).toBe(false));
+    expect(visited.sort()).toEqual([one, two].sort());
+    const after = restarted.state().accounts;
+    expect(after.map((a) => a.usageStatus)).toEqual(['unavailable', 'unavailable']);
+    expect(after.map((a) => a.limits?.windows[0]?.usedPercent)).toEqual([40, 70]);
+  });
+});
+
+describe('CodexAccounts usage per account (PM-173)', () => {
+  let tmpDir: string;
+  let prevCodexHome: string | undefined;
+  let db: Db;
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), 'pm-codex-usage-'));
+    mkdirSync(path.join(tmpDir, 'default-codex'), { recursive: true });
+    prevCodexHome = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = path.join(tmpDir, 'default-codex');
+    db = openDb(':memory:');
+  });
+  afterEach(() => {
+    db.close();
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('reads a login saved twice only once, from the default copy, and shares its usage', async () => {
+    const auth = (email: string) =>
+      JSON.stringify({
+        tokens: { id_token: makeJwt({ email }), access_token: 'a', refresh_token: 'r' },
+      });
+    writeFileSync(path.join(tmpDir, 'default-codex', 'auth.json'), auth('same@example.com'));
+    const accounts = new CodexAccounts(tmpDir, db);
+    accounts.importAccount('Copy', auth('SAME@example.com'));
+    accounts.importAccount('Other', auth('other@example.com'));
+    const visited: string[] = [];
+    const state = await accounts.refreshUsage(async (home) => {
+      visited.push(path.basename(home));
+      return {
+        status: 'fresh',
+        limits: {
+          providerId: 'codex',
+          windows: [{ label: '5-hour', windowMinutes: 300, usedPercent: 55, resetsAt: null }],
+          asOf: new Date().toISOString(),
+          source: 'test',
+        },
+        checkedAt: new Date().toISOString(),
+      };
+    });
+    const other = state.accounts.find((a) => a.name === 'Other')!;
+    // The default copy and the other account are read; the second copy is never started.
+    expect(visited.sort()).toEqual(['default-codex', other.id].sort());
+    const copy = state.accounts.find((a) => a.name === 'Copy')!;
+    expect(copy.limits?.windows[0]?.usedPercent).toBe(55);
+    expect(copy.usageStatus).toBe('fresh');
   });
 });

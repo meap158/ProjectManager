@@ -68,7 +68,8 @@ export function CodexAccountsPanel({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(() => {
-    const fetchState = isClaude ? api.getClaudeAccounts : api.getCodexAccounts;
+    // Codex: opening the panel also re-reads missing or old usage in the background (PM-173).
+    const fetchState = isClaude ? api.getClaudeAccounts : api.getCodexAccountsRefreshing;
     fetchState().then(
       (s) => {
         setState(s);
@@ -81,6 +82,23 @@ export function CodexAccountsPanel({
   useEffect(() => {
     load();
   }, [load]);
+
+  // While the server re-reads usage in the background, follow it until it is done.
+  const backgroundRefresh = !!state?.usageRefreshing;
+  useEffect(() => {
+    if (!backgroundRefresh || isClaude) return;
+    const timer = setInterval(() => {
+      api.getCodexAccounts().then(
+        (s) => {
+          setState(s);
+          setNow(Date.now());
+        },
+        () => {},
+      );
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [backgroundRefresh, isClaude]);
+  const loadingUsage = refreshingUsage || backgroundRefresh;
 
   const act = useCallback(
     async (fn: () => Promise<CodexAccountsState>) => {
@@ -364,13 +382,8 @@ export function CodexAccountsPanel({
                     · not signed in
                   </span>
                 )}
-                <span className="faint" role="status">
-                  {refreshingUsage
-                    ? 'Loading usage…'
-                    : usageLabel(state.defaultAccount?.usageStatus)}
-                </span>
-                {state.defaultAccount?.limits && (
-                  <UsageLimits limits={state.defaultAccount.limits} now={now} />
+                {state.defaultAccount && (
+                  <AccountUsage account={state.defaultAccount} loading={loadingUsage} now={now} />
                 )}
               </span>
               <span className="actions codex-account-actions">
@@ -473,10 +486,7 @@ export function CodexAccountsPanel({
                         )}
                       </>
                     )}
-                    <span className="faint" role="status">
-                      {refreshingUsage ? 'Loading usage…' : usageLabel(acc.usageStatus)}
-                    </span>
-                    {acc.limits && <UsageLimits limits={acc.limits} now={now} />}
+                    <AccountUsage account={acc} loading={loadingUsage} now={now} />
                   </span>
                   <span className="actions codex-account-actions">
                     {isActive ? (
@@ -546,14 +556,47 @@ export function CodexAccountsPanel({
   );
 }
 
-function usageLabel(status?: import('../../../shared/types').AccountUsageStatus): string {
+/**
+ * One account's usage, on its own line under the account (PM-173): what is known and when it
+ * was checked, with the meters. While a refresh runs, known meters stay and are marked
+ * updating; an account with none yet says it is loading.
+ */
+function AccountUsage({
+  account,
+  loading,
+  now,
+}: {
+  account: Pick<CodexAccount, 'usageStatus' | 'usageCheckedAt' | 'limits'>;
+  loading: boolean;
+  now: number;
+}) {
+  const label =
+    loading && !account.limits
+      ? 'Loading usage…'
+      : usageLabel(account.usageStatus, account.usageCheckedAt) + (loading ? ' · updating…' : '');
+  return (
+    <span className="codex-account-usage">
+      <span className="faint codex-account-usage-status" role="status">
+        {label}
+      </span>
+      {account.limits && <UsageLimits limits={account.limits} now={now} />}
+    </span>
+  );
+}
+
+function usageLabel(
+  status?: import('../../../shared/types').AccountUsageStatus,
+  checkedAt?: string | null,
+): string {
   switch (status) {
     case 'fresh':
-      return 'Current usage';
+      return 'Usage checked just now';
     case 'stale':
-      return 'Last reported usage (may be out of date)';
+      return checkedAt
+        ? `Usage checked ${formatRelative(checkedAt)}`
+        : 'Last reported usage (may be out of date)';
     case 'expired':
-      return 'Sign in again to refresh usage';
+      return 'Signed out: run codex login with this account, then save the login again';
     case 'unavailable':
       return 'Usage unavailable; try refreshing later';
     case 'unsupported':

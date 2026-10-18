@@ -20,6 +20,10 @@ import { readCodexAccountUsage, type AccountUsageResult } from './accountUsage.j
 const REGISTRY = 'codex-accounts.json';
 const ACTIVE_KEY = 'codex-accounts-active';
 const AUTO_SWITCH_KEY = 'codex-accounts-auto-switch';
+/** Last usage read per account home (limits and times only, never credentials). */
+const USAGE_KEY = 'codex-accounts-usage';
+/** Opening the accounts panel re-reads usage older than this, in the background. */
+export const USAGE_MAX_AGE_MS = 10 * 60_000;
 const MAX_AUTH_BYTES = 1024 * 1024;
 
 interface StoredAccount {
@@ -49,29 +53,119 @@ export class CodexAccounts {
   private readonly usage = new Map<string, AccountUsageResult>();
   private refreshingUsage: Promise<CodexAccountsState> | null = null;
 
-  refreshUsage(reader = readCodexAccountUsage): Promise<CodexAccountsState> {
+  /** Every signed-in account home: the default login and each saved profile. */
+  private usageHomes(): string[] {
+    return [this.defaultHome(), ...this.readRegistry().accounts.map((a) => this.home(a.id))].filter(
+      (home) => existsSync(path.join(home, 'auth.json')),
+    );
+  }
+
+  /**
+   * Where each home's usage is read from (PM-173). Usage belongs to the account, so homes with
+   * the same email share one read, from the first of them (the default login first). A second
+   * copy of a login is never started just to read usage: the CLI refreshes its token on start,
+   * and refresh tokens are single-use, so that could end the other copy's session.
+   */
+  private usageSources(): Map<string, string> {
+    const emails = new Map(
+      this.readRegistry().accounts.map((a) => [this.home(a.id), a.email ?? undefined]),
+    );
+    const firstByEmail = new Map<string, string>();
+    const sources = new Map<string, string>();
+    for (const home of this.usageHomes()) {
+      const email = (
+        home === this.defaultHome() || emails.get(home) === undefined
+          ? this.readAuthMeta(path.join(home, 'auth.json')).email
+          : emails.get(home)
+      )?.toLowerCase();
+      if (email && !firstByEmail.has(email)) firstByEmail.set(email, home);
+      sources.set(home, (email && firstByEmail.get(email)) || home);
+    }
+    return sources;
+  }
+
+  /** The homes usage is actually read from: one per account. */
+  private usageReadHomes(): string[] {
+    return [...new Set(this.usageSources().values())];
+  }
+
+  /**
+   * Reads usage for every account (or only those `stale` picks), two at a time, through the
+   * read-only account service. Results are kept across restarts (PM-173), so each profile
+   * shows its last known usage and when it was checked.
+   */
+  refreshUsage(
+    reader = readCodexAccountUsage,
+    stale: (home: string) => boolean = () => true,
+  ): Promise<CodexAccountsState> {
     if (this.refreshingUsage) return this.refreshingUsage;
-    this.refreshingUsage = (async () => {
-      const homes = [
-        this.defaultHome(),
-        ...this.readRegistry().accounts.map((a) => this.home(a.id)),
-      ].filter((home) => existsSync(path.join(home, 'auth.json')));
+    const run = (async () => {
+      const homes = this.usageReadHomes().filter(stale);
       for (let i = 0; i < homes.length; i += 2) {
         await Promise.all(
           homes.slice(i, i + 2).map(async (home) => {
-            this.usage.set(home, await reader(home));
+            const result = await reader(home);
+            // A failed read keeps the last known numbers, labelled with the failure.
+            const known = this.usage.get(home)?.limits;
+            this.usage.set(home, result.limits || !known ? result : { ...result, limits: known });
           }),
         );
+        this.saveUsage();
       }
-      return this.state();
-    })().finally(() => {
-      this.refreshingUsage = null;
-    });
+    })();
+    // Cleared before the final state is built, so it no longer reports a refresh running.
+    this.refreshingUsage = run.then(
+      () => {
+        this.refreshingUsage = null;
+        return this.state();
+      },
+      (error: unknown) => {
+        this.refreshingUsage = null;
+        throw error;
+      },
+    );
     return this.refreshingUsage;
   }
 
-  private usageState(home: string, now: number) {
-    const current = this.usage.get(home);
+  /**
+   * Stale-while-revalidate for the accounts panel: answers with what is known now and starts a
+   * background read of accounts whose usage is missing or older than `maxAgeMs`.
+   */
+  refreshUsageIfStale(
+    maxAgeMs = USAGE_MAX_AGE_MS,
+    now = Date.now(),
+    reader = readCodexAccountUsage,
+  ): void {
+    if (this.refreshingUsage) return;
+    const stale = (home: string) => {
+      const known = this.usage.get(home);
+      return !known || !(now - Date.parse(known.checkedAt) <= maxAgeMs);
+    };
+    if (!this.usageReadHomes().some(stale)) return;
+    void this.refreshUsage(reader, stale).catch((error: Error) => {
+      console.error('[codex-accounts] usage refresh:', error);
+    });
+  }
+
+  private loadUsage(): void {
+    const saved = getSetting<Record<string, AccountUsageResult>>(this.db, USAGE_KEY) ?? {};
+    for (const [home, result] of Object.entries(saved)) this.usage.set(home, result);
+  }
+
+  private saveUsage(): void {
+    // Only homes that still exist: a removed profile's usage is dropped with it.
+    const homes = new Set(this.usageHomes());
+    setSetting(
+      this.db,
+      USAGE_KEY,
+      Object.fromEntries([...this.usage].filter(([home]) => homes.has(home))),
+    );
+  }
+
+  private usageState(home: string, now: number, source = home) {
+    // A copy known to be signed out says so, rather than showing the other copy's usage.
+    const own = this.usage.get(home);
+    const current = own?.status === 'expired' ? own : (this.usage.get(source) ?? own);
     const limits = current?.limits ?? codexLimits(os.homedir(), home, now);
     const usageStatus =
       current?.status === 'fresh' && now - Date.parse(current.checkedAt) > 60000
@@ -86,6 +180,7 @@ export class CodexAccounts {
     private readonly db: Db,
   ) {
     this.root = path.join(dataDir, 'codex-accounts');
+    this.loadUsage();
   }
 
   state(now = Date.now()): CodexAccountsState {
@@ -98,11 +193,12 @@ export class CodexAccounts {
     const defHome = this.defaultHome();
     const defAuthFile = path.join(defHome, 'auth.json');
     const defMeta = this.readAuthMeta(defAuthFile);
+    const sources = this.usageSources();
     const defaultAccount = {
       available: existsSync(defAuthFile),
       email: defMeta.email,
       plan: defMeta.plan,
-      ...this.usageState(defHome, now),
+      ...this.usageState(defHome, now, sources.get(defHome)),
     };
     const accounts: CodexAccount[] = registry.accounts.map((account) => {
       const home = this.home(account.id);
@@ -116,10 +212,16 @@ export class CodexAccounts {
         createdAt: account.createdAt,
         email: meta.email,
         plan: meta.plan,
-        ...this.usageState(home, now),
+        ...this.usageState(home, now, sources.get(home)),
       };
     });
-    return { accounts, activeProfileId, autoSwitch, defaultAccount };
+    return {
+      accounts,
+      activeProfileId,
+      autoSwitch,
+      defaultAccount,
+      usageRefreshing: this.refreshingUsage !== null,
+    };
   }
 
   setActive(id: string | null): CodexAccountsState {

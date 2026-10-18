@@ -456,8 +456,11 @@ export class AgentSupervisor {
     return this.withCodexAccounts((accounts) => accounts.refreshUsage());
   }
 
-  codexAccountsState(): CodexAccountsState {
-    return this.withCodexAccounts((accounts) => accounts.state());
+  codexAccountsState(refreshStale = false): CodexAccountsState {
+    return this.withCodexAccounts((accounts) => {
+      if (refreshStale) accounts.refreshUsageIfStale();
+      return accounts.state();
+    });
   }
 
   importCodexAccount(name: string, authJson: string): CodexAccountsState {
