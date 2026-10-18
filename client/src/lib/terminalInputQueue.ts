@@ -4,18 +4,22 @@ import { splitSessionInput } from './sessionInput';
 export class TerminalInputQueue {
   private pending = '';
   private active = false;
-  private timer?: ReturnType<typeof setTimeout>;
+  private scheduled = false;
   constructor(
     private write: (data: string) => Promise<unknown>,
     private onError: (error: Error) => void,
   ) {}
   push(data: string) {
     this.pending += data;
-    if (!this.active && !this.timer)
-      this.timer = setTimeout(() => {
-        this.timer = undefined;
+    // Sent in the same task, not after a delay: a keystroke should leave as it is typed. Only what
+    // is typed while a request is in flight waits (and goes out together when it returns).
+    if (!this.active && !this.scheduled) {
+      this.scheduled = true;
+      queueMicrotask(() => {
+        this.scheduled = false;
         void this.flush();
-      }, 12);
+      });
+    }
   }
   private async flush() {
     this.active = true;

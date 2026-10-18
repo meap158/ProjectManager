@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getRequestListener } from '@hono/node-server';
@@ -147,6 +148,16 @@ async function main() {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // A stalled event loop freezes every request and terminal at once. Say so in the log, with
+  // when and for how long, so a "the app hangs" report can be matched against what ran then.
+  const loopDelay = monitorEventLoopDelay({ resolution: 20 });
+  loopDelay.enable();
+  setInterval(() => {
+    const worstMs = Math.round(loopDelay.max / 1e6);
+    loopDelay.reset();
+    if (worstMs >= 1000) console.warn(`[perf] event loop was blocked for ${worstMs} ms`);
+  }, 5000).unref();
 
   // Watchdog: if the launcher is killed hard (no chance to clean up), don't linger as an orphan.
   // In dev our parent is the tsx watcher, which would otherwise outlive the launcher too.

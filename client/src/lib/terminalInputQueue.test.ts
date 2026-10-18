@@ -28,3 +28,15 @@ it('coalesces typing during slow requests without reordering or duplicate writes
     vi.useRealTimers();
   }
 });
+it('sends a key typed while idle at once, without waiting for a timer', async () => {
+  vi.useFakeTimers();
+  try {
+    const write = vi.fn().mockResolvedValue(undefined);
+    const queue = new TerminalInputQueue(write, vi.fn());
+    queue.push('x');
+    await Promise.resolve();
+    expect(write).toHaveBeenCalledWith('x');
+  } finally {
+    vi.useRealTimers();
+  }
+});
