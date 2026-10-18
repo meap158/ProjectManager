@@ -664,7 +664,13 @@ describe('reboot persistence', () => {
       'session relaunch',
     );
     expect(relaunched.desiredState).toBe('running');
-    const output = sup2.readSessionOutput(session.id, 0)!;
+    // The row still says "running" from before the shutdown, so the wait above can pass before
+    // the relaunch writes its banner: wait for the banner itself.
+    const output = await waitFor(
+      async () => sup2!.readSessionOutput(session.id, 0)!,
+      (o) => o.data.includes('relaunched after restart'),
+      'relaunch banner',
+    );
     expect(output.data).toContain('relaunched after restart');
     const rerun = await waitFor(
       async () => sup2!.getRun(runId)!,
