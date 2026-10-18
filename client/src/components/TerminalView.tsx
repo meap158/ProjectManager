@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import type { AgentOutput } from '../../../shared/types';
@@ -254,6 +255,7 @@ export function TerminalView({
     let restoring = restoreBytes > initialOffset;
     const scrollDuration = term.options.smoothScrollDuration;
     let revealFrame: number | null = null;
+    let stickFrame: number | null = null;
     let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
     let receivedOutput = false;
     let serverResponded = false;
@@ -649,9 +651,13 @@ export function TerminalView({
         term.write(cleanData, () => {
           if (cancelled) return;
           markConnection('ready');
-          if (shouldStick) {
-            scrollToBottomAndSync();
-          }
+          // Once per frame, not per chunk: it reads layout, and a busy TUI sends many chunks a
+          // frame (phones lagged).
+          if (shouldStick && stickFrame === null)
+            stickFrame = requestAnimationFrame(() => {
+              stickFrame = null;
+              if (!cancelled) scrollToBottomAndSync();
+            });
         });
       }
     };
@@ -760,6 +766,17 @@ export function TerminalView({
     const openFrame = requestAnimationFrame(() => {
       if (cancelled) return;
       term.open(host);
+      // GPU rendering (PM-190): the default DOM renderer rebuilds styled HTML for every cell, and
+      // full-screen TUIs (OpenCode, Grok) repaint whole colour screens many times a second, which
+      // made phones lag. Falls back to the DOM renderer without WebGL or if the context is lost
+      // (browsers cap live contexts).
+      try {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => webgl.dispose());
+        term.loadAddon(webgl);
+      } catch {
+        // No WebGL here: the DOM renderer keeps working.
+      }
       // Older logs have no geometry markers; start with the supervisor's PTY default.
       if (stopped) term.resize(120, 30);
       opened = true;
@@ -777,6 +794,7 @@ export function TerminalView({
       controller.polling = false;
       cancelAnimationFrame(openFrame);
       if (revealFrame !== null) cancelAnimationFrame(revealFrame);
+      if (stickFrame !== null) cancelAnimationFrame(stickFrame);
       host.style.visibility = '';
       host.removeAttribute('aria-busy');
       if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);

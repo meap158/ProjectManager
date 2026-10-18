@@ -442,6 +442,9 @@ describe('TerminalView', () => {
     viewport.scrollTop = 800;
     viewport.dispatchEvent(new Event('scroll'));
     output();
+    output();
+    // Following is applied once per frame (not per chunk, PM-190): two chunks, one scroll.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     expect(term.bottomScrolls).toBe(before + 1);
   });
 
