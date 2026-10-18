@@ -69,22 +69,36 @@ export function CodexAccountsPanel({
   const [renameDraft, setRenameDraft] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const revision = useRef(0);
+  const acting = useRef(false);
+  const invalidateReads = useCallback(() => {
+    ++revision.current;
+  }, []);
 
   const load = useCallback(async () => {
+    if (acting.current) return;
+    const started = ++revision.current;
     // Codex: opening the panel also re-reads missing or old usage in the background (PM-173).
     const fetchState = isClaude ? api.getClaudeAccounts : api.getCodexAccountsRefreshing;
     await fetchState().then(
       (s) => {
+        if (started !== revision.current) return;
         setState(s);
         setNow(Date.now());
       },
-      (e: Error) => onError(e.message),
+      (e: Error) => {
+        if (started === revision.current) onError(e.message);
+      },
     );
   }, [isClaude, onError]);
 
   useEffect(() => {
-    return serialPoll(load, 60_000, { pauseWhenHidden: true });
-  }, [load]);
+    const stop = serialPoll(load, 60_000, { pauseWhenHidden: true });
+    return () => {
+      invalidateReads();
+      stop();
+    };
+  }, [load, invalidateReads]);
 
   // While the server re-reads usage in the background, follow it until it is done.
   const backgroundRefresh = !!state?.usageRefreshing;
@@ -93,9 +107,11 @@ export function CodexAccountsPanel({
     let active = true;
     const stop = serialPoll(
       async () => {
+        if (acting.current) return;
+        const started = ++revision.current;
         await api.getCodexAccounts().then(
           (s) => {
-            if (!active) return;
+            if (!active || started !== revision.current) return;
             setState(s);
             setNow(Date.now());
           },
@@ -114,6 +130,9 @@ export function CodexAccountsPanel({
 
   const act = useCallback(
     async (fn: () => Promise<CodexAccountsState>) => {
+      if (acting.current) return false;
+      acting.current = true;
+      ++revision.current;
       setBusy(true);
       try {
         const next = await fn();
@@ -125,6 +144,8 @@ export function CodexAccountsPanel({
         onError((e as Error).message);
         return false;
       } finally {
+        ++revision.current;
+        acting.current = false;
         setBusy(false);
       }
     },

@@ -279,3 +279,28 @@ it('revalidates usage while open and stops polling after closing the panel', asy
     vi.useRealTimers();
   }
 });
+
+it('ignores a background response captured before switching accounts', async () => {
+  let finish!: (state: CodexAccountsState) => void;
+  vi.mocked(api.getCodexAccountsRefreshing).mockResolvedValue({
+    ...baseState,
+    usageRefreshing: true,
+  });
+  vi.mocked(api.getCodexAccounts).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  vi.mocked(api.setActiveCodexAccount).mockResolvedValue({
+    ...baseState,
+    activeProfileId: baseState.accounts[0]!.id,
+  });
+  render(<CodexAccountsPanel onError={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Switch to account Work Pro' }));
+  await screen.findByText('active: Work Pro');
+  await act(async () => {
+    finish(baseState);
+  });
+  expect(screen.getByText('active: Work Pro')).toBeDefined();
+});
