@@ -303,6 +303,8 @@ export function BatchAttentionActions({
   const heading = useId();
 
   const [states, setStates] = useState<SessionOverlayState[]>([]);
+  /** CLIs whose prompt was answered in this dialog: they leave it until the next scan. */
+  const [handled, setHandled] = useState<Set<number>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [deliveries, setDeliveries] = useState<{ id: number; name: string; detail: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -325,6 +327,7 @@ export function BatchAttentionActions({
   );
 
   async function inspectScreens(targets: AgentSession[]) {
+    setHandled(new Set());
     setStates(
       targets.map((session) => ({
         session,
@@ -454,9 +457,19 @@ export function BatchAttentionActions({
     );
     setBusy(false);
     sending.current = false;
-    // Retry only failures: delivered and queued commands must not be submitted twice.
-    setSelectedIds(new Set(failed.map((session) => session.id)));
-    if (!failed.length && !queuedCount) {
+    // Delivered and queued commands must not be submitted twice: those CLIs leave the dialog,
+    // failures stay ticked for a retry, and other prompts keep their selection, so several
+    // prompts are answered one by one.
+    const done = new Set(
+      matching.filter((entry) => !failed.includes(entry.session)).map((e) => e.session.id),
+    );
+    setHandled((prev) => new Set([...prev, ...done]));
+    setSelectedIds((prev) => new Set([...prev].filter((id) => !done.has(id))));
+    const promptsLeft = states.some(
+      (entry) => entry.overlay && !handled.has(entry.session.id) && !done.has(entry.session.id),
+    );
+    // Closes on its own only once every prompt is answered.
+    if (!failed.length && !queuedCount && !promptsLeft) {
       setClosing(true);
       closeTimer.current = setTimeout(() => {
         dialog.current?.close();
@@ -474,7 +487,7 @@ export function BatchAttentionActions({
   }[] = [];
   const promptMap = new Map<string, (typeof prompts)[number]>();
   for (const entry of states) {
-    if (!entry.overlay) continue;
+    if (!entry.overlay || handled.has(entry.session.id)) continue;
     const signature = JSON.stringify([
       entry.overlay.title,
       entry.overlay.options.map((o) => [o.key, o.label]),
@@ -487,7 +500,9 @@ export function BatchAttentionActions({
     }
     prompt.sessions.push(entry);
   }
-  const undetected = states.filter((entry) => !entry.loading && !entry.overlay);
+  const undetected = states.filter(
+    (entry) => !entry.loading && !entry.overlay && !handled.has(entry.session.id),
+  );
   const toggle = (id: number) =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -567,6 +582,9 @@ export function BatchAttentionActions({
             </p>
           ) : (
             <>
+              {!prompts.length && handled.size > 0 && (
+                <p className="faint">All prompts answered.</p>
+              )}
               {prompts.length > 0 && (
                 <div className="batch-attention-prompts" aria-label="Detected CLI prompts">
                   {prompts.map((prompt) => {

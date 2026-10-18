@@ -324,3 +324,42 @@ describe('BatchAttentionActions prompt cards (PM-165)', () => {
     expect(api.sendSessionInput).toHaveBeenCalledWith(1, '1');
   });
 });
+
+describe('BatchAttentionActions one prompt at a time', () => {
+  it('stays open while other prompts are waiting, and closes after the last one', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    const sessions = [makeSession(1, 'Goal CLI'), makeSession(2, 'Limit CLI')];
+    vi.mocked(api.sessionScreen).mockImplementation(async (id) => ({
+      text: id === 1 ? CODEX_GOAL_POPUP_SCREEN : CLAUDE_LIMIT_MENU_SCREEN,
+    }));
+    vi.mocked(api.sendSessionInput).mockResolvedValue({ queued: false, session: sessions[0]! });
+    render(<BatchAttentionActions sessions={sessions} isAttentionFilter />);
+    fireEvent.click(screen.getByRole('button', { name: 'Batch CLI choices (2)' }));
+
+    // Answer the first prompt: its card goes, the other stays, still ticked, and it doesn't close.
+    fireEvent.click(await screen.findByRole('button', { name: '1. Resume goal', hidden: true }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('region', { name: 'Resume paused goal?', hidden: true }),
+      ).toBeNull(),
+    );
+    const limit = screen.getByRole('region', { name: 'What do you want to do?', hidden: true });
+    expect((limit.querySelector('input[type=checkbox]') as HTMLInputElement).checked).toBe(true);
+    await new Promise((r) => setTimeout(r, 2700));
+    expect(HTMLDialogElement.prototype.close).not.toHaveBeenCalled();
+
+    // Answer the last one: everything answered, so it closes on its own.
+    fireEvent.click(
+      screen.getByRole('button', { name: '1. Stop and wait for limit to reset', hidden: true }),
+    );
+    expect(await screen.findByText('All prompts answered.')).toBeDefined();
+    await waitFor(() => expect(HTMLDialogElement.prototype.close).toHaveBeenCalled(), {
+      timeout: 4000,
+    });
+    expect(vi.mocked(api.sendSessionInput).mock.calls).toEqual([
+      [1, '1'],
+      [2, '1'],
+    ]);
+  }, 12000);
+});
