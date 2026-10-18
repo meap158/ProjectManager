@@ -256,6 +256,6 @@ it('does not relaunch a one-attempt worker still alive after its supervisor exit
         if (Number.isSafeInteger(pid) && pid > 0) await killTree(pid).catch(() => undefined);
       }
     }
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }, 30000);
