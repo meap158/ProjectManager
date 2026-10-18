@@ -6114,6 +6114,7 @@ span.path-link:hover .path-icon {
 .codex-account-info {
   overflow-wrap: anywhere;
 }
+.codex-accounts-toolbar-actions .btn,
 .codex-account-actions .btn {
   display: inline-flex;
   align-items: center;
@@ -6121,11 +6122,13 @@ span.path-link:hover .path-icon {
   gap: 6px;
 }
 @media (max-width: 600px) {
+  .codex-accounts-toolbar-actions .btn,
   .codex-account-actions .btn {
     min-width: 44px;
     min-height: 44px;
     padding: 10px;
   }
+  .codex-accounts-toolbar-actions .account-action-label,
   .codex-account-actions .account-action-label {
     display: none;
   }

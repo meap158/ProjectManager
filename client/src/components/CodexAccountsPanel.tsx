@@ -5,11 +5,19 @@ import { formatDate, formatRelative } from '../format';
 import { ProviderIcon } from './icons';
 import { UsageLimits } from './UsageLimits';
 
-function AccountActionIcon({ action }: { action: 'switch' | 'rename' | 'remove' }) {
+function AccountActionIcon({
+  action,
+}: {
+  action: 'switch' | 'rename' | 'remove' | 'refresh' | 'save' | 'import' | 'cancel';
+}) {
   const paths = {
     switch: 'M3 8h10M9 4l4 4-4 4',
     rename: 'M3 11l-1 3 3-1 8-8-2-2-8 8z',
     remove: 'M3 4h10M6 4V2h4v2M5 4v10h6V4',
+    refresh: 'M13 6A5 5 0 1 0 13 10M13 2v4H9',
+    save: 'M2 2h10l2 2v10H2V2zM5 2v4h6V2M5 14V9h6v5',
+    import: 'M8 2v8M5 7l3 3 3-3M2 10v4h12v-4',
+    cancel: 'M4 4l8 8M12 4l-8 8',
   };
   return (
     <svg
@@ -204,6 +212,8 @@ export function CodexAccountsPanel({
                   type="button"
                   className="btn btn-sm"
                   disabled={busy || refreshingUsage}
+                  aria-label={refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
+                  title="Refresh usage for all accounts"
                   onClick={async () => {
                     setRefreshingUsage(true);
                     try {
@@ -218,7 +228,10 @@ export function CodexAccountsPanel({
                     }
                   }}
                 >
-                  {refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
+                  <AccountActionIcon action="refresh" />
+                  <span className="account-action-label">
+                    {refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
+                  </span>
                 </button>
               )}
               {state.defaultAccount?.available && (
@@ -231,18 +244,25 @@ export function CodexAccountsPanel({
                       isClaude ? api.saveCurrentClaudeAccount() : api.saveCurrentCodexAccount(),
                     )
                   }
+                  aria-label="Save current CLI login"
                   title={`Save ${credFile} into your ${cliTitle} accounts pool`}
                 >
-                  Save current CLI login
+                  <AccountActionIcon action="save" />
+                  <span className="account-action-label">Save current CLI login</span>
                 </button>
               )}
               <button
                 type="button"
                 className={showAdd ? 'btn btn-sm' : 'btn btn-primary btn-sm'}
                 disabled={busy}
+                aria-label={showAdd ? 'Cancel' : `Import ${importFileLabel}`}
+                title={showAdd ? 'Cancel import' : `Import ${importFileLabel}`}
                 onClick={() => setShowAdd((v) => !v)}
               >
-                {showAdd ? 'Cancel' : `Import ${importFileLabel}`}
+                <AccountActionIcon action={showAdd ? 'cancel' : 'import'} />
+                <span className="account-action-label">
+                  {showAdd ? 'Cancel' : `Import ${importFileLabel}`}
+                </span>
               </button>
             </span>
           </div>
@@ -361,6 +381,8 @@ export function CodexAccountsPanel({
                     type="button"
                     className="btn btn-sm"
                     disabled={busy}
+                    aria-label="Use default"
+                    title="Switch to default account"
                     onClick={() =>
                       act(() =>
                         isClaude
@@ -369,7 +391,8 @@ export function CodexAccountsPanel({
                       )
                     }
                   >
-                    Use default
+                    <AccountActionIcon action="switch" />
+                    <span className="account-action-label">Use default</span>
                   </button>
                 )}
               </span>
@@ -483,6 +506,7 @@ export function CodexAccountsPanel({
                         className="btn btn-sm"
                         disabled={busy}
                         aria-label={`Rename ${acc.name}`}
+                        title={sameAsEmail ? `Add nickname for ${acc.name}` : `Rename ${acc.name}`}
                         onClick={() => {
                           setRenamingId(acc.id);
                           setRenameDraft(acc.name);

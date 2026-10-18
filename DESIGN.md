@@ -790,3 +790,5 @@ Orchestrator chat shows its explicitly reported card or repository task above th
 Dashboard API reads share identical in-flight GETs and fetch fresh data after completion. JSON responses negotiate compression; terminal event streams remain uncompressed to preserve immediate updates.
 
 OpenCode and Grok PTY sessions now share the mobile Chat/CLI switch, message composer, image attachments, quick keys and expandable tool details. OpenCode reads its pinned SQLite conversation; Grok reads pinned JSONL updates. Provider snapshots replace changed streamed parts without duplicate messages; long history remains available in CLI view.
+
+On phones, account toolbar actions (refresh all usage, save current login, import/cancel) use the same icon buttons as account-row actions. Accessible names and tooltips remain; touch targets stay at least 44px. Desktop retains text labels.
