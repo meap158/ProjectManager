@@ -51,7 +51,7 @@ const CHECKS: { focus: Focus; label: string; title: string }[] = [
   { focus: 'review', label: 'Review', title: 'Check Review tasks: what is ready to accept' },
   {
     focus: 'attention',
-    label: 'Needs attention',
+    label: 'All alerts',
     title: 'Address All projects alerts, including uncommitted and unpushed work',
   },
 ];
@@ -236,9 +236,9 @@ export function OrchestratorChat({
           </button>
         </div>
       </div>
-      <div className="orchestrator-chat-checks" role="group" aria-label="One-time check">
-        <span className="faint">Ask it to check:</span>
-        {CHECKS.map((c) => (
+      <div className="orchestrator-chat-checks" role="group" aria-label="Board tasks">
+        <span className="faint">Board tasks:</span>
+        {CHECKS.filter((c) => c.focus !== 'attention').map((c) => (
           <button
             key={c.focus}
             type="button"
@@ -253,8 +253,22 @@ export function OrchestratorChat({
           </button>
         ))}
       </div>
-      <div className="orchestrator-chat-checks" role="group" aria-label="Quick process alerts">
-        <span className="faint">Quick process alerts:</span>
+      <div className="orchestrator-chat-checks" role="group" aria-label="Project alerts">
+        <span className="faint">Project alerts (git and folders):</span>
+        {CHECKS.filter((c) => c.focus === 'attention').map((c) => (
+          <button
+            key={c.focus}
+            type="button"
+            className="btn btn-sm"
+            disabled={
+              busy || activeSession?.tailState === 'running' || activeSession?.tailState === 'input'
+            }
+            title={c.title}
+            onClick={() => void check(c.focus, c.label)}
+          >
+            {working === c.focus ? 'Sending…' : c.label}
+          </button>
+        ))}
         {QUICK_ATTENTION.map((q) => (
           <button
             key={q.key}

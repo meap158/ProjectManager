@@ -165,7 +165,7 @@ it('sends dashboard attention checks to this chat (PM-172)', async () => {
       onChanged={() => {}}
     />,
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Needs attention' }));
+  fireEvent.click(screen.getByRole('button', { name: 'All alerts' }));
   expect(await screen.findByRole('status')).toBeDefined();
   expect(api.checkOrchestrator).toHaveBeenLastCalledWith('master', 'attention');
 });

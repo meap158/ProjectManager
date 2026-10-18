@@ -74,7 +74,7 @@ large ones, note questions) and Needs attention. Watch-only orchestrators recomm
 starting workers. The check is refused (409) while the chat is working or asking you something.
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open
-chat opens it in Agents; "Ask it to check" buttons, plus "Quick process alerts" chips that run the Needs attention check
+chat opens it in Agents; "Ask it to check" buttons, plus a "Project alerts" row with "All alerts" and per-kind chips that run the Needs attention check
 for one alert kind: `POST /orchestrators/:id/check` with `focus: "attention"` and `attentionKinds`), and orchestrators, their sections and
 Activity collapse with a chevron (remembered in the browser, `pm.orchestrator.collapsed`).
 

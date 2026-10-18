@@ -483,7 +483,7 @@ it('renders Needs Attention queue and allows resolving or pruning attention', as
 
   expect(await screen.findByText('Needs you')).toBeDefined();
   expect(screen.getByText('1 issue')).toBeDefined();
-  expect(screen.getByText('Uncommitted')).toBeDefined();
+  expect(screen.getAllByText('Uncommitted').some((el) => !el.closest('button'))).toBe(true);
   expect(screen.getByText('3 changed files')).toBeDefined();
 
   // Test Resolve attention button
@@ -834,7 +834,7 @@ it("asks an orchestrator's chat for a one-time check and links to it (PM-89)", a
   );
   expect(await screen.findByText('Ask this orchestrator')).toBeDefined();
   expect(screen.getByText('Not started yet')).toBeDefined();
-  const checks = within(screen.getByRole('group', { name: 'One-time check' }));
+  const checks = within(screen.getByRole('group', { name: 'Board tasks' }));
   fireEvent.click(checks.getByRole('button', { name: 'In progress' }));
   await waitFor(() => expect(api.checkOrchestrator).toHaveBeenCalledWith('m1', 'in_progress'));
   expect(await screen.findByRole('button', { name: 'Watch it work' })).toBeDefined();
