@@ -375,6 +375,7 @@ describe('screenInfo (PM-122)', () => {
       mode: 'auto mode on',
       background: ['general-purpose · 6m 16s · ↓ 113.8k', 'general-purpose · 6m 16s · ↓ 96.9k'],
       goal: null,
+      model: null,
     });
   });
 
@@ -384,6 +385,7 @@ describe('screenInfo (PM-122)', () => {
       mode: null,
       background: [],
       goal: null,
+      model: null,
     });
     expect(screenInfo('• Working (2m 03s • esc to interrupt)').status).toBe('Working (2m 03s)');
   });
@@ -720,5 +722,30 @@ describe('transcript unavailable', () => {
         'This session started before ProjectManager pinned its conversation.',
       ),
     ).toBeDefined();
+  });
+});
+
+describe('live panel for OpenCode, Grok and Antigravity (PM-190)', () => {
+  it("reads each CLI's model footer and busy line", () => {
+    const opencode = [
+      ' ┃  Build · DeepSeek V4.1 Flash Free OpenCode                                    /S:\\Vibe Marketing\\ManhAplus',
+      ' ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀',
+      '  S:\\Vibe Marketing\\ManhAplus                    47.2K (24%)  ctrl+p commands    • OpenCode 1.19.0',
+    ].join('\n');
+    expect(screenInfo(opencode, 'opencode').model).toBe('Build · DeepSeek V4.1 Flash Free');
+    const grok = [
+      '⁎ Responding… 0.6s                                                10s ↓77.5k [stop]',
+      '╰──────────────────────────── Weekly limit left: 8% · Grok 4.7 (high) · always-approve ─╯',
+    ].join('\n');
+    expect(screenInfo(grok, 'grok')).toMatchObject({
+      status: 'Responding… 0.6s 10s ↓77.5k [stop]',
+      model: 'Grok 4.7 (high) · always-approve',
+    });
+    const agy = [
+      '? for shortcuts                                                               Claude Sonnet 5.5 · medium',
+    ].join('\n');
+    expect(screenInfo(agy, 'antigravity').model).toBe('Claude Sonnet 5.5 · medium');
+    // Ordinary output with a "·" is not a footer, and other CLIs aren't read this way.
+    expect(screenInfo('Build · passed in 3s', 'claude').model).toBeNull();
   });
 });

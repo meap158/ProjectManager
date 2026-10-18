@@ -585,6 +585,11 @@
   color: var(--series-3);
   font-size: 11.5px;
 }
+/* The model and settings from the CLI's footer (OpenCode, Grok, Antigravity; PM-190). */
+.chat-model {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
 .chat-mode {
   color: var(--text-3);
   font-size: 11.5px;

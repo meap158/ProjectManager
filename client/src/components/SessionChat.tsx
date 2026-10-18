@@ -601,6 +601,27 @@ export interface ScreenInfo {
   background: string[];
   /** Claude Code's goal line: "/goal active (26m)". */
   goal: string | null;
+  /**
+   * The model and its settings from the CLI's footer (PM-190), for CLIs that show them there:
+   * OpenCode "Build · DeepSeek V4.1 Flash Free", Grok "Grok 4.7 (high) · always-approve",
+   * Antigravity "Claude Sonnet 5.5 · medium".
+   */
+  model?: string | null;
+}
+
+/** The model line of a CLI's footer, per CLI (each draws its own). */
+function footerModel(line: string, providerId: string): string | null {
+  const m =
+    providerId === 'opencode'
+      ? /^[▣┃\s]*((?:Build|Plan|General)\s·\s[^┃│]{3,60}?)(?:\s+OpenCode)?(?:\s{2,}.*)?$/.exec(line)
+      : providerId === 'grok'
+        ? /(Grok [\d.]+(?: \([^)]*\))?(?: · [\w-]+)*)/.exec(line)
+        : providerId === 'antigravity'
+          ? /(?:^|\s{2,})((?:Claude|Gemini|GPT|Grok)[\w .-]{0,40}? · (?:low|medium|high|xhigh|max))\s*$/.exec(
+              line,
+            )
+          : null;
+  return m ? m[1]!.replace(/\s+/g, ' ').trim() : null;
 }
 
 /** Which mode it is, for its colour as in the CLI (PM-134). */
@@ -628,7 +649,8 @@ export function statusParts(status: string): { activity: string; details: string
     : { activity: status, details: '' };
 }
 
-const SPINNER = /^[✻✶✢✽✳✺✹✸✷*·•◦⋆✦]\s*(?=\p{L})/u;
+// Claude's, Codex's and the braille / ⁎ spinners OpenCode, Grok and Antigravity draw (PM-190).
+const SPINNER = /^[✻✶✢✽✳✺✹✸✷*·•◦⋆✦⁎\u2800-\u28ff]\s*(?=\p{L})/u;
 const clean = (s: string) =>
   s
     .replace(/^[^\p{L}\p{N}]+/u, '')
@@ -642,9 +664,9 @@ const clean = (s: string) =>
  * permission mode and the background agents, all things the terminal shows live but the
  * transcript never records. Lines wrapped by the terminal are joined back.
  */
-export function screenInfo(screen: string): ScreenInfo {
+export function screenInfo(screen: string, providerId = ''): ScreenInfo {
   const raw = screen.split('\n');
-  const info: ScreenInfo = { status: null, mode: null, background: [], goal: null };
+  const info: ScreenInfo = { status: null, mode: null, background: [], goal: null, model: null };
   for (let i = 0; i < raw.length; i++) {
     const line = raw[i]!.trim();
     if (!line) continue;
@@ -674,6 +696,11 @@ export function screenInfo(screen: string): ScreenInfo {
       info.mode = clean(mode[0]!);
       continue;
     }
+    const model = providerId ? footerModel(line, providerId) : null;
+    if (model) {
+      info.model = model; // The last one: the footer is at the bottom.
+      continue;
+    }
     // Background agents / shells: a status bullet, a name, then time and tokens.
     if (/^(\(\s*\)|[◯○◉●◐◓◑◒])\s+\S/.test(line) && /\d+[smh]\b|↓/.test(line)) {
       info.background.push(
@@ -687,6 +714,8 @@ export function screenInfo(screen: string): ScreenInfo {
     // bullet is just output, e.g. Codex's "• Ran npm test"), or Codex's "Working (…)".
     if (
       (SPINNER.test(line) && /…|\(\s*\d+[smh]|waiting for/i.test(line)) ||
+      // Grok's "Responding… 0.6s", drawn without a glyph some frames.
+      /^\S*\s*(?:Responding|Thinking|Working)…\s+\d+(?:\.\d+)?s\b/.test(line) ||
       /^[•◦]?\s*working\s*\(\s*\d+[smh]/i.test(line)
     )
       info.status = clean(continued());
@@ -870,8 +899,8 @@ export function SessionChat({
     };
   }, [id, live, asking, working]);
   const shown: ScreenInfo = live
-    ? screenInfo(screen)
-    : { status: null, mode: null, background: [], goal: null };
+    ? screenInfo(screen, session.providerId)
+    : { status: null, mode: null, background: [], goal: null, model: null };
   const status = shown.status;
 
   // Follow new messages while at the bottom; otherwise count them on a "new messages" pill.
@@ -1214,7 +1243,12 @@ export function SessionChat({
             </div>
           ))}
           {/* What the terminal shows live around its input (PM-122): status, mode, background. */}
-          {(working || status || shown.mode || shown.goal || shown.background.length > 0) && (
+          {(working ||
+            status ||
+            shown.mode ||
+            shown.goal ||
+            shown.model ||
+            shown.background.length > 0) && (
             <div className="chat-live" role="status" aria-label="Session status">
               {(working || status) && (
                 <div
@@ -1259,6 +1293,7 @@ export function SessionChat({
                 </ul>
               )}
               {shown.goal && <span className="chat-goal">◎ {shown.goal}</span>}
+              {shown.model && <span className="chat-model">{shown.model}</span>}
               {shown.mode && (
                 <span className={`chat-mode is-${modeKind(shown.mode)}`}>
                   {modeKind(shown.mode) === 'plan' ? '⏸' : '⏵⏵'} {shown.mode}
