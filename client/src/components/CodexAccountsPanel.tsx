@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CodexAccount, CodexAccountsState } from '../../../shared/types';
 import { api } from '../api';
 import { formatDate, formatRelative } from '../format';
-import { ProviderIcon } from './icons';
+import { InfoIcon, ProviderIcon } from './icons';
+import './project-agents.css';
 import { UsageLimits } from './UsageLimits';
 
 function AccountActionIcon({
@@ -52,6 +53,7 @@ export function CodexAccountsPanel({
   providerId?: AccountProviderId;
   onError: (message: string) => void;
 }) {
+  const helpRef = useRef<HTMLDialogElement>(null);
   const isClaude = providerId === 'claude';
   const cliTitle = isClaude ? 'Claude' : 'Codex';
   const credFile = isClaude ? '~/.claude/.credentials.json' : '~/.codex/auth.json';
@@ -190,15 +192,61 @@ export function CodexAccountsPanel({
         </span>
         <span className="meta">active: {activeLabel}</span>
       </div>
-      <p className="faint" style={{ margin: '0 0 12px', fontSize: 12.5 }}>
-        The account selected here is the {cliTitle} login for every {cliTitle} session, run and
-        orchestrator chat. Switch between the default CLI login (<code>{credFile}</code>) and saved{' '}
-        <code>{importFileLabel}</code> profiles.{' '}
-        {!isClaude &&
-          'Codex can automatically rotate to another account when it hits a usage limit. '}
-        {!isClaude &&
-          'Moving Codex onto a different login starts a new conversation in each session. When adding multiple accounts, run codex login directly without running codex logout (which revokes the token on OpenAI’s server).'}
+      <p
+        className="faint"
+        style={{
+          margin: '0 0 12px',
+          fontSize: 12.5,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        The selected account is used by every {cliTitle} session, run and orchestrator chat.
+        <button
+          type="button"
+          className="icon-btn info-btn"
+          title={`How to add a ${cliTitle} account`}
+          aria-label={`How to add a ${cliTitle} account`}
+          aria-haspopup="dialog"
+          onClick={() => helpRef.current?.showModal()}
+        >
+          <InfoIcon size={14} />
+        </button>
       </p>
+      <dialog
+        ref={helpRef}
+        className="confirm-dialog sessions-info-dialog"
+        aria-label={`How to add a ${cliTitle} account`}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) event.currentTarget.close();
+        }}
+      >
+        <div className="dialog-body">
+          <h2>Add a {cliTitle} account</h2>
+          <ol style={{ paddingLeft: 18, margin: '0 0 8px' }}>
+            <li>
+              In a terminal, run <code>{isClaude ? 'claude' : 'codex login'}</code>
+              {isClaude && ' and type /login'} and sign in.
+            </li>
+            <li>
+              Back here, click <strong>Save current CLI login</strong>.
+            </li>
+            <li>Repeat for each account, then use Switch to account.</li>
+          </ol>
+          <p style={{ margin: 0 }}>
+            Default login: <code>{credFile}</code>. Saved profiles are{' '}
+            <code>{importFileLabel}</code> copies.
+            {!isClaude && ' Never run codex logout: it revokes the token on OpenAI’s server.'}
+            {!isClaude && ' Switching starts a new conversation in each session.'}
+          </p>
+        </div>
+        <div className="dialog-footer">
+          <button type="button" className="btn" onClick={() => helpRef.current?.close()}>
+            Close
+          </button>
+        </div>
+      </dialog>
 
       {state === null ? (
         <div className="skeleton" style={{ height: 100 }} />
