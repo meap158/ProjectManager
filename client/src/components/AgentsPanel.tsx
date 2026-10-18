@@ -555,7 +555,7 @@ export function AgentsPanel({
                   {sessionView.available && (
                     <ViewSwitch view={sessionView.view} onChange={sessionView.choose} />
                   )}
-                  <span style={{ flex: 1 }} />
+                  <span className="project-terminal-spacer" style={{ flex: 1 }} />
                   {/* Phones: the title gets the room; the actions open from ⋯ in a row below. */}
                   <button
                     type="button"

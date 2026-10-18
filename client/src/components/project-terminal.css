@@ -208,9 +208,20 @@
     flex-wrap: wrap;
     row-gap: 2px;
   }
+  /* The title takes every pixel the fixed controls leave: an empty spacer sharing the free space
+     with it left the title about half the room (it showed as "O…"). */
+  .project-terminal-head > .project-terminal-spacer {
+    display: none;
+  }
   .project-terminal-head > .pane-identity {
     flex: 1 1 0;
     min-width: 0;
+  }
+  /* A compact Chat/CLI switch: the title matters more than a wide switch. */
+  .project-terminal-head .view-switch .btn {
+    min-height: 36px;
+    padding: 0 8px;
+    font-size: 12px;
   }
   .project-terminal-head > .pane-identity .inline-rename,
   .project-terminal-head > .pane-identity b {
