@@ -122,7 +122,7 @@ export function TerminalView({
         top: `${viewport.offsetTop}px`,
         width: `${viewport.width}px`,
         height: `${Math.max(120, viewport.height - bar)}px`,
-        zIndex: '99', // Under the key bar (100).
+        zIndex: '99', // Under the key bar (1100).
         borderRadius: '0',
       });
       host.classList.add('is-pinned');
