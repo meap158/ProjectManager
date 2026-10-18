@@ -331,6 +331,8 @@ export interface SessionTranscript {
   next: number;
   /** The transcript was rewritten (e.g. compacted): replace, don't append. */
   reset: boolean;
+  /** Why there is none to read, when the CLI normally has one (shown instead of "no messages"). */
+  unavailable?: string;
 }
 
 export interface SensorFan {

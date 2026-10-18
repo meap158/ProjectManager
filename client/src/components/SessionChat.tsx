@@ -26,7 +26,7 @@ import './session-chat.css';
 /** Kept in memory; older items stay in the transcript file (the terminal shows them all too). */
 const MAX_ITEMS = 1500;
 const POLL_MS = 1500;
-const CHAT_PROVIDERS = new Set(['claude', 'codex', 'opencode', 'grok']);
+const CHAT_PROVIDERS = new Set(['claude', 'codex', 'opencode', 'grok', 'antigravity']);
 
 /** Sessions whose CLI writes a transcript the chat view can read. */
 export const chatSupported = (session: AgentSession) =>
@@ -797,6 +797,8 @@ export function SessionChat({
   const [items, setItems] = useState<ChatItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [supported, setSupported] = useState(true);
+  /** Why the server has no transcript to read, when it says (e.g. no pinned conversation). */
+  const [unavailable, setUnavailable] = useState<string | null>(null);
   const [screen, setScreen] = useState('');
   // The unsent message survives switching to the terminal and back (kept per session for this
   // browser tab); see the unmount effect below for what the terminal shows meanwhile.
@@ -818,6 +820,7 @@ export function SessionChat({
       api.sessionTranscript(id, next.current).then((t) => {
         if (!active) return;
         setSupported(t.supported);
+        setUnavailable(t.unavailable ?? null);
         setLoaded(true);
         next.current = t.next;
         if (!t.items.length && !t.reset) return;
@@ -1171,7 +1174,7 @@ export function SessionChat({
             </div>
           ) : !supported ? (
             <p className="chat-empty">
-              This CLI has no readable transcript: use the terminal view.
+              {unavailable ?? 'This CLI has no readable transcript: use the terminal view.'}
             </p>
           ) : !entries.length ? (
             <p className="chat-empty">No messages yet. Send one below.</p>

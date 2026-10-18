@@ -366,7 +366,11 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     const offset = after === undefined ? undefined : Number(after);
     if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0))
       throw new AgentError(400, 'Invalid offset');
-    if (resume.providerId === 'opencode' || resume.providerId === 'grok') {
+    if (
+      resume.providerId === 'opencode' ||
+      resume.providerId === 'grok' ||
+      resume.providerId === 'antigravity'
+    ) {
       const session = supervisor.getSession(parseId(c));
       if (!session) throw new AgentError(404, 'Session not found');
       return c.json(

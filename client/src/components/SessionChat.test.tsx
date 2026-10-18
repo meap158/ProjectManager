@@ -117,6 +117,7 @@ describe('SessionChat (mobile chat view)', () => {
     expect(chatSupported(session({ providerId: 'codex' }))).toBe(true);
     expect(chatSupported(session({ providerId: 'grok' }))).toBe(true);
     expect(chatSupported(session({ providerId: 'opencode' }))).toBe(true);
+    expect(chatSupported(session({ providerId: 'antigravity' }))).toBe(true);
     expect(chatSupported(session({ providerId: 'shell' }))).toBe(false);
     expect(chatSupported(session({ terminal: 'pipe' }))).toBe(false);
   });
@@ -703,5 +704,21 @@ describe('status shimmer (PM-134)', () => {
     const done = render(<SessionChat session={session()} onError={() => {}} />);
     await waitFor(() => expect(vi.mocked(api.sessionScreen).mock.calls.length).toBe(calls + 1));
     expect(done.container.querySelector('.chat-working.is-working')).toBeNull();
+  });
+});
+
+describe('transcript unavailable', () => {
+  it('says why a session has no transcript instead of an empty chat', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue({
+      ...transcript({}),
+      supported: false,
+      unavailable: 'This session started before ProjectManager pinned its conversation.',
+    });
+    render(<SessionChat session={session({ providerId: 'grok' })} onError={() => {}} />);
+    expect(
+      await screen.findByText(
+        'This session started before ProjectManager pinned its conversation.',
+      ),
+    ).toBeDefined();
   });
 });

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { ChatItem, SessionTranscript } from '../../shared/types.js';
+import { antigravityConversationFile, readAntigravity } from './antigravityTranscript.js';
 import { toolSummary } from './transcript.js';
 
 const clip = (s: string) => (s.length > 16_000 ? s.slice(0, 16_000) + '\n… more in CLI' : s);
@@ -28,7 +29,12 @@ export function providerConversation(provider: string, resume: string | null): s
     return null;
   }
   if (!Array.isArray(args)) return null;
-  const flag = provider === 'opencode' ? '--session' : '--resume';
+  const flag =
+    provider === 'opencode'
+      ? '--session'
+      : provider === 'antigravity'
+        ? '--conversation'
+        : '--resume';
   const at = args.findIndex((arg) => arg === flag || (provider === 'opencode' && arg === '-s'));
   const id = at >= 0 ? args[at + 1] : undefined;
   if (typeof id !== 'string') return null;
@@ -207,6 +213,21 @@ export function grokItems(lines: string[], conversation: string): ChatItem[] {
   return items;
 }
 
+const antigravityCache = new Map<string, { sig: string; cwd: string; items: ChatItem[] }>();
+
+/** Size and modification time of each file (missing ones included), to tell whether any changed. */
+async function fileSignature(files: string[]): Promise<string> {
+  const parts = await Promise.all(
+    files.map((file) =>
+      stat(file).then(
+        (s) => `${s.size}:${s.mtimeMs}`,
+        () => '-',
+      ),
+    ),
+  );
+  return parts.join('|');
+}
+
 export async function readProviderTranscript(
   provider: string,
   resume: string | null,
@@ -215,7 +236,27 @@ export async function readProviderTranscript(
   home = os.homedir(),
 ): Promise<SessionTranscript> {
   const id = providerConversation(provider, resume);
-  if (!id) return snapshot([], after);
+  if (!id)
+    // Never the newest conversation in the folder: without a pinned one there is none to read.
+    return {
+      supported: false,
+      items: [],
+      next: 0,
+      reset: false,
+      unavailable:
+        'This session started before ProjectManager pinned its conversation, so its transcript can’t be found. Use the terminal view, or start a new session for the chat view.',
+    };
+  if (provider === 'antigravity') {
+    const file = antigravityConversationFile(id, home);
+    if (!file) return snapshot([], after);
+    // A conversation file is tens of MB: decode it again only when it (or its WAL) changed.
+    const sig = await fileSignature([file, `${file}-wal`]);
+    const cached = antigravityCache.get(file);
+    if (cached?.sig === sig && cached.cwd === cwd) return snapshot(cached.items, after);
+    const items = readAntigravity(file, cwd) ?? [];
+    antigravityCache.set(file, { sig, cwd, items });
+    return snapshot(items, after);
+  }
   if (provider === 'opencode') {
     const file = path.join(home, '.local', 'share', 'opencode', 'opencode.db');
     if (!existsSync(file)) return snapshot([], after);
