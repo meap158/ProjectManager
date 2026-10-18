@@ -289,6 +289,13 @@ export interface CpuBudget {
   defaultThreads: number;
   /** Current overall CPU utilization (0–100%), sampled via os.cpus() delta without spawning a process. */
   usagePercent?: number | null;
+  /**
+   * From the governor (Windows), which keeps the whole machine under the threshold: what the
+   * agents themselves use (% of the machine) and how many threads they may use right now
+   * (fewer than `threads` while other load is high). Null when it isn't running.
+   */
+  agentPercent?: number | null;
+  allowedThreads?: number | null;
 }
 
 /** One entry of a session's chat view (mobile): a message, a tool call or its result. */

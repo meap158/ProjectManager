@@ -84,6 +84,7 @@ import {
 } from './activity.js';
 import { codexLimits, readLimits } from './limits.js';
 import { applyCpuBudget, getCpuBudget } from './cpuBudget.js';
+import { CpuGovernor, type GovernorStats } from './cpuGovernor.js';
 import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
 import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
 import {
@@ -349,6 +350,7 @@ export class AgentSupervisor {
   private readonly maxParallelRuns: number;
   /** Apply Settings → CPU budget to agent processes (production; tests opt in). */
   private readonly cpuBudget: boolean;
+  private cpuGovernor: CpuGovernor | null = null;
   /** When each session last spawned and whether that spawn resumed a conversation. */
   private lastSpawn = new Map<string, { at: number; resumed: boolean; byUser: boolean }>();
   /** Sessions whose last resume died right away: their next relaunch starts fresh. */
@@ -429,6 +431,13 @@ export class AgentSupervisor {
     this.managedRuns = options.managedRuns ?? false;
     this.maxParallelRuns = options.maxParallelRuns ?? MAX_PARALLEL_RUNS;
     this.cpuBudget = options.cpuBudget ?? false;
+    // Keeps the whole machine under the budget's threshold by narrowing agents when other load
+    // rises (Windows; elsewhere the budget's affinity alone applies).
+    if (this.cpuBudget && CpuGovernor.supported()) {
+      this.cpuGovernor = new CpuGovernor();
+      const budget = getCpuBudget(db);
+      this.cpuGovernor.configure({ threads: budget.threads, total: budget.totalThreads });
+    }
     this.installRecipes = options.installRecipes ?? {};
     this.useHost = !!options.host && !!this.dataDir && ptyAvailable();
     this.ready = this.reconcile().catch((e: Error) => {
@@ -709,8 +718,15 @@ export class AgentSupervisor {
     if (roots.length) await applyCpuBudget(roots, getCpuBudget(this.db).threads);
   }
 
+  /** The governor's latest measurements (Windows), or null when it isn't running. */
+  cpuGovernorStats(): GovernorStats | null {
+    return this.cpuGovernor?.latest() ?? null;
+  }
+
   /** Re-applies the CPU budget to every agent process (after the setting changed). */
   async refreshCpuBudget(): Promise<void> {
+    const budget = getCpuBudget(this.db);
+    this.cpuGovernor?.configure({ threads: budget.threads, total: budget.totalThreads });
     const pids = [...this.live.values()]
       .filter((live) => !(live.proc instanceof HostedProc))
       .map((live) => live.proc.pid);
@@ -1961,6 +1977,8 @@ export class AgentSupervisor {
       re-attaches); in-process ones are stopped so the next boot can relaunch them cleanly. */
   async shutdown(): Promise<void> {
     this.closed = true;
+    // Agents get their full budget back as the governor leaves.
+    this.cpuGovernor?.stop();
     clearInterval(this.continuationTimer);
     clearInterval(this.managedTimer);
     await this.managedPolling;

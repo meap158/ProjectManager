@@ -64,7 +64,9 @@ async function verifiedBudget(threads: number): Promise<boolean> {
         },
       );
       const [actual, priority] = stdout.trim().split(/\s+/);
-      return BigInt(actual!) === BigInt.asIntN(64, mask) && priority === 'BelowNormal';
+      // The governor may already have narrowed it to fewer threads within the budget.
+      const got = BigInt.asUintN(64, BigInt(actual!));
+      return got !== 0n && (got & ~mask) === 0n && priority === 'BelowNormal';
     }
     const status = await readFile('/proc/self/status', 'utf8');
     const actual = /^Cpus_allowed:\s*([a-f\d,]+)/im.exec(status)?.[1]?.replaceAll(',', '');

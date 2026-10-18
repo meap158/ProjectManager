@@ -9,6 +9,7 @@ import {
   AGENT_AUTONOMY,
   WORKSPACE_PRESETS,
   WORKSPACE_PRESET_INFO,
+  type CpuBudget,
   type WorkspaceLayout,
 } from '../../shared/types.js';
 import type { Db } from '../db.js';
@@ -142,7 +143,17 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   });
 
   // CPU budget for agent processes (Settings): applied at once to everything running.
-  app.get('/agents/cpu-budget', (c) => c.json(getCpuBudget(db)));
+  const budgetWithGovernor = (budget: CpuBudget): CpuBudget => {
+    const stats = supervisor.cpuGovernorStats();
+    return {
+      ...budget,
+      // The governor's own reading of the machine, so it and the agents' share are one sample.
+      usagePercent: stats?.machinePercent ?? budget.usagePercent,
+      agentPercent: stats?.agentPercent ?? null,
+      allowedThreads: stats?.allowedThreads ?? null,
+    };
+  };
+  app.get('/agents/cpu-budget', (c) => c.json(budgetWithGovernor(getCpuBudget(db))));
 
   app.put('/agents/cpu-budget', async (c) => {
     const body = await parseBody(
@@ -151,7 +162,7 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     );
     const budget = setCpuBudget(db, body.threads);
     void supervisor.refreshCpuBudget();
-    return c.json(budget);
+    return c.json(budgetWithGovernor(budget));
   });
 
   // CPU temperature and fan speeds beside the budget (PM-113). Read-only, briefly cached.
