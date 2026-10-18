@@ -164,6 +164,7 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
             }}
           />
         )}
+        <GitIdentityLine projectId={projectId} />
         {message && (
           <div className="notice" role="status">
             <span>{message}</span>
@@ -289,6 +290,103 @@ function AccountLine({
             disabled={saving}
           />
         </>
+      )}
+      {error && (
+        <div className="error-banner" role="alert">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The commit author for this project's agent sessions and runs (PM-186). Together with the GitHub
+ * account above it decides who commits, pushes and opens pull requests; nothing is written to the
+ * project folder.
+ */
+function GitIdentityLine({ projectId }: { projectId: number }) {
+  const [saved, setSaved] = useState<{ name: string | null; email: string | null } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const nameId = useId();
+  const emailId = useId();
+  useEffect(() => {
+    let active = true;
+    api
+      .getGitIdentity(projectId)
+      .then((value) => active && setSaved(value))
+      .catch(() => active && setSaved({ name: null, email: null }));
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+  if (!saved) return null;
+  async function save(next: { name: string | null; email: string | null }) {
+    setSaving(true);
+    setError(null);
+    try {
+      setSaved(await api.setGitIdentity(projectId, next.name, next.email));
+      setEditing(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="pr-action-row">
+      <p className="pr-merge-status">
+        Agents commit as{' '}
+        <strong>{saved.name ? `${saved.name} <${saved.email}>` : 'the configured git user'}</strong>{' '}
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => {
+            setName(saved.name ?? '');
+            setEmail(saved.email ?? '');
+            setEditing(!editing);
+          }}
+        >
+          {editing ? 'Cancel' : saved.name ? 'Change' : 'Set'}
+        </button>
+      </p>
+      {editing && (
+        <form
+          className="pr-action-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save({ name: name.trim() || null, email: email.trim() || null });
+          }}
+        >
+          <label className="sr-only" htmlFor={nameId}>
+            Commit name
+          </label>
+          <input
+            id={nameId}
+            value={name}
+            placeholder="Commit name"
+            autoComplete="off"
+            onChange={(e) => setName(e.target.value)}
+          />
+          <label className="sr-only" htmlFor={emailId}>
+            Commit email
+          </label>
+          <input
+            id={emailId}
+            type="email"
+            value={email}
+            placeholder="Commit email"
+            autoComplete="off"
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <button type="submit" className="btn btn-sm btn-primary" disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </form>
       )}
       {error && (
         <div className="error-banner" role="alert">

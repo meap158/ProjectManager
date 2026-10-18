@@ -101,6 +101,7 @@ import { HostClient } from './host/client.js';
 import type { HostSessionInfo } from './host/protocol.js';
 import { fetchScript, recipeFor } from './install.js';
 import { processEnv, ptyAvailable, spawnPipe, spawnPty, type AgentProc } from './proc.js';
+import { projectGitEnv } from '../gitIdentity.js';
 import {
   buildDispatchArgv,
   buildInteractiveArgv,
@@ -2091,9 +2092,13 @@ export class AgentSupervisor {
       const command = parsedCmd.command;
       // Settings picks the Codex login. A home stored on the session does not override it.
       const codexProfile = this.sessionCodexProfile(row);
-      const env = codexProfile
+      // The project's git identity (PM-186) sits under any env the session was started with.
+      const gitEnv = await this.projectGitEnv(row.project_id);
+      // `storedEnv` is what may be saved to the database; the git env carries a token and never is.
+      const storedEnv = codexProfile
         ? { ...parsedCmd.env, CODEX_HOME: codexProfile.home }
         : { ...parsedCmd.env };
+      const env = { ...gitEnv, ...storedEnv };
       const storedCodexKey =
         parsedCmd.codexAccountId ??
         this.codexAccounts?.keyForHome(parsedCmd.env?.CODEX_HOME) ??
@@ -2113,7 +2118,7 @@ export class AgentSupervisor {
         resume = null;
         const rest = {
           ...parsedCmd,
-          env,
+          env: storedEnv,
           ...(codexProfile ? { codexAccountId: codexProfile.id } : {}),
         };
         delete rest.codexFreshStart;
@@ -2600,6 +2605,17 @@ export class AgentSupervisor {
     return allowanceReset(tail, windows, Date.now()) !== null;
   }
 
+  /** Commit author and GitHub account for this project's agent processes; never throws. */
+  private async projectGitEnv(projectId: number): Promise<Record<string, string>> {
+    const project = getProjectRow(this.db, projectId);
+    if (!project) return {};
+    try {
+      return await projectGitEnv(this.db, project);
+    } catch {
+      return {};
+    }
+  }
+
   private async spawnRun(row: RunRow, isRelaunch: boolean): Promise<void> {
     if (hasManagedExecution(this.db, row.id, row.log_path)) {
       await this.pollManagedRuns();
@@ -2629,7 +2645,10 @@ export class AgentSupervisor {
       };
       const { command, timeoutMs } = storedCmd;
       const codexProfile = this.runCodexProfile(row);
-      const runEnv: Record<string, string> = codexProfile ? { CODEX_HOME: codexProfile.home } : {};
+      const runEnv: Record<string, string> = {
+        ...(await this.projectGitEnv(row.project_id)),
+        ...(codexProfile ? { CODEX_HOME: codexProfile.home } : {}),
+      };
       const project = getProjectRow(this.db, row.project_id);
       const cwd = project?.path ?? process.cwd();
       const log = this.outputFor(key, row.log_path);

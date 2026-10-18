@@ -25,6 +25,7 @@ import {
 } from './pullRequests.js';
 import { openInFileManager } from './openFolder.js';
 import { GH_LOGIN, ghAccountSettingKey, isLoggedIn } from './ghAccount.js';
+import { getGitIdentity, gitIdentitySettingKey, validateGitIdentity } from './gitIdentity.js';
 import {
   registerAttachmentRoutes,
   registerSessionImageRoutes,
@@ -264,6 +265,28 @@ export function createApp(
     return c.json({ override: account });
   });
 
+  // The commit author agents use in a project's sessions and runs (PM-186). With the gh account
+  // above it is the project's git identity; neither is written to the project folder.
+  app.get('/projects/:id/git-identity', (c) => {
+    const project = store.getProjectRow(db, parseId(c));
+    if (!project) throw new HttpError(404, 'Project not found');
+    return c.json(getGitIdentity(db, project.id));
+  });
+
+  app.put('/projects/:id/git-identity', async (c) => {
+    const project = store.getProjectRow(db, parseId(c));
+    if (!project) throw new HttpError(404, 'Project not found');
+    const body = await parseBody(
+      c,
+      z.object({ name: z.string().max(200).nullable(), email: z.string().max(300).nullable() }),
+    );
+    const checked = validateGitIdentity(body);
+    if (!checked.ok) throw new HttpError(400, checked.error);
+    if (checked.value.name === null) store.deleteSetting(db, gitIdentitySettingKey(project.id));
+    else store.setSetting(db, gitIdentitySettingKey(project.id), checked.value);
+    return c.json(checked.value);
+  });
+
   app.get('/projects/:id/pull-requests', async (c) => {
     const project = store.getProjectRow(db, parseId(c));
     if (!project) throw new HttpError(404, 'Project not found');
@@ -322,6 +345,7 @@ export function createApp(
       throw new HttpError(404, 'Project not found');
     }
     store.deleteSetting(db, ghAccountSettingKey(id));
+    store.deleteSetting(db, gitIdentitySettingKey(id));
     scanner.forget(id);
     await supervisor.onProjectDeleted(id);
     return c.body(null, 204);

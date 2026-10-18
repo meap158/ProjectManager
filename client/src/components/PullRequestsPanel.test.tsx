@@ -6,9 +6,16 @@ import { api } from '../api';
 import { PullRequestsPanel } from './PullRequestsPanel';
 
 vi.mock('../api', () => ({
-  api: { pullRequests: vi.fn(), pullRequestAction: vi.fn(), setPullRequestAccount: vi.fn() },
+  api: {
+    pullRequests: vi.fn(),
+    pullRequestAction: vi.fn(),
+    setPullRequestAccount: vi.fn(),
+    getGitIdentity: vi.fn(),
+    setGitIdentity: vi.fn(),
+  },
 }));
 beforeEach(() => {
+  vi.mocked(api.getGitIdentity).mockResolvedValue({ name: null, email: null });
   HTMLDialogElement.prototype.showModal = vi.fn();
   HTMLDialogElement.prototype.close = vi.fn();
 });
@@ -173,4 +180,18 @@ it('chooses another gh account for the project, then reloads as it', async () =>
   fireEvent.click(within(screen.getByRole('option', { name: /meapwork/ })).getByRole('button'));
   await waitFor(() => expect(api.setPullRequestAccount).toHaveBeenCalledWith(4, 'meapwork'));
   await waitFor(() => expect(api.pullRequests).toHaveBeenCalledTimes(2));
+});
+
+it('sets the commit author agents use in this project (PM-186)', async () => {
+  vi.mocked(api.pullRequests).mockResolvedValue(result([]));
+  vi.mocked(api.setGitIdentity).mockResolvedValue({ name: 'Ada', email: 'ada@example.com' });
+  render(<PullRequestsPanel projectId={4} visible />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Set' }));
+  fireEvent.change(screen.getByLabelText('Commit name'), { target: { value: 'Ada' } });
+  fireEvent.change(screen.getByLabelText('Commit email'), {
+    target: { value: 'ada@example.com' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(api.setGitIdentity).toHaveBeenCalledWith(4, 'Ada', 'ada@example.com'));
+  expect(await screen.findByText('Ada <ada@example.com>')).toBeDefined();
 });

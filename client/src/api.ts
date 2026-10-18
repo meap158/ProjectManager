@@ -202,6 +202,14 @@ export const api = {
     request<{ override: string | null }>('PUT', `/projects/${id}/pull-requests/account`, {
       account,
     }),
+  /** The commit author agents use in this project (both null: whatever git is configured with). */
+  getGitIdentity: (id: number) =>
+    request<{ name: string | null; email: string | null }>('GET', `/projects/${id}/git-identity`),
+  setGitIdentity: (id: number, name: string | null, email: string | null) =>
+    request<{ name: string | null; email: string | null }>('PUT', `/projects/${id}/git-identity`, {
+      name,
+      email,
+    }),
   listProjects: () => request<ProjectSummary[]>('GET', '/projects'),
   getProject: (id: number) => request<ProjectDetail>('GET', `/projects/${id}`),
   addProject: (path: string, name?: string) =>

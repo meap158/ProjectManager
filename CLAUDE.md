@@ -26,6 +26,7 @@ anything.
 | `scripts/board-mcp.mjs`   | MCP stdio bridge to the live local server                                         |
 | `server/pullRequests.ts`  | gh-backed pull requests for a project: list, mergeability, and PR actions         |
 | `server/ghAccount.ts`     | Which gh account a project acts as (repo owner's login, via per-call GH_TOKEN)    |
+| `server/gitIdentity.ts`   | Per-project commit author + gh account injected into agent env only (PM-186)      |
 | `server/scanner.ts`       | Background scans; cards auto-move from commits, branches and PRs (no agent)       |
 | `server/analysis/*`       | Pure-ish analysis: line counter, languages, file listing, disk walk, git, scc     |
 | `server/agents/*`         | AI agent providers, run/session supervisor, agent API routes                      |
