@@ -1383,7 +1383,98 @@ a.t:hover {
 .settings-cli-list > li {
   align-items: center;
 }
-.settings-cli-list > li > .badge {
+.settings-cli-list > li.settings-cli-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+.settings-cli-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+  flex-wrap: wrap;
+}
+.settings-cli-info {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.settings-cli-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.settings-cli-item.is-expandable > .settings-cli-row {
+  cursor: pointer;
+}
+.settings-cli-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.settings-cli-expand-btn[aria-expanded='true'] .blist-caret {
+  transform: rotate(90deg);
+}
+.settings-cli-drawer {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.codex-accounts-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.codex-accounts-toolbar-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.codex-account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.codex-account-info {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.codex-account-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+@media (max-width: 600px) {
+  .settings-cli-row {
+    align-items: flex-start;
+  }
+  .settings-cli-actions {
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: 4px;
+  }
+  .codex-accounts-toolbar-actions,
+  .codex-account-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+.settings-cli-list > li > .badge,
+.settings-cli-row > .badge,
+.settings-cli-actions > .badge {
   flex-shrink: 0;
   line-height: 1;
 }
@@ -6016,5 +6107,26 @@ span.path-link:hover .path-icon {
   }
   .work-list .work-actions {
     grid-column: 3;
+  }
+}
+
+/* Account controls retain their accessible names in compact mobile rows. */
+.codex-account-info {
+  overflow-wrap: anywhere;
+}
+.codex-account-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+@media (max-width: 600px) {
+  .codex-account-actions .btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+  }
+  .codex-account-actions .account-action-label {
+    display: none;
   }
 }

@@ -1,26 +1,59 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PROVIDER_LABELS, ProviderIcon } from './icons';
 import { Dropdown } from './Dropdown';
 import { OrchestratorTerminal } from './OrchestratorTerminal';
 import { api } from '../api';
 import type { AgentSession } from '../../../shared/types';
-import type { OrchestratorConfig } from '../../../shared/orchestrator';
+import { Link } from 'react-router';
+import { serialPoll } from '../lib/serialPoll';
+import type { OrchestratorChatWork, OrchestratorConfig } from '../../../shared/orchestrator';
 import './orchestrator-chat.css';
 
-type Focus = 'all' | 'todo' | 'in_progress' | 'review';
+const CHAT_OPEN_KEY = 'pm.orchestrator.chatOpen';
+
+function readChatOpen(instanceId: string): boolean {
+  try {
+    const raw = localStorage.getItem(CHAT_OPEN_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Boolean(parsed && typeof parsed === 'object' && parsed[instanceId]);
+  } catch {
+    return false;
+  }
+}
+
+function writeChatOpen(instanceId: string, isOpen: boolean): void {
+  try {
+    const raw = localStorage.getItem(CHAT_OPEN_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    const next = parsed && typeof parsed === 'object' ? { ...parsed } : {};
+    if (isOpen) next[instanceId] = true;
+    else delete next[instanceId];
+    localStorage.setItem(CHAT_OPEN_KEY, JSON.stringify(next));
+  } catch {
+    // Persisting expanded chat state is a convenience only.
+  }
+}
+
+type Focus = 'all' | 'todo' | 'in_progress' | 'review' | 'attention';
 const CHECKS: { focus: Focus; label: string; title: string }[] = [
   {
     focus: 'all',
     label: 'Everything pending',
     title: 'Check progress, review evidence and work through To do, then report back',
   },
-  { focus: 'todo', label: 'To do', title: 'Work through the To do tasks within worker limits' },
+  { focus: 'todo', label: 'To do', title: 'Work through the To do tasks directly in this chat' },
   {
     focus: 'in_progress',
     label: 'In progress',
     title: 'Check progress on In progress tasks and update their status',
   },
   { focus: 'review', label: 'Review', title: 'Check Review tasks: what is ready to accept' },
+  {
+    focus: 'attention',
+    label: 'Needs attention',
+    title: 'Address All projects alerts, including uncommitted and unpushed work',
+  },
 ];
 
 function chatState(session: AgentSession | null): string {
@@ -49,7 +82,12 @@ export function OrchestratorChat({
 }) {
   const [opened, setOpened] = useState<AgentSession | null>(null);
   const [openedFrom, setOpenedFrom] = useState<AgentSession | null>(null);
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [openByInstance, setOpenByInstance] = useState<Record<string, boolean>>({});
+  const terminalOpen = openByInstance[instance.id] ?? readChatOpen(instance.id);
+  const setTerminalOpen = (next: boolean) => {
+    setOpenByInstance((prev) => ({ ...prev, [instance.id]: next }));
+    writeChatOpen(instance.id, next);
+  };
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [sent, setSent] = useState<{ sessionId: number; label: string } | null>(null);
@@ -86,14 +124,37 @@ export function OrchestratorChat({
     });
   const activeSession =
     opened && session?.id === opened.id && session !== openedFrom ? session : (opened ?? session);
+  const [currentWork, setCurrentWork] = useState<OrchestratorChatWork | null>(null);
+  const progressSessionId = activeSession?.id;
+  const progressSessionStatus = activeSession?.status;
+  useEffect(() => {
+    let active = true;
+    if (!terminalOpen || !progressSessionId || progressSessionStatus !== 'running') return;
+    const stop = serialPoll(
+      async () => {
+        const work = await api.getOrchestratorChatWork(instance.id);
+        if (active) setCurrentWork(work);
+      },
+      3000,
+      { pauseWhenHidden: true },
+    );
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [instance.id, terminalOpen, progressSessionId, progressSessionStatus]);
+  const visibleWork =
+    currentWork?.sessionId === activeSession?.id && activeSession?.status === 'running'
+      ? currentWork
+      : null;
   return (
     <div className="orchestrator-chat" aria-label={`${instance.name} chat`}>
       <div className="orchestrator-chat-head">
         <div>
           <span className="orchestrator-subheading">Ask this orchestrator</span>
           <p className="faint">
-            Chat with it in its own terminal: it knows these projects and can follow up on tasks,
-            check progress, move cards and start workers within its limits.
+            Chat with it in its own terminal: it knows these projects, works on tasks directly,
+            checks progress and updates cards.
           </p>
         </div>
         <div className="orchestrator-chat-open">
@@ -169,6 +230,23 @@ export function OrchestratorChat({
             Watch it work
           </button>
         </p>
+      )}
+      {terminalOpen && visibleWork && (
+        <div className="orchestrator-chat-task" role="status" aria-label="Chat task">
+          <span className="faint">
+            {activeSession?.tailState === 'running' ? 'Working on' : 'Last reported task'}:
+          </span>{' '}
+          <Link
+            to={
+              visibleWork.cardId
+                ? '/projects/' + visibleWork.projectId + '?card=' + visibleWork.cardId
+                : '/projects/' + visibleWork.projectId
+            }
+          >
+            {visibleWork.projectName}
+            {visibleWork.cardKey ? ' · ' + visibleWork.cardKey : ''} · {visibleWork.title}
+          </Link>
+        </div>
       )}
       {terminalOpen && activeSession && (
         <OrchestratorTerminal

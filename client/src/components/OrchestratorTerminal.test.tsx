@@ -10,6 +10,7 @@ vi.mock('../api', () => ({
 vi.mock('./TerminalView', () => ({ TerminalView: () => null }));
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.resetAllMocks();
 });
 const session = {
@@ -56,4 +57,16 @@ it('toggles full screen by double-clicking the header', () => {
   render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
   fireEvent.doubleClick(screen.getByText('running').parentElement!);
   expect(document.querySelector('.orchestrator-terminal.is-max')).toBeTruthy();
+});
+
+it('persists full-screen expanded state across navigation remounts (PM-163)', () => {
+  const { unmount } = render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Full screen' }));
+  expect(document.querySelector('.orchestrator-terminal.is-max')).toBeTruthy();
+
+  unmount();
+
+  render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
+  expect(document.querySelector('.orchestrator-terminal.is-max')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Restore layout' })).toBeDefined();
 });

@@ -190,6 +190,9 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
 
   // ---- Codex accounts (PM-164: saved auth.json profiles + automatic usage-limit rotation) ----
   app.get('/agents/codex-accounts', (c) => c.json(supervisor.codexAccountsState()));
+  app.post('/agents/codex-accounts/usage', async (c) =>
+    c.json(await supervisor.refreshCodexAccountsUsage()),
+  );
 
   app.post('/agents/codex-accounts', async (c) => {
     const body = await parseBody(
@@ -234,6 +237,54 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
 
   app.delete('/agents/codex-accounts/:accountId', (c) =>
     c.json(supervisor.removeCodexAccount(c.req.param('accountId'))),
+  );
+
+  // ---- Claude accounts (PM-169: saved .credentials.json profiles) -----------------------------
+  app.get('/agents/claude-accounts', (c) => c.json(supervisor.claudeAccountsState()));
+
+  app.post('/agents/claude-accounts', async (c) => {
+    const body = await parseBody(
+      c,
+      z
+        .object({
+          name: z.string().trim().min(1).max(80).optional(),
+          authJson: z
+            .string()
+            .min(2)
+            .max(64 * 1024)
+            .optional(),
+          saveCurrent: z.boolean().optional(),
+        })
+        .refine((b) => b.saveCurrent || (b.name && b.authJson), {
+          message: 'Provide name and authJson, or saveCurrent: true',
+        }),
+    );
+    if (body.saveCurrent) {
+      return c.json(supervisor.saveCurrentClaudeAccount(body.name), 201);
+    }
+    return c.json(supervisor.importClaudeAccount(body.name!, body.authJson!), 201);
+  });
+
+  app.put('/agents/claude-accounts/active', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({ activeProfileId: z.string().trim().min(1).max(64).nullable() }),
+    );
+    return c.json(supervisor.setActiveClaudeAccount(body.activeProfileId));
+  });
+
+  app.put('/agents/claude-accounts/auto-switch', async (c) => {
+    const body = await parseBody(c, z.object({ autoSwitch: z.boolean() }));
+    return c.json(supervisor.setClaudeAutoSwitch(body.autoSwitch));
+  });
+
+  app.patch('/agents/claude-accounts/:accountId', async (c) => {
+    const body = await parseBody(c, z.object({ name: z.string().trim().min(1).max(80) }));
+    return c.json(supervisor.renameClaudeAccount(c.req.param('accountId'), body.name));
+  });
+
+  app.delete('/agents/claude-accounts/:accountId', (c) =>
+    c.json(supervisor.removeClaudeAccount(c.req.param('accountId'))),
   );
 
   // ---- Sessions -------------------------------------------------------------------------------

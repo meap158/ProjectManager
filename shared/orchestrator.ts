@@ -183,3 +183,14 @@ export interface OrchestratorProviderBlocker {
   code?: 'unavailable' | 'capacity' | 'quota_unknown' | 'quota_reserve';
   detail: string;
 }
+
+/** Explicit progress reported by an orchestrator chat, scoped to its current session. */
+export interface OrchestratorChatWork {
+  sessionId: number;
+  projectId: number;
+  projectName: string;
+  cardId: number | null;
+  cardKey: string | null;
+  title: string;
+  reportedAt: string;
+}

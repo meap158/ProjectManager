@@ -247,9 +247,7 @@ function activeCodexHome(dataDir: string | null): string {
   const fallback = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
   if (!dataDir) return fallback;
   try {
-    const raw = JSON.parse(
-      readFileSync(path.join(dataDir, 'codex-accounts.json'), 'utf8'),
-    ) as {
+    const raw = JSON.parse(readFileSync(path.join(dataDir, 'codex-accounts.json'), 'utf8')) as {
       activeProfileId?: string | null;
       accounts?: { id?: string }[];
     };

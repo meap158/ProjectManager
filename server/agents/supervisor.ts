@@ -111,7 +111,7 @@ import {
 import { resolveArgv } from './resolve.js';
 import { renderScreen } from './screen.js';
 import { logBase, logicalSize, physicalSize, removeLog } from './logFile.js';
-import { CodexAccountError, CodexAccounts } from './codexAccounts.js';
+import { ClaudeAccounts, CodexAccountError, CodexAccounts } from './codexAccounts.js';
 
 const now = () => new Date().toISOString();
 
@@ -383,6 +383,7 @@ export class AgentSupervisor {
   /** Test-only recipe overrides (production always uses the catalog). */
   private readonly installRecipes: Partial<Record<string, InstallRecipe>>;
   private readonly codexAccounts: CodexAccounts | null;
+  private readonly claudeAccounts: ClaudeAccounts | null;
   /** Accounts already tried in the current Codex usage-limit rotation. One list for every Codex CLI. */
   private codexRotationTried: string[] = [];
   private switchingCodexSession = new Set<number>();
@@ -424,6 +425,7 @@ export class AgentSupervisor {
     mkdirSync(logDir, { recursive: true });
     this.dataDir = options.dataDir ?? null;
     this.codexAccounts = this.dataDir ? new CodexAccounts(this.dataDir, db) : null;
+    this.claudeAccounts = this.dataDir ? new ClaudeAccounts(this.dataDir, db) : null;
     this.managedRuns = options.managedRuns ?? false;
     this.maxParallelRuns = options.maxParallelRuns ?? MAX_PARALLEL_RUNS;
     this.cpuBudget = options.cpuBudget ?? false;
@@ -448,6 +450,10 @@ export class AgentSupervisor {
       });
     }, 2000);
     this.managedTimer.unref();
+  }
+
+  refreshCodexAccountsUsage(): Promise<CodexAccountsState> {
+    return this.withCodexAccounts((accounts) => accounts.refreshUsage());
   }
 
   codexAccountsState(): CodexAccountsState {
@@ -519,6 +525,34 @@ export class AgentSupervisor {
     return this.withCodexAccounts((accounts) => accounts.setAutoSwitch(enabled));
   }
 
+  claudeAccountsState(): CodexAccountsState {
+    return this.withClaudeAccounts((accounts) => accounts.state());
+  }
+
+  importClaudeAccount(name: string, authJson: string): CodexAccountsState {
+    return this.withClaudeAccounts((accounts) => accounts.importAccount(name, authJson));
+  }
+
+  saveCurrentClaudeAccount(name?: string): CodexAccountsState {
+    return this.withClaudeAccounts((accounts) => accounts.saveCurrentAccount(name));
+  }
+
+  renameClaudeAccount(id: string, name: string): CodexAccountsState {
+    return this.withClaudeAccounts((accounts) => accounts.renameAccount(id, name));
+  }
+
+  removeClaudeAccount(id: string): CodexAccountsState {
+    return this.withClaudeAccounts((accounts) => accounts.removeAccount(id));
+  }
+
+  setActiveClaudeAccount(id: string | null): CodexAccountsState {
+    return this.withClaudeAccounts((accounts) => accounts.setActive(id));
+  }
+
+  setClaudeAutoSwitch(enabled: boolean): CodexAccountsState {
+    return this.withClaudeAccounts((accounts) => accounts.setAutoSwitch(enabled));
+  }
+
   /**
    * Switches a Codex session onto another saved login (`null` or `'default'` for the default
    * CODEX_HOME). A different account starts a new conversation: Codex will not resume a thread
@@ -571,6 +605,7 @@ export class AgentSupervisor {
         id,
       );
     this.usageLimits.delete(id);
+    this.resumeFailed.delete(this.logPathFor('session', id));
     if (!willRestart) {
       this.switchingCodexSession.delete(id);
       return this.getSession(id)!;
@@ -619,9 +654,20 @@ export class AgentSupervisor {
 
   private withCodexAccounts<T>(run: (accounts: CodexAccounts) => T): T {
     if (!this.codexAccounts)
-      throw new AgentError(409, 'Codex account management needs a configured app data directory');
+      throw new AgentError(400, 'Codex accounts require a configured data directory');
     try {
       return run(this.codexAccounts);
+    } catch (error) {
+      if (error instanceof CodexAccountError) throw new AgentError(error.status, error.message);
+      throw error;
+    }
+  }
+
+  private withClaudeAccounts<T>(run: (accounts: ClaudeAccounts) => T): T {
+    if (!this.claudeAccounts)
+      throw new AgentError(400, 'Claude accounts require a configured data directory');
+    try {
+      return run(this.claudeAccounts);
     } catch (error) {
       if (error instanceof CodexAccountError) throw new AgentError(error.status, error.message);
       throw error;
@@ -2435,6 +2481,10 @@ export class AgentSupervisor {
    * (or for explicit commands) relaunch fresh rather than risk resuming another pane's chat.
    */
   private resumeLatestArgv(row: SessionRow): string[] | null {
+    // Codex resolves its own session rollout via `codexSessionFor` in the profile's CODEX_HOME;
+    // falling back to `codex resume --last` when a switched account has no rollout yet fails or
+    // grabs an unrelated thread (PM-173).
+    if (row.provider_id === 'codex') return null;
     const provider = getProvider(row.provider_id);
     if (!provider?.binary || !provider.resumeLatestArgs) return null;
     const { command } = JSON.parse(row.command_json) as { command: string[] };

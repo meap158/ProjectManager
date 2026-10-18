@@ -48,7 +48,9 @@ it.each([
             '-e',
             `require('node:fs').appendFileSync(${JSON.stringify(marker)},'one');console.log('ready');console.log('worker-pid:'+process.pid);setInterval(()=>{},1000)`,
           ],
-          timeoutMs: 10000,
+          // Windows CPU-budget application and inspection each start PowerShell. Keep the
+          // worker alive through those operations; the test explicitly stops it below.
+          timeoutMs: 60000,
         }),
         path.join(dir, 'worker.log'),
       );
@@ -93,7 +95,7 @@ it.each([
       }
 
       await expect
-        .poll(() => supervisor!.getRun(1)?.status)
+        .poll(() => supervisor!.getRun(1)?.status, { timeout: 10000 })
         .toBe(authenticated ? 'running' : 'failed');
       if (authenticated) {
         const identity = db
@@ -171,5 +173,5 @@ it.each([
       rmSync(dir, { recursive: true, force: true });
     }
   },
-  15000,
+  45000,
 );

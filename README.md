@@ -34,6 +34,12 @@ on your computer.
 
 </div>
 
+Saved Codex and Claude logins are available under **Settings > Agent CLIs > Accounts**.
+Codex supports automatic account rotation at usage limits; Claude switching is manual.
+In Agents, **Batch CLI choices** applies detected attention-menu choices across sessions
+and reports queued or failed input. Ended task sessions can be disposed of after confirmation;
+their board cards remain available.
+
 ---
 
 ## ✨ What you get

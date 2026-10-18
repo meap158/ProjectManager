@@ -6,6 +6,19 @@ or chat history.
 
 ## 1. Principles
 
+Settings > Agent CLIs keeps saved accounts inside each Codex/Claude entry's Accounts drawer.
+Codex offers automatic quota rotation; Claude switching is manual. Account names that equal
+the email appear once, with saved time and an Add nickname action.
+Codex usage refresh reports fresh, expired, unavailable or unsupported results explicitly;
+missing usage never appears as zero. Claude usage is shown as unsupported.
+Orchestrator chat open/full-screen state persists per orchestrator in this browser.
+One-time chat checks work directly in the chat, with a scoped current-task indicator and a
+Needs attention check for dashboard alerts. Board automation retains its configured policy.
+Ended, unsupervised card sessions offer Dispose session with a named confirmation; disposal
+removes the session and recorded output while retaining its board card.
+Batch CLI choices inspects the selected attention sessions, groups detected choices and
+reports delivered, queued and failed input. Only failed recipients remain selected for retry.
+
 Orchestrators speak plainly: each one is "an orchestrator" (never "master") and every card reads
 top to bottom as what it looks after (one sentence), Ask this orchestrator (chat and one-time
 checks), Needs you (issues with Fix / Dismiss, Fix all, on-demand pending list), Board (counts,
@@ -767,3 +780,11 @@ mobile Status menu supports the same selection without a modifier key.
 Project CLI uses a bounded workspace: resizing transfers space from the session list above,
 keeping the bottom edge anchored. Mobile header keeps the dot beside the name and hides
 path/process metadata to avoid wrapping the identity into separate rows.
+
+Orchestrator chat handles authorized project changes directly in its session. One-time checks include Needs attention for dashboard alerts; scheduler dispatch and limits remain separate.
+
+The Sessions and runs information button opens a native modal dialog in the top layer, constrained to the viewport with scrollable content and a Close button. It remains readable inside clipped project panels on phones.
+
+Orchestrator chat shows its explicitly reported card or repository task above the terminal, linked to its project. Idle chats label it Last reported task; stopped or replaced sessions cannot show live work.
+
+Dashboard API reads share identical in-flight GETs and fetch fresh data after completion. JSON responses negotiate compression; terminal event streams remain uncompressed to preserve immediate updates.

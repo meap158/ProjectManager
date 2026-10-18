@@ -15,6 +15,7 @@ import type { Db } from '../db.js';
 import { getSetting, setSetting } from '../store.js';
 import type { CodexAccount, CodexAccountsState } from '../../shared/types.js';
 import { codexLimits } from './limits.js';
+import { readCodexAccountUsage, type AccountUsageResult } from './accountUsage.js';
 
 const REGISTRY = 'codex-accounts.json';
 const ACTIVE_KEY = 'codex-accounts-active';
@@ -45,6 +46,39 @@ export class CodexAccountError extends Error {
 }
 
 export class CodexAccounts {
+  private readonly usage = new Map<string, AccountUsageResult>();
+  private refreshingUsage: Promise<CodexAccountsState> | null = null;
+
+  refreshUsage(reader = readCodexAccountUsage): Promise<CodexAccountsState> {
+    if (this.refreshingUsage) return this.refreshingUsage;
+    this.refreshingUsage = (async () => {
+      const homes = [
+        this.defaultHome(),
+        ...this.readRegistry().accounts.map((a) => this.home(a.id)),
+      ].filter((home) => existsSync(path.join(home, 'auth.json')));
+      for (let i = 0; i < homes.length; i += 2) {
+        await Promise.all(
+          homes.slice(i, i + 2).map(async (home) => {
+            this.usage.set(home, await reader(home));
+          }),
+        );
+      }
+      return this.state();
+    })().finally(() => {
+      this.refreshingUsage = null;
+    });
+    return this.refreshingUsage;
+  }
+
+  private usageState(home: string, now: number) {
+    const current = this.usage.get(home);
+    const limits = current?.limits ?? codexLimits(os.homedir(), home, now);
+    const usageStatus =
+      current?.status === 'fresh' && now - Date.parse(current.checkedAt) > 60000
+        ? ('stale' as const)
+        : (current?.status ?? (limits ? ('stale' as const) : ('not_loaded' as const)));
+    return { limits, usageStatus, usageCheckedAt: current?.checkedAt ?? null };
+  }
   private readonly root: string;
 
   constructor(
@@ -56,9 +90,10 @@ export class CodexAccounts {
 
   state(now = Date.now()): CodexAccountsState {
     const registry = this.readRegistry();
-    const saved = getSetting<string | null>(this.db, ACTIVE_KEY) ?? null;
+    const saved = getSetting<string | null>(this.db, ACTIVE_KEY);
+    const candidate = saved !== undefined ? saved : (registry.activeProfileId ?? null);
     const activeProfileId =
-      saved && registry.accounts.some((account) => account.id === saved) ? saved : null;
+      candidate && registry.accounts.some((account) => account.id === candidate) ? candidate : null;
     const autoSwitch = getSetting<boolean>(this.db, AUTO_SWITCH_KEY) ?? true;
     const defHome = this.defaultHome();
     const defAuthFile = path.join(defHome, 'auth.json');
@@ -67,7 +102,7 @@ export class CodexAccounts {
       available: existsSync(defAuthFile),
       email: defMeta.email,
       plan: defMeta.plan,
-      limits: codexLimits(os.homedir(), defHome, now),
+      ...this.usageState(defHome, now),
     };
     const accounts: CodexAccount[] = registry.accounts.map((account) => {
       const home = this.home(account.id);
@@ -81,7 +116,7 @@ export class CodexAccounts {
         createdAt: account.createdAt,
         email: meta.email,
         plan: meta.plan,
-        limits: codexLimits(os.homedir(), home, now),
+        ...this.usageState(home, now),
       };
     });
     return { accounts, activeProfileId, autoSwitch, defaultAccount };
@@ -158,7 +193,20 @@ export class CodexAccounts {
     }
     const raw = readFileSync(authFile, 'utf8');
     const meta = this.readAuthMeta(authFile);
-    return this.importAccount(name.trim() || meta.email || 'Default login copy', raw);
+    const state = this.importAccount(name.trim() || meta.email || 'Default login copy', raw);
+    const newest = state.accounts.at(-1);
+    if (newest) {
+      // Move the default auth.json into the saved profile and make that profile active so a
+      // subsequent `codex logout` in the default ~/.codex folder cannot revoke the saved token
+      // on OpenAI's server (PM-173).
+      try {
+        rmSync(authFile, { force: true });
+      } catch {
+        // Best-effort cleanup of default auth.json.
+      }
+      return this.setActive(newest.id);
+    }
+    return state;
   }
 
   renameAccount(id: string, name: string): CodexAccountsState {
@@ -206,8 +254,12 @@ export class CodexAccounts {
   }
 
   selectedId(): string {
-    const saved = getSetting<string | null>(this.db, ACTIVE_KEY) ?? null;
+    const saved = getSetting<string | null>(this.db, ACTIVE_KEY);
     if (saved && this.account(saved)) return saved;
+    if (saved === undefined) {
+      const regActive = this.readRegistry().activeProfileId ?? null;
+      if (regActive && this.account(regActive)) return regActive;
+    }
     return 'default';
   }
 
@@ -332,17 +384,25 @@ export class CodexAccounts {
     }
   }
 
-  /** Saved profiles authenticate from their own auth.json, not the machine keyring. */
+  /**
+   * Saved profiles authenticate from their own auth.json, not the machine keyring.
+   * In TOML, top-level keys MUST appear before the first `[table]` section header — appending
+   * at the end of `config.toml` placed `cli_auth_credentials_store` inside `[notice]` (PM-173).
+   */
   private ensureFileCredentialStore(configPath: string): void {
     const current = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
     const line = 'cli_auth_credentials_store = "file"';
-    const hasKey = /^[ \t]*cli_auth_credentials_store[ \t]*=/m.test(current);
-    const next = hasKey
-      ? current.replace(/^[ \t]*cli_auth_credentials_store[ \t]*=.*$/m, line)
-      : `${current}${current.endsWith('\n') || current.length === 0 ? '' : '\n'}${line}\n`;
+    const stripped = current
+      .split(/\r?\n/)
+      .filter((l) => !/^[ \t]*cli_auth_credentials_store[ \t]*=/.test(l))
+      .join('\n')
+      .replace(/^\n+/, '');
+    const next = stripped
+      ? `${line}\n${stripped.endsWith('\n') ? stripped : `${stripped}\n`}`
+      : `${line}\n`;
     if (next === current) return;
     mkdirSync(path.dirname(configPath), { recursive: true, mode: 0o700 });
-    this.writePrivate(configPath, next.endsWith('\n') ? next : `${next}\n`);
+    this.writePrivate(configPath, next);
   }
 
   private readAuthMeta(authFile: string): { email: string | null; plan: string | null } {
@@ -544,4 +604,364 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 function normalPath(value: string): string {
   const resolved = path.resolve(value).replace(/[\\/]+$/, '');
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+const CLAUDE_REGISTRY = 'claude-accounts.json';
+const CLAUDE_ACTIVE_KEY = 'claude-accounts-active';
+const CLAUDE_AUTO_SWITCH_KEY = 'claude-accounts-auto-switch';
+
+/**
+ * Saved Claude Code accounts (PM-169): manages `.credentials.json` profiles alongside the user's
+ * default `~/.claude/.credentials.json` login so operators can switch or import Claude accounts
+ * in Settings > Agent CLIs just like Codex.
+ */
+export class ClaudeAccounts {
+  private readonly root: string;
+
+  constructor(
+    private readonly dataDir: string,
+    private readonly db: Db,
+  ) {
+    this.root = path.join(dataDir, 'claude-accounts');
+  }
+
+  state(_now = Date.now()): CodexAccountsState {
+    const registry = this.readRegistry();
+    const saved = getSetting<string | null>(this.db, CLAUDE_ACTIVE_KEY) ?? null;
+    const activeProfileId =
+      saved && registry.accounts.some((account) => account.id === saved) ? saved : null;
+    const autoSwitch = getSetting<boolean>(this.db, CLAUDE_AUTO_SWITCH_KEY) ?? true;
+    const defCredsFile = this.defaultBackupCredsFile();
+    const liveCredsFile = path.join(this.defaultHome(), '.credentials.json');
+    const sourceCredsFile = activeProfileId ? defCredsFile : liveCredsFile;
+    const defMeta = this.readAuthMeta(sourceCredsFile, activeProfileId === null);
+    const defaultAccount = {
+      available: existsSync(sourceCredsFile),
+      email: defMeta.email,
+      plan: defMeta.plan,
+      limits: null,
+      usageStatus: 'unsupported' as const,
+    };
+    const accounts: CodexAccount[] = registry.accounts.map((account) => {
+      const home = this.home(account.id);
+      const meta =
+        account.email !== undefined || account.plan !== undefined
+          ? { email: account.email ?? null, plan: account.plan ?? null }
+          : this.readAuthMeta(path.join(home, '.credentials.json'), false);
+      return {
+        id: account.id,
+        name: account.name,
+        createdAt: account.createdAt,
+        email: meta.email,
+        plan: meta.plan,
+        limits: null,
+        usageStatus: 'unsupported' as const,
+      };
+    });
+    return { accounts, activeProfileId, autoSwitch, defaultAccount };
+  }
+
+  setActive(id: string | null): CodexAccountsState {
+    const normalized = id === 'default' ? null : id;
+    const account = normalized !== null ? this.account(normalized) : undefined;
+    if (normalized !== null && !account)
+      throw new CodexAccountError(404, 'Claude account not found');
+
+    const currentActive = getSetting<string | null>(this.db, CLAUDE_ACTIVE_KEY) ?? null;
+    const liveCreds = path.join(this.defaultHome(), '.credentials.json');
+    const backupCreds = this.defaultBackupCredsFile();
+
+    // Claude refreshes tokens in the live file. Preserve those refreshed credentials before
+    // replacing them with another profile, so switching back does not restore expired tokens.
+    if (currentActive && this.account(currentActive) && existsSync(liveCreds)) {
+      this.writePrivate(
+        path.join(this.home(currentActive), '.credentials.json'),
+        readFileSync(liveCreds, 'utf8'),
+      );
+    }
+
+    if (currentActive === null && normalized !== null) {
+      if (existsSync(liveCreds)) {
+        mkdirSync(path.dirname(backupCreds), { recursive: true, mode: 0o700 });
+        this.writePrivate(backupCreds, readFileSync(liveCreds, 'utf8'));
+      } else {
+        rmSync(backupCreds, { force: true });
+      }
+    }
+
+    if (normalized === null) {
+      if (existsSync(backupCreds)) {
+        mkdirSync(this.defaultHome(), { recursive: true, mode: 0o700 });
+        this.writePrivate(liveCreds, readFileSync(backupCreds, 'utf8'));
+      } else if (currentActive !== null) {
+        rmSync(liveCreds, { force: true });
+      }
+    } else {
+      const profileCreds = path.join(this.home(normalized), '.credentials.json');
+      if (!existsSync(profileCreds))
+        throw new CodexAccountError(409, 'The saved Claude credentials file is missing');
+      mkdirSync(this.defaultHome(), { recursive: true, mode: 0o700 });
+      this.writePrivate(liveCreds, readFileSync(profileCreds, 'utf8'));
+    }
+
+    setSetting(this.db, CLAUDE_ACTIVE_KEY, normalized);
+    const registryFile = path.join(this.dataDir, CLAUDE_REGISTRY);
+    if (existsSync(registryFile) || normalized !== null) {
+      const registry = this.readRegistry();
+      this.writeRegistry({ ...registry, activeProfileId: normalized });
+    }
+    return this.state();
+  }
+
+  setAutoSwitch(enabled: boolean): CodexAccountsState {
+    setSetting(this.db, CLAUDE_AUTO_SWITCH_KEY, enabled);
+    return this.state();
+  }
+
+  importAccount(name: string, authJson: string): CodexAccountsState {
+    if (Buffer.byteLength(authJson, 'utf8') > MAX_AUTH_BYTES)
+      throw new CodexAccountError(400, 'Claude credentials file is larger than 1 MB');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(authJson) as unknown;
+    } catch {
+      throw new CodexAccountError(400, 'The selected file is not valid JSON');
+    }
+    const auth = normalizeClaudeAuth(parsed);
+    if (!auth)
+      throw new CodexAccountError(400, 'The selected JSON does not contain Claude credentials');
+
+    const meta = extractClaudeAuthMeta(auth, parsed);
+    const fallbackName = name.trim() || meta.email || '';
+    const cleanName = this.cleanName(fallbackName);
+
+    const id = randomUUID();
+    const dir = this.home(id);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try {
+      this.writePrivate(path.join(dir, '.credentials.json'), `${JSON.stringify(auth)}\n`);
+      const registry = this.readRegistry();
+      registry.accounts.push({
+        id,
+        name: cleanName,
+        createdAt: new Date().toISOString(),
+        email: meta.email,
+        plan: meta.plan,
+      });
+      this.writeRegistry(registry);
+    } catch (error) {
+      rmSync(dir, { recursive: true, force: true });
+      throw error;
+    }
+    return this.state();
+  }
+
+  saveCurrentAccount(name = ''): CodexAccountsState {
+    const credsFile = path.join(this.defaultHome(), '.credentials.json');
+    if (!existsSync(credsFile)) {
+      throw new CodexAccountError(
+        404,
+        'No Claude .credentials.json found in ~/.claude. Sign in with Claude Code first or import a saved JSON file.',
+      );
+    }
+    const raw = readFileSync(credsFile, 'utf8');
+    const meta = this.readAuthMeta(credsFile, true);
+    let enrichedRaw = raw;
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (meta.email && !parsed.email) parsed.email = meta.email;
+      if (meta.plan && !parsed.plan) parsed.plan = meta.plan;
+      enrichedRaw = JSON.stringify(parsed);
+    } catch {
+      // Keep original raw JSON if it cannot be enriched.
+    }
+    return this.importAccount(name.trim() || meta.email || 'Default login copy', enrichedRaw);
+  }
+
+  renameAccount(id: string, name: string): CodexAccountsState {
+    if (!this.account(id)) throw new CodexAccountError(404, 'Claude account not found');
+    const cleanName = this.cleanName(name);
+    const registry = this.readRegistry();
+    this.writeRegistry({
+      ...registry,
+      accounts: registry.accounts.map((account) =>
+        account.id === id ? { ...account, name: cleanName } : account,
+      ),
+    });
+    return this.state();
+  }
+
+  removeAccount(id: string): CodexAccountsState {
+    const account = this.account(id);
+    if (!account) throw new CodexAccountError(404, 'Claude account not found');
+    const profileHome = this.home(id);
+    const registry = this.readRegistry();
+    const nextActive = registry.activeProfileId === id ? null : registry.activeProfileId;
+    this.writeRegistry({
+      ...registry,
+      activeProfileId: nextActive,
+      accounts: registry.accounts.filter((item) => item.id !== id),
+    });
+    rmSync(profileHome, { recursive: true, force: true });
+    if (getSetting(this.db, CLAUDE_ACTIVE_KEY) === id) {
+      this.setActive(null);
+    }
+    return this.state();
+  }
+
+  private readAuthMeta(
+    credsFile: string,
+    includeGlobalConfig: boolean,
+  ): { email: string | null; plan: string | null } {
+    let email: string | null = null;
+    let plan: string | null = null;
+    if (existsSync(credsFile)) {
+      try {
+        const raw = JSON.parse(readFileSync(credsFile, 'utf8')) as unknown;
+        const auth = normalizeClaudeAuth(raw);
+        if (auth) {
+          const meta = extractClaudeAuthMeta(auth, raw);
+          email = meta.email;
+          plan = meta.plan;
+        }
+      } catch {
+        // Ignore unreadable credentials file.
+      }
+    }
+    if (includeGlobalConfig && (!email || !plan)) {
+      const globalClaudeJson = path.join(os.homedir(), '.claude.json');
+      if (existsSync(globalClaudeJson)) {
+        try {
+          const parsed = JSON.parse(readFileSync(globalClaudeJson, 'utf8')) as {
+            oauthAccount?: { emailAddress?: string; billingType?: string; seatTier?: string };
+          };
+          if (!email && typeof parsed.oauthAccount?.emailAddress === 'string') {
+            email = parsed.oauthAccount.emailAddress.trim() || null;
+          }
+          if (!plan && typeof parsed.oauthAccount?.seatTier === 'string') {
+            plan = parsed.oauthAccount.seatTier.trim() || null;
+          }
+        } catch {
+          // Ignore unreadable ~/.claude.json.
+        }
+      }
+    }
+    return { email, plan };
+  }
+
+  private account(id: string): StoredAccount | undefined {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return undefined;
+    return this.readRegistry().accounts.find((account) => account.id === id);
+  }
+
+  private cleanName(name: string): string {
+    const clean = [...name.trim()]
+      .filter((ch) => ch >= ' ' && ch !== '\x7f')
+      .join('')
+      .slice(0, 64);
+    if (!clean) throw new CodexAccountError(400, 'Enter a name for this account');
+    return clean;
+  }
+
+  private home(id: string): string {
+    return path.join(this.root, id);
+  }
+
+  private defaultBackupCredsFile(): string {
+    return path.join(this.root, 'default', '.credentials.json');
+  }
+
+  private defaultHome(): string {
+    return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'));
+  }
+
+  private readRegistry(): Registry {
+    const file = path.join(this.dataDir, CLAUDE_REGISTRY);
+    if (!existsSync(file)) return { version: 1, accounts: [] };
+    try {
+      const value = JSON.parse(readFileSync(file, 'utf8')) as Registry;
+      if (value.version !== 1 || !Array.isArray(value.accounts)) throw new Error();
+      return value;
+    } catch {
+      throw new Error(
+        'The saved Claude account registry is unreadable; no account files were changed',
+      );
+    }
+  }
+
+  private writeRegistry(registry: Registry): void {
+    mkdirSync(this.dataDir, { recursive: true });
+    this.writePrivate(
+      path.join(this.dataDir, CLAUDE_REGISTRY),
+      `${JSON.stringify(registry, null, 2)}\n`,
+    );
+  }
+
+  private writePrivate(file: string, contents: string): void {
+    const temp = `${file}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(temp, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      chmodSync(temp, 0o600);
+      renameSync(temp, file);
+    } finally {
+      rmSync(temp, { force: true });
+    }
+  }
+}
+
+export function normalizeClaudeAuth(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  if (
+    obj.claudeAiOauth &&
+    typeof obj.claudeAiOauth === 'object' &&
+    !Array.isArray(obj.claudeAiOauth)
+  ) {
+    const oauth = obj.claudeAiOauth as Record<string, unknown>;
+    if (
+      (typeof oauth.accessToken === 'string' && oauth.accessToken.length > 0) ||
+      (typeof oauth.refreshToken === 'string' && oauth.refreshToken.length > 0)
+    ) {
+      return { claudeAiOauth: oauth };
+    }
+  }
+  if (
+    (typeof obj.accessToken === 'string' && obj.accessToken.length > 0) ||
+    (typeof obj.refreshToken === 'string' && obj.refreshToken.length > 0)
+  ) {
+    return { claudeAiOauth: obj };
+  }
+  if (typeof obj.ANTHROPIC_API_KEY === 'string' && obj.ANTHROPIC_API_KEY.trim().length > 0) {
+    return { ANTHROPIC_API_KEY: obj.ANTHROPIC_API_KEY.trim() };
+  }
+  return null;
+}
+
+export function extractClaudeAuthMeta(
+  normalized: Record<string, unknown>,
+  raw?: unknown,
+): { email: string | null; plan: string | null } {
+  const rawObj =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const oauth =
+    normalized.claudeAiOauth &&
+    typeof normalized.claudeAiOauth === 'object' &&
+    !Array.isArray(normalized.claudeAiOauth)
+      ? (normalized.claudeAiOauth as Record<string, unknown>)
+      : {};
+  const email =
+    typeof rawObj.email === 'string' && rawObj.email.trim()
+      ? rawObj.email.trim()
+      : typeof oauth.email === 'string' && oauth.email.trim()
+        ? oauth.email.trim()
+        : null;
+  const plan =
+    typeof oauth.subscriptionType === 'string' && oauth.subscriptionType.trim()
+      ? oauth.subscriptionType.trim()
+      : typeof rawObj.plan === 'string' && rawObj.plan.trim()
+        ? rawObj.plan.trim()
+        : typeof normalized.ANTHROPIC_API_KEY === 'string'
+          ? 'api_key'
+          : null;
+  return { email, plan };
 }

@@ -32,6 +32,7 @@ export function SettingsPage() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [openLog, setOpenLog] = useState<number | null>(null);
+  const [expandedCliId, setExpandedCliId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Plan usage limits per CLI (PM-17) and the clock for "resets in …".
   const limits = useAgentLimits();
@@ -120,76 +121,123 @@ export function SettingsPage() {
           <div className="skeleton" style={{ height: 120 }} />
         ) : (
           <ul className="list settings-cli-list">
-            {clis.map((p) => (
-              <li key={p.id}>
-                <span
-                  className={`status-dot${p.available ? ' green' : ''}`}
-                  role="img"
-                  aria-label={p.available ? 'Installed' : 'Not installed'}
-                />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <b>{p.name}</b>{' '}
-                  <span className="faint" style={{ fontSize: 12.5 }}>
-                    {p.description}
-                  </span>
-                  {!p.available && p.unavailableReason && (
-                    <span className="faint" style={{ fontSize: 12.5 }}>
-                      {' '}
-                      · {p.unavailableReason}
+            {clis.map((p) => {
+              const isExpandable = p.id === 'codex' || p.id === 'claude';
+              const isExpanded = isExpandable && expandedCliId === p.id;
+              const toggleExpand = () => setExpandedCliId((prev) => (prev === p.id ? null : p.id));
+              return (
+                <li
+                  key={p.id}
+                  className={`settings-cli-item${isExpandable ? ' is-expandable' : ''}${isExpanded ? ' is-expanded' : ''}`}
+                >
+                  <div
+                    className="settings-cli-row"
+                    onClick={
+                      isExpandable
+                        ? (e) => {
+                            if ((e.target as HTMLElement).closest('button, a, input, label')) {
+                              return;
+                            }
+                            toggleExpand();
+                          }
+                        : undefined
+                    }
+                  >
+                    <span
+                      className={`status-dot${p.available ? ' green' : ''}`}
+                      role="img"
+                      aria-label={p.available ? 'Installed' : 'Not installed'}
+                    />
+                    <span className="settings-cli-info">
+                      <b>{p.name}</b>{' '}
+                      <span className="faint" style={{ fontSize: 12.5 }}>
+                        {p.description}
+                      </span>
+                      {!p.available && p.unavailableReason && (
+                        <span className="faint" style={{ fontSize: 12.5 }}>
+                          {' '}
+                          · {p.unavailableReason}
+                        </span>
+                      )}
+                      {limits.list
+                        .filter((l) => l.providerId === p.id)
+                        .map((l) => (
+                          <UsageLimits key={l.providerId} limits={l} now={limits.now} />
+                        ))}
                     </span>
+                    <span className="settings-cli-actions">
+                      {isExpandable && (
+                        <button
+                          type="button"
+                          className="btn btn-sm settings-cli-expand-btn"
+                          aria-expanded={isExpanded}
+                          aria-controls={`settings-cli-drawer-${p.id}`}
+                          onClick={toggleExpand}
+                          title={`Switch or manage saved ${p.name} accounts`}
+                        >
+                          <span>Accounts</span>
+                          <span className="blist-caret" aria-hidden="true" />
+                        </button>
+                      )}
+                      {p.available ? (
+                        <span className="badge badge-done">installed</span>
+                      ) : p.install ? (
+                        confirmId === p.id ? (
+                          <span className="actions">
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => install(p.id)}
+                            >
+                              Confirm install
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() => setConfirmId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => setConfirmId(p.id)}
+                          >
+                            Install
+                          </button>
+                        )
+                      ) : (
+                        <span className="faint" style={{ fontSize: 12.5 }}>
+                          manual install
+                          {p.installUrl && (
+                            <>
+                              {' '}
+                              <a href={p.installUrl} target="_blank" rel="noreferrer">
+                                docs
+                              </a>
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {isExpanded && (
+                    <div id={`settings-cli-drawer-${p.id}`} className="settings-cli-drawer">
+                      <CodexAccountsPanel
+                        providerId={p.id as 'codex' | 'claude'}
+                        onError={(msg) => setError(msg || null)}
+                      />
+                    </div>
                   )}
-                  {limits.list
-                    .filter((l) => l.providerId === p.id)
-                    .map((l) => (
-                      <UsageLimits key={l.providerId} limits={l} now={limits.now} />
-                    ))}
-                </span>
-                {p.available ? (
-                  <span className="badge badge-done">installed</span>
-                ) : p.install ? (
-                  confirmId === p.id ? (
-                    <span className="actions">
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => install(p.id)}
-                      >
-                        Confirm install
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => setConfirmId(null)}
-                      >
-                        Cancel
-                      </button>
-                    </span>
-                  ) : (
-                    <button type="button" className="btn btn-sm" onClick={() => setConfirmId(p.id)}>
-                      Install
-                    </button>
-                  )
-                ) : (
-                  <span className="faint" style={{ fontSize: 12.5 }}>
-                    manual install
-                    {p.installUrl && (
-                      <>
-                        {' '}
-                        <a href={p.installUrl} target="_blank" rel="noreferrer">
-                          docs
-                        </a>
-                      </>
-                    )}
-                  </span>
-                )}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
         {confirmId && <InstallConfirm provider={clis.find((p) => p.id === confirmId) ?? null} />}
       </section>
-
-      <CodexAccountsPanel onError={(msg) => setError(msg || null)} />
 
       <AgentPermissionsPanel providers={providers} onError={setError} />
 

@@ -49,7 +49,9 @@
   position: relative;
   height: 100%;
   border-radius: 999px;
-  transition: width 240ms ease, background-color 180ms ease;
+  transition:
+    width 240ms ease,
+    background-color 180ms ease;
 }
 .cpu-budget-meter-fill.is-cool {
   background: var(--good);

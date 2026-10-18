@@ -197,3 +197,19 @@
     min-height: 300px;
   }
 }
+
+/* Top-layer dialog avoids clipping by the project panel and mobile viewport. */
+.sessions-info-dialog {
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+@media (pointer: coarse) {
+  .panel-title-row .info-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

@@ -11,6 +11,36 @@ const TerminalView = lazy(() =>
   import('./TerminalView').then((m) => ({ default: m.TerminalView })),
 );
 
+const CHAT_MAX_KEY = 'pm.orchestrator.chatMaxed';
+
+function maxScopeKey(session: AgentSession): string {
+  return String(session.orchestratorId ?? session.id);
+}
+
+function readChatMaxed(key: string): boolean {
+  try {
+    const raw = localStorage.getItem(CHAT_MAX_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Boolean(parsed && typeof parsed === 'object' && parsed[key]);
+  } catch {
+    return false;
+  }
+}
+
+function writeChatMaxed(key: string, isMaxed: boolean): void {
+  try {
+    const raw = localStorage.getItem(CHAT_MAX_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    const next = parsed && typeof parsed === 'object' ? { ...parsed } : {};
+    if (isMaxed) next[key] = true;
+    else delete next[key];
+    localStorage.setItem(CHAT_MAX_KEY, JSON.stringify(next));
+  } catch {
+    // Persisting expanded layout state is a convenience only.
+  }
+}
+
 export function OrchestratorTerminal({
   session,
   onChanged,
@@ -38,15 +68,28 @@ export function OrchestratorTerminal({
   const pasteRef = useRef<((text: string) => void) | null>(null);
   // Full screen, the same affordance as an agent pane (PM-138): the header double-click or the
   // button grows the pane to fill the window (the whole screen on phones), Escape restores it.
-  const [maxed, setMaxed] = useState(false);
+  const scopeKey = maxScopeKey(session);
+  const [maxedByScope, setMaxedByScope] = useState<Record<string, boolean>>({});
+  const maxed = maxedByScope[scopeKey] ?? readChatMaxed(scopeKey);
+  const updateMaxed = (next: boolean | ((prev: boolean) => boolean)) => {
+    setMaxedByScope((prev) => {
+      const current = prev[scopeKey] ?? readChatMaxed(scopeKey);
+      const resolved = typeof next === 'function' ? next(current) : next;
+      writeChatMaxed(scopeKey, resolved);
+      return { ...prev, [scopeKey]: resolved };
+    });
+  };
   useEffect(() => {
     if (!maxed) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMaxed(false);
+      if (e.key === 'Escape') {
+        setMaxedByScope((prev) => ({ ...prev, [scopeKey]: false }));
+        writeChatMaxed(scopeKey, false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [maxed]);
+  }, [maxed, scopeKey]);
   // Same Chat/Terminal choice as an agent pane: native chat on phones and touch
   // screens for CLIs with a transcript, terminal everywhere else.
   const sessionView = useSessionView(session);
@@ -67,29 +110,14 @@ export function OrchestratorTerminal({
     >
       <div
         className="orchestrator-terminal-head"
-        onDoubleClick={() => setMaxed((v) => !v)}
+        onDoubleClick={() => updateMaxed((v) => !v)}
         title="Double-click to maximise"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 6,
-          flexWrap: 'wrap',
-        }}
       >
-        <span className="faint">{busy ? 'Updating session...' : session.status}</span>
+        <span className="faint orchestrator-terminal-status">
+          {busy ? 'Updating session...' : session.status}
+        </span>
         <SessionRestartStatus session={session} />
-        <fieldset
-          disabled={busy}
-          style={{
-            border: 0,
-            padding: 0,
-            margin: 0,
-            display: 'flex',
-            gap: 6,
-            flexWrap: 'wrap',
-          }}
-        >
+        <fieldset disabled={busy} className="orchestrator-terminal-controls">
           <SessionToggle
             session={session}
             onStart={() => void change(() => api.startSession(session.id))}
@@ -106,14 +134,14 @@ export function OrchestratorTerminal({
         {sessionView.available && (
           <ViewSwitch view={sessionView.view} onChange={sessionView.choose} />
         )}
-        <span style={{ flex: 1 }} />
+        <span className="orchestrator-terminal-spacer" />
         <button
           type="button"
           className="icon-btn orchestrator-terminal-max"
           aria-label={maxed ? 'Restore layout' : 'Full screen'}
           title={maxed ? 'Restore layout' : 'Maximise terminal'}
           aria-pressed={maxed}
-          onClick={() => setMaxed((v) => !v)}
+          onClick={() => updateMaxed((v) => !v)}
         >
           <svg
             width="18"

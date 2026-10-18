@@ -115,6 +115,12 @@ describe('CodexAccounts (PM-164)', () => {
     expect(saved.accounts).toHaveLength(1);
     expect(saved.accounts[0]?.name).toBe('default@example.com');
     expect(saved.accounts[0]?.plan).toBe('plus');
+    expect(saved.activeProfileId).toBe(saved.accounts[0]!.id);
+    expect(accounts.selectedId()).toBe(saved.accounts[0]!.id);
+    expect(existsSync(path.join(defaultCodexHome, 'auth.json'))).toBe(false);
+    expect(
+      readFileSync(path.join(accounts.profile(saved.accounts[0]!.id).home, 'auth.json'), 'utf8'),
+    ).toContain('def-token');
   });
 
   it('switches active account, toggles autoSwitch, renames, and removes unused accounts', () => {
@@ -192,6 +198,22 @@ describe('CodexAccounts (PM-164)', () => {
     expect(saved.startsWith('cli_auth_credentials_store = "file"\n')).toBe(true);
     expect(saved).not.toContain('keyring');
     expect(readFileSync(path.join(defaultCodexHome, 'config.toml'), 'utf8')).toContain('keyring');
+  });
+
+  it('repairs a credential-store key placed inside a TOML table', () => {
+    const config =
+      'model = "gpt-5-codex"\n[notice]\ncli_auth_credentials_store = "keyring"\nhide_warning = true\n';
+    writeFileSync(path.join(defaultCodexHome, 'config.toml'), config);
+    const accounts = new CodexAccounts(tmpDir, db);
+    const state = accounts.importAccount('Work', JSON.stringify({ OPENAI_API_KEY: 'sk-test' }));
+    const file = path.join(accounts.profile(state.accounts[0]!.id).home, 'config.toml');
+    const repaired = readFileSync(file, 'utf8');
+    expect(repaired).toBe(
+      'cli_auth_credentials_store = "file"\nmodel = "gpt-5-codex"\n[notice]\nhide_warning = true\n',
+    );
+    accounts.profile(state.accounts[0]!.id);
+    expect(readFileSync(file, 'utf8')).toBe(repaired);
+    expect(readFileSync(path.join(defaultCodexHome, 'config.toml'), 'utf8')).toBe(config);
   });
 
   it('does not resume the previous account thread when switching Codex accounts', async () => {
@@ -316,5 +338,24 @@ describe('CodexAccounts (PM-164)', () => {
     } finally {
       await supervisor.shutdown();
     }
+  });
+  it('refreshes saved profile usage without changing the selected account or using global default credentials', async () => {
+    const accounts = new CodexAccounts(tmpDir, db);
+    const saved = accounts.importAccount(
+      'Usage test',
+      JSON.stringify({ OPENAI_API_KEY: 'fake-test-key' }),
+    );
+    const id = saved.accounts[0]!.id;
+    accounts.setActive(id);
+    const visited: string[] = [];
+    const state = await accounts.refreshUsage(async (home) => {
+      visited.push(home);
+      return { status: 'expired', limits: null, checkedAt: new Date().toISOString() };
+    });
+    expect(visited).toEqual([path.join(tmpDir, 'codex-accounts', id)]);
+    expect(state.activeProfileId).toBe(id);
+    expect(state.accounts[0]?.usageStatus).toBe('expired');
+    expect(state.accounts[0]?.limits).toBeNull();
+    expect(existsSync(path.join(defaultCodexHome, 'auth.json'))).toBe(false);
   });
 });

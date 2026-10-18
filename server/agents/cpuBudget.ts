@@ -45,7 +45,9 @@ export interface CpuTimesSnapshot {
 
 /** Sums user/nice/sys/idle/irq ticks across all logical CPUs without spawning a process. */
 export function readCpuTotals(
-  cpus: readonly { times: { user: number; nice: number; sys: number; idle: number; irq: number } }[] = os.cpus(),
+  cpus: readonly {
+    times: { user: number; nice: number; sys: number; idle: number; irq: number };
+  }[] = os.cpus(),
 ): CpuTimesSnapshot {
   let idle = 0;
   let total = 0;
@@ -58,10 +60,7 @@ export function readCpuTotals(
 }
 
 /** Utilization percentage (0–100, one decimal place) between two os.cpus() snapshots. */
-export function calcCpuUsagePercent(
-  prev: CpuTimesSnapshot,
-  next: CpuTimesSnapshot,
-): number | null {
+export function calcCpuUsagePercent(prev: CpuTimesSnapshot, next: CpuTimesSnapshot): number | null {
   const dTotal = next.total - prev.total;
   const dIdle = next.idle - prev.idle;
   if (dTotal <= 0) return null;

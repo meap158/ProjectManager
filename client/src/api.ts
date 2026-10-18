@@ -1,5 +1,6 @@
 import type {
   OrchestratorOverview,
+  OrchestratorChatWork,
   OrchestratorConfig,
   OrchestratorSituation,
   OrchestratorPendingPage,
@@ -42,7 +43,21 @@ import type {
 import type { ProviderLimits } from '../../shared/limits';
 import { handleSignedOut } from './remote';
 
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+const pendingReads = new Map<string, Promise<unknown>>();
+
+/** Share only in-flight reads. Completed results and failures are never cached. */
+function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  if (method !== 'GET') return performRequest<T>(method, url, body);
+  const pending = pendingReads.get(url);
+  if (pending) return pending as Promise<T>;
+  const next = performRequest<T>(method, url, body).finally(() => {
+    if (pendingReads.get(url) === next) pendingReads.delete(url);
+  });
+  pendingReads.set(url, next);
+  return next;
+}
+
+async function performRequest<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${url}`, {
     method,
     // Always JSON: the server rejects non-JSON writes as a CSRF guard.
@@ -133,7 +148,12 @@ export const api = {
   openOrchestratorChat: (id: string, providerId?: string) =>
     request<AgentSession>('POST', `/orchestrators/${encodeURIComponent(id)}/chat`, { providerId }),
   /** Asks the master's chat for a one-time check on pending work (starting it if needed). */
-  checkOrchestrator: (id: string, focus: 'all' | 'todo' | 'in_progress' | 'review') =>
+  getOrchestratorChatWork: (id: string) =>
+    request<OrchestratorChatWork | null>(
+      'GET',
+      `/orchestrators/${encodeURIComponent(id)}/chat-work`,
+    ),
+  checkOrchestrator: (id: string, focus: 'all' | 'todo' | 'in_progress' | 'review' | 'attention') =>
     request<AgentSession>('POST', `/orchestrators/${encodeURIComponent(id)}/check`, { focus }),
   pruneOrchestratorAttention: (id?: string, projectId?: number) =>
     request<{ ok: boolean; state: OrchestratorState }>(
@@ -376,6 +396,8 @@ export const api = {
   deleteInstall: (id: number) => request<void>('DELETE', `/agent-installs/${id}`),
 
   // ---- Codex accounts (PM-164) ------------------------------------------------------------------
+  refreshCodexAccountsUsage: () =>
+    request<CodexAccountsState>('POST', '/agents/codex-accounts/usage'),
   getCodexAccounts: () => request<CodexAccountsState>('GET', '/agents/codex-accounts'),
   importCodexAccount: (name: string, authJson: string) =>
     request<CodexAccountsState>('POST', '/agents/codex-accounts', { name, authJson }),
@@ -389,9 +411,39 @@ export const api = {
   setCodexAutoSwitch: (autoSwitch: boolean) =>
     request<CodexAccountsState>('PUT', '/agents/codex-accounts/auto-switch', { autoSwitch }),
   renameCodexAccount: (accountId: string, name: string) =>
-    request<CodexAccountsState>('PATCH', `/agents/codex-accounts/${encodeURIComponent(accountId)}`, {
-      name,
-    }),
+    request<CodexAccountsState>(
+      'PATCH',
+      `/agents/codex-accounts/${encodeURIComponent(accountId)}`,
+      {
+        name,
+      },
+    ),
   removeCodexAccount: (accountId: string) =>
-    request<CodexAccountsState>('DELETE', `/agents/codex-accounts/${encodeURIComponent(accountId)}`),
+    request<CodexAccountsState>(
+      'DELETE',
+      `/agents/codex-accounts/${encodeURIComponent(accountId)}`,
+    ),
+  getClaudeAccounts: () => request<CodexAccountsState>('GET', '/agents/claude-accounts'),
+  importClaudeAccount: (name: string, authJson: string) =>
+    request<CodexAccountsState>('POST', '/agents/claude-accounts', { name, authJson }),
+  saveCurrentClaudeAccount: (name?: string) =>
+    request<CodexAccountsState>('POST', '/agents/claude-accounts', {
+      saveCurrent: true,
+      ...(name ? { name } : {}),
+    }),
+  setActiveClaudeAccount: (activeProfileId: string | null) =>
+    request<CodexAccountsState>('PUT', '/agents/claude-accounts/active', { activeProfileId }),
+  setClaudeAutoSwitch: (autoSwitch: boolean) =>
+    request<CodexAccountsState>('PUT', '/agents/claude-accounts/auto-switch', { autoSwitch }),
+  renameClaudeAccount: (accountId: string, name: string) =>
+    request<CodexAccountsState>(
+      'PATCH',
+      `/agents/claude-accounts/${encodeURIComponent(accountId)}`,
+      { name },
+    ),
+  removeClaudeAccount: (accountId: string) =>
+    request<CodexAccountsState>(
+      'DELETE',
+      `/agents/claude-accounts/${encodeURIComponent(accountId)}`,
+    ),
 };

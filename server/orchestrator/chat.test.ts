@@ -8,7 +8,7 @@ import type { AgentSupervisor } from '../agents/supervisor.js';
 import type { AgentRun, AgentSession, ProjectSummary } from '../../shared/types.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { OrchestratorService } from './service.js';
-import { OrchestratorChat, briefing } from './chat.js';
+import { OrchestratorChat, briefing, checkPrompt } from './chat.js';
 import { readLimits } from '../agents/limits.js';
 import { OrchestratorAssignments } from './assignments.js';
 import { providerStatuses } from '../agents/providers.js';
@@ -369,7 +369,8 @@ describe('orchestrator chat tools (PM-89)', () => {
     expect(text).toContain('**Alpha**');
     expect(text).not.toContain('**Beta**');
     expect(text).toContain('Watch only');
-    expect(text).toMatch(/never change files there yourself/);
+    expect(text).toContain('make authorized changes directly in this chat');
+    expect(text).toContain('Do not dispatch workers or delegate');
     // Its own folder, its master, and a provider that can load the board tools.
     expect(createSession).toHaveBeenCalledWith(
       expect.any(Number),
@@ -590,4 +591,37 @@ it('creates one chat on overlapping opens and reuses it after successful startup
   } finally {
     db.close();
   }
+});
+
+it('keeps every chat check in direct execution mode and includes dashboard alert context (PM-179, PM-172)', () => {
+  const instance = { name: 'All', strategy: 'autonomous' } as OrchestratorConfig;
+  for (const focus of ['all', 'todo', 'in_progress', 'review', 'attention'] as const) {
+    const prompt = checkPrompt(instance, focus);
+    expect(prompt).toContain('do not dispatch workers or delegate');
+    expect(prompt).not.toContain('Start workers');
+  }
+  expect(checkPrompt(instance, 'attention')).toContain('uncommitted and unpushed');
+  expect(checkPrompt(instance, 'attention')).toContain('Do not push, merge, discard files');
+  expect(checkPrompt({ ...instance, strategy: 'observe' }, 'todo')).toContain(
+    'do not edit files or move cards unless',
+  );
+});
+
+it('tracks scoped direct chat work and hides replaced, stopped or reviewed tasks (PM-174)', async () => {
+  const { chat, call, sessions, mine, other, db } = setup();
+  const session = { id: 5, orchestratorId: 'master-1', status: 'running' } as AgentSession;
+  sessions.push(session);
+  vi.spyOn(chat, 'session').mockReturnValue(session);
+  await call('report_work', { card: mine.key });
+  expect(chat.currentWork('master-1')?.cardId).toBe(mine.id);
+  await expect(call('report_work', { card: other.key })).rejects.toThrow(
+    /not in this orchestrator/,
+  );
+  await call('report_work', { clear: true });
+  expect(chat.currentWork('master-1')).toBeNull();
+  await call('report_work', { projectId: mine.projectId, title: 'Inspect uncommitted changes' });
+  expect(chat.currentWork('master-1')?.title).toBe('Inspect uncommitted changes');
+  session.status = 'killed';
+  expect(chat.currentWork('master-1')).toBeNull();
+  db.close();
 });

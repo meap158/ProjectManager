@@ -824,51 +824,53 @@ export function AgentsPanel({
 }
 
 function SessionsInfoButton() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('pointerdown', onClick);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('pointerdown', onClick);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
+  const dialogRef = useRef<HTMLDialogElement>(null);
   return (
-    <div className="info-wrap" ref={ref}>
+    <>
       <button
         type="button"
-        className={`icon-btn info-btn${open ? ' is-active' : ''}`}
+        className="icon-btn info-btn"
         title="About sessions and runs"
         aria-label="About sessions and runs"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="dialog"
+        onClick={() => dialogRef.current?.showModal()}
       >
         <InfoIcon size={14} />
       </button>
-      {open && (
-        <div className="info-popup panel" role="tooltip">
-          <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5 }}>
-            Sessions run on this machine as your user, rooted in the project folder by default, and
-            only answer this page — the API refuses anything but same-machine requests. Sessions
-            keep running when ProjectManager restarts, relaunch after crashes and reboots, and are
-            only removed when you stop or delete them; input typed while one is down waits in a
-            durable queue.
+      <dialog
+        ref={dialogRef}
+        className="confirm-dialog sessions-info-dialog"
+        aria-label="About sessions and runs"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            const bounds = event.currentTarget.getBoundingClientRect();
+            if (
+              event.clientX < bounds.left ||
+              event.clientX > bounds.right ||
+              event.clientY < bounds.top ||
+              event.clientY > bounds.bottom
+            )
+              event.currentTarget.close();
+          }
+        }}
+      >
+        <div className="dialog-body">
+          <h2>Sessions and runs</h2>
+          <p>
+            Sessions run on this machine as your user, rooted in the project folder by default.
+            Access is limited to this machine and devices you explicitly pair through LAN access.
+            Sessions keep running when ProjectManager restarts, relaunch after crashes and reboots,
+            and are only removed when you stop or delete them; input typed while one is down waits
+            in a durable queue.
           </p>
         </div>
-      )}
-    </div>
+        <div className="dialog-footer">
+          <button type="button" className="btn" onClick={() => dialogRef.current?.close()}>
+            Close
+          </button>
+        </div>
+      </dialog>
+    </>
   );
 }
 

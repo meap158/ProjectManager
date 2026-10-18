@@ -35,7 +35,7 @@ const chatOpen = z
   .object({ providerId: z.enum(['claude', 'codex', 'antigravity', 'opencode']).optional() })
   .strict();
 const chatCheck = z
-  .object({ focus: z.enum(['all', 'todo', 'in_progress', 'review']).optional() })
+  .object({ focus: z.enum(['all', 'todo', 'in_progress', 'review', 'attention']).optional() })
   .strict();
 export function registerOrchestratorRoutes(
   app: Hono,
@@ -45,6 +45,7 @@ export function registerOrchestratorRoutes(
   app.get('/orchestrators', (c) => c.json(service.state()));
   app.get('/orchestrators/overview', (c) => c.json(service.overview()));
   if (chat) {
+    app.get('/orchestrators/:id/chat-work', (c) => c.json(chat.currentWork(c.req.param('id'))));
     // The master's own chat CLI (PM-89): open (or reopen) it, or ask it for a one-time check
     // on pending work. AgentErrors (404 / 409 / 400) carry their own status.
     app.post('/orchestrators/:id/chat', async (c) => {

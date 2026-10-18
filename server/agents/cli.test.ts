@@ -549,7 +549,8 @@ describe('resuming CLIs without pinned conversations after a reboot', () => {
       };
     };
     const solo = insert('/repo-a');
-    expect(sup.resumeLatestArgv(solo)).toEqual(['codex', 'resume', '--last']);
+    // Codex must resolve a pinned rollout in its selected account's home, never --last.
+    expect(sup.resumeLatestArgv(solo)).toBeNull();
     // A second Codex session in the same folder: "latest" could be either one, so start fresh.
     insert('/repo-b');
     const b2 = insert('/repo-b');
@@ -560,11 +561,7 @@ describe('resuming CLIs without pinned conversations after a reboot', () => {
       '--continue',
     ]);
     expect(sup.resumeLatestArgv(insert('/repo-c2', 'antigravity', ['agy']))).toEqual(['agy', '-c']);
-    expect(sup.resumeLatestArgv(insert('/repo-d', 'codex', ['codex', '--model', 'x']))).toEqual([
-      'codex',
-      'resume',
-      '--last',
-    ]);
+    expect(sup.resumeLatestArgv(insert('/repo-d', 'codex', ['codex', '--model', 'x']))).toBeNull();
     expect(sup.resumeLatestArgv(insert('/repo-e', 'codex', ['/opt/other-codex']))).toBeNull();
   });
 });

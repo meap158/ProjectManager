@@ -9,6 +9,7 @@ vi.mock('../api', () => ({
   api: {
     openOrchestratorChat: vi.fn(async () => ({ id: 41, name: 'Master chat', status: 'running' })),
     checkOrchestrator: vi.fn(),
+    getOrchestratorChatWork: vi.fn(async () => null),
   },
 }));
 vi.mock('./OrchestratorTerminal', () => ({
@@ -27,7 +28,10 @@ vi.mock('./OrchestratorTerminal', () => ({
     </div>
   ),
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 it('opens and hides master chat inline without navigating to Agents or stopping it', async () => {
   const changed = vi.fn();
   render(
@@ -113,4 +117,55 @@ it('offers only configured chat agents and opens the chosen provider', async () 
   fireEvent.click(screen.getByRole('option', { name: /Claude Code/ }).querySelector('button')!);
   expect(await screen.findByRole('region', { name: 'Master chat' })).toBeDefined();
   expect(api.openOrchestratorChat).toHaveBeenLastCalledWith('master', 'claude');
+});
+
+it('persists expanded chat state across unmounting and remounting (PM-163)', async () => {
+  const current = {
+    id: 41,
+    name: 'Master chat',
+    providerId: 'codex',
+    status: 'running',
+  } as AgentSession;
+  vi.mocked(api.openOrchestratorChat).mockResolvedValueOnce(current);
+  const { unmount } = render(
+    <OrchestratorChat
+      instance={{ id: 'master', name: 'Master' } as OrchestratorConfig}
+      session={current}
+      disabled={false}
+      onChanged={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Open chat' }));
+  expect(await screen.findByRole('region', { name: 'Master chat' })).toBeDefined();
+
+  unmount();
+
+  render(
+    <OrchestratorChat
+      instance={{ id: 'master', name: 'Master' } as OrchestratorConfig}
+      session={current}
+      disabled={false}
+      onChanged={() => {}}
+    />,
+  );
+  expect(screen.getByRole('region', { name: 'Master chat' })).toBeDefined();
+  expect(screen.getByRole('button', { name: 'Hide chat' })).toBeDefined();
+});
+
+it('sends dashboard attention checks to this chat (PM-172)', async () => {
+  vi.mocked(api.checkOrchestrator).mockResolvedValueOnce({
+    id: 99,
+    status: 'running',
+  } as AgentSession);
+  render(
+    <OrchestratorChat
+      instance={{ id: 'master', name: 'Master' } as OrchestratorConfig}
+      session={null}
+      disabled={false}
+      onChanged={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Needs attention' }));
+  expect(await screen.findByRole('status')).toBeDefined();
+  expect(api.checkOrchestrator).toHaveBeenLastCalledWith('master', 'attention');
 });

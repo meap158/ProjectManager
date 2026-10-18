@@ -6,7 +6,7 @@ import type { Db } from '../db.js';
 import { AgentError, type AgentSupervisor } from '../agents/supervisor.js';
 import { providerStatuses } from '../agents/providers.js';
 import { stripTerminal } from '../agents/activity.js';
-import { getCard, insertCard, listCards, updateCard } from '../store.js';
+import { getCard, getSetting, setSetting, insertCard, listCards, updateCard } from '../store.js';
 import {
   CARD_STATUSES,
   type AgentRun,
@@ -15,7 +15,11 @@ import {
   type CardStatus,
   type ProjectSummary,
 } from '../../shared/types.js';
-import type { OrchestratorConfig, OrchestratorEvent } from '../../shared/orchestrator.js';
+import type {
+  OrchestratorConfig,
+  OrchestratorEvent,
+  OrchestratorChatWork,
+} from '../../shared/orchestrator.js';
 import type { OrchestratorToolHost } from '../boardMcp.js';
 import { cardContext } from './situation.js';
 import { planOrchestration } from './planner.js';
@@ -36,7 +40,7 @@ const CHAT_PROVIDERS = ['claude', 'codex', 'opencode', 'antigravity'];
 const NOTE_LIMIT = 20_000;
 const LIST_LIMIT = 200;
 
-export type CheckFocus = 'all' | 'todo' | 'in_progress' | 'review';
+export type CheckFocus = 'all' | 'todo' | 'in_progress' | 'review' | 'attention';
 
 const cardRef = z.union([
   z.number().int().positive(),
@@ -47,6 +51,21 @@ const cardRef = z.union([
 ]);
 
 export const ORCHESTRATOR_TOOLS = [
+  {
+    name: 'report_work',
+    description:
+      'Report the task you are actually working on above this chat terminal. Supply a scoped card, or projectId and title for repository attention work. Call with clear: true when finished or blocked. This is progress, not completion evidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        card: { type: ['string', 'integer'] },
+        projectId: { type: 'integer', minimum: 1 },
+        title: { type: 'string', minLength: 1, maxLength: 200 },
+        clear: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+  },
   {
     name: 'overview',
     description:
@@ -196,6 +215,27 @@ export class OrchestratorChat implements OrchestratorToolHost {
       .prepare('SELECT id FROM agent_sessions WHERE orchestrator_id = ? ORDER BY id DESC LIMIT 1')
       .get(id) as { id: number } | undefined;
     return row ? this.supervisor.getSession(row.id) : null;
+  }
+
+  currentWork(id: string): OrchestratorChatWork | null {
+    const instance = this.instance(id);
+    const work = getSetting<OrchestratorChatWork | null>(this.db, 'orchestrator-chat-work:' + id);
+    const session = this.session(id);
+    if (!work || !session || session.id !== work.sessionId || session.status !== 'running')
+      return null;
+    if (!this.scope(instance).some((p) => p.id === work.projectId)) return null;
+    if (work.cardId !== null) {
+      const card = getCard(this.db, work.cardId);
+      if (
+        !card ||
+        card.projectId !== work.projectId ||
+        card.status === 'done' ||
+        card.status === 'review'
+      )
+        return null;
+      return { ...work, cardKey: card.key, title: card.title };
+    }
+    return work;
   }
 
   /** The chat's own folder (never a project folder), holding its briefing. */
@@ -382,6 +422,48 @@ export class OrchestratorChat implements OrchestratorToolHost {
       status: c.status,
       updatedAt: c.updatedAt,
     });
+
+    if (name === 'report_work') {
+      const input = z
+        .object({
+          card: cardRef.optional(),
+          projectId: z.number().int().positive().optional(),
+          title: z.string().trim().min(1).max(200).optional(),
+          clear: z.boolean().optional(),
+        })
+        .strict()
+        .parse(args);
+      const session = this.supervisor.getSession(sessionId);
+      if (
+        !session ||
+        session.orchestratorId !== orchestratorId ||
+        session.status !== 'running' ||
+        this.session(orchestratorId)?.id !== sessionId
+      )
+        fail('Only the current running chat can report its work');
+      const key = 'orchestrator-chat-work:' + orchestratorId;
+      if (input.clear) {
+        setSetting(this.db, key, null);
+        return { cleared: true };
+      }
+      const task = input.card === undefined ? null : card(input.card);
+      const projectId = task?.projectId ?? input.projectId;
+      if (!projectId || !inScope(projectId)) fail('Choose a project in this orchestrator scope');
+      if (!task && !input.title) fail('Provide a card or a repository task title');
+      if (task && input.projectId !== undefined && input.projectId !== task.projectId)
+        fail('Card and project must match');
+      const work: OrchestratorChatWork = {
+        sessionId,
+        projectId: projectId!,
+        projectName: projectName(projectId!),
+        cardId: task?.id ?? null,
+        cardKey: task?.key ?? null,
+        title: task?.title ?? input.title!,
+        reportedAt: new Date().toISOString(),
+      };
+      setSetting(this.db, key, work);
+      return work;
+    }
 
     if (name === 'overview') {
       z.object({}).strict().parse(args);
@@ -806,30 +888,27 @@ function openingPrompt(instance: OrchestratorConfig): string {
 }
 
 const CHECKS: Record<CheckFocus, string> = {
-  todo: 'To do: go through each To do task. Decide whether it is ready to work on. Start workers (dispatch_worker) for ready ones within your worker limits, most important first; split large ones with create_card; add a note with your question on unclear ones.',
+  todo: 'To do: go through each To do task. Decide whether it is ready to work on. Implement ready tasks directly in this chat session, most important first. Inspect the project instructions and existing changes, complete the work and verify it before moving cards to Review. Do not dispatch workers or delegate; record concrete blockers on unclear tasks.',
   in_progress:
-    "In progress: check each card's progress (get_card, worker_output, and the project's git log in its folder). Move finished work to Review with a note of the evidence; nudge idle workers with message_worker; add a note on stalled cards saying what's blocking and what you suggest.",
+    "In progress: check each card's progress (get_card, worker_output, and the project's git log in its folder). Continue unfinished work directly here, preserving changes from existing sessions. Move finished work to Review with evidence; do not dispatch workers. Record concrete blockers on stalled cards.",
   review:
     'Review: for each card in Review, check the evidence (latest run outcome, commits, notes) and tell me which are ready for me to accept and which need more work (note why on the card).',
+  attention:
+    'Needs attention: inspect the live All projects dashboard alerts in overview, including uncommitted and unpushed work. Read the affected project instructions and diffs; address safe, authorized fixes directly here and verify them. Preserve unrelated changes. Do not dismiss unresolved alerts or mark work complete without evidence. Report the exact project, remaining work and any action requiring owner input. Do not push, merge, discard files or delete branches without explicit authorization for that action.',
   all: '',
 };
 
-function checkPrompt(instance: OrchestratorConfig, focus: CheckFocus): string {
+export function checkPrompt(instance: OrchestratorConfig, focus: CheckFocus): string {
   const steps =
     focus === 'all'
-      ? [
-          CHECKS.in_progress,
-          CHECKS.review,
-          CHECKS.todo,
-          'Needs attention: handle or explain each item.',
-        ]
+      ? [CHECKS.in_progress, CHECKS.review, CHECKS.todo, CHECKS.attention]
       : [CHECKS[focus]];
   const observe =
     instance.strategy === 'observe'
-      ? '\nYou are set to watch only: do not start workers; recommend instead.'
+      ? '\nWatch only: inspect and recommend changes; do not edit files or move cards unless the user explicitly authorizes the work.'
       : '';
   return [
-    'Check on pending work in your scope now. Call overview first.',
+    'Check on pending work in your scope now. Call overview first. Work directly in this chat session; do not dispatch workers or delegate. Worker capacity does not gate direct work.',
     ...steps.map((s, i) => `${i + 1}. ${s}`),
     `Finish with a short report: what you moved, started or noted, what's blocked, and what needs me.${observe}`,
   ].join('\n');
@@ -848,11 +927,13 @@ export function briefing(instance: OrchestratorConfig, projects: ProjectSummary[
 
 You are this ProjectManager orchestrator. The user chats with you here and you act on
 their requests across the projects below: following up on tasks, checking progress, moving cards
-and starting agent workers. This folder is only your home; the work happens in the projects.
+and implementing authorized work directly in this chat session. This folder is your home; inspect and edit the scoped projects using their absolute paths.
 
 ## Your settings
 
-- Mode: ${instance.strategy === 'observe' ? 'Watch only (recommend; start workers only when the user explicitly asks)' : 'Starts workers on its own'}
+- Chat mode: ${instance.strategy === 'observe' ? 'Watch only (recommend; implement only when the user explicitly asks)' : 'Process authorized work directly in this chat session'}
+- Do not dispatch workers or delegate work from this chat. Worker capacity does not block direct work.
+- Background scheduler settings below are separate from this chat's direct work:
 - Providers for workers: ${instance.providers.join(', ')}
 - Worker limits: ${instance.maxWorkers} in total, ${instance.maxWorkersPerProject} per project
 
@@ -872,14 +953,14 @@ ${projects.map(project).join('\n') || '- (none)'}
 
 ## How to work
 
-- To do: decide what's ready, start workers within the limits (most important first), split
-  large tasks, and note questions on unclear ones.
+- Call \`report_work\` before each card or repository task, and clear it when finished or blocked, so the chat shows the actual task above its terminal.
+
+- To do: inspect each task and its project's instructions, then implement authorized work directly here. Preserve existing changes; verify the requirements before moving a card to Review. Do not dispatch workers or delegate.
 - In progress: check progress (get_card, worker_output, the project's \`git log\`/\`git status\`).
-  Move finished work to Review with evidence; nudge idle workers; note what blocks stalled ones.
+  Continue unfinished work directly here without overwriting active sessions' changes. Move finished work to Review with evidence; note concrete blockers.
 - Review: check the evidence and tell the user what's ready to accept. Move to Done only when
   the requirements are clearly met; the user accepts or rejects finished runs.
-- Read project folders freely, but never change files there yourself: changes go through
-  workers. Never push, merge, delete branches or run destructive commands.
+- Read scoped project folders and make authorized changes directly in this chat. Follow each project's instructions, preserve unrelated changes, and run appropriate checks. Never push, merge, delete branches or run destructive commands without explicit authorization for that action.
 - Keep the board truthful: every move gets a short note saying why.
 - Report concisely: what you did, what's blocked, what needs the user.
 `;

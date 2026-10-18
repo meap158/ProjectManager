@@ -391,7 +391,12 @@ export interface AgentProviderStatus extends AgentProvider {
 }
 
 /** Codex authentication profiles kept in the local app data directory. Credentials are never returned. */
+export type AccountUsageStatus =
+  'fresh' | 'stale' | 'expired' | 'unavailable' | 'unsupported' | 'not_loaded';
+
 export interface CodexAccount {
+  usageStatus?: AccountUsageStatus;
+  usageCheckedAt?: string | null;
   id: string;
   name: string;
   createdAt: string;
@@ -409,6 +414,8 @@ export interface CodexAccountsState {
   autoSwitch: boolean;
   /** Non-secret metadata for the default CODEX_HOME login, if auth.json exists there. */
   defaultAccount?: {
+    usageStatus?: AccountUsageStatus;
+    usageCheckedAt?: string | null;
     available: boolean;
     email?: string | null;
     plan?: string | null;

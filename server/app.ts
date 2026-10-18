@@ -4,6 +4,7 @@ import { OrchestratorChat } from './orchestrator/chat.js';
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { compress } from 'hono/compress';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { BOARD_PRESETS, CARD_STATUSES } from '../shared/types.js';
@@ -163,6 +164,9 @@ export function createApp(
     }
     await next();
   });
+
+  // Shrink repeated dashboard payloads over LAN; event streams must flush immediately.
+  app.use('*', compress({ threshold: 2048, contentTypeFilter: /^application\/json(?:;|$)/i }));
 
   app.onError((error, c) => {
     if (error instanceof HttpError) return c.json({ error: error.message }, error.status);

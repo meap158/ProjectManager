@@ -2,6 +2,10 @@
 
 .orchestrator-chat {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   gap: 10px;
   padding: 12px;
   border: 1px solid var(--border);
@@ -14,16 +18,26 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+.orchestrator-chat-head > div:first-child {
+  min-width: 0;
+  max-width: 100%;
 }
 .orchestrator-chat-head p {
   margin: 4px 0 0;
   max-width: 60ch;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .orchestrator-chat-open {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  max-width: 100%;
 }
 .orchestrator-chat-state {
   font-size: 12px;
@@ -37,28 +51,74 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 .orchestrator-chat-sent {
   margin: 0;
   font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-/* The master's chat CLI pane (PM-138). Full screen matches the Agents tab CLI dock: on desktop
-   the pane sticks to the bottom and grows to the window; on phones it covers the whole screen,
-   page header, tabs and bottom bar included, inside the safe areas. The header double-click or
-   the maximise button toggles it, Escape restores it. */
+/* The master's chat CLI pane (PM-138, PM-163). Full screen matches the Agents tab CLI dock: on
+   desktop the pane sticks to the bottom and grows to the window; on phones it covers the whole
+   screen, page header, tabs and bottom bar included, inside the safe areas. The header
+   double-click or the maximise button toggles it, Escape restores it. */
 .orchestrator-terminal {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .orchestrator-terminal-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+  min-width: 0;
+  max-width: 100%;
   user-select: none;
+}
+.orchestrator-terminal-controls {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+.orchestrator-terminal-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .orchestrator-terminal-body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+.orchestrator-terminal-body > .terminal-shell,
+.orchestrator-terminal-body > .terminal-shell > .terminal,
+.orchestrator-terminal-body > .session-chat {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.orchestrator-terminal:not(.is-max) > .orchestrator-terminal-body > .session-chat {
+  max-height: min(440px, 65dvh);
 }
 .orchestrator-terminal.is-max {
   position: sticky;
@@ -184,6 +244,38 @@
   }
   .orchestrator-chat-checks .btn {
     min-height: 40px;
+    white-space: normal;
+  }
+  .orchestrator-terminal-head {
+    gap: 6px;
+  }
+  .orchestrator-terminal-head .session-restart-status {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .orchestrator-terminal-body .session-chat,
+  .orchestrator-terminal-body .chat-list,
+  .orchestrator-terminal-body .chat-msg,
+  .orchestrator-terminal-body .chat-bubble,
+  .orchestrator-terminal-body .chat-tool,
+  .orchestrator-terminal-body .chat-steps,
+  .orchestrator-terminal-body .chat-card,
+  .orchestrator-terminal-body .chat-asking,
+  .orchestrator-terminal-body .chat-live {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .orchestrator-terminal-body .chat-status-line,
+  .orchestrator-terminal-body .chat-background li {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 }
 
@@ -208,4 +300,12 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.orchestrator-chat-task {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }

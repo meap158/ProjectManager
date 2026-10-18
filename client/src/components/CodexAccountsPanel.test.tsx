@@ -1,19 +1,45 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CodexAccountsState } from '../../../shared/types';
 import { api } from '../api';
+import { SettingsPage } from '../pages/SettingsPage';
 import { CodexAccountsPanel } from './CodexAccountsPanel';
+
+vi.mock('../agentLimits', () => ({
+  useAgentLimits: () => ({ list: [], now: 0 }),
+}));
+vi.mock('./AgentPermissionsPanel', () => ({
+  AgentPermissionsPanel: () => null,
+}));
+vi.mock('./CpuBudgetPanel', () => ({
+  CpuBudgetPanel: () => null,
+}));
+vi.mock('./LanAccessPanel', () => ({
+  LanAccessPanel: () => null,
+}));
 
 vi.mock('../api', () => ({
   api: {
+    listProviders: vi.fn(),
+    listProvidersRefresh: vi.fn(),
+    listInstalls: vi.fn(),
+    listProjects: vi.fn(),
     getCodexAccounts: vi.fn(),
+    refreshCodexAccountsUsage: vi.fn(),
     importCodexAccount: vi.fn(),
     saveCurrentCodexAccount: vi.fn(),
     setActiveCodexAccount: vi.fn(),
     setCodexAutoSwitch: vi.fn(),
     renameCodexAccount: vi.fn(),
     removeCodexAccount: vi.fn(),
+    getClaudeAccounts: vi.fn(),
+    importClaudeAccount: vi.fn(),
+    saveCurrentClaudeAccount: vi.fn(),
+    setActiveClaudeAccount: vi.fn(),
+    setClaudeAutoSwitch: vi.fn(),
+    renameClaudeAccount: vi.fn(),
+    removeClaudeAccount: vi.fn(),
   },
 }));
 
@@ -57,7 +83,7 @@ describe('CodexAccountsPanel (PM-164)', () => {
     expect(await screen.findByText('Default Codex account')).toBeDefined();
     expect(screen.getByText('Work Pro')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to account' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to account Work Pro' }));
     await waitFor(() =>
       expect(api.setActiveCodexAccount).toHaveBeenCalledWith(
         '11111111-1111-1111-1111-111111111111',
@@ -108,4 +134,90 @@ describe('CodexAccountsPanel (PM-164)', () => {
     );
     expect(await screen.findByText('Backup Account')).toBeDefined();
   });
+
+  it('expands Codex account switching inside the Codex entry in Settings > Agent CLIs (PM-168)', async () => {
+    vi.mocked(api.listProviders).mockResolvedValue([
+      {
+        id: 'claude',
+        name: 'Claude Code',
+        description: 'Anthropic coding CLI',
+        binary: 'claude',
+        argsTemplate: [],
+        available: true,
+        resolvedPath: 'claude',
+        install: null,
+      },
+      {
+        id: 'codex',
+        name: 'Codex',
+        description: 'OpenAI coding CLI',
+        binary: 'codex',
+        argsTemplate: [],
+        available: true,
+        resolvedPath: 'codex',
+        install: null,
+      },
+    ]);
+    vi.mocked(api.listInstalls).mockResolvedValue([]);
+    vi.mocked(api.listProjects).mockResolvedValue([]);
+    vi.mocked(api.getCodexAccounts).mockResolvedValue(baseState);
+
+    render(<SettingsPage />);
+
+    const cliSection = await screen.findByRole('region', { name: 'Agent CLIs' });
+    const expandButtons = await within(cliSection).findAllByRole('button', { name: 'Accounts' });
+    expect(expandButtons).toHaveLength(2);
+    const [claudeExpandBtn, codexExpandBtn] = expandButtons as [HTMLElement, HTMLElement];
+    expect(codexExpandBtn.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('region', { name: 'Codex accounts' })).toBeNull();
+
+    fireEvent.click(codexExpandBtn);
+    expect(codexExpandBtn.getAttribute('aria-expanded')).toBe('true');
+
+    const codexRegion = await within(cliSection).findByRole('region', { name: 'Codex accounts' });
+    expect(await within(codexRegion).findByText('Default Codex account')).toBeDefined();
+    expect(within(codexRegion).getByText('Work Pro')).toBeDefined();
+
+    vi.mocked(api.getClaudeAccounts).mockResolvedValue(baseState);
+    fireEvent.click(claudeExpandBtn);
+    expect(claudeExpandBtn.getAttribute('aria-expanded')).toBe('true');
+    const claudeRegion = await within(cliSection).findByRole('region', { name: 'Claude accounts' });
+    expect(await within(claudeRegion).findByText('Default Claude account')).toBeDefined();
+  });
+
+  it('deduplicates account name when it equals email, shows saved timestamp, and offers Add nickname (PM-169, PM-173)', async () => {
+    vi.mocked(api.getCodexAccounts).mockResolvedValue({
+      ...baseState,
+      accounts: [
+        {
+          id: '33333333-3333-3333-3333-333333333333',
+          name: 'dup@example.com',
+          email: 'dup@example.com',
+          plan: 'plus',
+          createdAt: '2026-10-17T12:00:00Z',
+          limits: null,
+        },
+      ],
+    });
+
+    render(<CodexAccountsPanel onError={vi.fn()} />);
+    expect(await screen.findByText('dup@example.com')).toBeDefined();
+    expect(screen.queryByText(/· dup@example\.com/)).toBeNull();
+    expect(screen.getByText(/· saved /)).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Rename dup@example.com' }).textContent).toBe(
+      'Add nickname',
+    );
+  });
+});
+
+it('refreshes account usage without switching accounts and displays expired login state', async () => {
+  vi.mocked(api.getCodexAccounts).mockResolvedValue(baseState);
+  vi.mocked(api.refreshCodexAccountsUsage).mockResolvedValue({
+    ...baseState,
+    accounts: baseState.accounts.map((a) => ({ ...a, usageStatus: 'expired' })),
+  });
+  render(<CodexAccountsPanel onError={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Refresh usage' }));
+  expect(await screen.findByText('Sign in again to refresh usage')).toBeDefined();
+  expect(api.setActiveCodexAccount).not.toHaveBeenCalled();
 });

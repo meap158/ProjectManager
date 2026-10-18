@@ -1,18 +1,56 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CodexAccount, CodexAccountsState } from '../../../shared/types';
 import { api } from '../api';
+import { formatDate, formatRelative } from '../format';
 import { ProviderIcon } from './icons';
 import { UsageLimits } from './UsageLimits';
 
+function AccountActionIcon({ action }: { action: 'switch' | 'rename' | 'remove' }) {
+  const paths = {
+    switch: 'M3 8h10M9 4l4 4-4 4',
+    rename: 'M3 11l-1 3 3-1 8-8-2-2-8 8z',
+    remove: 'M3 4h10M6 4V2h4v2M5 4v10h6V4',
+  };
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={paths[action]} />
+    </svg>
+  );
+}
+
+export type AccountProviderId = 'codex' | 'claude';
+
 /**
- * Settings → Codex accounts (PM-164): manage saved Codex auth.json profiles, switch the active
- * account, save the current ~/.codex login, or automatically rotate to the next non-exhausted
+ * Settings → Agent CLIs → Accounts (PM-164, PM-168, PM-169, PM-173): manage saved CLI credential
+ * profiles (Codex `~/.codex/auth.json` and Claude Code `~/.claude/.credentials.json`), switch the
+ * active account, save the current login, or automatically rotate to the next non-exhausted
  * account when a Codex CLI hits its usage limit. The account selected here is the login for
- * every Codex session, run and orchestrator chat.
+ * every session, run and orchestrator chat that uses that CLI.
  */
-export function CodexAccountsPanel({ onError }: { onError: (message: string) => void }) {
+export function CodexAccountsPanel({
+  providerId = 'codex',
+  onError,
+}: {
+  providerId?: AccountProviderId;
+  onError: (message: string) => void;
+}) {
+  const isClaude = providerId === 'claude';
+  const cliTitle = isClaude ? 'Claude' : 'Codex';
+  const credFile = isClaude ? '~/.claude/.credentials.json' : '~/.codex/auth.json';
+  const importFileLabel = isClaude ? '.credentials.json' : 'auth.json';
   const [state, setState] = useState<CodexAccountsState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [refreshingUsage, setRefreshingUsage] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [importName, setImportName] = useState('');
   const [importJson, setImportJson] = useState('');
@@ -22,14 +60,15 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(() => {
-    api.getCodexAccounts().then(
+    const fetchState = isClaude ? api.getClaudeAccounts : api.getCodexAccounts;
+    fetchState().then(
       (s) => {
         setState(s);
         setNow(Date.now());
       },
       (e: Error) => onError(e.message),
     );
-  }, [onError]);
+  }, [isClaude, onError]);
 
   useEffect(() => {
     load();
@@ -61,8 +100,13 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
       const text = await file.text();
       setImportJson(text);
       if (!importName.trim()) {
-        const base = file.name.replace(/\.json$/i, '').trim();
-        if (base && base.toLowerCase() !== 'auth') setImportName(base);
+        const base = file.name
+          .replace(/^\.+/, '')
+          .replace(/\.json$/i, '')
+          .trim();
+        if (base && base.toLowerCase() !== 'auth' && base.toLowerCase() !== 'credentials') {
+          setImportName(base);
+        }
       }
     } catch {
       onError('Could not read the selected JSON file.');
@@ -74,7 +118,11 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
   async function submitImport(e: React.FormEvent) {
     e.preventDefault();
     if (!importName.trim() || !importJson.trim()) return;
-    const ok = await act(() => api.importCodexAccount(importName.trim(), importJson.trim()));
+    const ok = await act(() =>
+      isClaude
+        ? api.importClaudeAccount(importName.trim(), importJson.trim())
+        : api.importCodexAccount(importName.trim(), importJson.trim()),
+    );
     if (ok) {
       setImportName('');
       setImportJson('');
@@ -88,7 +136,11 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
       setRenamingId(null);
       return;
     }
-    const ok = await act(() => api.renameCodexAccount(account.id, trimmed));
+    const ok = await act(() =>
+      isClaude
+        ? api.renameClaudeAccount(account.id, trimmed)
+        : api.renameCodexAccount(account.id, trimmed),
+    );
     if (ok) setRenamingId(null);
   }
 
@@ -101,61 +153,85 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
           'Default CLI account');
 
   return (
-    <section className="panel" aria-label="Codex accounts">
-      <div className="panel-header">
+    <div className="codex-accounts-panel" role="region" aria-label={`${cliTitle} accounts`}>
+      <div
+        className="panel-header"
+        style={{ marginBottom: 6, paddingBottom: 0, borderBottom: 'none' }}
+      >
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <ProviderIcon id="codex" size={15} />
-          <h2>Codex accounts</h2>
+          <ProviderIcon id={providerId} size={14} />
+          <strong style={{ fontSize: 13 }}>{cliTitle} accounts</strong>
         </span>
         <span className="meta">active: {activeLabel}</span>
       </div>
       <p className="faint" style={{ margin: '0 0 12px', fontSize: 12.5 }}>
-        The account selected here is the Codex login for every Codex session, run and orchestrator
-        chat. Switch between the default CLI login (<code>~/.codex/auth.json</code>) and saved{' '}
-        <code>auth.json</code> profiles, or automatically rotate to another account with remaining
-        quota when one of those CLIs hits a usage limit. Moving onto a different login starts a
-        new conversation in each session.
+        The account selected here is the {cliTitle} login for every {cliTitle} session, run and
+        orchestrator chat. Switch between the default CLI login (<code>{credFile}</code>) and saved{' '}
+        <code>{importFileLabel}</code> profiles.{' '}
+        {!isClaude &&
+          'Codex can automatically rotate to another account when it hits a usage limit. '}
+        {!isClaude &&
+          'Moving Codex onto a different login starts a new conversation in each session. When adding multiple accounts, run codex login directly without running codex logout (which revokes the token on OpenAI’s server).'}
       </p>
 
       {state === null ? (
         <div className="skeleton" style={{ height: 100 }} />
       ) : (
         <>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              marginBottom: 12,
-            }}
-          >
-            <label
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={state.autoSwitch}
-                disabled={busy}
-                onChange={() => act(() => api.setCodexAutoSwitch(!state.autoSwitch))}
-              />
-              <span>Automatically switch accounts when hitting usage limits</span>
-            </label>
-            <span className="actions" style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="codex-accounts-toolbar">
+            {!isClaude && (
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={state.autoSwitch}
+                  disabled={busy}
+                  onChange={() => act(() => api.setCodexAutoSwitch(!state.autoSwitch))}
+                />
+                <span>Automatically switch accounts when hitting usage limits</span>
+              </label>
+            )}
+            <span className="actions codex-accounts-toolbar-actions">
+              {!isClaude && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy || refreshingUsage}
+                  onClick={async () => {
+                    setRefreshingUsage(true);
+                    try {
+                      const next = await api.refreshCodexAccountsUsage();
+                      setState(next);
+                      setNow(Date.now());
+                      onError('');
+                    } catch (e) {
+                      onError((e as Error).message);
+                    } finally {
+                      setRefreshingUsage(false);
+                    }
+                  }}
+                >
+                  {refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
+                </button>
+              )}
               {state.defaultAccount?.available && (
                 <button
                   type="button"
                   className="btn btn-sm"
                   disabled={busy}
-                  onClick={() => act(() => api.saveCurrentCodexAccount())}
-                  title="Copy ~/.codex/auth.json into your saved Codex accounts pool"
+                  onClick={() =>
+                    act(() =>
+                      isClaude ? api.saveCurrentClaudeAccount() : api.saveCurrentCodexAccount(),
+                    )
+                  }
+                  title={`Save ${credFile} into your ${cliTitle} accounts pool`}
                 >
                   Save current CLI login
                 </button>
@@ -166,7 +242,7 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
                 disabled={busy}
                 onClick={() => setShowAdd((v) => !v)}
               >
-                {showAdd ? 'Cancel' : 'Import auth.json'}
+                {showAdd ? 'Cancel' : `Import ${importFileLabel}`}
               </button>
             </span>
           </div>
@@ -202,21 +278,25 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
                   accept=".json,application/json"
                   onChange={handleFileSelect}
                   style={{ display: 'none' }}
-                  aria-label="Choose auth.json file"
+                  aria-label={`Choose ${importFileLabel} file`}
                 />
                 <button
                   type="button"
                   className="btn btn-sm"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  Choose auth.json file…
+                  Choose {importFileLabel} file…
                 </button>
               </div>
               <textarea
                 className="input mono"
                 rows={4}
-                placeholder='Paste Codex auth.json contents ({"tokens": ...} or {"OPENAI_API_KEY": ...})'
-                aria-label="Codex auth.json contents"
+                placeholder={
+                  isClaude
+                    ? 'Paste Claude .credentials.json contents ({"claudeAiOauth": ...} or {"ANTHROPIC_API_KEY": ...})'
+                    : 'Paste Codex auth.json contents ({"tokens": ...} or {"OPENAI_API_KEY": ...})'
+                }
+                aria-label={`${cliTitle} ${importFileLabel} contents`}
                 value={importJson}
                 onChange={(e) => setImportJson(e.target.value)}
                 style={{ fontSize: 12, resize: 'vertical' }}
@@ -234,24 +314,17 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
             </form>
           )}
 
-          <ul className="list">
-            <li
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                flexWrap: 'wrap',
-              }}
-            >
+          <ul className="list codex-accounts-list">
+            <li className="codex-account-row">
               <span
                 className={`status-dot${state.activeProfileId === null ? ' green' : ''}`}
                 role="img"
                 aria-label={state.activeProfileId === null ? 'Active account' : 'Inactive account'}
               />
-              <span style={{ flex: 1, minWidth: 180 }}>
-                <b>Default Codex account</b>{' '}
+              <span className="codex-account-info">
+                <b>Default {cliTitle} account</b>{' '}
                 <span className="faint" style={{ fontSize: 12.5 }}>
-                  (<code>~/.codex/auth.json</code>)
+                  (<code>{credFile}</code>)
                 </span>
                 {state.defaultAccount?.email && (
                   <span className="faint" style={{ fontSize: 12.5 }}>
@@ -271,49 +344,61 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
                     · not signed in
                   </span>
                 )}
+                <span className="faint" role="status">
+                  {refreshingUsage
+                    ? 'Loading usage…'
+                    : usageLabel(state.defaultAccount?.usageStatus)}
+                </span>
                 {state.defaultAccount?.limits && (
                   <UsageLimits limits={state.defaultAccount.limits} now={now} />
                 )}
               </span>
-              {state.activeProfileId === null ? (
-                <span className="badge badge-done">active</span>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={busy}
-                  onClick={() => act(() => api.setActiveCodexAccount(null))}
-                >
-                  Use default
-                </button>
-              )}
+              <span className="actions codex-account-actions">
+                {state.activeProfileId === null ? (
+                  <span className="badge badge-done">active</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy}
+                    onClick={() =>
+                      act(() =>
+                        isClaude
+                          ? api.setActiveClaudeAccount(null)
+                          : api.setActiveCodexAccount(null),
+                      )
+                    }
+                  >
+                    Use default
+                  </button>
+                )}
+              </span>
             </li>
 
             {state.accounts.map((acc) => {
               const isActive = state.activeProfileId === acc.id;
               const isRenaming = renamingId === acc.id;
+              const sameAsEmail =
+                Boolean(acc.email) &&
+                acc.email!.trim().toLowerCase() === acc.name.trim().toLowerCase();
+              const showEmail = Boolean(acc.email) && !sameAsEmail;
               return (
-                <li
-                  key={acc.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    flexWrap: 'wrap',
-                  }}
-                >
+                <li key={acc.id} className="codex-account-row">
                   <span
                     className={`status-dot${isActive ? ' green' : ''}`}
                     role="img"
                     aria-label={isActive ? 'Active account' : 'Saved account'}
                   />
-                  <span style={{ flex: 1, minWidth: 180 }}>
+                  <span className="codex-account-info">
                     {isRenaming ? (
                       <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                         <input
                           type="text"
                           className="input"
                           value={renameDraft}
+                          title={
+                            sameAsEmail ? `Add nickname for ${acc.name}` : `Rename ${acc.name}`
+                          }
                           aria-label={`Rename ${acc.name}`}
                           onChange={(e) => setRenameDraft(e.target.value)}
                           onKeyDown={(e) => {
@@ -341,7 +426,7 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
                     ) : (
                       <>
                         <b>{acc.name}</b>
-                        {acc.email && (
+                        {showEmail && (
                           <span className="faint" style={{ fontSize: 12.5 }}>
                             {' '}
                             · {acc.email}
@@ -353,11 +438,24 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
                             <span className="badge">{acc.plan}</span>
                           </>
                         )}
+                        {acc.createdAt && (
+                          <span
+                            className="faint"
+                            style={{ fontSize: 12 }}
+                            title={`Saved ${formatDate(acc.createdAt)}, ${new Date(acc.createdAt).toLocaleTimeString()}`}
+                          >
+                            {' '}
+                            · saved {formatRelative(acc.createdAt)}
+                          </span>
+                        )}
                       </>
                     )}
+                    <span className="faint" role="status">
+                      {refreshingUsage ? 'Loading usage…' : usageLabel(acc.usageStatus)}
+                    </span>
                     {acc.limits && <UsageLimits limits={acc.limits} now={now} />}
                   </span>
-                  <span className="actions" style={{ display: 'inline-flex', gap: 6 }}>
+                  <span className="actions codex-account-actions">
                     {isActive ? (
                       <span className="badge badge-done">active</span>
                     ) : (
@@ -365,9 +463,18 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
                         type="button"
                         className="btn btn-sm"
                         disabled={busy}
-                        onClick={() => act(() => api.setActiveCodexAccount(acc.id))}
+                        aria-label={`Switch to account ${acc.name}`}
+                        title={`Switch to ${acc.name}`}
+                        onClick={() =>
+                          act(() =>
+                            isClaude
+                              ? api.setActiveClaudeAccount(acc.id)
+                              : api.setActiveCodexAccount(acc.id),
+                          )
+                        }
                       >
-                        Switch to account
+                        <AccountActionIcon action="switch" />
+                        <span className="account-action-label">Switch to account</span>
                       </button>
                     )}
                     {!isRenaming && (
@@ -375,22 +482,34 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
                         type="button"
                         className="btn btn-sm"
                         disabled={busy}
+                        aria-label={`Rename ${acc.name}`}
                         onClick={() => {
                           setRenamingId(acc.id);
                           setRenameDraft(acc.name);
                         }}
                       >
-                        Rename
+                        <AccountActionIcon action="rename" />
+                        <span className="account-action-label">
+                          {sameAsEmail ? 'Add nickname' : 'Rename'}
+                        </span>
                       </button>
                     )}
                     <button
                       type="button"
                       className="btn btn-sm"
                       disabled={busy}
-                      onClick={() => act(() => api.removeCodexAccount(acc.id))}
+                      onClick={() =>
+                        act(() =>
+                          isClaude
+                            ? api.removeClaudeAccount(acc.id)
+                            : api.removeCodexAccount(acc.id),
+                        )
+                      }
+                      title={`Remove ${acc.name}`}
                       aria-label={`Remove ${acc.name}`}
                     >
-                      Remove
+                      <AccountActionIcon action="remove" />
+                      <span className="account-action-label">Remove</span>
                     </button>
                   </span>
                 </li>
@@ -399,6 +518,23 @@ export function CodexAccountsPanel({ onError }: { onError: (message: string) => 
           </ul>
         </>
       )}
-    </section>
+    </div>
   );
+}
+
+function usageLabel(status?: import('../../../shared/types').AccountUsageStatus): string {
+  switch (status) {
+    case 'fresh':
+      return 'Current usage';
+    case 'stale':
+      return 'Last reported usage (may be out of date)';
+    case 'expired':
+      return 'Sign in again to refresh usage';
+    case 'unavailable':
+      return 'Usage unavailable; try refreshing later';
+    case 'unsupported':
+      return 'Account usage is unavailable for this login type';
+    default:
+      return 'Usage not refreshed';
+  }
 }
