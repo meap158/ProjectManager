@@ -69,8 +69,21 @@ async function performRequest<T>(method: string, url: string, body?: unknown): P
     const data = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(data?.error ?? `Request failed (${res.status})`);
   }
-  return (res.status === 204 ? undefined : await res.json()) as T;
+  if (res.status === 204) return undefined as T;
+  if (method !== 'GET' || !STABLE_READS.test(url)) return (await res.json()) as T;
+  // Polled lists: an unchanged answer returns the previous object, so setState bails out and the
+  // tree below is not re-rendered every few seconds for nothing.
+  const text = await res.text();
+  const seen = lastReads.get(url);
+  if (seen?.text === text) return seen.value as T;
+  const value = JSON.parse(text) as T;
+  lastReads.set(url, { text, value });
+  return value;
 }
+
+const STABLE_READS =
+  /^\/(projects|cards|cards\/in-flight|agent-sessions|agent-runs|projects\/\d+\/(cards|agent-sessions))$/;
+const lastReads = new Map<string, { text: string; value: unknown }>();
 
 export interface OrchestratorRunPage {
   liveAssignments?: { id: number; projectId: number; cardId: number | null }[];

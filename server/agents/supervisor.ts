@@ -252,6 +252,11 @@ class HostedProc implements AgentProc {
 /** The host's key for a session record: the id alone is not unique (SQLite reuses ids). */
 const hostKey = (row: { id: number; log_path: string }) => `session:${row.id}|${row.log_path}`;
 
+interface SessionBatch {
+  autoContinue: Map<number, AgentSession['autoContinue']>;
+  queued: Map<number, number>;
+}
+
 interface SessionRow {
   id: number;
   project_id: number;
@@ -916,7 +921,35 @@ export class AgentSupervisor {
     const rows = this.db
       .prepare(`SELECT * FROM agent_sessions WHERE project_id = ? ORDER BY id`)
       .all(projectId) as unknown as SessionRow[];
-    return rows.map((r) => this.toSession(r));
+    const batch = this.sessionBatch();
+    return rows.map((r) => this.toSession(r, batch));
+  }
+
+  /**
+   * Per-session settings and queued input for a whole list in two queries. The lists are polled
+   * every couple of seconds by several views, and compiling four statements per session each time
+   * made them the dearest request the server handles.
+   */
+  private sessionBatch(): SessionBatch {
+    const autoContinue = new Map<number, AgentSession['autoContinue']>();
+    const prefix = 'session-auto-continue:';
+    for (const r of this.db
+      .prepare(`SELECT key, value FROM settings WHERE key LIKE 'session-auto-continue:%'`)
+      .all() as { key: string; value: string }[]) {
+      try {
+        autoContinue.set(Number(r.key.slice(prefix.length)), JSON.parse(r.value));
+      } catch {
+        // Unreadable value: the default applies, as with getSetting.
+      }
+    }
+    const queued = new Map<number, number>();
+    for (const r of this.db
+      .prepare(
+        `SELECT session_id, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM agent_input_queue GROUP BY session_id`,
+      )
+      .all() as { session_id: number; bytes: number }[])
+      queued.set(r.session_id, r.bytes);
+    return { autoContinue, queued };
   }
 
   /** Every session in every project, newest last (the workspace shows sessions side by side). */
@@ -924,7 +957,8 @@ export class AgentSupervisor {
     const rows = this.db
       .prepare(`SELECT * FROM agent_sessions ORDER BY id`)
       .all() as unknown as SessionRow[];
-    return rows.map((r) => this.toSession(r));
+    const batch = this.sessionBatch();
+    return rows.map((r) => this.toSession(r, batch));
   }
 
   getSession(id: number, projectId?: number): AgentSession | null {
@@ -3134,7 +3168,7 @@ export class AgentSupervisor {
     return row.bytes;
   }
 
-  private toSession(row: SessionRow): AgentSession {
+  private toSession(row: SessionRow, batch?: SessionBatch): AgentSession {
     const { command } = JSON.parse(row.command_json) as { command: string[] };
     const codexProfile = this.sessionCodexProfile(row);
     const live = this.live.get(`session:${row.id}`);
@@ -3169,7 +3203,9 @@ export class AgentSupervisor {
       restartProgress: this.restarting.get(row.id)?.phase ?? null,
       restartError: this.restarting.get(row.id)?.error ?? null,
       usageLimit: this.usageLimits.get(row.id) ?? null,
-      autoContinue: getSetting(this.db, `session-auto-continue:${row.id}`) ?? {
+      autoContinue: (batch
+        ? (batch.autoContinue.get(row.id) ?? null)
+        : getSetting<AgentSession['autoContinue']>(this.db, `session-auto-continue:${row.id}`)) ?? {
         enabled: false,
         resumesAt: null,
         message: '',
@@ -3195,7 +3231,7 @@ export class AgentSupervisor {
       resumeSupported: row.resume_json !== null,
       restarts: row.restarts,
       lastRestartAt: row.last_restart_at,
-      queuedInputBytes: this.queuedInputBytes(row.id),
+      queuedInputBytes: batch ? (batch.queued.get(row.id) ?? 0) : this.queuedInputBytes(row.id),
       createdAt: row.created_at,
       startedAt: row.started_at,
       endedAt: row.ended_at,

@@ -58,6 +58,9 @@ const inputBody = z.object({
     .max(64 * 1024),
 });
 
+/** Output events to one terminal are at most this far apart while the process runs (~60/s). */
+const STREAM_BATCH_MS = 16;
+
 const workspaceBody = z
   .object({
     preset: z.enum(WORKSPACE_PRESETS),
@@ -506,6 +509,10 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
             await stream.writeSSE({
               event: 'state',
               data: JSON.stringify({
+            // Batch bursts to about a frame: a busy TUI emits hundreds of tiny chunks a second,
+            // and each would otherwise cost an event, a JSON.parse and a terminal write. The
+            // first chunk after idle goes out at once; only what follows waits.
+            if (out.running) await new Promise((resolve) => setTimeout(resolve, STREAM_BATCH_MS));
                 running: out.running,
                 exitCode: out.exitCode,
                 logBytes: out.logBytes,

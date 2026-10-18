@@ -12,6 +12,29 @@ import type { AgentOutput } from '../../../shared/types';
  */
 export const MAX_INITIAL_HISTORY_BYTES = 512 * 1024;
 
+/** Browsers cap live WebGL contexts (about 16 in Chrome) and drop the oldest past that. */
+const MAX_WEBGL_TERMINALS = 6;
+let webglTerminals = 0;
+let hardwareWebgl: boolean | null = null;
+
+/** False without WebGL or on a software renderer, where the DOM renderer is the faster one. */
+function hasHardwareWebgl(): boolean {
+  if (hardwareWebgl !== null) return hardwareWebgl;
+  hardwareWebgl = false;
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    if (gl) {
+      const info = gl.getExtension('WEBGL_debug_renderer_info');
+      const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+      hardwareWebgl = !/swiftshader|llvmpipe|software|basic render/i.test(renderer);
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+  } catch {
+    // Unsupported: the DOM renderer is used.
+  }
+  return hardwareWebgl;
+}
+
 /**
  * Terminal rendering a session/run log via xterm.js (the same renderer VS Code uses), so ANSI
  * colours and cursor motion from AI CLIs display faithfully.
@@ -763,6 +786,7 @@ export function TerminalView({
     // Open on the next frame: xterm schedules viewport work right after open(), which throws if
     // the terminal is disposed first — exactly what StrictMode's throwaway mount does. A mount
     // that is cleaned up before this frame never opens at all.
+    let releaseWebgl: (() => void) | null = null;
     const openFrame = requestAnimationFrame(() => {
       if (cancelled) return;
       term.open(host);
@@ -770,12 +794,25 @@ export function TerminalView({
       // full-screen TUIs (OpenCode, Grok) repaint whole colour screens many times a second, which
       // made phones lag. Falls back to the DOM renderer without WebGL or if the context is lost
       // (browsers cap live contexts).
-      try {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => webgl.dispose());
-        term.loadAddon(webgl);
-      } catch {
-        // No WebGL here: the DOM renderer keeps working.
+      // Only where it pays: a finished log is static, a software renderer (SwiftShader, llvmpipe)
+      // is slower than the DOM, and each context is a scarce browser resource.
+      if (!stopped && webglTerminals < MAX_WEBGL_TERMINALS && hasHardwareWebgl()) {
+        try {
+          const webgl = new WebglAddon();
+          webglTerminals++;
+          releaseWebgl = () => {
+            releaseWebgl = null;
+            webglTerminals--;
+          };
+          webgl.onContextLoss(() => {
+            releaseWebgl?.();
+            webgl.dispose();
+          });
+          term.loadAddon(webgl);
+        } catch {
+          // No WebGL here: the DOM renderer keeps working.
+          releaseWebgl?.();
+        }
       }
       // Older logs have no geometry markers; start with the supervisor's PTY default.
       if (stopped) term.resize(120, 30);
@@ -821,6 +858,7 @@ export function TerminalView({
       clearTimeout(resizeTimer);
       resize.disconnect();
       term.dispose();
+      releaseWebgl?.();
     };
   }, [pollMs, interactive, streaming, stopped]);
 

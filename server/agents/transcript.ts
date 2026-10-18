@@ -42,6 +42,8 @@ export function transcriptSource(
 }
 
 const found = new Map<string, string>();
+const missed = new Map<string, number>();
+const MISS_TTL_MS = 3_000;
 
 /** Where the transcript lives, or null when the CLI hasn't written one yet. Cached once found. */
 export async function findTranscript(
@@ -51,6 +53,11 @@ export async function findTranscript(
   const key = `${source.providerId}:${source.conversationId}:${source.codexHome ?? ''}`;
   const cached = found.get(key);
   if (cached) return cached;
+  // The chat view polls every 1.5 s until the CLI writes its transcript: don't walk the session
+  // folders (days of rollouts) on every one of those polls.
+  const missKey = `${home}|${key}`;
+  const missedAt = missed.get(missKey);
+  if (missedAt !== undefined && Date.now() - missedAt < MISS_TTL_MS) return null;
   let file: string | null = null;
   if (source.providerId === 'claude') {
     const root = path.join(home, '.claude', 'projects');
@@ -84,7 +91,13 @@ export async function findTranscript(
                 break search;
               }
   }
-  if (file) found.set(key, file);
+  if (file) {
+    found.set(key, file);
+    missed.delete(missKey);
+  } else {
+    if (missed.size > 500) missed.clear();
+    missed.set(missKey, Date.now());
+  }
   return file;
 }
 
