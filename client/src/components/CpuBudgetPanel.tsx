@@ -20,7 +20,7 @@ export interface BudgetUsageMetrics {
   level: 'cool' | 'warm' | 'hot';
 }
 
-/** Computes current CPU usage against the configured thread budget target. */
+/** The whole machine's CPU usage against the budget's threshold. */
 export function budgetUsageMetrics(
   usagePercent: number,
   budget: Pick<CpuBudget, 'threads' | 'totalThreads'>,
@@ -67,8 +67,16 @@ export function CpuBudgetPanel({ onError }: { onError: (message: string) => void
       (b) => active && setBudget(b),
       (e: Error) => active && onError(e.message),
     );
+    // The governor's live figures (agents' own use, threads allowed now) while this is open.
+    const timer = setInterval(() => {
+      api.getCpuBudget().then(
+        (b) => active && setBudget(b),
+        () => {},
+      );
+    }, 4000);
     return () => {
       active = false;
+      clearInterval(timer);
     };
   }, [onError]);
 
@@ -85,7 +93,12 @@ export function CpuBudgetPanel({ onError }: { onError: (message: string) => void
     if (s.cpuUsagePercent != null) setLiveUsagePercent(s.cpuUsagePercent);
   }, []);
 
-  const effectiveUsage = liveUsagePercent ?? budget?.usagePercent ?? null;
+  // With the governor's figures, its own machine reading (same sample as the agents' share);
+  // otherwise the sensor poll's live reading.
+  const effectiveUsage =
+    budget?.agentPercent != null && budget.usagePercent != null
+      ? budget.usagePercent
+      : (liveUsagePercent ?? budget?.usagePercent ?? null);
   const metrics =
     budget && effectiveUsage != null ? budgetUsageMetrics(effectiveUsage, budget) : null;
 
@@ -98,7 +111,8 @@ export function CpuBudgetPanel({ onError }: { onError: (message: string) => void
       <p className="faint" style={{ margin: '0 0 12px', fontSize: 12.5 }}>
         Agent CLIs and the builds and tests they start share these CPU threads, at below-normal
         priority, so many agents at once can&rsquo;t hold every core, overheat the machine or slow
-        your other apps. A lower budget runs cooler; agents take longer.
+        your other apps. When other load rises, agents are narrowed to fewer threads so the whole
+        machine stays under the threshold. A lower budget runs cooler; agents take longer.
       </p>
       {budget === null ? (
         <div className="skeleton" style={{ height: 40 }} />
@@ -125,34 +139,42 @@ export function CpuBudgetPanel({ onError }: { onError: (message: string) => void
         </ul>
       )}
       {budget && metrics && (
-        <div className="cpu-budget-usage" aria-label="Current CPU usage against target budget">
+        <div className="cpu-budget-usage" aria-label="CPU usage against the threshold">
           <div className="cpu-budget-usage-head">
             <span className="cpu-budget-usage-current">
               <span className={`cpu-temp-dot is-${metrics.level}`} aria-hidden="true" />
-              <span>Current usage:</span>{' '}
+              <span>Whole machine:</span>{' '}
               <b className={`num cpu-temp is-${metrics.level}`}>
-                {metrics.usedThreads.toFixed(1)} / {budget.threads} threads
+                {metrics.clampedPercent.toFixed(1)}%
               </b>{' '}
               <span className="faint num">
-                ({metrics.clampedPercent.toFixed(1)}% of CPU · {metrics.budgetSharePercent}% of
-                target)
+                · {metrics.usedThreads.toFixed(1)} of {budget.totalThreads} threads busy
               </span>
             </span>
             <span className="cpu-budget-usage-target faint num">
-              Target:{' '}
+              Threshold:{' '}
               {budget.threads === budget.totalThreads
-                ? `All ${budget.totalThreads} threads (100% · no limit)`
+                ? `none (all ${budget.totalThreads} threads)`
                 : `${budget.threads} of ${budget.totalThreads} threads (${metrics.targetPercent}%)`}
             </span>
           </div>
+          {budget.agentPercent != null && budget.allowedThreads != null && (
+            <div className="cpu-budget-agents faint num">
+              Agents: {budget.agentPercent.toFixed(1)}% (
+              {((budget.agentPercent / 100) * budget.totalThreads).toFixed(1)} threads) · may use{' '}
+              {budget.allowedThreads} of {budget.threads} threads now
+              {budget.allowedThreads < budget.threads &&
+                ' · narrowed so the whole machine stays under the threshold'}
+            </div>
+          )}
           <div
             className="cpu-budget-meter"
             role="meter"
-            aria-label="CPU usage against target budget"
+            aria-label="Whole machine CPU usage against the threshold"
             aria-valuenow={metrics.clampedPercent}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuetext={`${metrics.usedThreads.toFixed(1)} of ${budget.threads} threads (${metrics.clampedPercent.toFixed(1)}% of CPU, ${metrics.budgetSharePercent}% of target budget)`}
+            aria-valuetext={`${metrics.clampedPercent.toFixed(1)}% of the machine (${metrics.usedThreads.toFixed(1)} of ${budget.totalThreads} threads); threshold ${metrics.targetPercent}%`}
           >
             <div
               className="cpu-budget-meter-target-zone"
@@ -167,7 +189,7 @@ export function CpuBudgetPanel({ onError }: { onError: (message: string) => void
               <div
                 className="cpu-budget-meter-marker"
                 style={{ left: `${metrics.targetPercent}%` }}
-                title={`Target budget: ${budget.threads} of ${budget.totalThreads} threads (${metrics.targetPercent}%)`}
+                title={`Threshold: ${budget.threads} of ${budget.totalThreads} threads (${metrics.targetPercent}%)`}
                 aria-hidden="true"
               />
             )}

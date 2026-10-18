@@ -188,3 +188,8 @@
     padding-left: 12px;
   }
 }
+/* The agents' own use and the threads the governor allows them now (Windows). */
+.cpu-budget-agents {
+  margin: -2px 0 7px;
+  font-size: 12px;
+}

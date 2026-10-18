@@ -43,13 +43,15 @@ describe('CPU budget choices and usage metrics', () => {
     expect(hot.usedThreads).toBe(16);
   });
 
-  it('renders current CPU usage against target settings in CpuBudgetPanel', async () => {
+  it('shows the whole machine against the threshold, and what the agents use and may use', async () => {
     vi.mocked(api.getCpuBudget).mockResolvedValue({
       supported: true,
       totalThreads: 20,
       threads: 14,
       defaultThreads: 14,
       usagePercent: 25,
+      agentPercent: 14.9,
+      allowedThreads: 8,
     });
     vi.mocked(api.getSensors).mockResolvedValue({
       source: 'hwinfo',
@@ -63,10 +65,41 @@ describe('CPU budget choices and usage metrics', () => {
 
     render(<CpuBudgetPanel onError={vi.fn()} />);
 
-    const meter = await screen.findByRole('meter', { name: 'CPU usage against target budget' });
-    expect(meter.getAttribute('aria-valuenow')).toBe('35');
-    expect(screen.getByText('7.0 / 14 threads')).toBeDefined();
-    expect(screen.getByText(/35\.0% of CPU · 50% of target/)).toBeDefined();
-    expect(screen.getByText(/Target: 14 of 20 threads \(70%\)/)).toBeDefined();
+    const meter = await screen.findByRole('meter', {
+      name: 'Whole machine CPU usage against the threshold',
+    });
+    // The governor's own machine reading (one sample with the agents' share), not the sensor's.
+    expect(meter.getAttribute('aria-valuenow')).toBe('25');
+    expect(screen.getByText('25.0%')).toBeDefined();
+    expect(screen.getByText(/5\.0 of 20 threads busy/)).toBeDefined();
+    expect(screen.getByText(/Threshold: 14 of 20 threads \(70%\)/)).toBeDefined();
+    const agents = screen.getByText(/^Agents:/);
+    expect(agents.textContent).toContain('14.9% (3.0 threads)');
+    expect(agents.textContent).toContain('may use 8 of 14 threads now');
+    expect(agents.textContent).toContain('narrowed so the whole machine stays under the threshold');
+  });
+
+  it('uses the live sensor reading when the governor is not running', async () => {
+    vi.mocked(api.getCpuBudget).mockResolvedValue({
+      supported: true,
+      totalThreads: 20,
+      threads: 14,
+      defaultThreads: 14,
+      usagePercent: 25,
+      agentPercent: null,
+      allowedThreads: null,
+    });
+    vi.mocked(api.getSensors).mockResolvedValue({
+      source: 'hwinfo',
+      cpuTempC: 58.5,
+      cpuTempLabel: 'CPU Package',
+      cpuUsagePercent: 35,
+      fans: [],
+      note: null,
+      at: '2026-10-17T12:00:00Z',
+    });
+    render(<CpuBudgetPanel onError={vi.fn()} />);
+    expect(await screen.findByText('35.0%')).toBeDefined();
+    expect(screen.queryByText(/^Agents:/)).toBeNull();
   });
 });
