@@ -3,6 +3,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -424,9 +425,62 @@ export class CodexAccounts {
     return chosen;
   }
 
+  /** The rollout file of conversation `id` inside a Codex home, or null. */
+  findRollout(home: string, id: string): string | null {
+    if (!/^[0-9a-f-]{16,}$/i.test(id)) return null;
+    const root = path.join(home, 'sessions');
+    if (!existsSync(root)) return null;
+    try {
+      const found = readdirSync(root, { recursive: true })
+        .map(String)
+        .filter(
+          (name) => path.basename(name).startsWith('rollout-') && name.endsWith(`-${id}.jsonl`),
+        )
+        .sort()
+        .pop();
+      return found ? path.join(root, found) : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
-   * Copies a rollout into another Codex home. Do not use this to resume a thread on a different
-   * ChatGPT account: Codex refuses that resume and reports that the access token was revoked.
+   * Moves a conversation onto another login (PM-188) so `codex resume <id>` continues it there.
+   * The rollout is copied under the same relative path with its encrypted reasoning items left
+   * out: those are sealed to the account that produced them, and the other login cannot read
+   * them. Messages, tool calls and their outputs, the parts the model works from, are kept. The
+   * previous home keeps its own copy. Returns false when there is nothing to carry, in which
+   * case the caller starts a new conversation.
+   */
+  carryConversation(fromHome: string, toHome: string, id: string): boolean {
+    if (normalPath(fromHome) === normalPath(toHome)) return true;
+    const source = this.findRollout(fromHome, id);
+    if (!source) return false;
+    try {
+      if (toHome !== this.defaultHome()) this.syncConfigToml(toHome);
+      const dest = path.join(toHome, path.relative(fromHome, source));
+      mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+      const kept = readFileSync(source, 'utf8')
+        .split('\n')
+        .filter((line) => {
+          if (!line.includes('"reasoning"')) return true;
+          try {
+            const item = JSON.parse(line) as { type?: string; payload?: { type?: string } };
+            return !(item.type === 'response_item' && item.payload?.type === 'reasoning');
+          } catch {
+            return true;
+          }
+        });
+      writeFileSync(dest, kept.join('\n'), 'utf8');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Copies a rollout into another Codex home as is. Use `carryConversation` to continue a thread
+   * on a different ChatGPT account: a straight copy keeps reasoning items sealed to the old one.
    */
   copyRolloutToHome(fromHome: string, toHome: string, rolloutFile: string | null): void {
     if (normalPath(fromHome) === normalPath(toHome)) return;

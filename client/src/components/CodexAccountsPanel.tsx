@@ -238,7 +238,7 @@ export function CodexAccountsPanel({
             Default login: <code>{credFile}</code>. Saved profiles are{' '}
             <code>{importFileLabel}</code> copies.
             {!isClaude && ' Never run codex logout: it revokes the token on OpenAI’s server.'}
-            {!isClaude && ' Switching starts a new conversation in each session.'}
+            {!isClaude && ' Switching keeps each session’s conversation going.'}
           </p>
         </div>
         <div className="dialog-footer">

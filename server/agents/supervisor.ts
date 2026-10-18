@@ -504,7 +504,7 @@ export class AgentSupervisor {
    * Points every Codex session at the account selected in Settings. There is one Codex login for
    * the whole app: sessions, runs and orchestrator chats do not keep a login of their own.
    * A session whose stored home differs is moved, including one that is mid-turn. A different
-   * login starts a new conversation (`switchSessionCodexAccount` clears resume).
+   * login keeps the conversation (`carryCodexConversation`), or starts a new one when none can move.
    */
   private applyCodexAccountToSessions(
     targetKey: string,
@@ -568,9 +568,10 @@ export class AgentSupervisor {
 
   /**
    * Switches a Codex session onto another saved login (`null` or `'default'` for the default
-   * CODEX_HOME). A different account starts a new conversation: Codex will not resume a thread
-   * that belongs to the previous login, and doing so fails with "you have since logged out or
-   * signed in to another account". Restarts the session when it is running.
+   * CODEX_HOME). The session's conversation moves with it: its rollout is copied into the new
+   * login's home without the account-sealed reasoning items, and the CLI resumes it there
+   * (PM-188). With no rollout to move, a new conversation starts. Restarts the session when it
+   * is running.
    */
   async switchSessionCodexAccount(
     id: number,
@@ -586,6 +587,7 @@ export class AgentSupervisor {
     // The login stored on this session, not the Settings selection. Reading the selection after
     // setActive would look like the session was already there, and `codex resume` would keep going.
     const previous = this.storedCodexProfile(row);
+    const fromHome = previous?.home ?? this.withCodexAccounts((a) => a.profile('default')).home;
     const willRestart =
       this.live.has(`session:${id}`) || row.desired_state === 'running' || row.status === 'running';
     if (willRestart) this.switchingCodexSession.add(id);
@@ -604,19 +606,25 @@ export class AgentSupervisor {
       codexFreshStart?: boolean;
     };
     const nextEnv = { ...(parsed.env ?? {}), CODEX_HOME: target.home };
-    this.db
-      .prepare(
-        `UPDATE agent_sessions SET command_json = ?${switchedAccount ? ', resume_json = NULL' : ''} WHERE id = ?`,
-      )
-      .run(
-        JSON.stringify({
-          ...parsed,
-          env: nextEnv,
-          codexAccountId: target.id,
-          ...(switchedAccount ? { codexFreshStart: true } : {}),
-        }),
-        id,
-      );
+    // The conversation moves with the session (PM-188); only when it can't, a new one starts.
+    const carriedId = switchedAccount
+      ? this.carryCodexConversation(row, fromHome, target.home)
+      : null;
+    const nextResume = switchedAccount
+      ? carriedId
+        ? JSON.stringify([parsed.command[0] ?? 'codex', 'resume', carriedId])
+        : null
+      : row.resume_json;
+    this.db.prepare(`UPDATE agent_sessions SET command_json = ?, resume_json = ? WHERE id = ?`).run(
+      JSON.stringify({
+        ...parsed,
+        env: nextEnv,
+        codexAccountId: target.id,
+        ...(switchedAccount && !carriedId ? { codexFreshStart: true } : {}),
+      }),
+      nextResume,
+      id,
+    );
     this.usageLimits.delete(id);
     this.resumeFailed.delete(this.logPathFor('session', id));
     if (!willRestart) {
@@ -627,7 +635,9 @@ export class AgentSupervisor {
     try {
       this.outputFor(`session:${id}`, row.log_path).append(
         switchedAccount
-          ? `\r\n[supervisor] switching Codex account to ${target.name} — starting a new conversation (this thread stays on the previous login)\r\n`
+          ? carriedId
+            ? `\r\n[supervisor] switching Codex account to ${target.name} — continuing the conversation on the new login\r\n`
+            : `\r\n[supervisor] switching Codex account to ${target.name} — starting a new conversation (no saved conversation to carry over)\r\n`
           : `\r\n[supervisor] switching Codex account to ${target.name}\r\n`,
       );
       await this.stopSession(id);
@@ -640,6 +650,27 @@ export class AgentSupervisor {
     } finally {
       this.switchingCodexSession.delete(id);
     }
+  }
+
+  /**
+   * Makes a session's Codex conversation available under another login and returns its id, or
+   * null when there is none to carry (never started, or its rollout is gone).
+   */
+  private carryCodexConversation(row: SessionRow, fromHome: string, toHome: string): string | null {
+    if (!this.codexAccounts) return null;
+    const resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
+    const id =
+      resume?.[1] === 'resume' && resume[2] && resume[2] !== '--last'
+        ? resume[2]
+        : codexSessionFor(
+            row.cwd,
+            row.created_at,
+            this.claimedConversations(row),
+            os.homedir(),
+            fromHome,
+          );
+    if (!id) return null;
+    return this.codexAccounts.carryConversation(fromHome, toHome, id) ? id : null;
   }
 
   /** The login recorded on this session. Does not fall back to Settings. */

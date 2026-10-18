@@ -216,7 +216,74 @@ describe('CodexAccounts (PM-164)', () => {
     expect(readFileSync(path.join(defaultCodexHome, 'config.toml'), 'utf8')).toBe(config);
   });
 
-  it('does not resume the previous account thread when switching Codex accounts', async () => {
+  it('carries the conversation to the new login so the restarted CLI resumes it (PM-188)', async () => {
+    const supervisor = new AgentSupervisor(db, path.join(tmpDir, 'logs'), { dataDir: tmpDir });
+    try {
+      await supervisor.ready;
+      writeFileSync(path.join(defaultCodexHome, 'auth.json'), '{"OPENAI_API_KEY":"sk-default"}\n');
+      const imported = supervisor.importCodexAccount(
+        'Genzy',
+        JSON.stringify({ OPENAI_API_KEY: 'sk-genzy' }),
+      );
+      const accountId = imported.accounts[0]!.id;
+      const projectId = insertProject(db, 'carry', path.join(tmpDir, 'proj'));
+      const resumeId = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12';
+      const rel = path.join(
+        'sessions',
+        '2026',
+        '10',
+        '18',
+        `rollout-2026-10-18T00-00-00-${resumeId}.jsonl`,
+      );
+      const source = path.join(defaultCodexHome, rel);
+      mkdirSync(path.dirname(source), { recursive: true });
+      const lines = [
+        { type: 'session_meta', payload: { id: resumeId } },
+        { type: 'response_item', payload: { type: 'reasoning', encrypted_content: 'sealed' } },
+        { type: 'response_item', payload: { type: 'message', role: 'user' } },
+      ].map((item) => JSON.stringify(item));
+      writeFileSync(source, `${lines.join('\n')}\n`);
+      const sessionId = Number(
+        db
+          .prepare(
+            `INSERT INTO agent_sessions
+               (project_id, name, provider_id, command_json, resume_json, cwd, status,
+                desired_state, supervise, created_at, started_at, log_path)
+             VALUES (?, 'Codex', 'codex', ?, ?, ?, 'exited', 'stopped', 0, ?, ?, ?)`,
+          )
+          .run(
+            projectId,
+            JSON.stringify({
+              command: ['codex'],
+              env: { CODEX_HOME: defaultCodexHome },
+              codexAccountId: 'default',
+            }),
+            JSON.stringify(['codex', 'resume', resumeId]),
+            path.join(tmpDir, 'proj'),
+            '2026-10-18T00:00:00.000Z',
+            '2026-10-18T00:00:00.000Z',
+            path.join(tmpDir, 'logs', 'session.log'),
+          ).lastInsertRowid,
+      );
+
+      await supervisor.switchSessionCodexAccount(sessionId, accountId);
+
+      const row = db
+        .prepare('SELECT command_json, resume_json FROM agent_sessions WHERE id = ?')
+        .get(sessionId) as { command_json: string; resume_json: string | null };
+      const command = JSON.parse(row.command_json) as { codexFreshStart?: boolean };
+      expect(command.codexFreshStart).toBeUndefined();
+      expect(JSON.parse(row.resume_json!)).toEqual(['codex', 'resume', resumeId]);
+      const copied = readFileSync(path.join(tmpDir, 'codex-accounts', accountId, rel), 'utf8');
+      expect(copied).toContain('"message"');
+      expect(copied).not.toContain('sealed');
+      expect(readFileSync(source, 'utf8')).toContain('sealed'); // the old login keeps its own copy
+    } finally {
+      await supervisor.shutdown();
+    }
+  });
+
+  it('starts a new conversation when switching Codex accounts with nothing to carry over', async () => {
     const supervisor = new AgentSupervisor(db, path.join(tmpDir, 'logs'), { dataDir: tmpDir });
     try {
       await supervisor.ready;
