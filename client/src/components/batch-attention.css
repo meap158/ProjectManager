@@ -1,0 +1,132 @@
+/* Batch CLI choices (PM-165): one card per distinct prompt (sessions grouped only when their
+   prompt is identical), the CLIs it belongs to as chips, and its options as compact buttons.
+   Desktop keeps everything on as few lines as wrap allows; phones stack the options as full-width
+   tap targets and scroll the key row sideways instead of wrapping it. */
+.batch-attention-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.batch-attention-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.batch-attention-question {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.batch-attention-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.batch-attention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+.batch-attention-chip.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.batch-attention-chip input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.batch-attention-chip-name,
+.batch-attention-chip-project {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.batch-attention-chip-name {
+  max-width: 14em;
+  font-weight: 600;
+}
+.batch-attention-chip-project {
+  max-width: 12em;
+  color: var(--text-2);
+}
+.batch-attention-chip-project::before {
+  content: '· ';
+}
+.batch-attention-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.batch-attention-options .btn {
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.batch-attention-option-label {
+  max-width: 26em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.batch-attention-count {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.batch-attention-undetected,
+.batch-attention-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .batch-attention-options {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .batch-attention-options .btn {
+    justify-content: space-between;
+    min-height: 40px;
+  }
+  .batch-attention-option-label {
+    max-width: none;
+    white-space: normal;
+    text-align: left;
+  }
+  .batch-attention-chip {
+    min-height: 32px;
+  }
+  .batch-attention-keys {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .batch-attention-keys > * {
+    flex: none;
+  }
+}
+/* Wider than the other confirm dialogs on desktop, so a prompt's options share fewer lines
+   (outranks dialog.confirm-dialog's 440px); phones keep the full width minus the gutter. */
+dialog.confirm-dialog.batch-attention-dialog {
+  width: min(720px, calc(100vw - 24px));
+}

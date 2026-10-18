@@ -1542,6 +1542,7 @@ function WorkList({
               <BatchAttentionActions
                 sessions={visibleSessions}
                 isAttentionFilter={includesAttentionFilter}
+                projectName={projectName}
               />
               {includesEndedFilter && stoppedSessions.length > 0 && (
                 <button

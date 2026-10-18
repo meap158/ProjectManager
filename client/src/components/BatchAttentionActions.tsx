@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
 import { splitSessionInput } from '../lib/sessionInput';
+import { ProviderIcon } from './icons';
+import './batch-attention.css';
 
 export type AttentionCommand =
   | { kind: 'key'; data: string }
@@ -287,9 +289,12 @@ interface SessionOverlayState {
 export function BatchAttentionActions({
   sessions,
   isAttentionFilter = false,
+  projectName,
 }: {
   sessions: AgentSession[];
   isAttentionFilter?: boolean;
+  /** Project names by id, so each prompt says which CLI (and project) it belongs to. */
+  projectName?: Map<number, string>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const sending = useRef(false);
@@ -460,32 +465,57 @@ export function BatchAttentionActions({
     }
   }
 
-  // Group detected overlay options across currently selected sessions.
-  const groupedOptions: {
-    key: string;
-    label: string;
-    detail?: string;
+  // One card per distinct prompt: sessions are grouped only when they show the same question
+  // with the same options, so a choice always means the same thing for every CLI it goes to.
+  const prompts: {
+    signature: string;
+    overlay: DetectedAttentionOverlay;
     sessions: SessionOverlayState[];
   }[] = [];
-  const groupMap = new Map<string, (typeof groupedOptions)[number]>();
-
+  const promptMap = new Map<string, (typeof prompts)[number]>();
   for (const entry of states) {
-    if (!selectedIds.has(entry.session.id) || !entry.overlay) continue;
-    for (const opt of entry.overlay.options) {
-      let group = groupMap.get(opt.key);
-      if (!group) {
-        group = {
-          key: opt.key,
-          label: opt.label,
-          ...(opt.detail ? { detail: opt.detail } : {}),
-          sessions: [],
-        };
-        groupMap.set(opt.key, group);
-        groupedOptions.push(group);
-      }
-      group.sessions.push(entry);
+    if (!entry.overlay) continue;
+    const signature = JSON.stringify([
+      entry.overlay.title,
+      entry.overlay.options.map((o) => [o.key, o.label]),
+    ]);
+    let prompt = promptMap.get(signature);
+    if (!prompt) {
+      prompt = { signature, overlay: entry.overlay, sessions: [] };
+      promptMap.set(signature, prompt);
+      prompts.push(prompt);
     }
+    prompt.sessions.push(entry);
   }
+  const undetected = states.filter((entry) => !entry.loading && !entry.overlay);
+  const toggle = (id: number) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  /** Which CLI a prompt belongs to: its CLI, name and project, and whether it is selected. */
+  const sessionChip = (entry: SessionOverlayState) => {
+    const project = projectName?.get(entry.session.projectId);
+    return (
+      <label
+        key={entry.session.id}
+        className={`batch-attention-chip${selectedIds.has(entry.session.id) ? ' is-selected' : ''}`}
+        title={`${entry.session.name}${project ? ` · ${project}` : ''}`}
+      >
+        <input
+          type="checkbox"
+          checked={selectedIds.has(entry.session.id)}
+          disabled={busy}
+          onChange={() => toggle(entry.session.id)}
+        />
+        <ProviderIcon id={entry.session.providerId} size={13} />
+        <span className="batch-attention-chip-name">{entry.session.name}</span>
+        {project && <span className="batch-attention-chip-project">{project}</span>}
+      </label>
+    );
+  };
 
   const selectedStates = states.filter((entry) => selectedIds.has(entry.session.id));
   const scanning = states.some((entry) => entry.loading);
@@ -513,7 +543,7 @@ export function BatchAttentionActions({
       </button>
       <dialog
         ref={dialog}
-        className="confirm-dialog batch-message-dialog"
+        className="confirm-dialog batch-message-dialog batch-attention-dialog"
         aria-labelledby={heading}
         onClose={() => {
           clearTimeout(closeTimer.current);
@@ -528,8 +558,7 @@ export function BatchAttentionActions({
             Batch process Needs attention CLIs ({selectedStates.length}/{states.length})
           </h2>
           <p className="faint" style={{ margin: '0 0 10px' }}>
-            Detects active CLI overlays (such as paused-goal prompts, usage-limit choices, and
-            approval menus) and applies your choice across matching sessions.
+            Each prompt lists the CLIs showing it; a choice goes to its ticked CLIs only.
           </p>
 
           {scanning ? (
@@ -538,72 +567,68 @@ export function BatchAttentionActions({
             </p>
           ) : (
             <>
-              {groupedOptions.length > 0 && (
-                <div
-                  role="group"
-                  aria-label="Detected CLI overlay options"
-                  style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}
-                >
-                  <strong style={{ fontSize: 12.5 }}>Detected overlay options</strong>
-                  {groupedOptions.map((group) => (
-                    <div
-                      key={group.key}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 10,
-                        flexWrap: 'wrap',
-                        padding: '8px 10px',
-                        border: '1px solid var(--border)',
-                        borderRadius: 6,
-                        background: 'var(--surface-2)',
-                      }}
-                    >
-                      <span style={{ flex: 1, minWidth: 180 }}>
-                        <b>{group.label}</b>
-                        {group.detail && (
-                          <span className="faint" style={{ fontSize: 12.5 }}>
-                            {' '}
-                            · {group.detail}
-                          </span>
-                        )}
-                        <div className="faint" style={{ fontSize: 11.5 }}>
-                          {group.sessions.map((s) => s.session.name).join(', ')}
-                        </div>
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        disabled={busy}
-                        onClick={() =>
-                          void runBatchOption(group.label, (entry) => {
-                            const found = entry.overlay?.options.find((o) => o.key === group.key);
-                            return found?.command ?? null;
-                          })
-                        }
+              {prompts.length > 0 && (
+                <div className="batch-attention-prompts" aria-label="Detected CLI prompts">
+                  {prompts.map((prompt) => {
+                    const chosen = prompt.sessions.filter((e) => selectedIds.has(e.session.id));
+                    return (
+                      <section
+                        key={prompt.signature}
+                        className="batch-attention-prompt"
+                        aria-label={prompt.overlay.title}
                       >
-                        Apply ({group.sessions.length})
-                      </button>
-                    </div>
-                  ))}
+                        <div className="batch-attention-question">{prompt.overlay.title}</div>
+                        <div
+                          className="batch-attention-chips"
+                          aria-label="CLIs showing this prompt"
+                        >
+                          {prompt.sessions.map(sessionChip)}
+                        </div>
+                        <div className="batch-attention-options">
+                          {prompt.overlay.options.map((option) => (
+                            <button
+                              key={option.key}
+                              type="button"
+                              className="btn btn-sm"
+                              disabled={busy || !chosen.length}
+                              title={
+                                option.detail ? `${option.label}: ${option.detail}` : option.label
+                              }
+                              onClick={() =>
+                                void runBatchOption(option.label, (entry) =>
+                                  prompt.sessions.includes(entry)
+                                    ? (entry.overlay?.options.find((o) => o.key === option.key)
+                                        ?.command ?? null)
+                                    : null,
+                                )
+                              }
+                            >
+                              <span className="batch-attention-option-label">{option.label}</span>{' '}
+                              {chosen.length > 1 && (
+                                <span className="batch-attention-count">×{chosen.length}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              )}
+
+              {undetected.length > 0 && (
+                <div className="batch-attention-undetected">
+                  <span className="faint">No prompt detected:</span>
+                  <div className="batch-attention-chips">{undetected.map(sessionChip)}</div>
                 </div>
               )}
 
               <div
                 role="group"
-                aria-label="Quick goal and overlay actions"
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 6,
-                  alignItems: 'center',
-                  marginBottom: 12,
-                }}
+                aria-label="Keys for every selected CLI"
+                className="batch-attention-keys"
               >
-                <span className="faint" style={{ fontSize: 12, marginRight: 4 }}>
-                  Quick batch actions:
-                </span>
+                <span className="faint">All selected ({selectedStates.length}):</span>
                 <button
                   type="button"
                   className="btn btn-sm"
@@ -615,7 +640,7 @@ export function BatchAttentionActions({
                     })
                   }
                 >
-                  Resume goal ({selectedStates.length})
+                  Resume goal
                 </button>
                 <button
                   type="button"
@@ -628,91 +653,27 @@ export function BatchAttentionActions({
                     })
                   }
                 >
-                  Leave paused ({selectedStates.length})
+                  Leave paused
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={busy || !selectedStates.length}
-                  onClick={() =>
-                    void runBatchOption('Option 1', () => ({ kind: 'key', data: '1' }))
-                  }
-                >
-                  Press 1 ({selectedStates.length})
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={busy || !selectedStates.length}
-                  onClick={() =>
-                    void runBatchOption('Option 2', () => ({ kind: 'key', data: '2' }))
-                  }
-                >
-                  Press 2 ({selectedStates.length})
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={busy || !selectedStates.length}
-                  onClick={() => void runBatchOption('Enter', () => ({ kind: 'key', data: '\r' }))}
-                >
-                  Press Enter ({selectedStates.length})
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={busy || !selectedStates.length}
-                  onClick={() => void runBatchOption('Esc', () => ({ kind: 'key', data: '\x1b' }))}
-                >
-                  Press Esc ({selectedStates.length})
-                </button>
+                {(
+                  [
+                    ['Option 1', '1', 'Press 1'],
+                    ['Option 2', '2', 'Press 2'],
+                    ['Enter', '\r', 'Enter'],
+                    ['Esc', '\x1b', 'Esc'],
+                  ] as const
+                ).map(([label, data, text]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy || !selectedStates.length}
+                    onClick={() => void runBatchOption(label, () => ({ kind: 'key', data }))}
+                  >
+                    {text}
+                  </button>
+                ))}
               </div>
-
-              <ul
-                className="list"
-                style={{ maxHeight: 180, overflowY: 'auto', marginBottom: 8 }}
-                aria-label="Sessions needing attention"
-              >
-                {states.map((entry) => {
-                  const checked = selectedIds.has(entry.session.id);
-                  return (
-                    <li key={entry.session.id} style={{ alignItems: 'center' }}>
-                      <label
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          flex: 1,
-                          minWidth: 0,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={busy}
-                          onChange={() =>
-                            setSelectedIds((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(entry.session.id)) next.delete(entry.session.id);
-                              else next.add(entry.session.id);
-                              return next;
-                            })
-                          }
-                        />
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <b>{entry.session.name}</b>{' '}
-                          <span className="faint" style={{ fontSize: 12 }}>
-                            {entry.overlay
-                              ? `· ${entry.overlay.title} (${entry.overlay.options.map((o) => o.label).join(' / ')})`
-                              : '· no overlay menu detected'}
-                          </span>
-                        </span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
             </>
           )}
 

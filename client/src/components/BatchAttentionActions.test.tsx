@@ -217,8 +217,12 @@ describe('BatchAttentionActions (PM-165)', () => {
     // Eligible outside the attention filter too: at its limit, it shows rather than asks.
     render(<BatchAttentionActions sessions={[limited]} />);
     fireEvent.click(screen.getByRole('button', { name: 'Batch CLI choices (1)' }));
-    await screen.findByText('Auto-continue when the limit resets');
-    fireEvent.click(screen.getAllByText('Apply (1)')[0]!);
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: /^Auto-continue when the limit resets/,
+        hidden: true,
+      }),
+    );
     await waitFor(() => expect(api.setAutoContinue).toHaveBeenCalledWith(76, true));
     expect(api.sendSessionInput).not.toHaveBeenCalled();
   });
@@ -235,13 +239,13 @@ describe('BatchAttentionActions (PM-165)', () => {
     });
     render(<BatchAttentionActions sessions={[first, second]} isAttentionFilter />);
     fireEvent.click(screen.getByRole('button', { name: 'Batch CLI choices (2)' }));
-    await screen.findByText('1. Resume goal');
-    fireEvent.click(screen.getAllByText('Apply (2)')[0]!);
+    // The same prompt on both: one card, its option going to both (×2).
+    fireEvent.click(await screen.findByRole('button', { name: '1. Resume goal ×2', hidden: true }));
     await waitFor(() => expect(screen.getByText(/Failed: Connection lost/)).toBeDefined());
     expect(screen.getByText(/Queued "1. Resume goal"/)).toBeDefined();
     expect(HTMLDialogElement.prototype.close).not.toHaveBeenCalled();
     vi.mocked(api.sendSessionInput).mockResolvedValue({ queued: false, session: second });
-    fireEvent.click(screen.getAllByText('Apply (1)')[0]!);
+    fireEvent.click(screen.getByRole('button', { name: '1. Resume goal', hidden: true }));
     await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledTimes(3));
     expect(vi.mocked(api.sendSessionInput).mock.calls.map(([id]) => id)).toEqual([1, 2, 2]);
   });
@@ -262,19 +266,61 @@ describe('BatchAttentionActions (PM-165)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Batch CLI choices (2)' }));
 
-    expect(await screen.findByText('1. Resume goal')).toBeDefined();
-    expect(screen.getByText('2. Leave paused')).toBeDefined();
-
-    const applyButtons = screen.getAllByText('Apply (2)');
-    fireEvent.click(applyButtons[0]!);
+    // Two different prompts (popup and footer): two cards, never merged.
+    expect(
+      await screen.findAllByRole('button', { name: '1. Resume goal', hidden: true }),
+    ).toHaveLength(2);
+    // "Resume goal" for every selected CLI uses each one's own way to resume.
+    fireEvent.click(screen.getByRole('button', { name: 'Resume goal', hidden: true }));
 
     await waitFor(() =>
       expect(screen.getByRole('status', { hidden: true }).textContent).toContain(
-        'Applied "1. Resume goal" to 2 of 2 sessions.',
+        'Applied "Resume goal" to 2 of 2 sessions.',
       ),
     );
     expect(api.sendSessionInput).toHaveBeenCalledWith(45, '1');
     expect(api.sendSessionInput).toHaveBeenCalledWith(42, '\x1b[200~/goal resume\x1b[201~');
     expect(api.sendSessionInput).toHaveBeenCalledWith(42, '\r');
+  });
+});
+
+describe('BatchAttentionActions prompt cards (PM-165)', () => {
+  it('groups only identical prompts and names the CLI and project of each', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    const sessions = [
+      { ...makeSession(1, 'Codex'), providerId: 'codex', projectId: 10 },
+      { ...makeSession(2, 'Codex'), providerId: 'codex', projectId: 20 },
+      { ...makeSession(3, 'Claude Code'), providerId: 'claude', projectId: 10 },
+    ] as AgentSession[];
+    vi.mocked(api.sessionScreen).mockImplementation(async (id) => ({
+      text: id === 3 ? CLAUDE_LIMIT_MENU_SCREEN : CODEX_GOAL_POPUP_SCREEN,
+    }));
+    vi.mocked(api.sendSessionInput).mockResolvedValue({ queued: false, session: sessions[0]! });
+    render(
+      <BatchAttentionActions
+        sessions={sessions}
+        isAttentionFilter
+        projectName={
+          new Map([
+            [10, 'TrendRelay'],
+            [20, 'TiemNet'],
+          ])
+        }
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Batch CLI choices (3)' }));
+    const goal = await screen.findByRole('region', { name: 'Resume paused goal?', hidden: true });
+    const limit = screen.getByRole('region', { name: 'What do you want to do?', hidden: true });
+    // Both Codex CLIs, told apart by project; the Claude prompt is its own card.
+    expect(goal.textContent).toContain('TrendRelay');
+    expect(goal.textContent).toContain('TiemNet');
+    expect(limit.textContent).toContain('Claude Code');
+    expect(limit.textContent).not.toContain('TiemNet');
+    // Unticking a CLI leaves it out of its card's choice.
+    fireEvent.click(screen.getAllByRole('checkbox', { hidden: true })[1]!);
+    fireEvent.click(screen.getByRole('button', { name: '1. Resume goal', hidden: true }));
+    await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledTimes(1));
+    expect(api.sendSessionInput).toHaveBeenCalledWith(1, '1');
   });
 });
