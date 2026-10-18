@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import { openDb } from '../db.js';
@@ -32,7 +34,32 @@ it('switches isolated Claude profiles, preserves saved timestamps, and restores 
         .accessToken,
     ).toBe('fake-saved');
     expect(pool.renameAccount(account.id, 'Work').accounts[0]?.createdAt).toBe(account.createdAt);
-    expect(pool.state().accounts[0]?.usageStatus).toBe('unsupported');
+    expect(pool.state().accounts[0]?.usageStatus).toBe('not_loaded');
+    const result = spawnSync(
+      process.execPath,
+      [
+        'scripts/claude-statusline.mjs',
+        temp,
+        createHash('sha256').update('fake-saved').digest('hex'),
+      ],
+      {
+        input: JSON.stringify({
+          rate_limits: {
+            five_hour: { used_percentage: 37, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+          },
+        }),
+        env: { ...process.env, CLAUDE_CONFIG_DIR: home },
+        encoding: 'utf8',
+      },
+    );
+    expect(result.status).toBe(0);
+    const identity = createHash('sha256').update('fake-saved').digest('hex');
+    expect(
+      existsSync(path.join(temp, 'claude-account-usage', identity, 'claude-limits.json')),
+    ).toBe(true);
+    expect(pool.state().accounts[0]?.limits?.windows[0]?.usedPercent).toBe(37);
+    expect(pool.state().accounts[0]?.usageStatus).toBe('fresh');
+    expect(pool.state().defaultAccount.limits).toBeNull();
     expect(pool.setActive(null).activeProfileId).toBeNull();
     expect(readFileSync(path.join(home, '.credentials.json'), 'utf8')).toBe(original);
   } finally {

@@ -540,29 +540,52 @@ export function CodexAccountsPanel({
                       </span>
                     ) : (
                       <>
-                        <b>{acc.name}</b>
-                        {showEmail && (
-                          <span className="faint" style={{ fontSize: 12.5 }}>
-                            {' '}
-                            · {acc.email}
+                        <span className="codex-account-heading">
+                          <span className="codex-account-identity">
+                            <b>{acc.name}</b>
+                            {showEmail && (
+                              <span className="faint" style={{ fontSize: 12.5 }}>
+                                {' '}
+                                · {acc.email}
+                              </span>
+                            )}
+                            {acc.plan && (
+                              <>
+                                {' '}
+                                <span className="badge">{acc.plan}</span>
+                              </>
+                            )}
                           </span>
-                        )}
-                        {acc.plan && (
-                          <>
-                            {' '}
-                            <span className="badge">{acc.plan}</span>
-                          </>
-                        )}
-                        {acc.createdAt && (
-                          <span
-                            className="faint"
-                            style={{ fontSize: 12 }}
-                            title={`Saved ${formatDate(acc.createdAt)}, ${new Date(acc.createdAt).toLocaleTimeString()}`}
-                          >
-                            {' '}
-                            · saved {formatRelative(acc.createdAt)}
-                          </span>
-                        )}
+                          {!isClaude && state.autoSwitch && (
+                            <label className="codex-account-auto-switch">
+                              <input
+                                type="checkbox"
+                                checked={acc.autoSwitchEligible !== false}
+                                disabled={busy}
+                                aria-label={`Include ${acc.name} in automatic switching`}
+                                onChange={(event) =>
+                                  act(() =>
+                                    api.setCodexAccountAutoSwitchEligible(
+                                      acc.id,
+                                      event.target.checked,
+                                    ),
+                                  )
+                                }
+                              />
+                              Auto-switch
+                            </label>
+                          )}
+                          {acc.createdAt && (
+                            <span
+                              className="faint"
+                              style={{ fontSize: 12 }}
+                              title={`Saved ${formatDate(acc.createdAt)}, ${new Date(acc.createdAt).toLocaleTimeString()}`}
+                            >
+                              {' '}
+                              · saved {formatRelative(acc.createdAt)}
+                            </span>
+                          )}
+                        </span>
                       </>
                     )}
                     <AccountUsage account={acc} loading={loadingUsage} now={now} />

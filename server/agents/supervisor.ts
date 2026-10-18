@@ -539,6 +539,10 @@ export class AgentSupervisor {
     }
   }
 
+  setCodexAccountAutoSwitchEligible(id: string, eligible: boolean) {
+    return this.codexAccounts!.setAutoSwitchEligible(id, eligible);
+  }
+
   setCodexAutoSwitch(enabled: boolean): CodexAccountsState {
     return this.withCodexAccounts((accounts) => accounts.setAutoSwitch(enabled));
   }
@@ -925,6 +929,15 @@ export class AgentSupervisor {
     return rows.map((r) => this.toSession(r, batch));
   }
 
+  /** Every session in every project, newest last (the workspace shows sessions side by side). */
+  listAllSessions(): AgentSession[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM agent_sessions ORDER BY id`)
+      .all() as unknown as SessionRow[];
+    const batch = this.sessionBatch();
+    return rows.map((r) => this.toSession(r, batch));
+  }
+
   /**
    * Per-session settings and queued input for a whole list in two queries. The lists are polled
    * every couple of seconds by several views, and compiling four statements per session each time
@@ -950,15 +963,6 @@ export class AgentSupervisor {
       .all() as { session_id: number; bytes: number }[])
       queued.set(r.session_id, r.bytes);
     return { autoContinue, queued };
-  }
-
-  /** Every session in every project, newest last (the workspace shows sessions side by side). */
-  listAllSessions(): AgentSession[] {
-    const rows = this.db
-      .prepare(`SELECT * FROM agent_sessions ORDER BY id`)
-      .all() as unknown as SessionRow[];
-    const batch = this.sessionBatch();
-    return rows.map((r) => this.toSession(r, batch));
   }
 
   getSession(id: number, projectId?: number): AgentSession | null {

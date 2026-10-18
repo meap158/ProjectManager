@@ -32,6 +32,7 @@ vi.mock('../api', () => ({
     saveCurrentCodexAccount: vi.fn(),
     setActiveCodexAccount: vi.fn(),
     setCodexAutoSwitch: vi.fn(),
+    setCodexAccountAutoSwitchEligible: vi.fn(),
     renameCodexAccount: vi.fn(),
     removeCodexAccount: vi.fn(),
     getClaudeAccounts: vi.fn(),
@@ -303,4 +304,27 @@ it('ignores a background response captured before switching accounts', async () 
     finish(baseState);
   });
   expect(screen.getByText('active: Work Pro')).toBeDefined();
+});
+
+it('shows saved-account eligibility only while automatic switching is enabled', async () => {
+  vi.mocked(api.getCodexAccounts).mockResolvedValue(baseState);
+  vi.mocked(api.refreshCodexAccountsUsage).mockResolvedValue(baseState);
+  const view = render(<CodexAccountsPanel onError={vi.fn()} />);
+  const toggles = await screen.findAllByRole('checkbox', {
+    name: /Include .* in automatic switching/,
+  });
+  expect((toggles[0] as HTMLInputElement).checked).toBe(true);
+  vi.mocked(api.setCodexAccountAutoSwitchEligible).mockResolvedValue(baseState);
+  fireEvent.click(toggles[0]!);
+  await waitFor(() =>
+    expect(api.setCodexAccountAutoSwitchEligible).toHaveBeenCalledWith(
+      baseState.accounts[0]!.id,
+      false,
+    ),
+  );
+  view.unmount();
+  vi.mocked(api.getCodexAccounts).mockResolvedValue({ ...baseState, autoSwitch: false });
+  render(<CodexAccountsPanel onError={vi.fn()} />);
+  await screen.findByText(baseState.accounts[0]!.name);
+  expect(screen.queryByRole('checkbox', { name: /Include .* in automatic switching/ })).toBeNull();
 });

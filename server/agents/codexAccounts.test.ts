@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -95,6 +105,133 @@ describe('CodexAccounts (PM-164)', () => {
       readFileSync(path.join(accounts.profile(second.id).home, 'auth.json'), 'utf8'),
     ) as { tokens?: { access_token?: string } };
     expect(savedAuth.tokens?.access_token).toBe('flat-access');
+  });
+
+  it('defaults profiles into rotation, persists opt-out and preserves manual selection', () => {
+    const accounts = new CodexAccounts(tmpDir, db);
+    const state = accounts.importAccount(
+      'Optional',
+      JSON.stringify({ access_token: 'test-token' }),
+    );
+    const id = state.accounts[0]!.id;
+    expect(state.accounts[0]!.autoSwitchEligible).toBe(true);
+    expect(accounts.nextUnused('default', ['default'])?.id).toBe(id);
+    accounts.setAutoSwitchEligible(id, false);
+    const reloaded = new CodexAccounts(tmpDir, db);
+    expect(reloaded.state().accounts[0]!.autoSwitchEligible).toBe(false);
+    expect(reloaded.nextUnused('default', ['default'])).toBeNull();
+    expect(reloaded.setActive(id).activeProfileId).toBe(id);
+    reloaded.setAutoSwitchEligible(id, true);
+    expect(reloaded.nextUnused('default', ['default'])?.id).toBe(id);
+    expect(() => reloaded.setAutoSwitchEligible('missing', false)).toThrow('not found');
+  });
+
+  it('copies multi-chunk rollouts without reading them as a single string', () => {
+    const accounts = new CodexAccounts(tmpDir, db);
+    const state = accounts.importAccount('Chunked', JSON.stringify({ access_token: 'test-token' }));
+    const target = accounts.profile(state.accounts[0]!.id);
+    const id = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b14';
+    const dir = path.join(defaultCodexHome, 'sessions', '2026');
+    mkdirSync(dir, { recursive: true });
+    const text = JSON.stringify({
+      type: 'response_item',
+      payload: { type: 'message', text: 'x'.repeat(2_100_000) },
+    });
+    const sealed = JSON.stringify({
+      type: 'response_item',
+      payload: { type: 'reasoning', encrypted_content: 'sealed' },
+    });
+    writeFileSync(path.join(dir, `rollout-2026-${id}.jsonl`), text + '\n' + sealed + '\n' + text);
+    expect(accounts.carryConversation(defaultCodexHome, target.home, id)).toBe(true);
+    expect(readFileSync(accounts.findRollout(target.home, id)!, 'utf8')).toBe(text + '\n' + text);
+  });
+
+  it('copies only the lines a rollout gained since the last sync', () => {
+    const accounts = new CodexAccounts(tmpDir, db);
+    const target = accounts.profile(
+      accounts.importAccount('Grow', JSON.stringify({ access_token: 'test-token' })).accounts[0]!
+        .id,
+    );
+    const id = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b15';
+    const file = path.join(defaultCodexHome, 'sessions', '2026', `rollout-2026-${id}.jsonl`);
+    mkdirSync(path.dirname(file), { recursive: true });
+    const sealed = '{"type":"response_item","payload":{"type":"reasoning"}}\n';
+    writeFileSync(file, '{"n":1}\n' + sealed);
+    expect(accounts.carryConversation(defaultCodexHome, target.home, id)).toBe(true);
+    const copy = accounts.findRollout(target.home, id)!;
+    expect(readFileSync(copy, 'utf8')).toBe('{"n":1}\n');
+    // Same size, so the copy still looks untouched: a changed byte proves the prefix isn't re-read.
+    writeFileSync(copy, '{"n":9}\n');
+    appendFileSync(file, '{"n":2}\n' + sealed + '{"n":3}\n');
+    expect(accounts.carryConversation(defaultCodexHome, target.home, id)).toBe(true);
+    expect(readFileSync(copy, 'utf8')).toBe('{"n":9}\n{"n":2}\n{"n":3}\n');
+  });
+
+  it('switching to Default never copies a profile smaller copy over the original', () => {
+    const accounts = new CodexAccounts(tmpDir, db);
+    const profile = accounts.profile(
+      accounts.importAccount('Copy', JSON.stringify({ access_token: 'test-token' })).accounts[0]!
+        .id,
+    );
+    const id = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b16';
+    const name = `rollout-2026-10-18-${id}.jsonl`;
+    const original = path.join(defaultCodexHome, 'sessions', '2026', '10', '18', name);
+    const copy = path.join(profile.home, 'sessions', '2026', '10', '18', name);
+    mkdirSync(path.dirname(original), { recursive: true });
+    mkdirSync(path.dirname(copy), { recursive: true });
+    const sealed = '{"type":"response_item","payload":{"type":"reasoning"}}\n';
+    const text = '{"n":1}\n' + sealed + '{"n":2}\n';
+    writeFileSync(original, text);
+    writeFileSync(copy, '{"n":1}\n{"n":2}\n'); // Filtered copy, made later: newer, smaller.
+    const past = new Date(Date.now() - 3_600_000);
+    utimesSync(original, past, past);
+    accounts.setActive(profile.id);
+    accounts.setActive(null);
+    expect(readFileSync(original, 'utf8')).toBe(text);
+    expect(statSync(original).mtimeMs).toBeCloseTo(past.getTime(), -2);
+  });
+
+  it('preserves the resume list and unrelated history across credential switches', () => {
+    const accounts = new CodexAccounts(tmpDir, db);
+    const imported = accounts.importAccount(
+      'Other',
+      JSON.stringify({ access_token: 'test-token' }),
+    );
+    const other = accounts.profile(imported.accounts[0]!.id);
+    const first = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12';
+    const second = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b13';
+    for (const [home, id] of [
+      [defaultCodexHome, first],
+      [other.home, second],
+    ]) {
+      const folder = path.join(home!, 'sessions', '2026', '10', '18');
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(
+        path.join(folder, `rollout-2026-10-18-${id}.jsonl`),
+        JSON.stringify({ type: 'session_meta', payload: { id, cwd: 'project' } }) +
+          '\n' +
+          JSON.stringify({
+            type: 'response_item',
+            payload: { type: 'reasoning', encrypted_content: 'sealed' },
+          }) +
+          '\n',
+      );
+      writeFileSync(
+        path.join(home!, 'session_index.jsonl'),
+        JSON.stringify({ id, thread_name: id, updated_at: '2026-10-18T00:00:00Z' }) + '\n',
+      );
+    }
+    accounts.setActive(other.id);
+    const selectedIndex = readFileSync(path.join(other.home, 'session_index.jsonl'), 'utf8');
+    expect(selectedIndex).toContain(first);
+    expect(selectedIndex).toContain(second);
+    expect(readFileSync(accounts.findRollout(other.home, first)!, 'utf8')).not.toContain('sealed');
+    accounts.setActive(null);
+    const defaultIndex = readFileSync(path.join(defaultCodexHome, 'session_index.jsonl'), 'utf8');
+    expect(defaultIndex).toContain(first);
+    expect(defaultIndex).toContain(second);
+    expect(accounts.findRollout(defaultCodexHome, second)).not.toBeNull();
+    expect(readFileSync(path.join(other.home, 'auth.json'), 'utf8')).toContain('test-token');
   });
 
   it('saves the current default CODEX_HOME login into the managed pool', () => {

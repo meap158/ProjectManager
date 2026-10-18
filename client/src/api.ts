@@ -440,6 +440,12 @@ export const api = {
     }),
   setActiveCodexAccount: (activeProfileId: string | null) =>
     request<CodexAccountsState>('PUT', '/agents/codex-accounts/active', { activeProfileId }),
+  setCodexAccountAutoSwitchEligible: (accountId: string, eligible: boolean) =>
+    request<CodexAccountsState>(
+      'PUT',
+      `/agents/codex-accounts/${encodeURIComponent(accountId)}/auto-switch`,
+      { eligible },
+    ),
   setCodexAutoSwitch: (autoSwitch: boolean) =>
     request<CodexAccountsState>('PUT', '/agents/codex-accounts/auto-switch', { autoSwitch }),
   renameCodexAccount: (accountId: string, name: string) =>

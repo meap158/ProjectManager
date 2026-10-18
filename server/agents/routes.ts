@@ -248,6 +248,13 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     return c.json(supervisor.setCodexAutoSwitch(body.autoSwitch));
   });
 
+  app.put('/agents/codex-accounts/:accountId/auto-switch', async (c) => {
+    const body = await parseBody(c, z.object({ eligible: z.boolean() }));
+    return c.json(
+      supervisor.setCodexAccountAutoSwitchEligible(c.req.param('accountId'), body.eligible),
+    );
+  });
+
   app.patch('/agents/codex-accounts/:accountId', async (c) => {
     const body = await parseBody(c, z.object({ name: z.string().trim().min(1).max(80) }));
     return c.json(supervisor.renameCodexAccount(c.req.param('accountId'), body.name));
@@ -502,6 +509,10 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
                 terminalSize: out.terminalSize,
               }),
             });
+            // Batch bursts to about a frame: a busy TUI emits hundreds of tiny chunks a second,
+            // and each would otherwise cost an event, a JSON.parse and a terminal write. The
+            // first chunk after idle goes out at once; only what follows waits.
+            if (out.running) await new Promise((resolve) => setTimeout(resolve, STREAM_BATCH_MS));
             continue; // Drain everything available before waiting.
           }
           if (out.running !== lastRunning) {
@@ -509,10 +520,6 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
             await stream.writeSSE({
               event: 'state',
               data: JSON.stringify({
-            // Batch bursts to about a frame: a busy TUI emits hundreds of tiny chunks a second,
-            // and each would otherwise cost an event, a JSON.parse and a terminal write. The
-            // first chunk after idle goes out at once; only what follows waits.
-            if (out.running) await new Promise((resolve) => setTimeout(resolve, STREAM_BATCH_MS));
                 running: out.running,
                 exitCode: out.exitCode,
                 logBytes: out.logBytes,

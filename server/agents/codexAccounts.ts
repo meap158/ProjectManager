@@ -1,4 +1,8 @@
 import {
+  closeSync,
+  openSync,
+  readSync,
+  writeSync,
   chmodSync,
   copyFileSync,
   existsSync,
@@ -6,16 +10,18 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  statSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Db } from '../db.js';
 import { getSetting, setSetting } from '../store.js';
 import type { CodexAccount, CodexAccountsState } from '../../shared/types.js';
-import { codexLimits } from './limits.js';
+import { claudeLimits, codexLimits } from './limits.js';
 import { readCodexAccountUsage, type AccountUsageResult } from './accountUsage.js';
 
 const REGISTRY = 'codex-accounts.json';
@@ -28,6 +34,7 @@ export const USAGE_MAX_AGE_MS = 10 * 60_000;
 const MAX_AUTH_BYTES = 1024 * 1024;
 
 interface StoredAccount {
+  autoSwitchEligible?: boolean;
   id: string;
   name: string;
   createdAt: string;
@@ -209,6 +216,7 @@ export class CodexAccounts {
           : this.readAuthMeta(path.join(home, 'auth.json'));
       return {
         id: account.id,
+        autoSwitchEligible: account.autoSwitchEligible !== false,
         name: account.name,
         createdAt: account.createdAt,
         email: meta.email,
@@ -229,12 +237,26 @@ export class CodexAccounts {
     const normalized = id === 'default' ? null : id;
     if (normalized !== null && !this.account(normalized))
       throw new CodexAccountError(404, 'Codex account not found');
+    this.syncResumeHistory(normalized === null ? this.defaultHome() : this.home(normalized));
     setSetting(this.db, ACTIVE_KEY, normalized);
     const registryFile = path.join(this.dataDir, REGISTRY);
     if (existsSync(registryFile) || normalized !== null) {
       const registry = this.readRegistry();
       this.writeRegistry({ ...registry, activeProfileId: normalized });
     }
+    return this.state();
+  }
+
+  setAutoSwitchEligible(id: string, eligible: boolean): CodexAccountsState {
+    const registry = this.readRegistry();
+    if (!registry.accounts.some((account) => account.id === id))
+      throw new CodexAccountError(404, 'Codex account not found');
+    this.writeRegistry({
+      ...registry,
+      accounts: registry.accounts.map((account) =>
+        account.id === id ? { ...account, autoSwitchEligible: eligible } : account,
+      ),
+    });
     return this.state();
   }
 
@@ -406,11 +428,13 @@ export class CodexAccounts {
   ): { id: string; name: string; home: string } | null {
     const accounts = [
       { id: 'default', name: 'Default Codex account', home: this.defaultHome() },
-      ...this.readRegistry().accounts.map((account) => ({
-        id: account.id,
-        name: account.name,
-        home: this.home(account.id),
-      })),
+      ...this.readRegistry()
+        .accounts.filter((account) => account.autoSwitchEligible !== false)
+        .map((account) => ({
+          id: account.id,
+          name: account.name,
+          home: this.home(account.id),
+        })),
     ];
     const currentIndex = accounts.findIndex((account) => account.id === currentKey);
     const untried: { id: string; name: string; home: string }[] = [];
@@ -423,6 +447,75 @@ export class CodexAccounts {
     const chosen = nonExhausted ?? untried[0]!;
     if (chosen.id !== 'default') this.syncConfigToml(chosen.home);
     return chosen;
+  }
+
+  /** Keep the native resume picker independent of the selected credential. */
+  syncResumeHistory(targetHome: string): void {
+    const homes = [this.defaultHome(), ...this.readRegistry().accounts.map((a) => this.home(a.id))];
+    const newest = new Map<string, { home: string; file: string; time: number; size: number }>();
+    // What the target already holds, found by this one scan (not a tree walk per conversation).
+    const held = new Map<string, { time: number; size: number }>();
+    const index = new Map<string, { line: string; time: number }>();
+    for (const home of homes) {
+      const sessions = path.join(home, 'sessions');
+      if (existsSync(sessions)) {
+        for (const relative of readdirSync(sessions, { recursive: true }).map(String)) {
+          const match = /^rollout-.*-([0-9a-f-]{36})\.jsonl$/i.exec(path.basename(relative));
+          if (!match) continue;
+          const file = path.join(sessions, relative);
+          const stat = statSync(file);
+          const time = stat.mtimeMs;
+          const id = match[1]!;
+          if (normalPath(home) === normalPath(targetHome)) {
+            const was = held.get(id);
+            held.set(id, {
+              time: Math.max(was?.time ?? 0, time),
+              size: Math.max(was?.size ?? 0, stat.size),
+            });
+          }
+          if (!newest.has(id) || newest.get(id)!.time < time)
+            newest.set(id, { home, file, time, size: stat.size });
+        }
+      }
+      const indexFile = path.join(home, 'session_index.jsonl');
+      if (!existsSync(indexFile)) continue;
+      for (const line of readFileSync(indexFile, 'utf8').split('\n').filter(Boolean)) {
+        try {
+          const entry = JSON.parse(line) as { id?: string; updated_at?: string };
+          if (!entry.id) continue;
+          const time = Date.parse(entry.updated_at ?? '') || 0;
+          if (!index.has(entry.id) || index.get(entry.id)!.time <= time)
+            index.set(entry.id, { line, time });
+        } catch {
+          /* Ignore an incomplete append; retain all other records. */
+        }
+      }
+    }
+    for (const [id, source] of newest) {
+      if (normalPath(source.home) === normalPath(targetHome)) continue;
+      // Nothing to copy when the target is as recent, or already holds as much: a copy is the
+      // original minus its sealed reasoning, so it is never larger. Judging by time alone made a
+      // profile's copy look newer than the original in another home and copied it back over it
+      // (GBs, synchronously) when switching to Default.
+      const have = held.get(id);
+      if (have && (have.time >= source.time || have.size >= source.size)) continue;
+      if (!this.carryRollout(source.file, source.home, targetHome)) {
+        this.saveCopyState();
+        throw new CodexAccountError(
+          409,
+          'Could not preserve resume history; account was not switched',
+        );
+      }
+    }
+    this.saveCopyState();
+    if (index.size)
+      this.writePrivate(
+        path.join(targetHome, 'session_index.jsonl'),
+        [...index.values()]
+          .sort((a, b) => a.time - b.time)
+          .map((item) => item.line)
+          .join('\n') + '\n',
+      );
   }
 
   /** The rollout file of conversation `id` inside a Codex home, or null. */
@@ -456,25 +549,130 @@ export class CodexAccounts {
     if (normalPath(fromHome) === normalPath(toHome)) return true;
     const source = this.findRollout(fromHome, id);
     if (!source) return false;
+    const carried = this.carryRollout(source, fromHome, toHome);
+    this.saveCopyState();
+    return carried;
+  }
+
+  private carryRollout(source: string, fromHome: string, toHome: string): boolean {
     try {
       if (toHome !== this.defaultHome()) this.syncConfigToml(toHome);
       const dest = path.join(toHome, path.relative(fromHome, source));
       mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
-      const kept = readFileSync(source, 'utf8')
-        .split('\n')
-        .filter((line) => {
-          if (!line.includes('"reasoning"')) return true;
-          try {
-            const item = JSON.parse(line) as { type?: string; payload?: { type?: string } };
-            return !(item.type === 'response_item' && item.payload?.type === 'reasoning');
-          } catch {
-            return true;
-          }
-        });
-      writeFileSync(dest, kept.join('\n'), 'utf8');
+      // The target already holds at least this much of the conversation (a copy never outgrows
+      // its original): leave it. Otherwise switching a session back to Default would overwrite
+      // the original rollout in the default home with this profile's filtered copy.
+      if (existsSync(dest) && statSync(dest).size >= statSync(source).size) return true;
+      this.filteredCopy(source, dest);
+      // A copy is dated like its original, so it never looks newer than the thing it came from.
+      const origin = statSync(source);
+      utimesSync(dest, origin.atime, origin.mtime);
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Copies a rollout without its sealed reasoning records. Rollouts only ever grow (one JSON
+   * record per line, several GB for long sessions), so a copy made before is brought up to date
+   * by filtering just the lines added since: re-copying a live multi-GB rollout on every account
+   * switch froze the server. The point reached is remembered per destination and trusted only
+   * while the destination still has the size we left it with; otherwise it is copied afresh.
+   */
+  private filteredCopy(source: string, dest: string): void {
+    const state = this.copyState();
+    const key = normalPath(dest);
+    const known = state[key];
+    const sourceSize = statSync(source).size;
+    let destSize = -1;
+    try {
+      destSize = statSync(dest).size;
+    } catch {
+      // Not copied yet.
+    }
+    const append =
+      known !== undefined &&
+      known.source === normalPath(source) &&
+      known.destSize === destSize &&
+      known.offset <= sourceSize;
+    if (append && known.offset === sourceSize) return;
+    // Rollouts can exceed the JS string limit. Copy bounded chunks and filter
+    // sealed reasoning records without reading the whole history into memory.
+    const input = openSync(source, 'r');
+    const temporary = append ? null : `${dest}.${randomUUID()}.tmp`;
+    let output: number | undefined;
+    try {
+      output = openSync(temporary ?? dest, append ? 'a' : 'wx', 0o600);
+      const buffer = Buffer.alloc(1024 * 1024);
+      let pending = Buffer.alloc(0);
+      let position = append ? known.offset : 0;
+      let written = append ? destSize : 0;
+      const writeLine = (line: Buffer) => {
+        // JSON record type is near the beginning, even for huge tool outputs.
+        const prefix = line.subarray(0, 2048).toString('utf8');
+        if (/"type"\s*:\s*"response_item"/.test(prefix) && /"type"\s*:\s*"reasoning"/.test(prefix))
+          return;
+        let offset = 0;
+        while (offset < line.length)
+          offset += writeSync(output!, line, offset, line.length - offset);
+        written += line.length;
+      };
+      let length: number;
+      while ((length = readSync(input, buffer, 0, buffer.length, position)) > 0) {
+        position += length;
+        const chunk = pending.length
+          ? Buffer.concat([pending, buffer.subarray(0, length)])
+          : buffer.subarray(0, length);
+        let start = 0;
+        for (let end = chunk.indexOf(10); end !== -1; end = chunk.indexOf(10, start)) {
+          writeLine(chunk.subarray(start, end + 1));
+          start = end + 1;
+        }
+        pending = Buffer.from(chunk.subarray(start));
+      }
+      if (pending.length) writeLine(pending);
+      closeSync(output);
+      output = undefined;
+      if (temporary) renameSync(temporary, dest);
+      // A last line without its newline may still be growing: no resume point then, so the next
+      // sync copies afresh rather than appending after half a line.
+      if (pending.length) delete state[key];
+      else state[key] = { source: normalPath(source), offset: position, destSize: written };
+    } finally {
+      closeSync(input);
+      if (output !== undefined) closeSync(output);
+      if (temporary) rmSync(temporary, { force: true });
+    }
+  }
+
+  private copyStateCache: Record<
+    string,
+    { source: string; offset: number; destSize: number }
+  > | null = null;
+
+  private copyState() {
+    if (this.copyStateCache) return this.copyStateCache;
+    try {
+      const raw = JSON.parse(
+        readFileSync(path.join(this.dataDir, 'codex-resume-sync.json'), 'utf8'),
+      ) as unknown;
+      this.copyStateCache = raw && typeof raw === 'object' ? (raw as never) : {};
+    } catch {
+      this.copyStateCache = {};
+    }
+    return this.copyStateCache!;
+  }
+
+  private saveCopyState(): void {
+    if (!this.copyStateCache) return;
+    try {
+      this.writePrivate(
+        path.join(this.dataDir, 'codex-resume-sync.json'),
+        JSON.stringify(this.copyStateCache),
+      );
+    } catch {
+      // Losing it only means the next sync copies afresh.
     }
   }
 
@@ -781,7 +979,7 @@ export class ClaudeAccounts {
     this.root = path.join(dataDir, 'claude-accounts');
   }
 
-  state(_now = Date.now()): CodexAccountsState {
+  state(now = Date.now()): CodexAccountsState {
     const registry = this.readRegistry();
     const saved = getSetting<string | null>(this.db, CLAUDE_ACTIVE_KEY) ?? null;
     const activeProfileId =
@@ -795,8 +993,7 @@ export class ClaudeAccounts {
       available: existsSync(sourceCredsFile),
       email: defMeta.email,
       plan: defMeta.plan,
-      limits: null,
-      usageStatus: 'unsupported' as const,
+      ...this.accountUsage(sourceCredsFile, now),
     };
     const accounts: CodexAccount[] = registry.accounts.map((account) => {
       const home = this.home(account.id);
@@ -810,11 +1007,39 @@ export class ClaudeAccounts {
         createdAt: account.createdAt,
         email: meta.email,
         plan: meta.plan,
-        limits: null,
-        usageStatus: 'unsupported' as const,
+        ...this.accountUsage(
+          account.id === activeProfileId ? liveCredsFile : path.join(home, '.credentials.json'),
+          now,
+        ),
       };
     });
     return { accounts, activeProfileId, autoSwitch, defaultAccount };
+  }
+
+  private accountUsage(
+    file: string,
+    now: number,
+  ): Pick<CodexAccount, 'limits' | 'usageStatus' | 'usageCheckedAt'> {
+    try {
+      const credentials = JSON.parse(readFileSync(file, 'utf8')) as {
+        claudeAiOauth?: { accessToken?: string };
+      };
+      const token = credentials.claudeAiOauth?.accessToken;
+      if (!token) return { limits: null, usageStatus: 'unavailable', usageCheckedAt: null };
+      const identity = createHash('sha256').update(token).digest('hex');
+      const limits = claudeLimits(path.join(this.dataDir, 'claude-account-usage', identity), now);
+      return {
+        limits,
+        usageCheckedAt: limits?.asOf ?? null,
+        usageStatus: limits
+          ? now - Date.parse(limits.asOf) > USAGE_MAX_AGE_MS
+            ? 'stale'
+            : 'fresh'
+          : 'not_loaded',
+      };
+    } catch {
+      return { limits: null, usageStatus: 'unavailable', usageCheckedAt: null };
+    }
   }
 
   setActive(id: string | null): CodexAccountsState {

@@ -404,6 +404,8 @@ export type AccountUsageStatus =
   'fresh' | 'stale' | 'expired' | 'unavailable' | 'unsupported' | 'not_loaded';
 
 export interface CodexAccount {
+  /** Missing on older profiles means eligible for automatic switching. */
+  autoSwitchEligible?: boolean;
   usageStatus?: AccountUsageStatus;
   usageCheckedAt?: string | null;
   id: string;

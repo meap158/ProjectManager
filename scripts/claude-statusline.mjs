@@ -7,6 +7,7 @@
 //    then user), run like Claude runs it (a shell command, in the session's folder, same stdin);
 //  - its output is passed through as is; with none configured, nothing is printed (as before).
 // Never breaks Claude: recording failures are ignored and every path exits 0.
+import { mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -37,6 +38,16 @@ try {
     const temp = `${file}.${process.pid}.tmp`;
     writeFileSync(temp, JSON.stringify(record));
     renameSync(temp, file);
+    // Attribute usage to the login that emitted this status, never every saved profile.
+    const identity = process.argv[3];
+    if (typeof identity === 'string' && /^[a-f0-9]{64}$/.test(identity)) {
+      const folder = path.join(dataDir, 'claude-account-usage', identity);
+      mkdirSync(folder, { recursive: true });
+      const accountFile = path.join(folder, 'claude-limits.json');
+      const accountTemp = `${accountFile}.${process.pid}.tmp`;
+      writeFileSync(accountTemp, JSON.stringify(record));
+      renameSync(accountTemp, accountFile);
+    }
   }
 } catch {
   // Recording is best effort.

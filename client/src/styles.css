@@ -2003,11 +2003,14 @@ dialog::backdrop {
 .terminal {
   background: #121211;
   border-radius: var(--radius);
-  padding: 8px;
   overflow: hidden;
 }
+/* The inset sits on .xterm, not the host: FitAddon subtracts the padding of the xterm element
+   but reads the host's border-box height, so host padding made it fit 16px too many rows and
+   the bottom line was clipped by the host's overflow. */
 .terminal .xterm {
   height: 100%;
+  padding: 8px;
 }
 .terminal-input {
   display: flex;
@@ -2096,9 +2099,13 @@ dialog::backdrop {
 .terminal.is-interactive {
   cursor: text;
   outline: 1px solid var(--border);
+  /* Drawn inside the box: an outer outline is clipped by overflow:hidden parents (the
+     orchestrator chat body), leaving only the rounded corners visible. */
+  outline-offset: -1px;
 }
 .terminal.is-interactive:focus-within {
   outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 /* ---- Agent workspace (multi-pane terminals) --------------------------------------------- */
@@ -6149,5 +6156,87 @@ span.path-link:hover .path-icon {
   .codex-accounts-toolbar-actions .account-action-label,
   .codex-account-actions .account-action-label {
     display: none;
+  }
+}
+
+/* Long menus keep search inside the existing bounded popup (PM-192). */
+.dropdown-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dropdown-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  /* Sized like the options below it (12.5px text, ~30px rows); touch screens get 16px text
+     (smaller makes iOS zoom in on focus) and a full tap target, below. */
+  height: 28px;
+  min-height: 28px;
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface-raised);
+  font: inherit;
+  font-size: 12.5px;
+}
+@media (pointer: coarse) {
+  .dropdown-search {
+    height: 40px;
+    min-height: 40px;
+    font-size: 16px;
+  }
+}
+.dropdown-empty {
+  margin: 0;
+  padding: 10px 8px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+@media (pointer: coarse) {
+  .dropdown-list li button {
+    min-height: 44px;
+  }
+}
+
+/* Stable account columns without forcing long emails to widen the panel. */
+.codex-account-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 210px) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.codex-account-identity {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.codex-account-auto-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 12px;
+  cursor: pointer;
+}
+.codex-account-auto-switch input {
+  margin: 0;
+  flex: none;
+}
+@media (max-width: 700px) {
+  .codex-account-heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 8px;
+  }
+  .codex-account-heading > .faint {
+    grid-column: 1 / -1;
+  }
+  .codex-account-auto-switch {
+    min-height: 44px;
   }
 }

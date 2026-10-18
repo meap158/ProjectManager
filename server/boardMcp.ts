@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { Hono } from 'hono';
 import { z } from 'zod';
@@ -116,6 +117,24 @@ export function boardConnection(
     // switches on /resume, /clear and compaction), so relaunches resume the right conversation,
     // and a status line that records plan usage (Claude reports it nowhere else) before running
     // the user's own status line unchanged (scripts/claude-statusline.mjs, PM-17).
+    let usageIdentity = '';
+    try {
+      const credentials = JSON.parse(
+        readFileSync(
+          path.join(
+            process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
+            '.credentials.json',
+          ),
+          'utf8',
+        ),
+      );
+      if (typeof credentials.claudeAiOauth?.accessToken === 'string')
+        usageIdentity = createHash('sha256')
+          .update(credentials.claudeAiOauth.accessToken)
+          .digest('hex');
+    } catch {
+      /* No attributable login yet. */
+    }
     const hook =
       owner.kind === 'session'
         ? [
@@ -123,7 +142,7 @@ export function boardConnection(
             JSON.stringify({
               statusLine: {
                 type: 'command',
-                command: `node "${siblingScript('claude-statusline.mjs')}" "${dataDir}"`,
+                command: `node "${siblingScript('claude-statusline.mjs')}" "${dataDir}" "${usageIdentity}"`,
               },
               hooks: Object.fromEntries(
                 [

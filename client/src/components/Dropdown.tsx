@@ -34,6 +34,7 @@ export function Dropdown<T extends string | number>({
   id,
   disabled,
   multiple,
+  searchable,
 }: {
   label: string;
   value: T;
@@ -42,16 +43,35 @@ export function Dropdown<T extends string | number>({
   /** Id for the trigger, so a visible `<label htmlFor>` can name it. */
   id?: string;
   disabled?: boolean;
+  /** Defaults to search for lists with eight or more options. */
+  searchable?: boolean;
   multiple?: { values: T[]; allValue: T; onChange: (values: T[]) => void };
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const hasSearch = searchable ?? options.length >= 8;
+  const searchRef = useRef<HTMLInputElement>(null);
+  const normalized = (text: string) =>
+    text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase();
+  const visible = options
+    .map((option, index) => ({ option, index }))
+    .filter(
+      ({ option }) =>
+        !hasSearch ||
+        normalized([option.label, option.sub, option.hint].filter(Boolean).join(' ')).includes(
+          normalized(query.trim()),
+        ),
+    );
   // Opens upward when the menu would run past the bottom of its dialog body (or the window).
   const [dropUp, setDropUp] = useState(false);
   const [focusIndex, setFocusIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const listRef = useRef<HTMLUListElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const listId = useId();
   const isSelected = (candidate: T) =>
     multiple
@@ -69,20 +89,23 @@ export function Dropdown<T extends string | number>({
         : selected?.label;
 
   function enabledIndexes(): number[] {
-    return options.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0);
+    return visible.filter(({ option }) => !option.disabled).map(({ index }) => index);
   }
 
   function openMenu(atSelected: boolean) {
-    const enabled = enabledIndexes();
+    const enabled = options
+      .map((option, index) => (option.disabled ? -1 : index))
+      .filter((index) => index >= 0);
     if (enabled.length === 0) return;
+    setQuery('');
     const selectedIndex = options.findIndex((o) => isSelected(o.value) && !o.disabled);
-    setFocusIndex(atSelected && selectedIndex >= 0 ? selectedIndex : enabled[0]!);
+    setFocusIndex(hasSearch ? -1 : atSelected && selectedIndex >= 0 ? selectedIndex : enabled[0]!);
     const trigger = triggerRef.current?.getBoundingClientRect();
     if (trigger) {
       const bounds = triggerRef.current!.closest('.dialog-body')?.getBoundingClientRect();
       const bottom = bounds?.bottom ?? window.innerHeight;
       const top = bounds?.top ?? 0;
-      const menuHeight = Math.min(MAX_MENU_HEIGHT, options.length * 32 + 10);
+      const menuHeight = Math.min(MAX_MENU_HEIGHT, options.length * 32 + 10 + (hasSearch ? 48 : 0));
       setDropUp(trigger.bottom + 4 + menuHeight > bottom && trigger.top - 4 - menuHeight >= top);
     }
     setOpen(true);
@@ -168,8 +191,10 @@ export function Dropdown<T extends string | number>({
 
   // Focus follows the keyboard cursor while open.
   useEffect(() => {
-    if (open) optionRefs.current[focusIndex]?.focus();
-  }, [open, focusIndex]);
+    if (!open) return;
+    if (focusIndex === -1 && hasSearch) searchRef.current?.focus();
+    else optionRefs.current[focusIndex]?.focus();
+  }, [open, focusIndex, hasSearch]);
 
   return (
     <div className="dropdown" ref={rootRef}>
@@ -210,76 +235,113 @@ export function Dropdown<T extends string | number>({
         </span>
       </button>
       {open && (
-        <ul
-          ref={listRef}
-          className={`dropdown-list${dropUp ? ' drop-up' : ''}`}
-          role="listbox"
-          aria-multiselectable={multiple ? true : undefined}
-          aria-label={label}
-          id={listId}
-        >
-          {options.map((option, i) => (
-            <li
-              key={String(option.value)}
-              role="option"
-              aria-selected={isSelected(option.value)}
-              aria-disabled={option.disabled || undefined}
-              className={isSelected(option.value) ? 'selected' : undefined}
-            >
-              <button
-                ref={(el) => {
-                  optionRefs.current[i] = el;
-                }}
-                type="button"
-                disabled={option.disabled}
-                title={
-                  option.title
-                    ? multiple
-                      ? `${option.title} · Ctrl+click to select only this`
-                      : option.title
-                    : multiple
-                      ? 'Ctrl+click to select only this'
-                      : undefined
-                }
-                tabIndex={i === focusIndex ? 0 : -1}
-                onClick={(e) => choose(i, e.ctrlKey || e.metaKey)}
-                onMouseEnter={() => {
-                  if (!option.disabled) setFocusIndex(i);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setFocusIndex(step(i, 1));
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setFocusIndex(step(i, -1));
-                  } else if (e.key === 'Home') {
-                    e.preventDefault();
-                    setFocusIndex(enabledIndexes()[0] ?? i);
-                  } else if (e.key === 'End') {
-                    e.preventDefault();
-                    setFocusIndex(enabledIndexes().at(-1) ?? i);
-                  } else if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    choose(i, e.ctrlKey || e.metaKey);
-                  } else if (e.key === 'Tab') {
-                    setOpen(false);
-                  }
-                }}
+        <div ref={listRef} className={`dropdown-list${dropUp ? ' drop-up' : ''}`}>
+          {hasSearch && (
+            <input
+              ref={searchRef}
+              className="dropdown-search"
+              type="search"
+              aria-label={`Search ${label}`}
+              aria-controls={listId}
+              autoComplete="off"
+              placeholder={`Search ${label.toLocaleLowerCase()}…`}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setFocusIndex(-1);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  const enabled = enabledIndexes();
+                  setFocusIndex((event.key === 'ArrowDown' ? enabled[0] : enabled.at(-1)) ?? -1);
+                } else if (event.key === 'Enter') {
+                  event.preventDefault();
+                  const first = enabledIndexes()[0];
+                  if (first !== undefined) choose(first);
+                } else if (event.key === 'Tab') setOpen(false);
+              }}
+            />
+          )}
+          {visible.length === 0 && (
+            <p className="dropdown-empty" role="status">
+              No matching options
+            </p>
+          )}
+          <ul
+            className="dropdown-options"
+            role="listbox"
+            aria-multiselectable={multiple ? true : undefined}
+            aria-label={label}
+            id={listId}
+          >
+            {visible.map(({ option, index: i }) => (
+              <li
+                key={String(option.value)}
+                role="option"
+                aria-selected={isSelected(option.value)}
+                aria-disabled={option.disabled || undefined}
+                className={isSelected(option.value) ? 'selected' : undefined}
               >
-                <span className="dropdown-check" aria-hidden="true">
-                  {isSelected(option.value) ? '✓' : ''}
-                </span>
-                {option.icon && <span className="dropdown-icon">{option.icon}</span>}
-                <span className="dropdown-text">
-                  <span className="truncate">{option.label}</span>
-                  {option.sub && <span className="dropdown-sub truncate">{option.sub}</span>}
-                </span>
-                {option.hint && <span className="dropdown-hint">{option.hint}</span>}
-              </button>
-            </li>
-          ))}
-        </ul>
+                <button
+                  ref={(el) => {
+                    optionRefs.current[i] = el;
+                  }}
+                  type="button"
+                  disabled={option.disabled}
+                  title={
+                    option.title
+                      ? multiple
+                        ? `${option.title} · Ctrl+click to select only this`
+                        : option.title
+                      : multiple
+                        ? 'Ctrl+click to select only this'
+                        : undefined
+                  }
+                  tabIndex={i === focusIndex ? 0 : -1}
+                  onClick={(e) => choose(i, e.ctrlKey || e.metaKey)}
+                  onMouseEnter={() => {
+                    if (!option.disabled && document.activeElement !== searchRef.current)
+                      setFocusIndex(i);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setFocusIndex(step(i, 1));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setFocusIndex(step(i, -1));
+                    } else if (e.key === 'Home') {
+                      e.preventDefault();
+                      setFocusIndex(enabledIndexes()[0] ?? i);
+                    } else if (e.key === 'End') {
+                      e.preventDefault();
+                      setFocusIndex(enabledIndexes().at(-1) ?? i);
+                    } else if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      choose(i, e.ctrlKey || e.metaKey);
+                    } else if (e.key === 'Backspace' && hasSearch) {
+                      e.preventDefault();
+                      setFocusIndex(-1);
+                    } else if (e.key === 'Tab') {
+                      setOpen(false);
+                    }
+                  }}
+                >
+                  <span className="dropdown-check" aria-hidden="true">
+                    {isSelected(option.value) ? '✓' : ''}
+                  </span>
+                  {option.icon && <span className="dropdown-icon">{option.icon}</span>}
+                  <span className="dropdown-text">
+                    <span className="truncate">{option.label}</span>
+                    {option.sub && <span className="dropdown-sub truncate">{option.sub}</span>}
+                  </span>
+                  {option.hint && <span className="dropdown-hint">{option.hint}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

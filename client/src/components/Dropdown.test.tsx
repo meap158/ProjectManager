@@ -65,3 +65,55 @@ it('Ctrl+click selects only the clicked item in a multi-select dropdown', () => 
   );
   expect(screen.getByRole('button', { name: 'Agent' }).textContent).toContain('OpenCode');
 });
+
+it('searches long lists without changing selection until a result is chosen', () => {
+  const options = Array.from({ length: 9 }, (_, index) => ({
+    value: String(index),
+    label: `Project ${index}`,
+  }));
+  function Picker() {
+    const [value, setValue] = useState('0');
+    return <Dropdown label="Project" value={value} options={options} onChange={setValue} />;
+  }
+  render(<Picker />);
+  fireEvent.click(screen.getByRole('button', { name: 'Project' }));
+  const search = screen.getByRole('searchbox', { name: 'Search Project' });
+  expect(document.activeElement).toBe(search);
+  fireEvent.change(search, { target: { value: 'PROJECT 7' } });
+  expect(screen.getAllByRole('option')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Project' }).textContent).toContain('Project 0');
+  fireEvent.keyDown(search, { key: 'ArrowDown' });
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Project 7' }));
+  fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
+  expect(screen.queryByRole('listbox')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Project' }).textContent).toContain('Project 7');
+  fireEvent.click(screen.getByRole('button', { name: 'Project' }));
+  expect(screen.getAllByRole('option')).toHaveLength(9);
+});
+
+it('keeps empty searches and disabled results from selecting another value', () => {
+  render(
+    <Dropdown
+      label="Project"
+      value="a"
+      searchable
+      onChange={() => {
+        throw new Error('Must not select');
+      }}
+      options={[
+        { value: 'a', label: 'Alpha' },
+        { value: 'b', label: 'Blocked', disabled: true },
+      ]}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Project' }));
+  const search = screen.getByRole('searchbox');
+  fireEvent.change(search, { target: { value: 'missing' } });
+  expect(screen.getByRole('status').textContent).toBe('No matching options');
+  fireEvent.keyDown(search, { key: 'Enter' });
+  fireEvent.change(search, { target: { value: 'Blocked' } });
+  fireEvent.keyDown(search, { key: 'Enter' });
+  fireEvent.keyDown(search, { key: 'Escape' });
+  expect(screen.queryByRole('listbox')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Project' }));
+});
