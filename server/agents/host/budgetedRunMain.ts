@@ -59,7 +59,7 @@ async function verifiedBudget(threads: number): Promise<boolean> {
         ],
         {
           windowsHide: true,
-          timeout: 5000,
+          timeout: 30_000, // PowerShell can take many seconds to start on a loaded machine; still fails closed
           env: { ...process.env, PM_VERIFY_PID: String(process.pid) },
         },
       );
