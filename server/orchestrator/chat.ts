@@ -316,9 +316,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
    * A one-time check on pending work: sends the orchestrator's chat a request to go through To do,
    * In progress and Review (or one of them) and act on it. Starts the chat when needed.
    */
-  async check(id: string, focus: CheckFocus = 'all'): Promise<AgentSession> {
+  async check(
+    id: string,
+    focus: CheckFocus = 'all',
+    attentionKinds: readonly string[] = [],
+  ): Promise<AgentSession> {
     const instance = this.instance(id);
-    const request = checkPrompt(instance, focus);
+    const request = checkPrompt(instance, focus, attentionKinds);
     let existing = this.session(id);
     if (!existing || !instance.providers.includes(existing.providerId))
       return this.open(id, undefined, `${openingLine(instance)}\n\n${request}`);
@@ -345,10 +349,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
     this.writeBriefing(currentInstance);
     this.supervisor.sendInput(
       live.id,
-      `\x1b[200~${checkPrompt(currentInstance, focus)}\x1b[201~\r`,
+      `\x1b[200~${checkPrompt(currentInstance, focus, attentionKinds)}\x1b[201~\r`,
       false,
     );
-    this.record(id, 'check', `Asked the chat to check pending work (${focus})`);
+    this.record(
+      id,
+      'check',
+      `Asked the chat to check pending work (${focus}${attentionKinds.length ? `: ${attentionKinds.join(', ')}` : ''})`,
+    );
     return this.supervisor.getSession(live.id)!;
   }
 
@@ -898,11 +906,19 @@ const CHECKS: Record<CheckFocus, string> = {
   all: '',
 };
 
-export function checkPrompt(instance: OrchestratorConfig, focus: CheckFocus): string {
+export function checkPrompt(
+  instance: OrchestratorConfig,
+  focus: CheckFocus,
+  attentionKinds: readonly string[] = [],
+): string {
+  const only =
+    attentionKinds.length > 0
+      ? ` Handle only these alert kinds: ${attentionKinds.join(', ')}; leave every other alert untouched and say so.`
+      : '';
   const steps =
     focus === 'all'
       ? [CHECKS.in_progress, CHECKS.review, CHECKS.todo, CHECKS.attention]
-      : [CHECKS[focus]];
+      : [focus === 'attention' ? CHECKS.attention + only : CHECKS[focus]];
   const observe =
     instance.strategy === 'observe'
       ? '\nWatch only: inspect and recommend changes; do not edit files or move cards unless the user explicitly authorizes the work.'

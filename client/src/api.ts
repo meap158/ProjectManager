@@ -153,8 +153,16 @@ export const api = {
       'GET',
       `/orchestrators/${encodeURIComponent(id)}/chat-work`,
     ),
-  checkOrchestrator: (id: string, focus: 'all' | 'todo' | 'in_progress' | 'review' | 'attention') =>
-    request<AgentSession>('POST', `/orchestrators/${encodeURIComponent(id)}/check`, { focus }),
+  checkOrchestrator: (
+    id: string,
+    focus: 'all' | 'todo' | 'in_progress' | 'review' | 'attention',
+    attentionKinds?: string[],
+  ) =>
+    request<AgentSession>(
+      'POST',
+      `/orchestrators/${encodeURIComponent(id)}/check`,
+      attentionKinds ? { focus, attentionKinds } : { focus },
+    ),
   pruneOrchestratorAttention: (id?: string, projectId?: number) =>
     request<{ ok: boolean; state: OrchestratorState }>(
       'POST',

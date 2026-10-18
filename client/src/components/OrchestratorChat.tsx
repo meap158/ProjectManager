@@ -56,6 +56,35 @@ const CHECKS: { focus: Focus; label: string; title: string }[] = [
   },
 ];
 
+/** One-click passes over a single kind of All projects alert. */
+const QUICK_ATTENTION: { key: string; label: string; kinds: string[]; title: string }[] = [
+  {
+    key: 'quick-uncommitted',
+    label: 'Uncommitted',
+    kinds: ['Uncommitted'],
+    title: 'Review and commit the uncommitted changes flagged in All projects',
+  },
+  {
+    key: 'quick-unpushed',
+    label: 'Unpushed',
+    kinds: ['Unpushed'],
+    title:
+      'Check the unpushed commits flagged in All projects (it will not push without your say-so)',
+  },
+  {
+    key: 'quick-stale',
+    label: 'Stale',
+    kinds: ['Stale'],
+    title: 'Look into projects with no recent commits',
+  },
+  {
+    key: 'quick-broken',
+    label: 'Missing or failed',
+    kinds: ['Folder missing', 'Scan failed'],
+    title: 'Look into projects whose folder is missing or whose scan failed',
+  },
+];
+
 function chatState(session: AgentSession | null): string {
   if (!session) return 'Not started yet';
   if (session.status !== 'running') return 'Stopped · reopening continues the conversation';
@@ -114,9 +143,11 @@ export function OrchestratorChat({
       setTerminalOpen(true);
       onChanged();
     });
-  const check = (focus: Focus, label: string) =>
-    run(focus, async () => {
-      const chat = await api.checkOrchestrator(instance.id, focus);
+  const check = (focus: Focus, label: string, key: string = focus, kinds?: string[]) =>
+    run(key, async () => {
+      const chat = kinds
+        ? await api.checkOrchestrator(instance.id, focus, kinds)
+        : await api.checkOrchestrator(instance.id, focus);
       setSent({ sessionId: chat.id, label });
       setOpenedFrom(session);
       setOpened(chat);
@@ -219,6 +250,23 @@ export function OrchestratorChat({
             onClick={() => void check(c.focus, c.label)}
           >
             {working === c.focus ? 'Sending…' : c.label}
+          </button>
+        ))}
+      </div>
+      <div className="orchestrator-chat-checks" role="group" aria-label="Quick process alerts">
+        <span className="faint">Quick process alerts:</span>
+        {QUICK_ATTENTION.map((q) => (
+          <button
+            key={q.key}
+            type="button"
+            className="btn btn-sm"
+            disabled={
+              busy || activeSession?.tailState === 'running' || activeSession?.tailState === 'input'
+            }
+            title={q.title}
+            onClick={() => void check('attention', `${q.label} alerts`, q.key, q.kinds)}
+          >
+            {working === q.key ? 'Sending…' : q.label}
           </button>
         ))}
       </div>

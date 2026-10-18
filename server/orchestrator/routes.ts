@@ -35,7 +35,14 @@ const chatOpen = z
   .object({ providerId: z.enum(['claude', 'codex', 'antigravity', 'opencode']).optional() })
   .strict();
 const chatCheck = z
-  .object({ focus: z.enum(['all', 'todo', 'in_progress', 'review', 'attention']).optional() })
+  .object({
+    focus: z.enum(['all', 'todo', 'in_progress', 'review', 'attention']).optional(),
+    attentionKinds: z
+      .array(z.enum(['Folder missing', 'Scan failed', 'Stale', 'Uncommitted', 'Unpushed']))
+      .min(1)
+      .max(5)
+      .optional(),
+  })
   .strict();
 export function registerOrchestratorRoutes(
   app: Hono,
@@ -56,7 +63,11 @@ export function registerOrchestratorRoutes(
     app.post('/orchestrators/:id/check', async (c) => {
       const parsed = chatCheck.safeParse((await c.req.json().catch(() => null)) ?? {});
       if (!parsed.success) return c.json({ error: 'Invalid check request' }, 400);
-      return c.json(await chat.check(c.req.param('id'), parsed.data.focus));
+      if (parsed.data.attentionKinds && parsed.data.focus !== 'attention')
+        return c.json({ error: 'attentionKinds needs focus "attention"' }, 400);
+      return c.json(
+        await chat.check(c.req.param('id'), parsed.data.focus, parsed.data.attentionKinds),
+      );
     });
   }
   // What the orchestrators see of Home, with trace-back identity (PM-70). Registered before

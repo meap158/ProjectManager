@@ -602,6 +602,9 @@ it('keeps every chat check in direct execution mode and includes dashboard alert
   }
   expect(checkPrompt(instance, 'attention')).toContain('uncommitted and unpushed');
   expect(checkPrompt(instance, 'attention')).toContain('Do not push, merge, discard files');
+  const scoped = checkPrompt(instance, 'attention', ['Unpushed']);
+  expect(scoped).toContain('Handle only these alert kinds: Unpushed');
+  expect(checkPrompt(instance, 'attention')).not.toContain('Handle only');
   expect(checkPrompt({ ...instance, strategy: 'observe' }, 'todo')).toContain(
     'do not edit files or move cards unless',
   );

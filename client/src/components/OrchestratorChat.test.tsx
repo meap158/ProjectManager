@@ -169,3 +169,21 @@ it('sends dashboard attention checks to this chat (PM-172)', async () => {
   expect(await screen.findByRole('status')).toBeDefined();
   expect(api.checkOrchestrator).toHaveBeenLastCalledWith('master', 'attention');
 });
+
+it('quick-processes one kind of dashboard alert (PM-184)', async () => {
+  vi.mocked(api.checkOrchestrator).mockResolvedValueOnce({
+    id: 99,
+    status: 'running',
+  } as AgentSession);
+  render(
+    <OrchestratorChat
+      instance={{ id: 'master', name: 'Master' } as OrchestratorConfig}
+      session={null}
+      disabled={false}
+      onChanged={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Unpushed' }));
+  expect(await screen.findByRole('status')).toBeDefined();
+  expect(api.checkOrchestrator).toHaveBeenLastCalledWith('master', 'attention', ['Unpushed']);
+});
