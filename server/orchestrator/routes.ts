@@ -60,6 +60,16 @@ export function registerOrchestratorRoutes(
       if (!parsed.success) return c.json({ error: 'Invalid chat request' }, 400);
       return c.json(await chat.open(c.req.param('id'), parsed.data.providerId));
     });
+    app.get('/orchestrators/:id/chat-state', (c) => c.json(chat.chatState(c.req.param('id'))));
+    // One card handed to the running chat (PM-202): scoped, never starts the chat.
+    app.post('/orchestrators/:id/send-card', async (c) => {
+      const parsed = z
+        .object({ cardId: z.number().int().positive() })
+        .strict()
+        .safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: 'Invalid card request' }, 400);
+      return c.json(chat.sendCard(c.req.param('id'), parsed.data.cardId));
+    });
     app.post('/orchestrators/:id/check', async (c) => {
       const parsed = chatCheck.safeParse((await c.req.json().catch(() => null)) ?? {});
       if (!parsed.success) return c.json({ error: 'Invalid check request' }, 400);

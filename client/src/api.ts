@@ -166,6 +166,14 @@ export const api = {
       'GET',
       `/orchestrators/${encodeURIComponent(id)}/chat-work`,
     ),
+  orchestratorChatState: (id: string) =>
+    request<{ running: boolean; state: 'running' | 'idle' | 'input' | null }>(
+      'GET',
+      `/orchestrators/${encodeURIComponent(id)}/chat-state`,
+    ),
+  /** Messages one in-scope card to the orchestrator's running chat; never starts the chat. */
+  sendCardToOrchestratorChat: (id: string, cardId: number) =>
+    request<AgentSession>('POST', `/orchestrators/${encodeURIComponent(id)}/send-card`, { cardId }),
   checkOrchestrator: (
     id: string,
     focus: 'all' | 'todo' | 'in_progress' | 'review' | 'attention',

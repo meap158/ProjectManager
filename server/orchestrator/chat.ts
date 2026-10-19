@@ -360,6 +360,55 @@ export class OrchestratorChat implements OrchestratorToolHost {
     return this.supervisor.getSession(live.id)!;
   }
 
+  /** Whether the chat can take a card now, and why not (for the card dialog, PM-202). */
+  chatState(id: string): { running: boolean; state: 'running' | 'idle' | 'input' | null } {
+    this.instance(id);
+    const session = this.session(id);
+    const running = !!session && session.status === 'running';
+    return { running, state: running ? session.tailState : null };
+  }
+
+  /**
+   * Hands one card to the orchestrator's running chat as a message. Never starts or restarts the
+   * chat (a stopped chat is the owner's choice), only takes cards inside the orchestrator's scope,
+   * and refuses while the chat is busy or asking the owner something, like a check does.
+   */
+  sendCard(id: string, cardId: number): AgentSession {
+    const instance = this.instance(id);
+    const found = getCard(this.db, cardId);
+    if (
+      !found ||
+      found.projectId === null ||
+      !this.scope(instance).some((p) => p.id === found.projectId)
+    )
+      throw new AgentError(404, "Card not found in this orchestrator's projects");
+    if (found.status === 'done')
+      throw new AgentError(409, `${found.key} is done; move it back first if it needs more work`);
+    const live = this.session(id);
+    if (!live || live.status !== 'running')
+      throw new AgentError(409, 'The orchestrator chat is stopped; open it before sending a card');
+    if (!instance.providers.includes(live.providerId))
+      throw new AgentError(
+        409,
+        'The chat agent was removed from this orchestrator; stop it and choose a configured agent',
+      );
+    if (live.tailState === 'running' || live.tailState === 'input')
+      throw new AgentError(
+        409,
+        live.tailState === 'input'
+          ? 'The orchestrator chat is asking you something; answer it first'
+          : 'The orchestrator chat is busy; wait for it or open it to steer',
+      );
+    const project = this.scope(instance).find((p) => p.id === found.projectId)!;
+    this.supervisor.sendInput(
+      live.id,
+      `\x1b[200~${cardPrompt(instance, found, project.name)}\x1b[201~\r`,
+      false,
+    );
+    this.record(id, 'send-card', `Sent ${found.key} to the chat`, found.id);
+    return this.supervisor.getSession(live.id)!;
+  }
+
   /** A restarted CLI needs a moment before it takes input. */
   private async waitUntilReady(sessionId: number, timeoutMs = 45_000): Promise<void> {
     const until = Date.now() + timeoutMs;
@@ -905,6 +954,25 @@ const CHECKS: Record<CheckFocus, string> = {
     'Needs attention: inspect the live All projects dashboard alerts in overview, including uncommitted and unpushed work. Read the affected project instructions and diffs; address safe, authorized fixes directly here and verify them. Preserve unrelated changes. Do not dismiss unresolved alerts or mark work complete without evidence. Report the exact project, remaining work and any action requiring owner input. Do not push, merge, discard files or delete branches without explicit authorization for that action.',
   all: '',
 };
+
+/** The message that hands one card to the orchestrator chat (PM-202). */
+export function cardPrompt(instance: OrchestratorConfig, card: Card, projectName: string): string {
+  const notes = card.description.trim();
+  const observe =
+    instance.strategy === 'observe'
+      ? ' Watch only: inspect and recommend; do not edit files or move cards unless I explicitly authorize it.'
+      : '';
+  return [
+    `Pick up ${card.key} (${projectName}, ${card.status.replace('_', ' ')}): ${card.title}`,
+    notes
+      ? `Card notes:
+${notes.length > 1500 ? `${notes.slice(0, 1500)}…` : notes}`
+      : '',
+    `Call get_card ${card.key} for its full notes and history, read the project's instructions, and work it directly in this chat session; do not dispatch workers or delegate. Verify before moving it to Review, and keep the board truthful.${observe}`,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 export function checkPrompt(
   instance: OrchestratorConfig,

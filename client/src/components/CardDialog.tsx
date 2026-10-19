@@ -21,12 +21,14 @@ import { RunCard } from './RunCard';
 import { ConfirmDelete } from './ConfirmDelete';
 
 // Ways to hand a card to an agent: one choice + one button, each explained in place.
-type HandMode = 'terminal' | 'run' | 'send' | 'orchestrator';
+type HandMode = 'terminal' | 'run' | 'send' | 'orchestrator' | 'chat';
 const HAND_MODE_KEY = 'pm.card.handMode';
 function readHandMode(): HandMode {
   try {
     const v = localStorage.getItem(HAND_MODE_KEY);
-    return v === 'run' || v === 'send' || v === 'terminal' ? v : 'run';
+    return v === 'run' || v === 'send' || v === 'terminal' || v === 'orchestrator' || v === 'chat'
+      ? v
+      : 'run';
   } catch {
     return 'run';
   }
@@ -75,6 +77,14 @@ const HAND_MODES: {
     action: 'Create & queue',
     title:
       'Create or move the card to To do and tick the orchestrator whose scope includes this project, so it plans a worker',
+  },
+  {
+    value: 'chat',
+    label: 'Orchestrator chat',
+    hint: 'Sends the card as a message to the running chat of the orchestrator that covers this project.',
+    action: 'Send to chat',
+    title:
+      'Message the running orchestrator chat to work this card directly; it never starts a stopped chat',
   },
 ];
 
@@ -243,6 +253,30 @@ export function CardDialog({
       active = false;
     };
   }, []);
+  // Whether that orchestrator's chat is running and free to take a card (PM-202). Only a running
+  // chat is offered: starting a stopped one stays the owner's choice.
+  const [runningChatOf, setRunningChatOf] = useState<string | null>(null);
+  const scopedOrchestratorId = (orchestrators ?? []).find(
+    (i) =>
+      i.enabled !== false &&
+      effectiveProjectId &&
+      (i.projectIds ?? []).includes(effectiveProjectId),
+  )?.id;
+  useEffect(() => {
+    if (!scopedOrchestratorId || typeof api.orchestratorChatState !== 'function') return;
+    let active = true;
+    api.orchestratorChatState(scopedOrchestratorId).then(
+      (state) => {
+        if (active) setRunningChatOf(state.running ? scopedOrchestratorId : null);
+      },
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [scopedOrchestratorId]);
+  // Keyed by orchestrator so a stale answer never applies to another project's orchestrator.
+  const chatRunning = scopedOrchestratorId !== undefined && runningChatOf === scopedOrchestratorId;
   const scopedOrchestrator = effectiveProjectId
     ? ((orchestrators ?? []).find(
         (i) => i.enabled !== false && (i.projectIds ?? []).includes(effectiveProjectId),
@@ -279,7 +313,9 @@ export function CardDialog({
       ? 'terminal'
       : handMode === 'orchestrator' && !scopedOrchestrator
         ? 'terminal'
-        : handMode;
+        : handMode === 'chat' && !(scopedOrchestrator && chatRunning)
+          ? 'terminal'
+          : handMode;
   const modeInfo = HAND_MODES.find((m) => m.value === mode)!;
 
   // The Project picker is shown whenever the dialog knows the projects, for a new card and for an
@@ -372,6 +408,24 @@ export function CardDialog({
       await api.tickOrchestrators(scopedOrchestrator.id);
       onDispatched?.();
       onSaved(saved);
+      onClose();
+    } catch (e) {
+      setDispatchError((e as Error).message);
+    } finally {
+      setDispatching(false);
+    }
+  }
+
+  /** Hand the card to the orchestrator's running chat as a message (PM-202). */
+  async function sendToChat() {
+    if (!card || !scopedOrchestrator) return;
+    setDispatching(true);
+    setDispatchError(null);
+    try {
+      const saved = await ensureCard();
+      await api.sendCardToOrchestratorChat(scopedOrchestrator.id, saved.id);
+      onDispatched?.();
+      if (creating) onSaved(saved);
       onClose();
     } catch (e) {
       setDispatchError((e as Error).message);
@@ -559,7 +613,8 @@ export function CardDialog({
                 {HAND_MODES.filter(
                   (m) =>
                     (m.value !== 'send' || liveSessions.length > 0) &&
-                    (m.value !== 'orchestrator' || scopedOrchestrator !== null),
+                    (m.value !== 'orchestrator' || scopedOrchestrator !== null) &&
+                    (m.value !== 'chat' || (scopedOrchestrator !== null && chatRunning)),
                 ).map((m) => (
                   <label key={m.value} className="hand-mode" title={m.title}>
                     <input
@@ -594,7 +649,7 @@ export function CardDialog({
                     })}
                     onChange={setAttachTo}
                   />
-                ) : mode === 'orchestrator' ? null : (
+                ) : mode === 'orchestrator' || mode === 'chat' ? null : (
                   <Dropdown
                     label="Agent"
                     value={dispatchProvider}
@@ -624,7 +679,9 @@ export function CardDialog({
                       ? liveSessions.length === 0
                       : mode === 'orchestrator'
                         ? !scopedOrchestrator
-                        : !selectedProvider?.available)
+                        : mode === 'chat'
+                          ? !scopedOrchestrator || !chatRunning
+                          : !selectedProvider?.available)
                   }
                   onClick={
                     mode === 'run'
@@ -633,7 +690,9 @@ export function CardDialog({
                         ? sendToSession
                         : mode === 'orchestrator'
                           ? sendToOrchestrator
-                          : () => openInTerminal(true)
+                          : mode === 'chat'
+                            ? sendToChat
+                            : () => openInTerminal(true)
                   }
                 >
                   {dispatching ? 'Working…' : modeInfo.action}
@@ -649,6 +708,12 @@ export function CardDialog({
                 <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
                   “{scopedOrchestrator.name}” covers this project. Sending creates the card in To do
                   and asks that orchestrator to pick it up now.
+                </p>
+              )}
+              {mode === 'chat' && scopedOrchestrator && (
+                <p className="faint" style={{ margin: 0, fontSize: 12.5 }}>
+                  Messages “{scopedOrchestrator.name}” in its open chat to work this card directly.
+                  It is refused while the chat is busy or asking you something.
                 </p>
               )}
               {(mode === 'terminal' || mode === 'run') && (

@@ -628,3 +628,41 @@ it('tracks scoped direct chat work and hides replaced, stopped or reviewed tasks
   expect(chat.currentWork('master-1')).toBeNull();
   db.close();
 });
+
+it('sends one in-scope card to a running, idle chat and refuses every other case (PM-202)', () => {
+  const { chat, sessions, supervisor, mine, other, db } = setup();
+  const session = {
+    id: 5,
+    orchestratorId: 'master-1',
+    providerId: 'codex',
+    status: 'running',
+    tailState: 'idle',
+  } as AgentSession;
+  sessions.push(session);
+  vi.spyOn(chat, 'session').mockReturnValue(session);
+  expect(chat.chatState('master-1')).toEqual({ running: true, state: 'idle' });
+
+  expect(() => chat.sendCard('master-1', other.id)).toThrow(/not found in this orchestrator/);
+  expect(supervisor.sendInput).not.toHaveBeenCalled();
+
+  session.tailState = 'input';
+  expect(() => chat.sendCard('master-1', mine.id)).toThrow(/asking you something/);
+  session.tailState = 'running';
+  expect(() => chat.sendCard('master-1', mine.id)).toThrow(/busy/);
+  expect(supervisor.sendInput).not.toHaveBeenCalled();
+
+  session.tailState = 'idle';
+  chat.sendCard('master-1', mine.id);
+  const [id, text, echo] = supervisor.sendInput.mock.calls[0] as [number, string, boolean];
+  expect([id, echo]).toEqual([5, false]);
+  expect(text).toContain(mine.key);
+  expect(text).toContain('Add login');
+  expect(text).toContain('do not dispatch workers');
+
+  session.status = 'killed';
+  expect(chat.chatState('master-1')).toEqual({ running: false, state: null });
+  expect(() => chat.sendCard('master-1', mine.id)).toThrow(/stopped/);
+  expect(supervisor.sendInput).toHaveBeenCalledTimes(1);
+  expect(getCard(db, mine.id)?.status).toBe('todo');
+  db.close();
+});
