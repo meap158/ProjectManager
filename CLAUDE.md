@@ -105,3 +105,9 @@ anything.
 - `node:sqlite` is "experimental" in Node 22. Its warning is suppressed in the launcher, not removed.
 
 - PM-171: `server/agents/providerTranscripts.ts` adapts pinned OpenCode SQLite and Grok JSONL conversations to shared chat items. Reads are read-only and scoped to both conversation ID and working directory; never infer the latest conversation. OpenCode snapshots capture in-place changes, Grok snapshots coalesce text chunks. `next` is a content revision for these providers, not a byte offset; changed snapshots set `reset`.
+
+## Local notes, human tasks and launcher titles
+
+- `AGENT_HANDOVER.md` is local only and git-ignored. Never stage or commit it; if it is ever tracked, untrack it without deleting the file. Update it after meaningful work so the next agent can resume.
+- `References/DEV_TASKS.html` (local, git-ignored) tracks work only a person can do: accounts, credentials, approvals, real-device checks and decisions. Do the work yourself first. Add or update a task only when a human really has to act, with exact steps and what you can continue with meanwhile. Mark a task Completed only with evidence or the owner's confirmation. Never put secrets in it. It is view-only: statuses are edited in the file, so never imply a browser change was saved.
+- Launcher windows carry descriptive titles that name the project and the service (for example `ProjectName - Frontend`). Keep the titles, the single obvious launch command and the automatic port fallback working when you change startup.
