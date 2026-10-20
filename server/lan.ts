@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import os from 'node:os';
 import type { LanDevice, LanStatus } from '../shared/types.js';
 import type { Db } from './db.js';
+import { gzipResponse } from './lanCompress.js';
 import { getSetting, setSetting } from './store.js';
 
 // Opt-in LAN access. ProjectManager can read any folder and run agent CLIs, so the loopback
@@ -72,10 +73,17 @@ function localName(): string | null {
   return /^[a-z0-9-]{1,63}$/.test(name) ? `${name}.local` : null;
 }
 
+/** How long the Host allowlist is reused: reading the adapters takes ~3 ms on Windows. */
+const HOSTS_TTL_MS = 5_000;
+let hostsCache: { hosts: Set<string>; at: number } | null = null;
+
 /** Host names a LAN device may use for this machine (DNS-rebinding guard). */
 function allowedHosts(): Set<string> {
+  if (hostsCache && Date.now() - hostsCache.at < HOSTS_TTL_MS) return hostsCache.hosts;
   const name = os.hostname().toLowerCase();
-  return new Set([...lanAddresses(), name, `${name}.local`]);
+  const hosts = new Set([...lanAddresses(), name, `${name}.local`]);
+  hostsCache = { hosts, at: Date.now() };
+  return hosts;
 }
 
 /** Response headers on everything the LAN listener sends itself. */
@@ -412,6 +420,8 @@ export class LanAccess {
     // Signed in: handle like a local request, but marked as coming from the LAN.
     setHeader(req, 'host', new URL(this.localOrigin()).host);
     setHeader(req, LAN_HEADER, '1');
+    // Pages, scripts and styles go out gzipped (the API compresses its own JSON and streams).
+    if (!url.pathname.startsWith('/api/')) gzipResponse(req, res);
     this.handler(req, res);
   };
 
@@ -484,6 +494,8 @@ export class LanAccess {
     });
     server.headersTimeout = 10_000; // Slow-header clients don't hold sockets open.
     server.requestTimeout = 60_000; // Request bodies only; live output streams are unaffected.
+    // Phones poll every few seconds: keep their connections instead of a new handshake each time.
+    server.keepAliveTimeout = 65_000;
     const ok = await new Promise<boolean>((resolve) => {
       server.once('error', () => resolve(false));
       server.listen(port, host, () => resolve(true));

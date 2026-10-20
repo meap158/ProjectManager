@@ -312,6 +312,10 @@ header; maximize a pane to give the CLI more screen space.
 
 Tip: add it to your home screen (Safari: Share → Add to Home Screen) to open it like an app.
 
+Phones get pages and scripts gzipped and without the development source maps (about 1 MB
+instead of 13 MB on a first visit). For the fastest phone loads, run the production build:
+`npm run build`, then `npm start`.
+
 In an agent's terminal, **swipe** to scroll back through the terminal, including the prompt and
 footer in normal terminal mode. Touch updates are combined per display frame; full-screen
 terminal apps keep their own scroll handling. To show an agent a picture, open **⋯** in the
@@ -452,8 +456,6 @@ Mobile chat is available for Claude Code, Codex, OpenCode and Grok PTY sessions.
 
 PM-192: shared Dropdown menus with 8+ options include a searchable list; short lists retain their existing presentation (callers may override searchable). Filtering matches label, description and hint without accent/case sensitivity, never changes selection by itself, and reports no matches. Keyboard arrows/Enter/Escape and multi-select remain supported. Search fits inside the existing viewport-bounded popup with a 32px input row and 16px text to avoid iPhone focus zoom. Closed trigger sizing and the 360px menu cap remain unchanged; no permanent extra control or enlarged field. Browser/Windows runtime initialization failed with "failed to write kernel assets ... os error 3", so physical phone visual QA remains outstanding.
 
-
 PM-197: saved Codex profiles default to inclusion in automatic switching. With global automatic switching enabled, each saved row offers Include in automatic switching; opt-outs persist in the profile registry and nextUnused skips them, including unknown/exhausted fallback selection. Manual switching stays available. Turning global automation off hides the row controls without resetting eligibility. No saved credential content is returned or changed. Focused account regressions: 22 passing, covering persistence/defaults/rotation/manual selection and conditional UI. Server reload is needed for the new eligibility endpoint and selection behavior.
-
 
 PM-196: Claude saved profiles now display usage from credential-specific statusline snapshots instead of hardcoded unsupported. Statusline identity is a SHA256 fingerprint pinned at session launch; no token is included in settings command or returned payload. A session started before identity pinning continues only the global cache. Only matching snapshots populate account rows; missing shows not_loaded, expired snapshot stale. Selected profile reads live refreshed credential. Requires server reload and newly started/relaunched Claude session reply to collect attributable usage; no login switched or model call made. Validation:23 focused account/UI/limits tests passed, then14 attribution/limits tests after launch-pin hardening; types/lint/diff checks pass. Existing unrelated shared changes and scratch test preserved.
