@@ -24,7 +24,7 @@ export function withoutInlineMap(body: Buffer): Buffer {
   return /^[^\n]*\s*$/.test(tail) ? body.subarray(0, at + 1) : body;
 }
 
-/** Compressed bodies by URL + ETag: Vite's deps are immutable, and modules keep their ETag. */
+/** Compressed bodies by URL + version (ETag, else Last-Modified): unchanged files reuse theirs. */
 const CACHE_LIMIT_BYTES = 48 * 1024 * 1024;
 const cache = new Map<string, Buffer>();
 let cacheBytes = 0;
@@ -135,8 +135,9 @@ export function gzipResponse(req: IncomingMessage, res: ServerResponse): void {
       finish(body, false);
       return res;
     }
-    const etag = res.getHeader('etag');
-    const key = etag ? `${req.url}\0${String(etag)}` : null;
+    // The production static server sends Last-Modified but no ETag.
+    const version = res.getHeader('etag') ?? res.getHeader('last-modified');
+    const key = version ? `${req.url}\0${String(version)}` : null;
     const cached = key ? recall(key) : undefined;
     if (cached) {
       finish(cached, true);

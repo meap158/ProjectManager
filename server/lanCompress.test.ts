@@ -1,5 +1,11 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, request, type RequestListener, type Server } from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { getRequestListener } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { Hono } from 'hono';
 import { afterEach, describe, expect, it } from 'vitest';
 import { gzipResponse, withoutInlineMap } from './lanCompress.js';
 
@@ -18,11 +24,14 @@ async function serve(handler: RequestListener) {
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as { port: number }).port;
-  return (headers: Record<string, string> = { 'accept-encoding': 'gzip, deflate' }) =>
+  return (
+    headers: Record<string, string> = { 'accept-encoding': 'gzip, deflate' },
+    path = '/x.js',
+  ) =>
     new Promise<Reply>((resolve, reject) => {
       const start = Date.now();
       let firstMs = -1;
-      const req = request({ host: '127.0.0.1', port, path: '/x.js', headers }, (res) => {
+      const req = request({ host: '127.0.0.1', port, path, headers }, (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => {
           if (firstMs < 0) firstMs = Date.now() - start;
@@ -125,5 +134,23 @@ describe('withoutInlineMap', () => {
     expect(withoutInlineMap(Buffer.from(external)).toString()).toBe(external);
     const notLast = code + map + 'export const b = 2;\n';
     expect(withoutInlineMap(Buffer.from(notLast)).toString()).toBe(notLast);
+  });
+});
+
+describe('gzipResponse with the production static server', () => {
+  it('gzips files served by serveStatic, byte for byte', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'pm-gzip-'));
+    try {
+      writeFileSync(path.join(dir, 'app.js'), script);
+      const app = new Hono();
+      app.use('/*', serveStatic({ root: path.relative(process.cwd(), dir) }));
+      const get = await serve(getRequestListener(app.fetch));
+      const reply = await get({ 'accept-encoding': 'gzip, deflate' }, '/app.js');
+      expect(reply.status).toBe(200);
+      expect(reply.headers['content-encoding']).toBe('gzip');
+      expect(gunzipSync(reply.body).toString()).toBe(script);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

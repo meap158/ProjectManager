@@ -72,6 +72,12 @@ async function main() {
   if (config.isProduction) {
     // dist/server/index.js -> dist/client
     const clientDir = path.relative(process.cwd(), path.join(here, '..', 'client'));
+    // Built assets carry a content hash in their name: browsers (phones on the LAN especially)
+    // keep them instead of downloading the bundle again on every visit.
+    root.use('/assets/*', async (c, next) => {
+      await next();
+      if (c.res.status === 200) c.header('cache-control', 'public, max-age=31536000, immutable');
+    });
     root.use('/*', serveStatic({ root: clientDir }));
     root.get('*', serveStatic({ path: path.join(clientDir, 'index.html') }));
     handle = getRequestListener(root.fetch);
