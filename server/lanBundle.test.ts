@@ -12,16 +12,20 @@ type Reply = { status: number; headers: Record<string, unknown>; body: string };
 const cleanup: (() => void)[] = [];
 afterEach(() => cleanup.splice(0).forEach((fn) => fn()));
 
-function setup() {
+function setup(waitMs = 30) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pm-lan-bundle-'));
   const builds: { dir: string; done: () => void; fail: (e: Error) => void }[] = [];
-  const bundle = new LanBundle(root, (dir) => {
-    mkdirSync(path.join(dir, 'assets'), { recursive: true });
-    writeFileSync(path.join(dir, 'index.html'), `<p>build ${builds.length + 1}</p>`);
-    writeFileSync(path.join(dir, 'assets', `chunk-${builds.length + 1}.js`), 'export {}');
-    writeFileSync(path.join(dir, 'icon.svg'), '<svg/>');
-    return new Promise<void>((done, fail) => builds.push({ dir, done, fail }));
-  });
+  const bundle = new LanBundle(
+    root,
+    (dir) => {
+      mkdirSync(path.join(dir, 'assets'), { recursive: true });
+      writeFileSync(path.join(dir, 'index.html'), `<p>build ${builds.length + 1}</p>`);
+      writeFileSync(path.join(dir, 'assets', `chunk-${builds.length + 1}.js`), 'export {}');
+      writeFileSync(path.join(dir, 'icon.svg'), '<svg/>');
+      return new Promise<void>((done, fail) => builds.push({ dir, done, fail }));
+    },
+    waitMs,
+  );
   const server: Server = createServer((req, res) => {
     void bundle.serve(req, res).then((served) => served || res.writeHead(200).end('dev'));
   });
@@ -70,6 +74,14 @@ describe('LanBundle', () => {
     expect(chunk.headers['content-type']).toBe('text/javascript; charset=utf-8');
     expect((await get('/src/main.tsx', '*/*')).body).toBe('dev');
     expect(builds).toHaveLength(1);
+  });
+
+  it('lets a page request wait briefly for a quick build', async () => {
+    const { builds, get } = setup(2_000);
+    const page = get('/');
+    while (!builds.length) await new Promise((r) => setTimeout(r, 5));
+    builds[0]!.done();
+    expect((await page).body).toBe('<p>build 1</p>');
   });
 
   it('never serves a page from a build the source has moved past', async () => {

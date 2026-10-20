@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { createReadStream, rmSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { createReadStream, readdirSync } from 'node:fs';
+import { rm, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,8 +9,8 @@ import path from 'node:path';
 // Phones get no hot reload over the LAN, so Vite's dev modules only cost them: ~110 requests in
 // an import waterfall (~1.4 s on a 20 Mbit/s, 30 ms link) against ~28 built files (~0.2 s).
 //  - Never stale: a page is served from the bundle only when no client file changed since its
-//    build started (Vite's watcher bumps a generation). Otherwise the dev modules are served as
-//    before and one background build starts.
+//    build started (Vite's watcher bumps a generation). Otherwise one build starts, the page
+//    request waits up to 2 s for it, and gets the dev modules as before if it takes longer.
 //  - Builds only when a LAN device asks for a page, in a child process at below-normal priority
 //    (other sessions edit client files constantly; the CPU budget matters).
 //  - Each build gets its own folder under <dataDir>/lan-client. Older folders stay for a few
@@ -18,6 +18,8 @@ import path from 'node:path';
 
 /** A failed build waits this long before the next try (dev modules are served meanwhile). */
 const RETRY_MS = 60_000;
+/** A page request waits this long for a running build (builds take about a second). */
+const WAIT_MS = 2_000;
 /** How long a replaced build keeps serving its files to pages that loaded it. */
 const KEEP_OLD_MS = 10 * 60_000;
 
@@ -83,14 +85,25 @@ export class LanBundle {
   private generation = 0;
   private seq = 0;
   private builds: Build[] = [];
-  private building = false;
+  /** The running build (it never rejects), shared by every page request waiting on it. */
+  private pending: Promise<void> | null = null;
   private failedAt = 0;
 
   constructor(
     private root: string,
     private build: Builder,
+    /** How long a page request waits for a running build before taking the dev modules. */
+    private waitMs = WAIT_MS,
   ) {
-    rmSync(root, { recursive: true, force: true }); // Earlier runs' builds: stale by definition.
+    // Earlier runs' builds are stale by definition. This process builds into `<pid>-<n>`, so a
+    // build an earlier server left running never shares a folder with ours.
+    let old: string[] = [];
+    try {
+      old = readdirSync(root);
+    } catch {
+      // No folder yet.
+    }
+    for (const name of old) remove(path.join(root, name));
   }
 
   /** A client file changed: the current build no longer matches the source. */
@@ -98,22 +111,19 @@ export class LanBundle {
     this.generation++;
   }
 
-  /** The newest build, when it matches the current source; otherwise starts one and says null. */
-  fresh(): string | null {
+  /** The newest build's folder, when it matches the current source. */
+  private current(): string | null {
     const newest = this.builds[0];
-    if (newest && newest.generation === this.generation) return newest.dir;
-    this.start();
-    return null;
+    return newest && newest.generation === this.generation ? newest.dir : null;
   }
 
   private start(): void {
-    if (this.building || Date.now() - this.failedAt < RETRY_MS) return;
-    this.building = true;
+    if (this.pending || Date.now() - this.failedAt < RETRY_MS) return;
     const generation = this.generation;
-    const dir = path.join(this.root, String(++this.seq));
-    this.build(dir).then(
+    const dir = path.join(this.root, `${process.pid}-${++this.seq}`);
+    this.pending = this.build(dir).then(
       () => {
-        this.building = false;
+        this.pending = null;
         const now = Date.now();
         for (const old of this.builds) old.replacedAt ??= now;
         this.builds.unshift({ dir, generation });
@@ -121,10 +131,10 @@ export class LanBundle {
         // Source changed during the build: it is stale already, the next page request rebuilds.
       },
       (error: Error) => {
-        this.building = false;
+        this.pending = null;
         this.failedAt = Date.now();
         console.warn('[lan] client build failed; serving dev modules:', error.message);
-        rmSync(dir, { recursive: true, force: true });
+        remove(dir);
       },
     );
   }
@@ -133,7 +143,7 @@ export class LanBundle {
     const now = Date.now();
     this.builds = this.builds.filter((b, i) => {
       if (i === 0 || now - (b.replacedAt ?? now) < KEEP_OLD_MS) return true;
-      rmSync(b.dir, { recursive: true, force: true });
+      remove(b.dir);
       return false;
     });
   }
@@ -155,12 +165,8 @@ export class LanBundle {
     if (pathname !== '/') {
       // Hashed chunks from any kept build; unhashed public files (icons) only when fresh.
       const hashed = pathname.startsWith('/assets/');
-      const newest = this.builds[0];
-      const candidates = hashed
-        ? this.builds
-        : newest?.generation === this.generation
-          ? [newest]
-          : [];
+      const fresh = this.builds.find((b) => b.dir === this.current());
+      const candidates = hashed ? this.builds : fresh ? [fresh] : [];
       for (const build of candidates) {
         const file = path.join(build.dir, pathname);
         if (!file.startsWith(build.dir + path.sep)) return false; // No way out of the folder.
@@ -173,14 +179,35 @@ export class LanBundle {
     }
     const navigation = (req.headers.accept ?? '').includes('text/html');
     if (!navigation) return false;
-    const dir = this.fresh();
-    if (!dir) return false;
+    let dir = this.current();
+    if (!dir) {
+      // A build takes about a second: worth waiting for, as a dev-loaded page also runs
+      // development React for the whole visit.
+      this.start();
+      if (this.pending) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          this.pending,
+          new Promise((resolve) => (timer = setTimeout(resolve, this.waitMs))),
+        ]);
+        clearTimeout(timer);
+      }
+      dir = this.current();
+      if (!dir) return false;
+    }
     const file = path.join(dir, 'index.html');
     const info = await stat(file).catch(() => null);
     if (!info) return false;
     send(req, res, file, info, false);
     return true;
   }
+}
+
+/** Best effort: Windows can hold a just-built file open (antivirus scans); never throw. */
+function remove(dir: string): void {
+  rm(dir, { recursive: true, force: true, maxRetries: 3 }).catch((error: Error) =>
+    console.warn('[lan] could not remove an old client build:', error.message),
+  );
 }
 
 function send(

@@ -87,18 +87,28 @@ async function main() {
     // Development: Vite runs inside this process (middleware mode), sharing our port, including
     // its HMR websocket. Imported lazily so production never loads Vite.
     const { createServer: createVite } = await import('vite');
-    const vite = await createVite({
-      configFile: path.join(here, '..', 'vite.config.ts'),
-      server: { middlewareMode: true, hmr: { server } },
-      appType: 'spa',
-    });
-    const api = getRequestListener(root.fetch);
     // LAN devices get a production build of the client once one matches the source (PM-203).
     const lanBundle = new LanBundle(
       path.join(config.dataDir, 'lan-client'),
       viteBuilder(path.join(here, '..')),
     );
-    vite.watcher.on('all', () => lanBundle.changed());
+    const vite = await createVite({
+      configFile: path.join(here, '..', 'vite.config.ts'),
+      server: { middlewareMode: true, hmr: { server } },
+      appType: 'spa',
+      plugins: [
+        {
+          // A plugin, not vite.watcher: Vite swaps in a new watcher when it restarts itself
+          // (config or .env change), and this hook runs again for it.
+          name: 'pm-lan-bundle-freshness',
+          configureServer(dev) {
+            lanBundle.changed();
+            dev.watcher.on('all', () => lanBundle.changed());
+          },
+        },
+      ],
+    });
+    const api = getRequestListener(root.fetch);
     handle = (req: IncomingMessage, res: ServerResponse) => {
       if (req.url?.startsWith('/api/') || req.url === '/api') api(req, res);
       else if (req.headers[LAN_HEADER] !== '1') vite.middlewares(req, res);
