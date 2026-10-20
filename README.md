@@ -312,9 +312,10 @@ header; maximize a pane to give the CLI more screen space.
 
 Tip: add it to your home screen (Safari: Share → Add to Home Screen) to open it like an app.
 
-Phones get pages and scripts gzipped and without the development source maps (about 1 MB
-instead of 13 MB on a first visit). For the fastest phone loads, run the production build:
-`npm run build`, then `npm start`.
+Phones load fast even while the app runs in development: they get a production build of the
+app (about 30 gzipped files, under 0.5 MB), made in the background the first time a phone opens
+a page and again after the code changes. Until it is ready, phones get the development files
+gzipped and without source maps. The build goes in `data/lan-client`.
 
 In an agent's terminal, **swipe** to scroll back through the terminal, including the prompt and
 footer in normal terminal mode. Touch updates are combined per display frame; full-screen

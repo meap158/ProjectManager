@@ -9,7 +9,8 @@ import { createApp } from './app.js';
 import { config } from './config.js';
 import { openDb } from './db.js';
 import { ALREADY_RUNNING_MARKER, claimInstance, isAlive, releaseInstance } from './instance.js';
-import { LanAccess } from './lan.js';
+import { LAN_HEADER, LanAccess } from './lan.js';
+import { LanBundle, viteBuilder } from './lanBundle.js';
 
 /** scripts/launch.mjs watches for this line to retry on the next port. Keep in sync with it. */
 const PORT_IN_USE_MARKER = '[server] EADDRINUSE';
@@ -92,9 +93,20 @@ async function main() {
       appType: 'spa',
     });
     const api = getRequestListener(root.fetch);
+    // LAN devices get a production build of the client once one matches the source (PM-203).
+    const lanBundle = new LanBundle(
+      path.join(config.dataDir, 'lan-client'),
+      viteBuilder(path.join(here, '..')),
+    );
+    vite.watcher.on('all', () => lanBundle.changed());
     handle = (req: IncomingMessage, res: ServerResponse) => {
       if (req.url?.startsWith('/api/') || req.url === '/api') api(req, res);
-      else vite.middlewares(req, res);
+      else if (req.headers[LAN_HEADER] !== '1') vite.middlewares(req, res);
+      else
+        void lanBundle.serve(req, res).then(
+          (served) => served || vite.middlewares(req, res),
+          () => vite.middlewares(req, res),
+        );
     };
     server.on('request', handle);
     server.on('close', () => void vite.close());
