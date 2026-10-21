@@ -6,6 +6,11 @@ or chat history.
 
 ## 1. Principles
 
+Agents list rows offer Continue for running AI CLIs, submitting a message without restarting.
+Continue shows pending/sent/queued feedback and prevents duplicate in-flight sends. Show in pane
+uses a pane icon with an accessible name and tooltip. On phones Continue is icon-only and row
+actions retain 44px touch targets with compact gaps; desktop keeps the Continue label.
+
 Settings > Agent CLIs keeps saved accounts inside each Codex/Claude entry's Accounts drawer.
 Usage status and meters sit in a separate block with an 8px gap below account details and
 6px between status and meters. The open drawer revalidates usage each minute; server-side
@@ -798,11 +803,8 @@ On phones, account toolbar actions (refresh all usage, save current login, impor
 
 PM-192: shared Dropdown menus with 8+ options include a searchable list; short lists retain their existing presentation (callers may override searchable). Filtering matches label, description and hint without accent/case sensitivity, never changes selection by itself, and reports no matches. Keyboard arrows/Enter/Escape and multi-select remain supported. Search fits inside the existing viewport-bounded popup with a 32px input row and 16px text to avoid iPhone focus zoom. Closed trigger sizing and the 360px menu cap remain unchanged; no permanent extra control or enlarged field. Browser/Windows runtime initialization failed with "failed to write kernel assets ... os error 3", so physical phone visual QA remains outstanding.
 
-
 PM-197: saved Codex profiles default to inclusion in automatic switching. With global automatic switching enabled, each saved row offers Include in automatic switching; opt-outs persist in the profile registry and nextUnused skips them, including unknown/exhausted fallback selection. Manual switching stays available. Turning global automation off hides the row controls without resetting eligibility. No saved credential content is returned or changed. Focused account regressions: 22 passing, covering persistence/defaults/rotation/manual selection and conditional UI. Server reload is needed for the new eligibility endpoint and selection behavior.
 
-
 PM-198: account Auto-switch checkbox now sits inline beside metadata, wraps on narrow screens and retains its full accessible label. Credential switches merge local session indexes and copy missing/newer rollouts from the default and saved profile homes into the selected home; conversations are deduplicated by id, newest copies win, sealed reasoning is filtered on cross-account carry and authentication stays separate. Failed rollout carry refuses selection. 23 account tests pass, including two-way resume-history preservation, typecheck and focused lint pass. Requires server reload; native CLI picker end-to-end acceptance remains to verify without disrupting running sessions.
-
 
 PM-196: Claude saved profiles now display usage from credential-specific statusline snapshots instead of hardcoded unsupported. Statusline identity is a SHA256 fingerprint pinned at session launch; no token is included in settings command or returned payload. A session started before identity pinning continues only the global cache. Only matching snapshots populate account rows; missing shows not_loaded, expired snapshot stale. Selected profile reads live refreshed credential. Requires server reload and newly started/relaunched Claude session reply to collect attributable usage; no login switched or model call made. Validation:23 focused account/UI/limits tests passed, then14 attribution/limits tests after launch-pin hardening; types/lint/diff checks pass. Existing unrelated shared changes and scratch test preserved.

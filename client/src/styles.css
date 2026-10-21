@@ -6135,6 +6135,31 @@ span.path-link:hover .path-icon {
   }
 }
 
+/* Compact session shortcuts retain labels for assistive technology and touch targets. */
+.work-list .session-continue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+@media (max-width: 768px) {
+  .workspace .work-list .work-actions {
+    gap: 4px;
+  }
+  .workspace .work-list .work-actions .btn {
+    min-height: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
+  .workspace .work-list .work-actions .session-continue {
+    width: 44px;
+    padding: 0;
+  }
+  .workspace .work-list .session-continue-label {
+    display: none;
+  }
+}
+
 /* Account controls retain their accessible names in compact mobile rows. */
 .codex-account-info {
   overflow-wrap: anywhere;

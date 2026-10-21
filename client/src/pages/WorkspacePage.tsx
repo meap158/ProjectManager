@@ -46,6 +46,7 @@ import { ConfirmDelete } from '../components/ConfirmDelete';
 import { BatchAttentionActions } from '../components/BatchAttentionActions';
 import { BatchSessionMessage } from '../components/BatchSessionMessage';
 import { SessionToggle } from '../components/SessionToggle';
+import { SessionContinue } from '../components/SessionContinue';
 import { RunCard } from '../components/RunCard';
 import { LimitsStrip } from '../components/LimitsStrip';
 import { SessionImageButton } from '../components/SessionImageButton';
@@ -1459,13 +1460,25 @@ function WorkList({
       <>
         <button
           type="button"
-          className="btn btn-sm"
+          className="btn btn-sm btn-icon session-show-pane"
           title="Put this session in a pane"
           aria-label="Show in pane"
           onClick={() => onShowInPane(s.id)}
         >
-          Show<span className="phone-hide">in pane</span>
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden="true"
+          >
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M14 4v16M3 9h11" />
+          </svg>
         </button>
+        <SessionContinue session={s} onError={onError} />
         <SessionToggle
           session={s}
           onStart={() => change(() => api.startSession(s.id))}
