@@ -419,6 +419,12 @@ export function BatchAttentionActions({
       const cmd = resolveCommand(entry)!;
       setProgress((p) => ({ ...p, current: session.name }));
       try {
+        if (entry.overlay && (cmd.kind === 'key' || cmd.kind === 'line')) {
+          const fresh = await api.sessionScreen(session.id);
+          const overlay = detectAttentionOverlay(fresh.text, session);
+          if (JSON.stringify(overlay) !== JSON.stringify(entry.overlay))
+            throw new Error('Prompt changed; refresh screens before applying a choice');
+        }
         const queued = await sendCommand(session, cmd);
         if (queued) queuedCount++;
         setDeliveries((rows) => [

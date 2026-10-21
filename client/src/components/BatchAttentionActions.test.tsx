@@ -326,6 +326,32 @@ describe('BatchAttentionActions prompt cards (PM-165)', () => {
 });
 
 describe('BatchAttentionActions one prompt at a time', () => {
+  it('refuses a choice if the terminal prompt changed since inspection', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    vi.mocked(api.sessionScreen)
+      .mockResolvedValueOnce({ text: CODEX_GOAL_POPUP_SCREEN })
+      .mockResolvedValueOnce({ text: CLAUDE_LIMIT_MENU_SCREEN });
+    render(<BatchAttentionActions sessions={[makeSession(1, 'Changed CLI')]} isAttentionFilter />);
+    fireEvent.click(screen.getByRole('button', { name: 'Batch CLI choices (1)' }));
+    fireEvent.click(await screen.findByRole('button', { name: '1. Resume goal', hidden: true }));
+    await screen.findByText(/Prompt changed; refresh screens/);
+    expect(api.sendSessionInput).not.toHaveBeenCalled();
+    expect(HTMLDialogElement.prototype.close).not.toHaveBeenCalled();
+  });
+
+  it('does not send input when the live prompt cannot be read', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    vi.mocked(api.sessionScreen)
+      .mockResolvedValueOnce({ text: CODEX_GOAL_POPUP_SCREEN })
+      .mockRejectedValueOnce(new Error('Disconnected'));
+    render(<BatchAttentionActions sessions={[makeSession(1, 'Offline CLI')]} isAttentionFilter />);
+    fireEvent.click(screen.getByRole('button', { name: 'Batch CLI choices (1)' }));
+    fireEvent.click(await screen.findByRole('button', { name: '1. Resume goal', hidden: true }));
+    await screen.findByText(/Failed: Disconnected/);
+    expect(api.sendSessionInput).not.toHaveBeenCalled();
+  });
+
   it('stays open while other prompts are waiting, and closes after the last one', async () => {
     HTMLDialogElement.prototype.showModal = vi.fn();
     HTMLDialogElement.prototype.close = vi.fn();
