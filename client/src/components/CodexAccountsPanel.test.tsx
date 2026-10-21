@@ -18,6 +18,9 @@ vi.mock('./CpuBudgetPanel', () => ({
 vi.mock('./LanAccessPanel', () => ({
   LanAccessPanel: () => null,
 }));
+vi.mock('./RemoteAccessPanel', () => ({
+  RemoteAccessPanel: () => null,
+}));
 
 vi.mock('../api', () => ({
   api: {

@@ -50,6 +50,12 @@ anything.
   port + 100 as a fallback), off by default, devices sign in with a single-use expiring
   code (retired after 5 wrong tries) and then carry their own hashed device token, this machine's
   own LAN addresses only as Host, rate-limited sign-ins, and LAN settings refused from LAN clients. Never weaken that gate or bind the main server wider.
+  The one other exception is the opt-in **remote listener** (`server/remote.ts`,
+  `docs/REMOTE-ACCESS.md`): loopback only, reached through the owner's own Cloudflare Tunnel, and
+  every request needs the exact public Host, a valid Cloudflare Access token (`server/cfAccess.ts`),
+  an allowlisted email and an authenticator-code session (`server/totp.ts`). Remote settings and
+  secrets are answered on this computer only. Never weaken any of the four checks or let that
+  listener bind anything but 127.0.0.1.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
   the user explicitly starts may change project files. The one other exception is a pull request
   action the user confirms in the Pull requests tab: it may delete the PR's _local_ branch, and only

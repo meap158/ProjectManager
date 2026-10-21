@@ -18,6 +18,8 @@ import type {
   SessionTranscript,
   SlashCommand,
   LanStatus,
+  RemoteConfig,
+  RemoteStatus,
   AgentProviderStatus,
   AgentTerminal,
   AgentRun,
@@ -274,6 +276,18 @@ export const api = {
   /** Signs one LAN device out, or every device without an id. */
   lanSignOut: (deviceId?: string) =>
     request<LanStatus>('DELETE', deviceId ? `/lan/devices/${deviceId}` : '/lan/devices'),
+  /** Opt-in remote access through a Cloudflare Tunnel (Settings); only answers on this computer. */
+  remoteStatus: () => request<RemoteStatus>('GET', '/remote'),
+  remoteConfigure: (config: RemoteConfig) => request<RemoteStatus>('PUT', '/remote/config', config),
+  remoteBeginTotp: () => request<RemoteStatus>('POST', '/remote/totp', {}),
+  remoteConfirmTotp: (code: string) =>
+    request<RemoteStatus>('POST', '/remote/totp/confirm', { code }),
+  setRemote: (enabled: boolean) => request<RemoteStatus>('PUT', '/remote', { enabled }),
+  remoteSignOut: (sessionId?: string) =>
+    request<RemoteStatus>(
+      'DELETE',
+      sessionId ? `/remote/sessions/${sessionId}` : '/remote/sessions',
+    ),
   /** Global agent permissions and per-CLI overrides (Settings). */
   getCpuBudget: () => request<CpuBudget>('GET', '/agents/cpu-budget'),
   setCpuBudget: (threads: number) => request<CpuBudget>('PUT', '/agents/cpu-budget', { threads }),

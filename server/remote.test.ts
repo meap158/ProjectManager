@@ -150,7 +150,10 @@ describe('remote access gate', () => {
     const t = await setup();
     const base = { host: hostname };
     expect((await send(t.port, 'GET', '/', base)).status).toBe(403);
-    const forged = t.token().replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'));
+    // Tamper with the start of the signature: the last base64 character carries unused bits.
+    const parts = t.token().split('.');
+    parts[2] = (parts[2]![0] === 'A' ? 'B' : 'A') + parts[2]!.slice(1);
+    const forged = parts.join('.');
     expect(
       (await send(t.port, 'GET', '/', { ...base, 'cf-access-jwt-assertion': forged })).status,
     ).toBe(403);

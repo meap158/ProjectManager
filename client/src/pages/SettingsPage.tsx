@@ -15,6 +15,7 @@ import { AgentPermissionsPanel } from '../components/AgentPermissionsPanel';
 import { CodexAccountsPanel } from '../components/CodexAccountsPanel';
 import { CpuBudgetPanel } from '../components/CpuBudgetPanel';
 import { LanAccessPanel } from '../components/LanAccessPanel';
+import { RemoteAccessPanel } from '../components/RemoteAccessPanel';
 import { UsageLimits } from '../components/UsageLimits';
 import { Dropdown } from '../components/Dropdown';
 
@@ -244,6 +245,8 @@ export function SettingsPage() {
       <CpuBudgetPanel onError={setError} />
 
       <LanAccessPanel onError={setError} />
+
+      <RemoteAccessPanel onError={setError} />
 
       <section className="panel" aria-label="Boards">
         <div className="panel-header">

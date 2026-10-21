@@ -399,7 +399,9 @@ show up in the size on disk.
 <summary><b>Can it run on a server for my team?</b></summary>
 <br>
 It's built for one person on one computer. It can read your folders and run agents, so don't put
-it on the internet. LAN access is for your own devices at home.
+it on the internet directly. LAN access is for your own devices at home. If you need it from
+elsewhere, the opt-in Cloudflare Tunnel mode puts Cloudflare Access (MFA), an email list and an
+authenticator code in front of it: see [docs/REMOTE-ACCESS.md](docs/REMOTE-ACCESS.md).
 </details>
 
 ---
