@@ -11,6 +11,7 @@ import { openDb } from './db.js';
 import { ALREADY_RUNNING_MARKER, claimInstance, isAlive, releaseInstance } from './instance.js';
 import { LAN_HEADER, LanAccess } from './lan.js';
 import { LanBundle, viteBuilder } from './lanBundle.js';
+import { appendFileSync, mkdirSync } from 'node:fs';
 
 /** scripts/launch.mjs watches for this line to retry on the next port. Keep in sync with it. */
 const PORT_IN_USE_MARKER = '[server] EADDRINUSE';
@@ -19,6 +20,19 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 /** The launcher passes its PID: it owns this instance across dev restarts (tsx watch). */
 const launcherPid = Number(process.env.PM_LAUNCHER_PID) || null;
+
+// Observe fatal errors without suppressing Node's normal nonzero exit. The launcher also
+// watches this marker because tsx watch may stay alive after its server child crashes.
+process.on('uncaughtExceptionMonitor', (error, origin) => {
+  const detail = `${new Date().toISOString()} [server] FATAL ${origin}: ${error.stack ?? error}\n`;
+  try {
+    mkdirSync(config.dataDir, { recursive: true });
+    appendFileSync(path.join(config.dataDir, 'server-crashes.log'), detail);
+  } catch {
+    /* stderr remains available if the data disk cannot be written. */
+  }
+  process.stderr.write(detail);
+});
 
 async function main() {
   // Must run before the database/supervisor start: a second server would relaunch the same
@@ -184,7 +198,12 @@ async function main() {
   setInterval(() => {
     const worstMs = Math.round(loopDelay.max / 1e6);
     loopDelay.reset();
-    if (worstMs >= 1000) console.warn(`[perf] event loop was blocked for ${worstMs} ms`);
+    if (worstMs >= 1000) {
+      const memory = process.memoryUsage();
+      console.warn(
+        `${new Date().toISOString()} [perf] event loop was blocked for ${worstMs} ms; rss=${Math.round(memory.rss / 1048576)}MB heap=${Math.round(memory.heapUsed / 1048576)}MB`,
+      );
+    }
   }, 5000).unref();
 
   // Watchdog: if the launcher is killed hard (no chance to clean up), don't linger as an orphan.

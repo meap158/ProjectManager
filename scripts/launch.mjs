@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { childOutcome, recordServerOutput, restartBudget } from './serverRecovery.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIN_NODE = [22, 13];
@@ -82,6 +83,15 @@ function loadDotEnv(file) {
 // One server per data folder (see server/instance.ts). If one is already running, just open it.
 
 const dataDir = path.resolve(ROOT, process.env.DATA_DIR || 'data');
+process.on('uncaughtExceptionMonitor', (error, origin) => {
+  recordServerOutput(
+    dataDir,
+    `\n${new Date().toISOString()} [launch] FATAL ${origin}: ${error.stack ?? error}\n`,
+  );
+});
+process.on('exit', (code) => {
+  recordServerOutput(dataDir, `\n${new Date().toISOString()} [launch] exit code=${code}\n`);
+});
 
 async function runningInstanceUrl() {
   try {
@@ -212,6 +222,7 @@ function startServer(port) {
   ]) {
     stream.on('data', (chunk) => {
       const text = chunk.toString();
+      recordServerOutput(dataDir, text);
       if (text.includes(PORT_IN_USE_MARKER)) proc.portInUse = true;
       const at = text.indexOf(ALREADY_RUNNING_MARKER);
       if (at !== -1) {
@@ -229,9 +240,12 @@ function startServer(port) {
 async function waitUntilReady(port, proc) {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (proc.exitCode !== null || proc.portInUse || proc.alreadyRunning) return false;
+    if (proc.exitCode !== null || proc.recoveryFailed || proc.portInUse || proc.alreadyRunning)
+      return false;
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+      const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        signal: AbortSignal.timeout(1500),
+      });
       if (res.ok) return true;
     } catch {
       // Not listening yet.
@@ -259,6 +273,7 @@ const existingUrl = await runningInstanceUrl();
 if (existingUrl) handOver(existingUrl);
 
 const triedPorts = new Set();
+const mayRestart = restartBudget();
 for (let attempt = 0; attempt < 5; attempt++) {
   const port = await findFreePort(preferredPort, triedPorts);
   if (port === null) {
@@ -271,7 +286,7 @@ for (let attempt = 0; attempt < 5; attempt++) {
 
   log(`Starting ${prod ? 'production' : 'development'} server on port ${port}...`);
   child = startServer(port);
-  const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)));
+  let exited = childOutcome(child);
   const ready = await waitUntilReady(port, child);
 
   if (ready) {
@@ -282,8 +297,28 @@ for (let attempt = 0; attempt < 5; attempt++) {
     );
     console.log('  Press Ctrl+C to stop.\n');
     if (shouldOpen) openBrowser(url);
-    const code = await exited;
-    if (!shuttingDown) fail(`Server stopped unexpectedly (exit code ${code}).`);
+    while (!shuttingDown) {
+      const outcome = await exited;
+      if (shuttingDown) break;
+      killTree(child);
+      const detail = `code=${outcome.code} signal=${outcome.signal ?? 'none'}${outcome.error ? ` error=${outcome.error}` : ''}`;
+      recordServerOutput(
+        dataDir,
+        `\n${new Date().toISOString()} [launch] server stopped (${detail})\n`,
+      );
+      if (!mayRestart())
+        fail(`Server repeatedly crashed; see ${path.join(dataDir, 'server-output.log')}.`);
+      log(
+        `Server stopped (${detail}); restarting in 1s. Diagnostics: ${path.join(dataDir, 'server-output.log')}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (shuttingDown) break;
+      child = startServer(port);
+      exited = childOutcome(child);
+      // A failed restart also goes through the bounded recovery loop.
+      if (await waitUntilReady(port, child)) log(`Server recovered at ${url}`);
+      else if (child.exitCode === null) killTree(child);
+    }
     break;
   }
 

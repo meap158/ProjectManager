@@ -4,6 +4,11 @@
 
 # ProjectManager
 
+The launcher now recovers unexpected server exits automatically, with at most five restarts
+in five minutes. Ctrl+C still stops it. Crash output is saved in `data/server-output.log`
+(one rotated backup); fatal server stacks also go to `data/server-crashes.log`.
+After updating launcher code, start `npm run launch` again to load the recovery behavior.
+
 **Persistent AI coding sessions. Every project. Any screen.**<br>
 Organize Claude Code, Codex and other agent CLIs across your projects in one browser workspace.
 Keep sessions running when you close a tab, resume conversations after restarts, and work from
