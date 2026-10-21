@@ -8,8 +8,15 @@ import { compress } from 'hono/compress';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { BOARD_PRESETS, CARD_STATUSES } from '../shared/types.js';
-import type { DirectoryEntry, DirectoryListing, LanStatus } from '../shared/types.js';
+import type {
+  DirectoryEntry,
+  DirectoryListing,
+  LanStatus,
+  RemoteConfig,
+  RemoteStatus,
+} from '../shared/types.js';
 import { LAN_HEADER } from './lan.js';
+import { REMOTE_HEADER } from './remote.js';
 import type { Db } from './db.js';
 import { Scanner } from './scanner.js';
 import * as store from './store.js';
@@ -128,6 +135,15 @@ export function createApp(
       setEnabled(enabled: boolean): Promise<LanStatus>;
       newCode(): LanStatus;
       signOut(id?: string): LanStatus;
+    };
+    /** Opt-in Cloudflare Tunnel listener control (server/remote.ts); absent in tests. */
+    remote?: {
+      status(): RemoteStatus;
+      configure(input: RemoteConfig): Promise<RemoteStatus>;
+      beginTotp(): RemoteStatus;
+      confirmTotp(code: string): Promise<RemoteStatus>;
+      setEnabled(enabled: boolean): Promise<RemoteStatus>;
+      signOut(id?: string): RemoteStatus;
     };
     dataDir?: string;
     /** Run interactive sessions in the session host so they survive server restarts. */
@@ -437,6 +453,51 @@ export function createApp(
   app.post('/lan/new-code', (c) => c.json(lanOnly(c).newCode()));
   app.delete('/lan/devices/:id', (c) => c.json(lanOnly(c).signOut(c.req.param('id'))));
   app.delete('/lan/devices', (c) => c.json(lanOnly(c).signOut()));
+
+  // ---- Remote access through a Cloudflare Tunnel (opt-in; server/remote.ts) ---------------------
+  // Same rule as LAN, stricter: the Cloudflare details, the authenticator secret and the session
+  // list are answered on this computer only. Requests through the remote listener carry both
+  // markers and are refused here, so enrolment can never happen from the internet.
+  const remoteOnly = (c: Context) => {
+    if (c.req.header(LAN_HEADER) || c.req.header(REMOTE_HEADER))
+      throw new HttpError(403, 'Remote access settings can only be changed on this computer');
+    if (!options.remote) throw new HttpError(404, 'Remote access is not available');
+    return options.remote;
+  };
+  const failAsBadRequest = async <T>(run: () => T | Promise<T>): Promise<T> => {
+    try {
+      return await run();
+    } catch (error) {
+      throw new HttpError(400, error instanceof Error ? error.message : 'Request failed');
+    }
+  };
+  app.get('/remote', (c) => c.json(remoteOnly(c).status()));
+  app.put('/remote/config', async (c) => {
+    const remote = remoteOnly(c);
+    const body = await parseBody(
+      c,
+      z.object({
+        team: z.string().max(63),
+        aud: z.string().max(64),
+        hostname: z.string().max(253),
+        emails: z.array(z.string().max(254)).max(20),
+      }),
+    );
+    return c.json(await failAsBadRequest(() => remote.configure(body)));
+  });
+  app.post('/remote/totp', (c) => c.json(remoteOnly(c).beginTotp()));
+  app.post('/remote/totp/confirm', async (c) => {
+    const remote = remoteOnly(c);
+    const { code } = await parseBody(c, z.object({ code: z.string().max(16) }));
+    return c.json(await failAsBadRequest(() => remote.confirmTotp(code)));
+  });
+  app.put('/remote', async (c) => {
+    const remote = remoteOnly(c);
+    const { enabled } = await parseBody(c, z.object({ enabled: z.boolean() }));
+    return c.json(await failAsBadRequest(() => remote.setEnabled(enabled)));
+  });
+  app.delete('/remote/sessions/:id', (c) => c.json(remoteOnly(c).signOut(c.req.param('id'))));
+  app.delete('/remote/sessions', (c) => c.json(remoteOnly(c).signOut()));
 
   // ---- Preferences ------------------------------------------------------------------------------
   // The colour theme lives in the database as well as the browser: browser storage is tied to the

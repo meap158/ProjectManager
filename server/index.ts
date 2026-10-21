@@ -11,6 +11,7 @@ import { openDb } from './db.js';
 import { ALREADY_RUNNING_MARKER, claimInstance, isAlive, releaseInstance } from './instance.js';
 import { LAN_HEADER, LanAccess } from './lan.js';
 import { LanBundle, viteBuilder } from './lanBundle.js';
+import { RemoteAccess } from './remote.js';
 import { appendFileSync, mkdirSync } from 'node:fs';
 
 /** scripts/launch.mjs watches for this line to retry on the next port. Keep in sync with it. */
@@ -63,8 +64,17 @@ async function main() {
     '0.0.0.0',
     config.port,
   );
+  // Opt-in Cloudflare Tunnel listener (Settings → Remote access): loopback only, cloudflared
+  // forwards to it; Access login, an email allowlist and an authenticator code are all required.
+  const remote = new RemoteAccess(
+    db,
+    (req, res) => handle(req, res),
+    () => `http://localhost:${config.port}`,
+    config.port + 200,
+  );
   const api = createApp(db, {
     lan,
+    remote,
     dataDir: config.dataDir,
     // Sessions live in the session host and survive server restarts (AGENT_HOST=off disables).
     agentHost: process.env.AGENT_HOST !== 'off',
@@ -125,6 +135,7 @@ async function main() {
     const api = getRequestListener(root.fetch);
     handle = (req: IncomingMessage, res: ServerResponse) => {
       if (req.url?.startsWith('/api/') || req.url === '/api') api(req, res);
+      // Remote requests carry the LAN marker too, so they get the production bundle as well.
       else if (req.headers[LAN_HEADER] !== '1') vite.middlewares(req, res);
       else
         void lanBundle.serve(req, res).then(
@@ -151,6 +162,7 @@ async function main() {
       `[server] listening on http://${config.host}:${config.port} (${config.isProduction ? 'production' : 'development'})`,
     );
     void lan.restore();
+    void remote.restore();
   });
 
   // "localhost" resolves to ::1 first in browsers and Node, and Windows lets another app hold
@@ -179,6 +191,7 @@ async function main() {
       } finally {
         releaseInstance(config.dataDir, process.pid);
         await lan.stop();
+        await remote.stop();
         server.close();
         server.closeAllConnections();
         server6?.close();

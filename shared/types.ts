@@ -271,6 +271,44 @@ export interface LanStatus {
   error: string | null;
 }
 
+/** A signed-in remote browser session (Cloudflare Access identity + authenticator code). */
+export interface RemoteSession {
+  id: string;
+  email: string;
+  signedInAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+}
+
+/** What the Cloudflare tunnel front door needs (Settings; only ever answered on this computer). */
+export interface RemoteConfig {
+  /** Cloudflare Zero Trust team name: `<team>.cloudflareaccess.com`. */
+  team: string;
+  /** The Access application's AUD tag (64 hex characters). */
+  aud: string;
+  /** The public hostname the tunnel serves, for example `pm.example.com`. */
+  hostname: string;
+  /** Emails allowed in. Never empty while enabled. */
+  emails: string[];
+}
+
+/** Opt-in remote access through a Cloudflare Tunnel (server/remote.ts). */
+export interface RemoteStatus {
+  enabled: boolean;
+  running: boolean;
+  /** The loopback port cloudflared must send traffic to; null while stopped. */
+  port: number | null;
+  config: RemoteConfig;
+  /** True once an authenticator code has been confirmed. */
+  totpConfirmed: boolean;
+  /** Shown on this computer only, while enrolling: the secret and its otpauth link. */
+  pendingTotp: { secret: string; otpauth: string } | null;
+  sessions: RemoteSession[];
+  /** What is still missing before access can be switched on. */
+  missing: string[];
+  error: string | null;
+}
+
 /** A permission choice: one of the levels, or 'cli' = pass no flags, the CLI's own settings apply. */
 export type PermissionLevel = 'cli' | AgentAutonomy;
 
