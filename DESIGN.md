@@ -6,6 +6,10 @@ or chat history.
 
 ## 1. Principles
 
+PM-242: desktop agent rows align the card tag, state and action buttons with the session title;
+secondary facts sit below. Action groups size to their visible controls without a reserved
+minimum width, including ended sessions. Mobile retains its compact two-row arrangement.
+
 Agents list rows offer Continue for running AI CLIs, submitting a message without restarting.
 Continue shows pending/sent/queued feedback and prevents duplicate in-flight sends. Show in pane
 uses a pane icon with an accessible name and tooltip. On phones Continue is icon-only and row

@@ -364,10 +364,9 @@ export function AgentWorkList({
                 )}
               </span>
             </div>
-            {/* State and actions share one centre line, beside both text lines. */}
+            {/* Desktop metadata shares the title line; phones place controls below it. */}
             <span className="work-side">
-              {/* Card tag in a fixed right-hand column: tags line up, and names stay flush
-                  left right after the status dot whether or not a row has a card. */}
+              {/* An absent tag takes no reserved space. */}
               <span className="work-card-slot">
                 {w.item.cardKey && (
                   <span className="badge mono work-card-tag" title="Card this work is on">
@@ -391,8 +390,7 @@ export function AgentWorkList({
                   </span>
                 </span>
               )}
-              {/* Fixed-width actions group (empty for runs) keeps the card and state columns at
-                  the same x on every row. */}
+              {/* Size to the controls present, including the smaller ended-session group. */}
               <span className="work-actions">{actions?.(w)}</span>
             </span>
           </li>

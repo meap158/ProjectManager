@@ -2795,7 +2795,7 @@ kbd {
 }
 .work-actions {
   flex: none;
-  min-width: 222px; /* fits Open in workspace + Start/Stop + delete */
+  min-width: 0;
   display: inline-flex;
   justify-content: flex-end;
   align-items: center;
@@ -6088,19 +6088,31 @@ span.path-link:hover .path-icon {
   border-top: 0;
 }
 
-/* Desktop row metadata sizes to its content. Fixed 64/148px columns kept every
-   row's buttons aligned but left triple-digit dead space after short states
-   ("running" in a 148px column) and on rows without a card tag - the boxed
-   gap. Buttons now follow the state instead. */
+/* PM-242: metadata shares the title's row, and action width follows actual buttons. */
 @media (min-width: 769px) {
-  .work-list .work-side {
+  .work-list > li {
     display: grid;
-    grid-template-columns: auto auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     align-items: center;
-    column-gap: 12px;
-    padding-right: 6px;
+    gap: 2px 10px;
+  }
+  .work-list .work-row,
+  .work-list .work-side {
+    display: contents;
+  }
+  .work-list .work-line {
+    grid-column: 1;
+    grid-row: 1;
+    padding-left: 6px;
+  }
+  .work-list .work-facts {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    padding-left: 22px;
   }
   .work-list .work-card-slot {
+    grid-column: 2;
+    grid-row: 1;
     width: auto;
     align-items: center;
     justify-content: flex-end;
@@ -6109,6 +6121,8 @@ span.path-link:hover .path-icon {
     display: none;
   }
   .work-list .work-state {
+    grid-column: 3;
+    grid-row: 1;
     min-width: 0;
     width: auto;
     margin: 0;
@@ -6119,19 +6133,14 @@ span.path-link:hover .path-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-  }
-}
-
-/* Keep desktop action buttons in the final column when an empty card slot is hidden. */
-@media (min-width: 769px) {
-  .work-list .work-card-slot {
-    grid-column: 1;
-  }
-  .work-list .work-state {
-    grid-column: 2;
+    line-height: 1;
+    box-sizing: border-box;
   }
   .work-list .work-actions {
-    grid-column: 3;
+    grid-column: 4;
+    grid-row: 1;
+    min-width: 0;
+    margin: 0 6px 0 0;
   }
 }
 
