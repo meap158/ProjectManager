@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
 import { openDb } from '../db.js';
-import { effectiveLevel, withPermissions } from './permissions.js';
+import { claudeModeOnScreen, effectiveLevel, withPermissions } from './permissions.js';
 import { buildDispatchArgv, getProvider } from './providers.js';
 
 describe('agent permissions', () => {
@@ -83,5 +83,48 @@ describe('agent permissions', () => {
     expect(await (await call('GET')).json()).toEqual(value);
     expect((await call('PUT', { global: 'edit', providers: { bogus: 'read' } })).status).toBe(400);
     expect((await call('PUT', { global: 'god', providers: {} })).status).toBe(400);
+  });
+});
+
+describe('Claude Code mode across a relaunch', () => {
+  const screen = (footer: string) =>
+    `● Done.\n\n> \n────\n  ${footer} (shift+tab to cycle) · ← 2 agents\n`;
+
+  it('reads the mode from the footer', () => {
+    expect(claudeModeOnScreen(screen('⏵⏵ auto mode on'))).toBe('auto');
+    expect(claudeModeOnScreen(screen('⏵⏵ accept edits on'))).toBe('acceptEdits');
+    expect(claudeModeOnScreen(screen('⏸ plan mode on'))).toBe('plan');
+    expect(claudeModeOnScreen(screen('⏵⏵ bypass permissions on'))).toBe('bypassPermissions');
+    expect(claudeModeOnScreen('● Done.\n> \n  ? for shortcuts\n')).toBeNull();
+  });
+
+  it('keeps the mode it was in instead of the Settings default, never raising to bypass', () => {
+    const argv = ['claude', '--resume', 'x'];
+    expect(withPermissions('claude', 'edit', argv, {}, 'auto').command).toEqual([
+      'claude',
+      '--permission-mode',
+      'auto',
+      '--resume',
+      'x',
+    ]);
+    // Bypass only when Settings allows full access; otherwise the Settings level applies.
+    expect(withPermissions('claude', 'edit', argv, {}, 'bypassPermissions').command).toEqual([
+      'claude',
+      '--permission-mode',
+      'acceptEdits',
+      '--resume',
+      'x',
+    ]);
+    expect(withPermissions('claude', 'full', argv, {}, 'bypassPermissions').command[2]).toBe(
+      'bypassPermissions',
+    );
+    // Nothing shown: the Settings level, as before.
+    expect(withPermissions('claude', 'edit', argv, {}, null).command[2]).toBe('acceptEdits');
+    // Other CLIs are untouched by a carried Claude mode.
+    expect(withPermissions('codex', 'edit', ['codex'], {}, 'auto').command).toEqual([
+      'codex',
+      '--sandbox',
+      'workspace-write',
+    ]);
   });
 });

@@ -95,7 +95,12 @@ import {
   grokSessionExists,
   openCodeSessionFor,
 } from './conversations.js';
-import { effectiveLevel, getPermissions, withPermissions } from './permissions.js';
+import {
+  claudeModeOnScreen,
+  effectiveLevel,
+  getPermissions,
+  withPermissions,
+} from './permissions.js';
 import { forgetTurn, turnState } from './turnState.js';
 import { HostClient } from './host/client.js';
 import type { HostSessionInfo } from './host/protocol.js';
@@ -2304,12 +2309,19 @@ export class AgentSupervisor {
             env,
           )
         : { command: baseArgv, env };
-      // Global / per-CLI permission level (Settings), applied at every launch and relaunch.
+      // Global / per-CLI permission level (Settings), applied at every launch and relaunch. A
+      // relaunched Claude Code keeps the mode it was cycled to (its last screen's footer), read
+      // before this relaunch resets the terminal.
+      const carried =
+        isRelaunch && row.provider_id === 'claude'
+          ? claudeModeOnScreen(this.sessionScreen(row.id, 4000) ?? '')
+          : null;
       const permitted = withPermissions(
         row.provider_id,
         effectiveLevel(getPermissions(this.db), row.provider_id),
         connection.command,
         connection.env,
+        carried,
       );
       connection.command = permitted.command;
       connection.env = permitted.env;

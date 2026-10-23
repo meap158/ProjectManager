@@ -74,12 +74,47 @@ export function effectiveLevel(perms: AgentPermissions, providerId: string): Per
  * command[0]; flags go right after it (before any subcommand such as `codex resume <id>`), and
  * user-written flags for the same setting are left alone (the level is only added when absent).
  */
+/**
+ * The permission mode a Claude Code screen shows in its footer ("⏵⏵ auto mode on (shift+tab to
+ * cycle)"), as a `--permission-mode` value, or null when none is shown (the default mode, or no
+ * footer on screen).
+ */
+export function claudeModeOnScreen(screen: string): string | null {
+  const footer = screen
+    .split('\n')
+    .reverse()
+    .find((line) => line.includes('(shift+tab to cycle)'));
+  if (!footer) return null;
+  if (/\bauto mode on\b/.test(footer)) return 'auto';
+  if (/\baccept edits on\b/.test(footer)) return 'acceptEdits';
+  if (/\bplan mode on\b/.test(footer)) return 'plan';
+  if (/\bbypass permissions on\b/.test(footer)) return 'bypassPermissions';
+  if (/\bdon['’]t ask on\b/.test(footer)) return 'dontAsk';
+  return null;
+}
+
+/**
+ * The launch command with the Settings permission level applied. `carried` is the mode a Claude
+ * Code session was in before a relaunch (cycled with Shift+Tab): it is kept instead of the
+ * Settings default, or every restart reset "auto mode" to "accept edits". It never raises a
+ * session to bypassing permissions unless Settings allows full access.
+ */
 export function withPermissions(
   providerId: string,
   level: PermissionLevel,
   command: string[],
   env: Record<string, string>,
+  carried?: string | null,
 ): { command: string[]; env: Record<string, string> } {
+  if (
+    providerId === 'claude' &&
+    carried &&
+    command.length > 0 &&
+    !command.includes('--permission-mode') &&
+    (carried !== 'bypassPermissions' || level === 'full')
+  ) {
+    return { command: [command[0]!, '--permission-mode', carried, ...command.slice(1)], env };
+  }
   if (level === 'cli' || command.length === 0) return { command, env };
   if (providerId === 'opencode') {
     const existing = JSON.parse(
