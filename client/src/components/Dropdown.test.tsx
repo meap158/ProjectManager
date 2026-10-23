@@ -117,3 +117,24 @@ it('keeps empty searches and disabled results from selecting another value', () 
   expect(screen.queryByRole('listbox')).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Project' }));
 });
+it('does not focus the search field when a phone dropdown opens', () => {
+  const previous = window.matchMedia;
+  window.matchMedia = (() => ({ matches: true })) as unknown as typeof window.matchMedia;
+  try {
+    render(
+      <Dropdown
+        label="Project"
+        value="0"
+        onChange={() => {}}
+        options={Array.from({ length: 9 }, (_, i) => ({ value: String(i), label: `Project ${i}` }))}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Project' }));
+    const search = screen.getByRole('searchbox');
+    expect(document.activeElement).not.toBe(search);
+    search.focus();
+    expect(document.activeElement).toBe(search);
+  } finally {
+    window.matchMedia = previous;
+  }
+});

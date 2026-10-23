@@ -4,6 +4,15 @@ import { useState } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { WorkFilters, NO_FILTERS, type WorkFilterState } from './WorkFilters';
 afterEach(cleanup);
+it('marks the phone filter toggle expanded only while its controls are open', () => {
+  render(<Harness />);
+  const toggle = screen.getByRole('button', { name: 'Filters' });
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+});
 function Harness() {
   const [filters, setFilters] = useState<WorkFilterState>(NO_FILTERS);
   return (

@@ -99,7 +99,11 @@ export function Dropdown<T extends string | number>({
     if (enabled.length === 0) return;
     setQuery('');
     const selectedIndex = options.findIndex((o) => isSelected(o.value) && !o.disabled);
-    setFocusIndex(hasSearch ? -1 : atSelected && selectedIndex >= 0 ? selectedIndex : enabled[0]!);
+    // Avoid opening the phone keyboard before the user chooses to search.
+    const focusSearch = hasSearch && !window.matchMedia?.('(max-width: 768px)').matches;
+    setFocusIndex(
+      focusSearch ? -1 : atSelected && selectedIndex >= 0 ? selectedIndex : enabled[0]!,
+    );
     const trigger = triggerRef.current?.getBoundingClientRect();
     if (trigger) {
       const bounds = triggerRef.current!.closest('.dialog-body')?.getBoundingClientRect();

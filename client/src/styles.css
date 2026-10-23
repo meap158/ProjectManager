@@ -2850,7 +2850,9 @@ kbd {
   display: inline-flex;
   gap: 2px;
 }
-.view-switch .btn.is-active {
+.view-switch .btn.is-active,
+.workspace .work-filter-toggle[aria-expanded='true'],
+.workspace:has(#workspace-bulk-actions:popover-open) .btn[popovertarget='workspace-bulk-actions'] {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);

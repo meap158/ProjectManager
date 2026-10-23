@@ -63,6 +63,10 @@ and a progress bar. Delivery indicates terminal input submission, not an agent r
 On phones the composer opens on its heading, with a 16px message field; typing starts
 when the user taps it. Expanded mobile filters appear beneath the unchanged toolbar row.
 Mobile Filters uses a funnel icon and active-count badge with an accessible label.
+The filter toggle is highlighted while expanded and returns to its normal style when collapsed.
+The Agents Actions trigger uses the same selected styling as Panes/List while its menu is open.
+Searchable dropdowns on phones focus an option on opening; search takes focus only when chosen,
+so opening the project filter does not summon the software keyboard.
 Expanded filters use two compact columns, with Kind beside Search and Clear filters
 aligned at the right. Inputs retain 44px touch targets and 16px search text.
 Mobile pane actions keep Auto-continue and action icons together on one row.
