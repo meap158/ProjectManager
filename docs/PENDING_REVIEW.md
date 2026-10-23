@@ -23,3 +23,7 @@ Follow-up: scanner periodic refresh and commit/PR watchers now contain failures 
 boundary, log them and continue on the next poll. Regression tests inject a database read
 failure and verify the busy flag is released and polling resumes. This removes an uncaught
 timer/unhandled-promise path; it has not been linked to a captured production crash stack.
+
+Commit fingerprint acknowledgement also now happens only after card-reference processing
+succeeds. A transient processing failure retries the unchanged revision on the next poll;
+after success, unchanged revisions are skipped as before.

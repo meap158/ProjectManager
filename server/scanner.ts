@@ -274,10 +274,13 @@ export class Scanner {
           // Any local branch moving counts (worktrees and feature branches, not just HEAD).
           const head = await branchesFingerprint(path);
           if (!head || heads.get(id) === head) continue;
-          heads.set(id, head);
-          await this.applyCommitRefs(id).catch((e: Error) =>
-            console.error(`[cards] project ${id}: ${e.message}`),
-          );
+          try {
+            await this.applyCommitRefs(id);
+            // Failed processing must retry this same revision on the next poll.
+            heads.set(id, head);
+          } catch (error) {
+            console.error(`[cards] project ${id}:`, error);
+          }
         }
       } catch (error) {
         console.error('[cards] commit watcher failed:', error);
