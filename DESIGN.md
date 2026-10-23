@@ -65,6 +65,7 @@ when the user taps it. Expanded mobile filters appear beneath the unchanged tool
 Mobile Filters uses a funnel icon and active-count badge with an accessible label.
 The filter toggle is highlighted while expanded and returns to its normal style when collapsed.
 The Agents Actions trigger uses the same selected styling as Panes/List while its menu is open.
+Mobile workspace and session action toggles share that highlight while expanded.
 Searchable dropdowns on phones focus an option on opening; search takes focus only when chosen,
 so opening the project filter does not summon the software keyboard.
 Expanded filters use two compact columns, with Kind beside Search and Clear filters

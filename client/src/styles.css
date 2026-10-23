@@ -2852,6 +2852,8 @@ kbd {
 }
 .view-switch .btn.is-active,
 .workspace .work-filter-toggle[aria-expanded='true'],
+.workspace .workspace-mobile-actions .btn[aria-expanded='true'],
+.workspace .pane-head .pane-controls-toggle[aria-expanded='true'],
 .workspace:has(#workspace-bulk-actions:popover-open) .btn[popovertarget='workspace-bulk-actions'] {
   background: var(--accent-soft);
   border-color: var(--accent);
