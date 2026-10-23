@@ -87,7 +87,10 @@ describe('AccessVerifier', () => {
 
     const warn = console.warn;
     console.warn = () => {};
-    const down = new AccessVerifier(() => Promise.reject(new Error('offline')), () => now);
+    const down = new AccessVerifier(
+      () => Promise.reject(new Error('offline')),
+      () => now,
+    );
     expect(await down.verify(token(), config)).toBeNull();
     console.warn = warn;
   });
