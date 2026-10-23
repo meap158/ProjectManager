@@ -341,6 +341,37 @@ it('offers bulk Start stopped when a multi-selected status set includes Ended', 
   expect(api.startSession).toHaveBeenCalledTimes(1);
 });
 
+it.each(['all', 'idle', 'running', 'ended'])(
+  'shows Continue only in the Idle filter (%s)',
+  async (status) => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    localStorage.setItem('pm.workspace.view', 'list');
+    localStorage.setItem('pm.workspace.listFilters', JSON.stringify({ status }));
+    vi.mocked(api.getWorkspace).mockResolvedValue({ preset: '1', panes: [null], maximized: null });
+    vi.mocked(api.listAllSessions).mockResolvedValue([
+      {
+        ...session(1, 'Alpha'),
+        providerId: 'codex',
+        status: status === 'ended' ? 'exited' : 'running',
+        tailState: status === 'running' ? 'running' : 'idle',
+      },
+    ]);
+    render(
+      <MemoryRouter>
+        <WorkspacePage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('button', { name: 'Show Alpha' });
+    const button = screen.queryByRole('button', { name: 'Continue Alpha' });
+    if (status === 'idle') {
+      expect(button).not.toBeNull();
+      expect(button?.parentElement?.querySelectorAll('button')[0]).toBe(button);
+    } else {
+      expect(button).toBeNull();
+    }
+  },
+);
+
 it('keeps the open terminal mounted when an Idle session becomes Running', async () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
   localStorage.setItem('pm.workspace.view', 'list');
