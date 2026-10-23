@@ -19,6 +19,13 @@ tests. This is not a green full-suite result. Process tests remain sensitive to 
 concurrent edits also changed agent source during the run, so source line references shifted.
 Do not treat passing reruns as evidence of real-phone or live-login acceptance.
 
+Subsequent process-test rerun hit native V8 `Fatal process out of memory: Zone` errors and
+an unexpectedly exited worker; this is no longer just a timeout observation. At inspection,
+Windows reported about 1.85 GiB physical and 2.21 GiB virtual memory available (31.9 GiB RAM,
+55.6 GiB total virtual). No unrelated process was stopped. Removed the proposed broad agent
+test timeout increase; it cannot resolve allocation failure. Hosted launcher completion alone
+gets a bounded 10s poll instead of the 1s default, retaining the completion assertions.
+
 | Card                                                   | Current finding                                                                                                                                                                     | Next step                                                                                                            |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | PM-242                                                 | Implemented in c955bb2: desktop tag/status/control alignment; no 222px action minimum. 18 interaction tests and build passed.                                                       | Owner desktop/mobile visual acceptance.                                                                              |

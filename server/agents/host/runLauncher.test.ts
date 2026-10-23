@@ -29,7 +29,8 @@ it('launches a real pipe worker once and replays its completion after host resta
     launcher.launch(input, () => {
       throw new Error('Duplicate must not launch');
     });
-    await expect.poll(() => journal.get('attempt')?.state).toBe('exited');
+    // A real Node child can need more than Vitest's 1s polling default under CPU governance.
+    await expect.poll(() => journal.get('attempt')?.state, { timeout: 10_000 }).toBe('exited');
     expect(journal.get('attempt')).toMatchObject({ exitCode: 0, signal: null });
     expect(output).toContain('output');
     expect(output).toContain('error');
@@ -53,7 +54,7 @@ it('launches a real pipe worker once and replays its completion after host resta
     journal.close();
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 it('retains spawn failure without reauthorizing the same nonce', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'pm-run-launcher-'));
