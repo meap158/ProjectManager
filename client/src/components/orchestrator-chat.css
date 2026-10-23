@@ -146,6 +146,11 @@
     border-radius: 0;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   }
+  /* Full screen drops the panel's padding: the header (status, Stop, Chat/CLI) gets its own
+     gutter, or it sits flush with the screen edge and reads as cut off. */
+  .orchestrator-terminal.is-max > .orchestrator-terminal-head {
+    padding: 6px 10px 0;
+  }
   html:has(.orchestrator-terminal.is-max) .app-main {
     overflow: hidden;
   }
