@@ -246,7 +246,13 @@ export class Scanner {
         : Infinity;
       if (age >= maxAgeMs) this.start(stalest.id);
     };
-    const timer = setInterval(tick, checkMs);
+    const timer = setInterval(() => {
+      try {
+        tick();
+      } catch (error) {
+        console.error('[scan] periodic refresh failed:', error);
+      }
+    }, checkMs);
     timer.unref();
     return () => clearInterval(timer);
   }
@@ -273,6 +279,8 @@ export class Scanner {
             console.error(`[cards] project ${id}: ${e.message}`),
           );
         }
+      } catch (error) {
+        console.error('[cards] commit watcher failed:', error);
       } finally {
         busy = false;
       }
@@ -304,6 +312,8 @@ export class Scanner {
           const moves = await this.applyPullRequestRefs(id).catch(() => null);
           if (moves === null) retryAt.set(id, Date.now() + 30 * 60_000);
         }
+      } catch (error) {
+        console.error('[cards] pull request watcher failed:', error);
       } finally {
         busy = false;
       }

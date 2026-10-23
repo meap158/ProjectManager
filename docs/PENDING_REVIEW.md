@@ -18,3 +18,8 @@ implementation; many cards await owner/device acceptance. Do not relaunch worker
 The repeated server-exit root cause is still unconfirmed. Recovery and durable diagnostics are
 implemented in af388a2. The current diagnostic tail contained HMR/scan activity, with no fatal
 stack file when checked. Absence of another crash is not proof the initiating defect is fixed.
+
+Follow-up: scanner periodic refresh and commit/PR watchers now contain failures at the job
+boundary, log them and continue on the next poll. Regression tests inject a database read
+failure and verify the busy flag is released and polling resumes. This removes an uncaught
+timer/unhandled-promise path; it has not been linked to a captured production crash stack.
