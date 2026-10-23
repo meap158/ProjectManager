@@ -1,7 +1,12 @@
-# Pending ProjectManager review — 2026-10-22
+# Pending ProjectManager review — updated 2026-10-23
 
 Checked the live project board and AGENT_HANDOVER.md. Review status is not evidence of unfinished
 implementation; many cards await owner/device acceptance. Do not relaunch workers for those cards.
+
+Latest account follow-up: PM-243 is committed in 1478806. The selected Codex credentials now
+become the default login and all Codex CLIs use the default home, retaining conversation history.
+The handover explicitly leaves a live switch of running CLIs unverified; that remains an owner
+acceptance step. Do not rely on earlier notes describing every CLI using its saved profile home.
 
 | Card                                                   | Current finding                                                                                                                                                                     | Next step                                                                                                            |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
