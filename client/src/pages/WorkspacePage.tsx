@@ -41,6 +41,7 @@ import { SessionChat, ViewSwitch, useSessionView } from '../components/SessionCh
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
 import { serialPoll } from '../lib/serialPoll';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
+import { useShortcutProps, useShortcutTitle } from '../shortcuts';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
 import { BatchAttentionActions } from '../components/BatchAttentionActions';
@@ -1209,6 +1210,35 @@ function NewSessionInline({
   );
 }
 
+/** A list row's "put this session in a pane" button (answers to its keyboard shortcut). */
+function ShowInPaneButton({ onClick }: { onClick: () => void }) {
+  const keys = useShortcutProps('session.showInPane');
+  const title = useShortcutTitle('session.showInPane', 'Put this session in a pane');
+  return (
+    <button
+      type="button"
+      className="btn btn-sm btn-icon session-show-pane"
+      title={title}
+      aria-label="Show in pane"
+      {...keys}
+      onClick={onClick}
+    >
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        aria-hidden="true"
+      >
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M14 4v16M3 9h11" />
+      </svg>
+    </button>
+  );
+}
+
 /** Keyboard/mouse shortcuts behind a "?" button: discoverable without permanent clutter. */
 function ShortcutsHelp() {
   const ref = useRef<HTMLDetailsElement>(null);
@@ -1250,6 +1280,7 @@ function ShortcutsHelp() {
           <dt>Drag a header</dt>
           <dd>Swap two panes</dd>
         </dl>
+        <Link to="/settings#keyboard-shortcuts">Shortcuts for the selected session…</Link>
       </div>
     </details>
   );
@@ -1458,29 +1489,11 @@ function WorkList({
     const s = w.item;
     return (
       <>
-        <button
-          type="button"
-          className="btn btn-sm btn-icon session-show-pane"
-          title="Put this session in a pane"
-          aria-label="Show in pane"
-          onClick={() => onShowInPane(s.id)}
-        >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            aria-hidden="true"
-          >
-            <rect x="3" y="4" width="18" height="16" rx="2" />
-            <path d="M14 4v16M3 9h11" />
-          </svg>
-        </button>
-        <SessionContinue session={s} onError={onError} />
+        <ShowInPaneButton onClick={() => onShowInPane(s.id)} />
+        <SessionContinue session={s} onError={onError} shortcut="session.continue" />
         <SessionToggle
           session={s}
+          shortcuts={{ restart: 'session.restart', toggle: 'session.toggle' }}
           onStart={() => change(() => api.startSession(s.id))}
           onStop={() => change(() => api.stopSession(s.id))}
           onRestart={async () => {
@@ -1495,6 +1508,7 @@ function WorkList({
           label={`Delete session "${s.name}"`}
           heading={`Delete session "${s.name}"?`}
           message="Stops the process if it's running and deletes its log. This can't be undone."
+          shortcut="session.delete"
           onConfirm={() =>
             api.deleteSession(s.id).then(
               () => onSessionDeleted(s.id),

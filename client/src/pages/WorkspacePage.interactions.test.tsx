@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, WorkspaceLayout } from '../../../shared/types';
 import { api } from '../api';
+import { installShortcuts } from '../shortcuts';
 import { WorkspacePage } from './WorkspacePage';
 
 // The real terminal (xterm) needs a canvas; a focusable stand-in is enough for the page logic.
@@ -130,6 +131,38 @@ describe('Agents workspace interactions', () => {
     await waitFor(() =>
       expect(api.saveWorkspace).toHaveBeenLastCalledWith(
         expect.objectContaining({ preset: '3v', panes: [1, null, null] }),
+      ),
+    );
+  });
+
+  it('keyboard shortcuts act on the selected session, also from its terminal (PM-244)', async () => {
+    installShortcuts();
+    localStorage.setItem('pm.workspace.view', 'list');
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    vi.mocked(api.stopSession).mockImplementation(async (id: number) => ({
+      ...session(id, 'Alpha'),
+      status: 'killed',
+    }));
+    await renderWorkspace({ preset: '1', panes: [1], maximized: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Show Alpha' }));
+    const terminal = await screen.findByRole('textbox', { name: 'terminal input' });
+    const stop = screen.getByRole('button', { name: 'Stop Alpha' });
+    expect(stop.getAttribute('aria-keyshortcuts')).toBe('Alt+Shift+S');
+    expect(stop.getAttribute('title')).toMatch(/\(Alt\+Shift\+S\)$/);
+    // From the focused terminal: the combo stops the selected session and never reaches it.
+    const press = fireEvent.keyDown(terminal, {
+      key: 'S',
+      code: 'KeyS',
+      altKey: true,
+      shiftKey: true,
+    });
+    expect(press).toBe(false); // Default prevented.
+    await waitFor(() => expect(api.stopSession).toHaveBeenCalledWith(1));
+    // Ctrl+↓ moves the selection to the next session.
+    fireEvent.keyDown(terminal, { key: 'ArrowDown', code: 'ArrowDown', ctrlKey: true });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Show Beta' }).getAttribute('aria-current')).toBe(
+        'true',
       ),
     );
   });

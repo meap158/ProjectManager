@@ -285,6 +285,16 @@ Your CLI config files are never edited: the tools are passed to each process whe
 
 </details>
 
+### Keyboard shortcuts
+
+In the Agents list, select a session and act on it from the keyboard, even while its terminal
+has focus: <kbd>Ctrl</kbd>+<kbd>↓</kbd>/<kbd>↑</kbd> moves the selection, and
+<kbd>Alt</kbd>+<kbd>Shift</kbd> with <kbd>P</kbd> shows it in a pane, <kbd>C</kbd> continues it,
+<kbd>R</kbd> restarts it, <kbd>S</kbd> stops or starts it and <kbd>D</kbd> deletes it (after
+asking). Each button's tooltip shows its key. Change or clear any of them under **Settings >
+Keyboard shortcuts**; a key already in use is refused. Keys without Ctrl, Alt or ⌘ only work
+outside text fields and terminals, so they never get in the way of typing.
+
 ---
 
 ## 📱 Use it from your phone

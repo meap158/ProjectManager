@@ -9,6 +9,7 @@ import {
   formatRelative,
 } from '../format';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
+import { formatCombo, useBindings, useShortcut } from '../shortcuts';
 import { InlineRename } from './InlineRename';
 import { PROVIDER_LABELS, ProviderIcon } from './icons';
 
@@ -246,38 +247,29 @@ export function AgentWorkList({
     }
   }, [selected]);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') &&
-        !target.classList.contains('xterm-helper-textarea')
-      ) {
-        return;
-      }
-      if (items.length === 0) return;
-      e.preventDefault();
-      const currentIdx = selected ? items.findIndex((w) => workKey(w) === selected) : -1;
-      const delta = e.key === 'ArrowDown' ? 1 : -1;
-      let nextIdx: number;
-      if (currentIdx === -1) {
-        nextIdx = delta === 1 ? 0 : items.length - 1;
-      } else {
-        nextIdx = (currentIdx + delta + items.length) % items.length;
-      }
-      const nextKey = workKey(items[nextIdx]!);
-      if (onNavigate) {
-        onNavigate(nextKey);
-      } else {
-        onSelect(nextKey);
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [items, selected, onSelect, onNavigate]);
+  // Next / previous session (Settings > Keyboard shortcuts; Ctrl+↓/↑ by default), also from the
+  // open terminal.
+  const move = (delta: 1 | -1) => {
+    if (items.length === 0) return false;
+    const currentIdx = selected ? items.findIndex((w) => workKey(w) === selected) : -1;
+    const nextIdx =
+      currentIdx === -1
+        ? delta === 1
+          ? 0
+          : items.length - 1
+        : (currentIdx + delta + items.length) % items.length;
+    const nextKey = workKey(items[nextIdx]!);
+    if (onNavigate) onNavigate(nextKey);
+    else onSelect(nextKey);
+    return true;
+  };
+  useShortcut('list.next', () => move(1));
+  useShortcut('list.previous', () => move(-1));
+  const bindings = useBindings();
+  const navHint = [bindings['list.previous'], bindings['list.next']]
+    .filter((c): c is string => !!c)
+    .map((c) => formatCombo(c))
+    .join(' / ');
 
   return (
     <ul className="list work-list" aria-label="Agent sessions and runs">
@@ -313,7 +305,7 @@ export function AgentWorkList({
                   className="work-select"
                   aria-current={key === selected || undefined}
                   aria-label={`Show ${w.item.name}`}
-                  title="Select session (Ctrl+↑/↓ to navigate)"
+                  title={navHint ? `Select session (${navHint} to move)` : 'Select session'}
                   onClick={(e) => {
                     e.stopPropagation();
                     onSelect(key);

@@ -40,6 +40,7 @@ import type {
   PullRequestListState,
   PullRequestsResult,
   ProjectSummary,
+  ShortcutOverrides,
   WorkspaceLayout,
 } from '../../shared/types';
 import type { ProviderLimits } from '../../shared/limits';
@@ -300,6 +301,10 @@ export const api = {
     request<{ theme: 'system' | 'light' | 'dark' | null }>('GET', '/preferences/theme'),
   saveTheme: (theme: 'system' | 'light' | 'dark') =>
     request<{ theme: string }>('PUT', '/preferences/theme', { theme }),
+  /** Keyboard shortcuts changed from their defaults (PM-244). */
+  getShortcuts: () => request<{ overrides: ShortcutOverrides }>('GET', '/preferences/shortcuts'),
+  saveShortcuts: (overrides: ShortcutOverrides) =>
+    request<{ overrides: ShortcutOverrides }>('PUT', '/preferences/shortcuts', { overrides }),
   getProjectOrder: () => request<{ order: number[] }>('GET', '/preferences/project-order'),
   saveProjectOrder: (order: number[]) =>
     request<{ order: number[] }>('PUT', '/preferences/project-order', { order }),

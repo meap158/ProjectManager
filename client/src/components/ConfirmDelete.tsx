@@ -1,4 +1,5 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
+import { useShortcutProps, useShortcutTitle, type ShortcutId } from '../shortcuts';
 
 function TrashIcon() {
   return (
@@ -33,7 +34,10 @@ export function ConfirmDelete({
   icon,
   small,
   disabled,
+  shortcut,
 }: {
+  /** The keyboard shortcut that opens this confirmation (PM-244): shown in the tooltip only. */
+  shortcut?: ShortcutId;
   label: string;
   text?: string;
   heading: string;
@@ -51,6 +55,8 @@ export function ConfirmDelete({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
   const headingId = useId();
+  const keys = useShortcutProps(shortcut);
+  const title = useShortcutTitle(shortcut, label);
 
   async function confirm() {
     setBusy(true);
@@ -68,8 +74,9 @@ export function ConfirmDelete({
         type="button"
         className={`btn ${tone === 'primary' ? 'btn-primary' : 'btn-danger'}${text ? '' : ' btn-icon'}${small ? ' btn-sm' : ''}`}
         disabled={disabled}
-        title={label}
+        title={title}
         aria-label={text ? undefined : label}
+        {...keys}
         onClick={() => {
           dialogRef.current?.showModal();
           cancelRef.current?.focus();

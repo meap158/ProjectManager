@@ -3,8 +3,11 @@ import { useState } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { AgentSession } from '../../../shared/types';
+import { installShortcuts } from '../shortcuts';
 import { AgentWorkList, type WorkItem, type WorkKey } from './AgentWorkList';
 
+// Ctrl+↓/↑ go through the app's one shortcut handler (PM-244), installed by the app shell.
+installShortcuts();
 afterEach(cleanup);
 
 const mockSession = (id: number, name: string): AgentSession =>

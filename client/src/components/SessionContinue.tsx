@@ -1,18 +1,24 @@
 import { useRef, useState } from 'react';
 import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
+import { useShortcutProps, useShortcutTitle, type ShortcutId } from '../shortcuts';
 
 /** Explicitly submit a short nudge to this CLI, without restarting its conversation. */
 export function SessionContinue({
   session,
   onError,
+  shortcut,
 }: {
   session: AgentSession;
   onError: (message: string) => void;
+  /** The keyboard shortcut this button answers to (PM-244). */
+  shortcut?: ShortcutId;
 }) {
   const sending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState('');
+  const keys = useShortcutProps(shortcut);
+  const title = useShortcutTitle(shortcut, 'Send “continue” to this session');
   if (
     !['codex', 'claude', 'opencode', 'grok', 'antigravity'].includes(session.providerId) ||
     session.status !== 'running'
@@ -25,7 +31,8 @@ export function SessionContinue({
         type="button"
         className="btn btn-sm session-continue"
         aria-label={`Continue ${session.name}`}
-        title={result || 'Send “continue” to this session'}
+        title={result || title}
+        {...keys}
         disabled={busy || restarting}
         onClick={async () => {
           if (sending.current) return;

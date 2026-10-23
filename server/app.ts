@@ -7,13 +7,14 @@ import path from 'node:path';
 import { compress } from 'hono/compress';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { BOARD_PRESETS, CARD_STATUSES } from '../shared/types.js';
+import { BOARD_PRESETS, CARD_STATUSES, SHORTCUT_IDS } from '../shared/types.js';
 import type {
   DirectoryEntry,
   DirectoryListing,
   LanStatus,
   RemoteConfig,
   RemoteStatus,
+  ShortcutOverrides,
 } from '../shared/types.js';
 import { LAN_HEADER } from './lan.js';
 import { REMOTE_HEADER } from './remote.js';
@@ -72,6 +73,14 @@ const createCardBody = z.object({
 const themeBody = z.object({ theme: z.enum(['system', 'light', 'dark']) });
 type ThemePreference = z.infer<typeof themeBody>['theme'];
 const projectOrderBody = z.object({ order: z.array(z.number().int().positive()).max(5000) });
+/** Modifiers in a fixed order, then one key ("Alt+Shift+C", "Ctrl+ArrowDown", "?"). */
+const shortcutCombo = z
+  .string()
+  .max(40)
+  .regex(/^(?:Ctrl\+)?(?:Alt\+)?(?:Shift\+)?(?:Meta\+)?[^+\s]{1,20}$/);
+const shortcutsBody = z.object({
+  overrides: z.partialRecord(z.enum(SHORTCUT_IDS), shortcutCombo.nullable()),
+});
 
 const updateCardBody = z
   .object({
@@ -524,6 +533,17 @@ export function createApp(
     const unique = [...new Set(order)];
     store.setSetting(db, 'project_order', unique);
     return c.json({ order: unique });
+  });
+
+  // Keyboard shortcuts (PM-244): only the keys changed from the defaults (the client owns those).
+  app.get('/preferences/shortcuts', (c) =>
+    c.json({ overrides: store.getSetting<ShortcutOverrides>(db, 'shortcuts') ?? {} }),
+  );
+
+  app.put('/preferences/shortcuts', async (c) => {
+    const { overrides } = await parseBody(c, shortcutsBody);
+    store.setSetting(db, 'shortcuts', overrides);
+    return c.json({ overrides });
   });
 
   // ---- Folder browser (for the "Add project" dialog) -----------------------------------------

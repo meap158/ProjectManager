@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
 import { MobileTabBar } from './components/MobileTabBar';
 import { sectionHref, useSectionMemory } from './sectionMemory';
@@ -7,6 +7,7 @@ import { ThemeSwitch } from './components/ThemeSwitch';
 import { BoardIcon, GridIcon, SettingsIcon, TerminalIcon } from './components/icons';
 import { RememberLastPage } from './lastPage';
 import { useProjectPanel } from './projectPanel';
+import { installShortcuts, loadShortcuts } from './shortcuts';
 
 const ProjectsPage = lazy(() =>
   import('./pages/ProjectsPage').then((m) => ({ default: m.ProjectsPage })),
@@ -32,6 +33,11 @@ export function App() {
   const projects = useProjectPanel();
   // Each section reopens where it was left, scroll position included (PM-72).
   useSectionMemory();
+  // Keyboard shortcuts (Settings > Keyboard shortcuts) work on every page (PM-244).
+  useEffect(() => {
+    installShortcuts();
+    loadShortcuts();
+  }, []);
   return (
     <>
       <RememberLastPage />

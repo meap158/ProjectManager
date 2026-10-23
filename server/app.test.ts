@@ -141,6 +141,22 @@ describe('projects and cards', () => {
     expect((await call('PUT', '/preferences/theme', { theme: 'neon' })).status).toBe(400);
   });
 
+  it('keeps changed keyboard shortcuts, known actions and well-formed keys only (PM-244)', async () => {
+    const { call } = setup();
+    expect(await (await call('GET', '/preferences/shortcuts')).json()).toEqual({ overrides: {} });
+    const overrides = { 'session.continue': 'Alt+K', 'session.delete': null };
+    expect((await call('PUT', '/preferences/shortcuts', { overrides })).status).toBe(200);
+    expect(await (await call('GET', '/preferences/shortcuts')).json()).toEqual({ overrides });
+    for (const bad of [
+      { 'unknown.action': 'Alt+K' },
+      { 'session.continue': 'Shift+Alt+K' },
+      { 'session.continue': 'Alt+' },
+      { 'session.continue': 'x'.repeat(50) },
+    ]) {
+      expect((await call('PUT', '/preferences/shortcuts', { overrides: bad })).status).toBe(400);
+    }
+  });
+
   it('keeps the sidebar custom order server-side, without duplicates', async () => {
     const { call } = setup();
     expect(await (await call('GET', '/preferences/project-order')).json()).toEqual({ order: [] });

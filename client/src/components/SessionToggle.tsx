@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AgentSession } from '../../../shared/types';
+import { useShortcutProps, useShortcutTitle, type ShortcutId } from '../shortcuts';
 import { PlayIcon, StopIcon } from './icons';
 
 /**
@@ -11,13 +12,27 @@ export function SessionToggle({
   onStart,
   onStop,
   onRestart,
+  shortcuts,
 }: {
   session: AgentSession;
   onStart: () => void;
   onStop: () => void;
   onRestart?: () => Promise<unknown>;
+  /** Keyboard shortcuts these buttons answer to (PM-244): restart, and stop/start. */
+  shortcuts?: { restart?: ShortcutId; toggle?: ShortcutId };
 }) {
   const [restarting, setRestarting] = useState(false);
+  const restartKeys = useShortcutProps(shortcuts?.restart);
+  const toggleKeys = useShortcutProps(shortcuts?.toggle);
+  const restartTitle = useShortcutTitle(shortcuts?.restart, 'Restart session (stop, then start)');
+  const stopTitle = useShortcutTitle(
+    shortcuts?.toggle,
+    "Stop the process (it won't relaunch until you start it)",
+  );
+  const startTitle = useShortcutTitle(
+    shortcuts?.toggle,
+    session.resumeSupported ? 'Start again, resuming the conversation' : 'Start again',
+  );
   const busy = restarting || (!!session.restartProgress && session.restartProgress !== 'failed');
   return session.status === 'running' || busy ? (
     <>
@@ -26,7 +41,8 @@ export function SessionToggle({
           type="button"
           className="btn btn-sm btn-icon session-restart"
           aria-label={`Restart ${session.name}`}
-          title="Restart session (stop, then start)"
+          title={restartTitle}
+          {...restartKeys}
           disabled={busy}
           onClick={async () => {
             setRestarting(true);
@@ -57,8 +73,9 @@ export function SessionToggle({
       <button
         type="button"
         className="btn btn-sm session-toggle stop"
-        title="Stop the process (it won't relaunch until you start it)"
+        title={stopTitle}
         aria-label={`Stop ${session.name}`}
+        {...toggleKeys}
         disabled={
           restarting ||
           session.restartProgress === 'stopping' ||
@@ -74,7 +91,8 @@ export function SessionToggle({
     <button
       type="button"
       className="btn btn-sm session-toggle start"
-      title={session.resumeSupported ? 'Start again, resuming the conversation' : 'Start again'}
+      title={startTitle}
+      {...toggleKeys}
       onClick={onStart}
     >
       <PlayIcon size={11} />

@@ -804,3 +804,17 @@ export interface PullRequestActionResult {
   /** What happened, e.g. "Merged #12. Deleted branch fix (remote and local)." */
   message: string;
 }
+
+/** Keyboard shortcut actions (PM-244); Settings stores only the keys changed from the defaults. */
+export const SHORTCUT_IDS = [
+  'list.next',
+  'list.previous',
+  'session.showInPane',
+  'session.continue',
+  'session.restart',
+  'session.toggle',
+  'session.delete',
+] as const;
+export type ShortcutId = (typeof SHORTCUT_IDS)[number];
+/** A combo ("Alt+Shift+C"), or null for an action left without one. */
+export type ShortcutOverrides = Partial<Record<ShortcutId, string | null>>;
