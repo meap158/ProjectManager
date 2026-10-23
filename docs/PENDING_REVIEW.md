@@ -8,6 +8,17 @@ become the default login and all Codex CLIs use the default home, retaining conv
 The handover explicitly leaves a live switch of running CLIs unverified; that remains an owner
 acceptance step. Do not rely on earlier notes describing every CLI using its saved profile home.
 
+## Verification follow-up, 2026-10-23
+
+Client/server typechecks and whole-repository lint passed. Removed an obsolete local staging
+helper that was incorrectly included by lint. Formatting found only cfAccess.test.ts; corrected
+in e35018c. The full single-worker suite completed with 815 passed / 7 failed, 149 files:
+six agent lifecycle tests exceeded deadlines and one hosted-launcher completion poll expired.
+Isolated reruns with a 30-second test deadline passed all 23 agent tests and all three launcher
+tests. This is not a green full-suite result. Process tests remain sensitive to machine load;
+concurrent edits also changed agent source during the run, so source line references shifted.
+Do not treat passing reruns as evidence of real-phone or live-login acceptance.
+
 | Card                                                   | Current finding                                                                                                                                                                     | Next step                                                                                                            |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | PM-242                                                 | Implemented in c955bb2: desktop tag/status/control alignment; no 222px action minimum. 18 interaction tests and build passed.                                                       | Owner desktop/mobile visual acceptance.                                                                              |
