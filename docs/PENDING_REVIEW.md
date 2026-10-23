@@ -42,6 +42,12 @@ The repeated server-exit root cause is still unconfirmed. Recovery and durable d
 implemented in af388a2. The current diagnostic tail contained HMR/scan activity, with no fatal
 stack file when checked. Absence of another crash is not proof the initiating defect is fixed.
 
+Native V8 heap/allocation fatal messages now also trigger bounded launcher recovery when
+the development watcher remains alive: native failures bypass the application's exception
+monitor. Seven recovery tests pass, including split native fatal messages and an actual
+disposable launcher restart. This requires restarting the launcher to load the change;
+no live session was restarted, and no captured live fatal stack establishes the original cause.
+
 Follow-up: scanner periodic refresh and commit/PR watchers now contain failures at the job
 boundary, log them and continue on the next poll. Regression tests inject a database read
 failure and verify the busy flag is released and polling resumes. This removes an uncaught

@@ -29,7 +29,7 @@ export function restartBudget(limit = 5, windowMs = 5 * 60_000) {
   };
 }
 
-/** tsx watch can remain alive after its server crashes; the fatal marker ends this wait too. */
+/** tsx watch can remain alive after its server crashes, including native V8 failures. */
 export function childOutcome(proc) {
   return new Promise((resolve) => {
     let tail = '';
@@ -44,7 +44,12 @@ export function childOutcome(proc) {
     const onError = (error) => done({ code: null, error: error.message });
     const onData = (chunk) => {
       tail = (tail + chunk.toString()).slice(-8192);
-      if (tail.includes(FATAL_MARKER)) done({ code: 1, fatal: true });
+      // Native allocation failures bypass uncaughtExceptionMonitor and its application marker.
+      if (
+        tail.includes(FATAL_MARKER) ||
+        /(?:^|\n)\s*FATAL ERROR: (?:.*(?:heap|allocation|out of memory)|Zone)/i.test(tail)
+      )
+        done({ code: 1, fatal: true });
     };
     proc.once('exit', onExit);
     proc.once('error', onError);

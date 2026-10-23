@@ -86,6 +86,26 @@ it('detects a fatal server inside a watcher that remains alive, including split 
   }
 });
 
+it.each([
+  'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory',
+  'FATAL ERROR: Fatal process out of memory: Zone',
+])('detects native V8 failure while its watcher remains alive: %s', async (message) => {
+  const watcher = spawn(
+    process.execPath,
+    [
+      '-e',
+      `process.stderr.write('ordinary out of memory warning\\n'); setTimeout(() => process.stderr.write(${JSON.stringify(message.slice(0, 8))}), 20); setTimeout(() => process.stderr.write(${JSON.stringify(message.slice(8) + '\n')}), 40); setInterval(()=>{},1000)`,
+    ],
+    { windowsHide: true },
+  );
+  try {
+    expect(await childOutcome(watcher)).toMatchObject({ fatal: true, code: 1 });
+    expect(watcher.exitCode).toBeNull();
+  } finally {
+    watcher.kill();
+  }
+});
+
 it('limits repeated crashes and replenishes the budget after stable runtime', () => {
   const allowed = restartBudget(2, 100);
   expect(allowed(0)).toBe(true);
