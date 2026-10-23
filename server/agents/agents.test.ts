@@ -184,6 +184,35 @@ describe('providers', () => {
     expect(session.usageLimit).toBeNull();
     await call('DELETE', `/agent-sessions/${session.id}`);
   });
+
+  it('ignores a usage limit left on screen from before a restart until a message is sent (PM-243)', async () => {
+    // After an account switch the old login's limit is still on screen; acting on it would
+    // rotate the account again at once. A limit only comes back in reply to a request.
+    const created = await call('POST', `/projects/${projectId}/agent-sessions`, {
+      command: [
+        NODE,
+        '-e',
+        `process.stdout.write("You've hit your usage limit. Try again at 8:56 PM.\\n");process.stdin.on('data',()=>{});${LONG}`,
+      ],
+      terminal: 'pipe',
+      supervise: false,
+    });
+    const session = (await created.json()) as AgentSession;
+    await waitFor(
+      () => call('GET', `/agent-sessions/${session.id}/screen`).then((r) => r.json()),
+      (s: { text?: string }) => /usage limit/.test(s.text ?? ''),
+      'limit on screen',
+    );
+    testDb.prepare(`UPDATE agent_sessions SET provider_id = 'codex' WHERE id = ?`).run(session.id);
+    const tick = () =>
+      (app.supervisor as unknown as { tickContinuation(): void }).tickContinuation();
+    tick();
+    expect((await getSession(session.id)).usageLimit).toBeNull();
+    await call('POST', `/agent-sessions/${session.id}/input`, { data: 'continue\r' });
+    tick();
+    expect((await getSession(session.id)).usageLimit).not.toBeNull();
+    await call('DELETE', `/agent-sessions/${session.id}`);
+  });
   it('lists the catalog with availability', async () => {
     const res = await call('GET', '/agents/providers');
     expect(res.status).toBe(200);

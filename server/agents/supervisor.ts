@@ -395,6 +395,12 @@ export class AgentSupervisor {
   /** Accounts already tried in the current Codex usage-limit rotation. One list for every Codex CLI. */
   private codexRotationTried: string[] = [];
   private switchingCodexSession = new Set<number>();
+  /**
+   * Sessions this process (re)started that have not been sent a message since. A usage limit
+   * still on their screen is from before the restart (the old login, PM-243): it would rotate
+   * the account again at once. A limit only comes back in reply to a request.
+   */
+  private noTurnSinceStart = new Set<number>();
   /** Resolves once boot reconciliation (re-attach / relaunch) is done. */
   readonly ready: Promise<void>;
 
@@ -1208,6 +1214,7 @@ export class AgentSupervisor {
       this.db.prepare('UPDATE agent_sessions SET last_input_at = ? WHERE id = ?').run(now(), id);
     }
     const live = this.live.get(`session:${id}`);
+    if (live && !isTerminalReport(data) && /[\r\n]/.test(data)) this.noTurnSinceStart.delete(id);
     if (live && live.proc.write(data)) return { queued: false, session: this.getSession(id) };
     // A terminal's automatic replies (focus, device attributes, cursor reports) mean nothing to
     // a process that isn't listening: never queue them.
@@ -1432,7 +1439,9 @@ export class AgentSupervisor {
     for (const id of this.usageLimits.keys()) if (!running.has(id)) this.usageLimits.delete(id);
     for (const row of rows) {
       const windows = this.codexWindowsForSession(row);
-      const shown = usageLimitShown(this.sessionScreen(row.id, 4000) ?? '', windows, Date.now());
+      const shown = this.noTurnSinceStart.has(row.id)
+        ? null
+        : usageLimitShown(this.sessionScreen(row.id, 4000) ?? '', windows, Date.now());
       if (shown) {
         this.usageLimits.set(row.id, shown);
         if (
@@ -2141,6 +2150,7 @@ export class AgentSupervisor {
       // Strip terminal auto-replies queued by older clients; replaying them would type junk.
       const data = stripTerminalReports(item.data);
       if (data && !proc.write(data)) break;
+      if (/[\r\n]/.test(data)) this.noTurnSinceStart.delete(sessionId);
       flushed++;
     }
     if (flushed > 0) {
@@ -2369,6 +2379,7 @@ export class AgentSupervisor {
           `UPDATE agent_sessions SET status = 'running', pid = ?, started_at = ?, ended_at = NULL WHERE id = ?`,
         )
         .run(proc.pid ?? null, now(), row.id);
+      this.noTurnSinceStart.add(row.id);
 
       proc.onData((text) => log.append(text));
       proc.onError((e) => log.append(`\r\n[process error: ${e.message}]\r\n`));
