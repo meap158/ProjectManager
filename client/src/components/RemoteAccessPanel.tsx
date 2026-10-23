@@ -99,7 +99,7 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
                 : 'off'}
         </span>
       </div>
-      <p className="faint" style={{ margin: '0 0 12px', fontSize: 12.5 }}>
+      <p className="faint remote-intro">
         Use ProjectManager from anywhere through a Cloudflare Tunnel you run yourself. A signed-in
         person can read your tracked folders and drive your agents, so three checks stand in front
         of it: Cloudflare Access with your MFA policy, the email list below, and an authenticator
@@ -108,143 +108,163 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
       {status === null ? (
         <div className="skeleton" style={{ height: 60 }} />
       ) : (
-        <>
-          <div className="lan-label">1. Cloudflare details</div>
-          <div className="form-grid">
-            <label>
-              Team name
-              <input
-                value={form.team}
-                placeholder="myteam (from myteam.cloudflareaccess.com)"
-                onChange={(e) => setForm({ ...form, team: e.target.value })}
-              />
-            </label>
-            <label>
-              Application AUD tag
-              <input
-                value={form.aud}
-                placeholder="64 hex characters"
-                spellCheck={false}
-                onChange={(e) => setForm({ ...form, aud: e.target.value })}
-              />
-            </label>
-            <label>
-              Public hostname
-              <input
-                value={form.hostname}
-                placeholder="pm.example.com"
-                onChange={(e) => setForm({ ...form, hostname: e.target.value })}
-              />
-            </label>
-            <label>
-              Allowed emails (one per line)
-              <textarea
-                rows={2}
-                value={form.emails}
-                onChange={(e) => setForm({ ...form, emails: e.target.value })}
-              />
-            </label>
-          </div>
-          <div className="lan-actions">
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() => act(() => api.remoteConfigure(config()))}
-            >
-              Save details
-            </button>
-          </div>
-
-          <div className="lan-label" style={{ marginTop: 14 }}>
-            2. Authenticator app
-          </div>
-          {status.pendingTotp ? (
-            <div className="lan-connect">
-              <div className="lan-qr">
-                {qr ? (
-                  <img src={qr} width="200" height="200" alt="Scan with your authenticator app" />
-                ) : (
-                  <div className="skeleton" style={{ width: 200, height: 200 }} />
-                )}
-                <span className="faint">
-                  Or type this secret into the app: <code>{status.pendingTotp.secret}</code>
-                </span>
-              </div>
-              <div className="lan-signin">
-                <label>
-                  Code from the app
-                  <input
-                    value={code}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={7}
-                    onChange={(e) => setCode(e.target.value)}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={busy || code.replace(/\s/g, '').length !== 6}
-                  onClick={() =>
-                    act(async () => {
-                      const next = await api.remoteConfirmTotp(code);
-                      setCode('');
-                      return next;
-                    })
-                  }
-                >
-                  Confirm code
-                </button>
-              </div>
+        <div className="remote-steps">
+          <section className="remote-step" aria-labelledby="remote-step-1">
+            <h3 id="remote-step-1" className="remote-step-title">
+              <span className="remote-step-num" aria-hidden="true">
+                1
+              </span>
+              Cloudflare details
+            </h3>
+            <div className="remote-fields">
+              <label className="remote-field">
+                <span>Team name</span>
+                <input
+                  value={form.team}
+                  placeholder="myteam (from myteam.cloudflareaccess.com)"
+                  onChange={(e) => setForm({ ...form, team: e.target.value })}
+                />
+              </label>
+              <label className="remote-field">
+                <span>Public hostname</span>
+                <input
+                  value={form.hostname}
+                  placeholder="pm.example.com"
+                  onChange={(e) => setForm({ ...form, hostname: e.target.value })}
+                />
+              </label>
+              <label className="remote-field remote-field-wide">
+                <span>Application AUD tag</span>
+                <input
+                  value={form.aud}
+                  placeholder="64 hex characters"
+                  spellCheck={false}
+                  onChange={(e) => setForm({ ...form, aud: e.target.value })}
+                />
+              </label>
+              <label className="remote-field remote-field-wide">
+                <span>Allowed emails (one per line)</span>
+                <textarea
+                  rows={3}
+                  value={form.emails}
+                  onChange={(e) => setForm({ ...form, emails: e.target.value })}
+                />
+              </label>
             </div>
-          ) : (
-            <p className="faint" style={{ margin: '0 0 8px', fontSize: 12.5 }}>
-              {status.totpConfirmed
-                ? 'An authenticator is set up. Setting up again replaces it and signs everyone out.'
-                : 'Not set up yet. Remote access cannot be switched on without it.'}{' '}
+            <div className="lan-actions">
               <button
                 type="button"
-                className="link-button"
+                className="btn"
                 disabled={busy}
-                onClick={() => act(() => api.remoteBeginTotp())}
+                onClick={() => act(() => api.remoteConfigure(config()))}
               >
-                {status.totpConfirmed ? 'Set up again' : 'Set up authenticator'}
+                Save details
               </button>
-            </p>
-          )}
+            </div>
+          </section>
 
-          <div className="lan-label" style={{ marginTop: 14 }}>
-            3. Switch on
-          </div>
-          {status.missing.length > 0 && !status.enabled && (
-            <p className="faint" style={{ margin: '0 0 8px', fontSize: 12.5 }}>
-              Still needed: {status.missing.join(', ')}.
-            </p>
-          )}
-          {status.error && <div className="error-banner">{status.error}</div>}
-          <div className="lan-actions">
-            <button
-              type="button"
-              className={status.enabled ? 'btn' : 'btn btn-primary'}
-              disabled={busy || (!status.enabled && status.missing.length > 0)}
-              onClick={() => act(() => api.setRemote(!status.enabled))}
-            >
-              {status.enabled ? 'Turn off remote access' : 'Turn on remote access'}
-            </button>
-          </div>
-          {status.running && (
-            <p className="faint" style={{ margin: '8px 0 0', fontSize: 12.5 }}>
-              Point your tunnel at <code>http://127.0.0.1:{status.port}</code> and open{' '}
-              <code>https://{status.config.hostname}</code>.
-            </p>
-          )}
+          <section className="remote-step" aria-labelledby="remote-step-2">
+            <h3 id="remote-step-2" className="remote-step-title">
+              <span className="remote-step-num" aria-hidden="true">
+                2
+              </span>
+              Authenticator app
+              <span className={`badge${status.totpConfirmed ? ' badge-done' : ''}`}>
+                {status.totpConfirmed ? 'set up' : 'not set up'}
+              </span>
+            </h3>
+            {status.pendingTotp ? (
+              <div className="remote-totp">
+                <div className="lan-qr">
+                  {qr ? (
+                    <img src={qr} width="200" height="200" alt="Scan with your authenticator app" />
+                  ) : (
+                    <div className="skeleton" style={{ width: 200, height: 200 }} />
+                  )}
+                  <span className="faint">
+                    Or type this secret into the app: <code>{status.pendingTotp.secret}</code>
+                  </span>
+                </div>
+                <div className="remote-code">
+                  <label className="remote-field">
+                    <span>Code from the app</span>
+                    <input
+                      value={code}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={7}
+                      onChange={(e) => setCode(e.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={busy || code.replace(/\s/g, '').length !== 6}
+                    onClick={() =>
+                      act(async () => {
+                        const next = await api.remoteConfirmTotp(code);
+                        setCode('');
+                        return next;
+                      })
+                    }
+                  >
+                    Confirm code
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="remote-row">
+                <p className="faint remote-note">
+                  {status.totpConfirmed
+                    ? 'An authenticator is set up. Setting up again replaces it and signs everyone out.'
+                    : 'Not set up yet. Remote access cannot be switched on without it.'}
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy}
+                  onClick={() => act(() => api.remoteBeginTotp())}
+                >
+                  {status.totpConfirmed ? 'Set up again' : 'Set up authenticator'}
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className="remote-step" aria-labelledby="remote-step-3">
+            <h3 id="remote-step-3" className="remote-step-title">
+              <span className="remote-step-num" aria-hidden="true">
+                3
+              </span>
+              Switch on
+            </h3>
+            {status.missing.length > 0 && !status.enabled && (
+              <p className="faint remote-note">Still needed: {status.missing.join(', ')}.</p>
+            )}
+            {status.error && <div className="error-banner">{status.error}</div>}
+            <div className="lan-actions">
+              <button
+                type="button"
+                className={status.enabled ? 'btn' : 'btn btn-primary'}
+                disabled={busy || (!status.enabled && status.missing.length > 0)}
+                onClick={() => act(() => api.setRemote(!status.enabled))}
+              >
+                {status.enabled ? 'Turn off remote access' : 'Turn on remote access'}
+              </button>
+            </div>
+            {status.running && (
+              <p className="faint remote-note">
+                Point your tunnel at <code>http://127.0.0.1:{status.port}</code> and open{' '}
+                <code>https://{status.config.hostname}</code>.
+              </p>
+            )}
+          </section>
 
           {status.sessions.length > 0 && (
-            <>
-              <div className="lan-label" style={{ marginTop: 14 }}>
+            <section className="remote-step" aria-labelledby="remote-step-sessions">
+              <h3 id="remote-step-sessions" className="remote-step-title">
                 Signed-in sessions
-              </div>
+              </h3>
               <ul className="list lan-devices">
                 {status.sessions.map((s) => (
                   <li key={s.id}>
@@ -276,9 +296,9 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
                   Sign out all sessions
                 </button>
               )}
-            </>
+            </section>
           )}
-        </>
+        </div>
       )}
     </section>
   );

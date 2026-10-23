@@ -4783,6 +4783,110 @@ span.path-link:hover .path-icon {
     grid-template-columns: 1fr;
   }
 }
+/* Settings → Remote access: numbered steps, each a quiet inset block. */
+.remote-intro {
+  margin: 0 0 14px;
+  max-width: 72ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.remote-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.remote-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.remote-step-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+.remote-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.remote-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+.remote-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.remote-field > span {
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-2);
+}
+.remote-field input,
+.remote-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.remote-field-wide {
+  grid-column: 1 / -1;
+}
+.remote-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.remote-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+.remote-totp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px 32px;
+}
+.remote-totp .lan-qr {
+  margin-bottom: 0;
+}
+.remote-code {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: 220px;
+  max-width: 100%;
+}
+.remote-code .remote-field {
+  width: 100%;
+}
+@media (max-width: 700px) {
+  .remote-fields {
+    grid-template-columns: 1fr;
+  }
+}
 /* Start / Stop on session rows: the icon carries the colour, the word stays text-coloured. */
 .session-toggle {
   gap: 5px;
