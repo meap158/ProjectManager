@@ -381,10 +381,21 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
       resume.providerId === 'grok' ||
       resume.providerId === 'antigravity'
     ) {
-      const session = supervisor.getSession(parseId(c));
+      const id = parseId(c);
+      const session = supervisor.getSession(id);
       if (!session) throw new AgentError(404, 'Session not found');
+      let resumeJson = resume.resumeJson;
+      const running = session.status === 'running';
+      // A new OpenCode / Antigravity session: its conversation gets pinned once it exists.
+      if (!resumeJson && running && resume.providerId !== 'grok') {
+        await supervisor.pinConversation(id);
+        resumeJson = supervisor.sessionResume(id)?.resumeJson ?? null;
+        // Nothing sent yet: an empty chat, not "started before pinning" (the first message
+        // starts the conversation, and the next poll finds it).
+        if (!resumeJson) return c.json({ supported: true, items: [], next: 0, reset: false });
+      }
       return c.json(
-        await readProviderTranscript(resume.providerId, resume.resumeJson, session.cwd, offset),
+        await readProviderTranscript(resume.providerId, resumeJson, session.cwd, offset),
       );
     }
     const source = transcriptSource(resume.providerId, resume.resumeJson, resume.codexHome);

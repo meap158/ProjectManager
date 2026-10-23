@@ -2491,6 +2491,37 @@ export class AgentSupervisor {
     );
   }
 
+  /** Recent conversation lookups for the chat view, shared by its polls (one per session). */
+  private pinning = new Map<number, { at: number; run: Promise<void> }>();
+
+  /**
+   * OpenCode and Antigravity name their conversation only once it starts, so a new session has
+   * none pinned and its chat view had nothing to read until a relaunch. Finds it for the chat
+   * view with the relaunch lookup: this folder, begun since this session started, not another
+   * session's (never just the latest). At most every 15 s per session: OpenCode's lookup runs
+   * its CLI.
+   */
+  pinConversation(id: number): Promise<void> {
+    const row = this.getSessionRow(id);
+    if (!row || row.resume_json) return Promise.resolve();
+    const command = (JSON.parse(row.command_json) as { command: string[] }).command;
+    const opencode = row.provider_id === 'opencode' && command[0] === 'opencode';
+    const agy = row.provider_id === 'antigravity' && command[0] === 'agy';
+    if (!opencode && !agy) return Promise.resolve();
+    const last = this.pinning.get(id);
+    if (last && Date.now() - last.at < 15_000) return last.run;
+    const run = (async () => {
+      const claimed = this.claimedConversations(row);
+      const found = opencode
+        ? await openCodeSessionFor(row.cwd, row.created_at, claimed)
+        : antigravityConversationFor(row.cwd, row.created_at, claimed);
+      if (found && !this.getSessionRow(id)?.resume_json)
+        this.saveResume(id, [command[0]!, opencode ? '--session' : '--conversation', found]);
+    })().catch(() => undefined);
+    this.pinning.set(id, { at: Date.now(), run });
+    return run;
+  }
+
   private saveResume(id: number, resume: string[]): string[] {
     this.db
       .prepare('UPDATE agent_sessions SET resume_json = ? WHERE id = ?')

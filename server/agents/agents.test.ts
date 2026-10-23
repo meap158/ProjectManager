@@ -185,6 +185,38 @@ describe('providers', () => {
     await call('DELETE', `/agent-sessions/${session.id}`);
   });
 
+  it('gives a new Antigravity/OpenCode session an empty chat until its conversation starts', async () => {
+    // These CLIs name their conversation only once it starts: a running session with none
+    // yet is a new one (empty chat), not one from before conversations were pinned.
+    const created = await call('POST', `/projects/${projectId}/agent-sessions`, {
+      command: [NODE, '-e', LONG],
+      terminal: 'pipe',
+      supervise: false,
+    });
+    const session = (await created.json()) as AgentSession;
+    testDb
+      .prepare(
+        `UPDATE agent_sessions SET provider_id = 'antigravity', command_json = ? WHERE id = ?`,
+      )
+      .run(JSON.stringify({ command: ['agy'] }), session.id);
+    const transcript = async () =>
+      (await (await call('GET', `/agent-sessions/${session.id}/transcript`)).json()) as {
+        supported: boolean;
+        items: unknown[];
+        unavailable?: string;
+      };
+    expect(await transcript()).toEqual({ supported: true, items: [], next: 0, reset: false });
+    await call('POST', `/agent-sessions/${session.id}/stop`);
+    await waitFor(
+      () => getSession(session.id),
+      (s) => s.status !== 'running',
+      'stopped',
+    );
+    // Stopped with nothing pinned: the old explanation stays.
+    expect((await transcript()).unavailable).toMatch(/before ProjectManager pinned/);
+    await call('DELETE', `/agent-sessions/${session.id}`);
+  });
+
   it('ignores a usage limit left on screen from before a restart until a message is sent (PM-243)', async () => {
     // After an account switch the old login's limit is still on screen; acting on it would
     // rotate the account again at once. A limit only comes back in reply to a request.
