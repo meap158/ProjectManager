@@ -264,9 +264,11 @@ export class CodexAccounts {
         404,
         'This saved login has no auth.json; save or import it again',
       );
-    const defaultFile = path.join(this.defaultHome(), 'auth.json');
+    const defaultHome = this.defaultHome();
+    const defaultFile = path.join(defaultHome, 'auth.json');
     const current = this.defaultMatch();
     if (current === id) return; // Already the default login.
+    let leaving = current;
     if (existsSync(defaultFile)) {
       if (current) {
         const saved = path.join(this.home(current), 'auth.json');
@@ -274,11 +276,24 @@ export class CodexAccounts {
           this.writePrivate(saved, readFileSync(defaultFile, 'utf8'));
       } else {
         const email = this.readAuthMeta(defaultFile).email;
-        this.importAccount(email ?? 'Earlier default login', readFileSync(defaultFile, 'utf8'));
+        const state = this.importAccount(
+          email ?? 'Earlier default login',
+          readFileSync(defaultFile, 'utf8'),
+        );
+        leaving = state.accounts.at(-1)?.id ?? null;
       }
     }
-    mkdirSync(this.defaultHome(), { recursive: true, mode: 0o700 });
+    mkdirSync(defaultHome, { recursive: true, mode: 0o700 });
     this.writePrivate(defaultFile, readFileSync(source, 'utf8'));
+    // Usage is cached per folder: ~/.codex's reading belongs to the login leaving it, and the
+    // arriving login brings its own last reading. Otherwise the account just switched to showed
+    // the previous account's usage until the next refresh.
+    const leavingUsage = this.usage.get(defaultHome);
+    if (leaving && leavingUsage) this.usage.set(this.home(leaving), leavingUsage);
+    const arrivingUsage = this.usage.get(this.home(id));
+    if (arrivingUsage) this.usage.set(defaultHome, arrivingUsage);
+    else this.usage.delete(defaultHome);
+    this.saveUsage();
   }
 
   /** The saved profile holding the login in ~/.codex/auth.json (ChatGPT account, else email). */

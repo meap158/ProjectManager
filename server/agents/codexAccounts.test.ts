@@ -578,6 +578,38 @@ describe('CodexAccounts (PM-164)', () => {
     );
   });
 
+  it('a switch moves usage with the logins, not the ~/.codex folder (PM-243)', async () => {
+    const login = (email: string) =>
+      JSON.stringify({ tokens: { id_token: makeJwt({ email }), access_token: email } });
+    writeFileSync(path.join(defaultCodexHome, 'auth.json'), login('a@example.com'));
+    const accounts = new CodexAccounts(tmpDir, db);
+    const a = accounts.importAccount('A', login('a@example.com')).accounts[0]!;
+    const b = accounts.importAccount('B', login('b@example.com')).accounts[1]!;
+    const limits = (used: number) => ({
+      providerId: 'codex',
+      windows: [{ label: '5-hour', windowMinutes: 300, usedPercent: used, resetsAt: null }],
+      asOf: new Date().toISOString(),
+      source: 'test',
+    });
+    // A is in ~/.codex (read there, at 100%); B is read from its own folder (10%).
+    await accounts.refreshUsage(async (home) => ({
+      status: 'fresh',
+      limits: limits(home === defaultCodexHome ? 100 : 10),
+      checkedAt: new Date().toISOString(),
+    }));
+    const used = () =>
+      Object.fromEntries(
+        accounts.state().accounts.map((x) => [x.name, x.limits?.windows[0]?.usedPercent]),
+      );
+    expect(used()).toEqual({ A: 100, B: 10 });
+    accounts.setActive(b.id);
+    // B now lives in ~/.codex: it shows its own 10%, not A's 100% left on the folder.
+    expect(used()).toEqual({ A: 100, B: 10 });
+    expect(accounts.state().defaultAccount.limits?.windows[0]?.usedPercent).toBe(10);
+    accounts.setActive(a.id);
+    expect(used()).toEqual({ A: 100, B: 10 });
+  });
+
   it('keeps usage for every profile across restarts and re-reads only stale ones (PM-173)', async () => {
     const accounts = new CodexAccounts(tmpDir, db);
     for (const name of ['One', 'Two'])
