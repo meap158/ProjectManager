@@ -596,7 +596,8 @@ export class AgentSupervisor {
     // The login stored on this session, not the Settings selection. Reading the selection after
     // setActive would look like the session was already there, and `codex resume` would keep going.
     const previous = this.storedCodexProfile(row);
-    const fromHome = previous?.home ?? this.withCodexAccounts((a) => a.profile('default')).home;
+    // Every login runs in the default CODEX_HOME; switching changes the auth.json there (PM-243).
+    const runHome = this.withCodexAccounts((a) => a.runHome());
     const willRestart =
       this.live.has(`session:${id}`) || row.desired_state === 'running' || row.status === 'running';
     if (willRestart) this.switchingCodexSession.add(id);
@@ -607,18 +608,21 @@ export class AgentSupervisor {
       if (!options.keepRotation) this.codexRotationTried = [];
       this.applyCodexAccountToSessions(target.id, { exceptId: id });
     }
-    const switchedAccount = previous ? previous.home !== target.home : target.id !== 'default';
     const parsed = JSON.parse(row.command_json) as {
       command: string[];
       env?: Record<string, string>;
       codexAccountId?: string;
       codexFreshStart?: boolean;
     };
-    const nextEnv = { ...(parsed.env ?? {}), CODEX_HOME: target.home };
-    // The conversation moves with the session (PM-188); only when it can't, a new one starts.
-    const carriedId = switchedAccount
-      ? this.carryCodexConversation(row, fromHome, target.home)
-      : null;
+    // Where the CLI ran: sessions from before PM-243 may still sit in a saved profile's folder.
+    const fromHome = parsed.env?.CODEX_HOME ?? runHome;
+    const movedHome = path.resolve(fromHome) !== path.resolve(runHome);
+    const switchedAccount = (previous?.id ?? 'default') !== target.id || movedHome;
+    const nextEnv = { ...(parsed.env ?? {}), CODEX_HOME: runHome };
+    // The conversation stays with the session: same folder, resumed by id after the login
+    // changes (as after a manual `codex login`); copied over first when the folder changes
+    // (PM-188). Only when there is none, a new one starts.
+    const carriedId = switchedAccount ? this.carryCodexConversation(row, fromHome, runHome) : null;
     const nextResume = switchedAccount
       ? carriedId
         ? JSON.stringify([parsed.command[0] ?? 'codex', 'resume', carriedId])

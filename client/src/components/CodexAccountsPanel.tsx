@@ -203,6 +203,9 @@ export function CodexAccountsPanel({
     if (ok) setRenamingId(null);
   }
 
+  // Codex CLIs always run on ~/.codex/auth.json: switching copies a saved login there (PM-243),
+  // so the default row is the login in use, and the saved profile it matches is marked too.
+  const defaultInUse = !isClaude || state?.activeProfileId === null;
   const activeLabel =
     state === null
       ? 'loading…'
@@ -434,9 +437,9 @@ export function CodexAccountsPanel({
           <ul className="list codex-accounts-list">
             <li className="codex-account-row">
               <span
-                className={`status-dot${state.activeProfileId === null ? ' green' : ''}`}
+                className={`status-dot${defaultInUse ? ' green' : ''}`}
                 role="img"
-                aria-label={state.activeProfileId === null ? 'Active account' : 'Inactive account'}
+                aria-label={defaultInUse ? 'Active account' : 'Inactive account'}
               />
               <span className="codex-account-info">
                 <b>Default {cliTitle} account</b>{' '}
@@ -466,7 +469,7 @@ export function CodexAccountsPanel({
                 )}
               </span>
               <span className="actions codex-account-actions">
-                {state.activeProfileId === null ? (
+                {defaultInUse ? (
                   <span className="badge badge-done">active</span>
                 ) : (
                   <button

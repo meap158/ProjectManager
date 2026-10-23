@@ -191,47 +191,54 @@ describe('CodexAccounts (PM-164)', () => {
     expect(statSync(original).mtimeMs).toBeCloseTo(past.getTime(), -2);
   });
 
-  it('preserves the resume list and unrelated history across credential switches', () => {
+  it('switching makes a saved login the default one and keeps the login it replaces (PM-243)', () => {
+    const login = (email: string, token: string, refreshedAt: string) =>
+      JSON.stringify({
+        tokens: {
+          id_token: makeJwt({ email }),
+          access_token: token,
+          refresh_token: `r-${token}`,
+          account_id: `acct-${email}`,
+        },
+        last_refresh: refreshedAt,
+      });
+    const defaultFile = path.join(defaultCodexHome, 'auth.json');
+    writeFileSync(defaultFile, login('first@example.com', 'first-1', '2026-10-01T00:00:00Z'));
     const accounts = new CodexAccounts(tmpDir, db);
-    const imported = accounts.importAccount(
-      'Other',
-      JSON.stringify({ access_token: 'test-token' }),
+    const second = accounts.importAccount(
+      'Second',
+      login('second@example.com', 'second-1', '2026-10-01T00:00:00Z'),
+    ).accounts[0]!;
+    const rollout = path.join(defaultCodexHome, 'sessions', '2026', '10', '18', 'rollout-a.jsonl');
+    mkdirSync(path.dirname(rollout), { recursive: true });
+    writeFileSync(rollout, '{"type":"session_meta"}\n');
+
+    // The default login was never saved: switching saves it first, then replaces it.
+    let state = accounts.setActive(second.id);
+    expect(readFileSync(defaultFile, 'utf8')).toContain('second-1');
+    expect(state.activeProfileId).toBe(second.id);
+    expect(accounts.selectedProfile()).toMatchObject({ id: second.id, home: defaultCodexHome });
+    const first = state.accounts.find((a) => a.email === 'first@example.com')!;
+    expect(readFileSync(path.join(accounts.profile(first.id).home, 'auth.json'), 'utf8')).toContain(
+      'first-1',
     );
-    const other = accounts.profile(imported.accounts[0]!.id);
-    const first = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12';
-    const second = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b13';
-    for (const [home, id] of [
-      [defaultCodexHome, first],
-      [other.home, second],
-    ]) {
-      const folder = path.join(home!, 'sessions', '2026', '10', '18');
-      mkdirSync(folder, { recursive: true });
-      writeFileSync(
-        path.join(folder, `rollout-2026-10-18-${id}.jsonl`),
-        JSON.stringify({ type: 'session_meta', payload: { id, cwd: 'project' } }) +
-          '\n' +
-          JSON.stringify({
-            type: 'response_item',
-            payload: { type: 'reasoning', encrypted_content: 'sealed' },
-          }) +
-          '\n',
-      );
-      writeFileSync(
-        path.join(home!, 'session_index.jsonl'),
-        JSON.stringify({ id, thread_name: id, updated_at: '2026-10-18T00:00:00Z' }) + '\n',
-      );
-    }
-    accounts.setActive(other.id);
-    const selectedIndex = readFileSync(path.join(other.home, 'session_index.jsonl'), 'utf8');
-    expect(selectedIndex).toContain(first);
-    expect(selectedIndex).toContain(second);
-    expect(readFileSync(accounts.findRollout(other.home, first)!, 'utf8')).not.toContain('sealed');
-    accounts.setActive(null);
-    const defaultIndex = readFileSync(path.join(defaultCodexHome, 'session_index.jsonl'), 'utf8');
-    expect(defaultIndex).toContain(first);
-    expect(defaultIndex).toContain(second);
-    expect(accounts.findRollout(defaultCodexHome, second)).not.toBeNull();
-    expect(readFileSync(path.join(other.home, 'auth.json'), 'utf8')).toContain('test-token');
+    // Conversations stay where every CLI runs.
+    expect(existsSync(rollout)).toBe(true);
+
+    // Codex refreshed the second login in ~/.codex: switching away writes that back.
+    writeFileSync(defaultFile, login('second@example.com', 'second-2', '2026-10-05T00:00:00Z'));
+    expect(accounts.state().activeProfileId).toBe(second.id);
+    state = accounts.setActive(first.id);
+    expect(readFileSync(defaultFile, 'utf8')).toContain('first-1');
+    expect(state.activeProfileId).toBe(first.id);
+    expect(
+      readFileSync(path.join(accounts.profile(second.id).home, 'auth.json'), 'utf8'),
+    ).toContain('second-2');
+    expect(state.accounts).toHaveLength(2); // No duplicate of a login that was already saved.
+
+    // A manual `codex login` shows as the account in use.
+    writeFileSync(defaultFile, login('second@example.com', 'second-3', '2026-10-06T00:00:00Z'));
+    expect(accounts.state().activeProfileId).toBe(second.id);
   });
 
   it('saves the current default CODEX_HOME login into the managed pool', () => {
@@ -254,7 +261,9 @@ describe('CodexAccounts (PM-164)', () => {
     expect(saved.accounts[0]?.plan).toBe('plus');
     expect(saved.activeProfileId).toBe(saved.accounts[0]!.id);
     expect(accounts.selectedId()).toBe(saved.accounts[0]!.id);
-    expect(existsSync(path.join(defaultCodexHome, 'auth.json'))).toBe(false);
+    // The login stays where the CLIs run; saving again adds no second copy.
+    expect(existsSync(path.join(defaultCodexHome, 'auth.json'))).toBe(true);
+    expect(accounts.saveCurrentAccount().accounts).toHaveLength(1);
     expect(
       readFileSync(path.join(accounts.profile(saved.accounts[0]!.id).home, 'auth.json'), 'utf8'),
     ).toContain('def-token');
@@ -408,13 +417,18 @@ describe('CodexAccounts (PM-164)', () => {
       const row = db
         .prepare('SELECT command_json, resume_json FROM agent_sessions WHERE id = ?')
         .get(sessionId) as { command_json: string; resume_json: string | null };
-      const command = JSON.parse(row.command_json) as { codexFreshStart?: boolean };
+      const command = JSON.parse(row.command_json) as {
+        codexFreshStart?: boolean;
+        env?: Record<string, string>;
+      };
+      // Like a manual `codex login`: the new login lands in ~/.codex and the CLI resumes the
+      // same conversation there (PM-243). Nothing is copied into the profile folder.
       expect(command.codexFreshStart).toBeUndefined();
+      expect(command.env?.CODEX_HOME).toBe(defaultCodexHome);
       expect(JSON.parse(row.resume_json!)).toEqual(['codex', 'resume', resumeId]);
-      const copied = readFileSync(path.join(tmpDir, 'codex-accounts', accountId, rel), 'utf8');
-      expect(copied).toContain('"message"');
-      expect(copied).not.toContain('sealed');
-      expect(readFileSync(source, 'utf8')).toContain('sealed'); // the old login keeps its own copy
+      expect(readFileSync(path.join(defaultCodexHome, 'auth.json'), 'utf8')).toContain('sk-genzy');
+      expect(readFileSync(source, 'utf8')).toContain('"message"');
+      expect(existsSync(path.join(tmpDir, 'codex-accounts', accountId, rel))).toBe(false);
     } finally {
       await supervisor.shutdown();
     }
@@ -471,7 +485,7 @@ describe('CodexAccounts (PM-164)', () => {
       expect(row.resume_json).toBeNull();
       expect(command.codexFreshStart).toBe(true);
       expect(command.codexAccountId).toBe(accountId);
-      expect(command.env?.CODEX_HOME).toBe(path.join(tmpDir, 'codex-accounts', accountId));
+      expect(command.env?.CODEX_HOME).toBe(defaultCodexHome);
       expect(existsSync(path.join(tmpDir, 'codex-accounts', accountId, 'sessions'))).toBe(false);
     } finally {
       await supervisor.shutdown();
@@ -531,11 +545,10 @@ describe('CodexAccounts (PM-164)', () => {
         };
       });
       for (const session of homes) {
+        // Its conversation was never written: a new one starts, on the new login.
         expect(session.resume).toBeNull();
         expect(session.command.codexAccountId).toBe(accountId);
-        expect(session.command.env?.CODEX_HOME).toBe(
-          path.join(tmpDir, 'codex-accounts', accountId),
-        );
+        expect(session.command.env?.CODEX_HOME).toBe(defaultCodexHome);
       }
       expect(supervisor.codexAccountsState().activeProfileId).toBe(accountId);
       expect(supervisor.getSession(second)?.codexAccountId).toBe(accountId);
@@ -543,7 +556,7 @@ describe('CodexAccounts (PM-164)', () => {
       await supervisor.shutdown();
     }
   });
-  it('refreshes saved profile usage without changing the selected account or using global default credentials', async () => {
+  it('reads the active login usage from ~/.codex, never from its stale saved copy (PM-243)', async () => {
     const accounts = new CodexAccounts(tmpDir, db);
     const saved = accounts.importAccount(
       'Usage test',
@@ -556,11 +569,13 @@ describe('CodexAccounts (PM-164)', () => {
       visited.push(home);
       return { status: 'expired', limits: null, checkedAt: new Date().toISOString() };
     });
-    expect(visited).toEqual([path.join(tmpDir, 'codex-accounts', id)]);
+    expect(visited).toEqual([defaultCodexHome]);
     expect(state.activeProfileId).toBe(id);
     expect(state.accounts[0]?.usageStatus).toBe('expired');
     expect(state.accounts[0]?.limits).toBeNull();
-    expect(existsSync(path.join(defaultCodexHome, 'auth.json'))).toBe(false);
+    expect(readFileSync(path.join(defaultCodexHome, 'auth.json'), 'utf8')).toContain(
+      'fake-test-key',
+    );
   });
 
   it('keeps usage for every profile across restarts and re-reads only stale ones (PM-173)', async () => {

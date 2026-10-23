@@ -89,6 +89,10 @@ export class CodexAccounts {
       if (email && !firstByEmail.has(email)) firstByEmail.set(email, home);
       sources.set(home, (email && firstByEmail.get(email)) || home);
     }
+    // The saved copy of the login in ~/.codex is never started: its refresh token is stale once
+    // Codex refreshes the default one (PM-243), and using it could sign the default out.
+    const inUse = this.defaultMatch();
+    if (inUse && sources.has(this.home(inUse))) sources.set(this.home(inUse), this.defaultHome());
     return sources;
   }
 
@@ -193,10 +197,9 @@ export class CodexAccounts {
 
   state(now = Date.now()): CodexAccountsState {
     const registry = this.readRegistry();
-    const saved = getSetting<string | null>(this.db, ACTIVE_KEY);
-    const candidate = saved !== undefined ? saved : (registry.activeProfileId ?? null);
-    const activeProfileId =
-      candidate && registry.accounts.some((account) => account.id === candidate) ? candidate : null;
+    // The account in use is whichever saved login ~/.codex/auth.json holds (also after a manual
+    // `codex login`), not a remembered choice.
+    const activeProfileId = this.defaultMatch();
     const autoSwitch = getSetting<boolean>(this.db, AUTO_SWITCH_KEY) ?? true;
     const defHome = this.defaultHome();
     const defAuthFile = path.join(defHome, 'auth.json');
@@ -233,11 +236,18 @@ export class CodexAccounts {
     };
   }
 
+  /**
+   * Makes a saved login the default one, as `codex login` with that account would: its auth.json
+   * becomes ~/.codex/auth.json, and every Codex CLI runs there and resumes its conversation
+   * natively (PM-243). The login it replaces is kept first: written back to its saved profile
+   * (Codex rotates refresh tokens in the default home, so that copy is the fresh one), or saved
+   * as a new profile when it was never saved.
+   */
   setActive(id: string | null): CodexAccountsState {
     const normalized = id === 'default' ? null : id;
     if (normalized !== null && !this.account(normalized))
       throw new CodexAccountError(404, 'Codex account not found');
-    this.syncResumeHistory(normalized === null ? this.defaultHome() : this.home(normalized));
+    if (normalized !== null) this.makeDefault(normalized);
     setSetting(this.db, ACTIVE_KEY, normalized);
     const registryFile = path.join(this.dataDir, REGISTRY);
     if (existsSync(registryFile) || normalized !== null) {
@@ -245,6 +255,88 @@ export class CodexAccounts {
       this.writeRegistry({ ...registry, activeProfileId: normalized });
     }
     return this.state();
+  }
+
+  private makeDefault(id: string): void {
+    const source = path.join(this.home(id), 'auth.json');
+    if (!existsSync(source))
+      throw new CodexAccountError(
+        404,
+        'This saved login has no auth.json; save or import it again',
+      );
+    const defaultFile = path.join(this.defaultHome(), 'auth.json');
+    const current = this.defaultMatch();
+    if (current === id) return; // Already the default login.
+    if (existsSync(defaultFile)) {
+      if (current) {
+        const saved = path.join(this.home(current), 'auth.json');
+        if (this.lastRefresh(defaultFile) >= this.lastRefresh(saved))
+          this.writePrivate(saved, readFileSync(defaultFile, 'utf8'));
+      } else {
+        const email = this.readAuthMeta(defaultFile).email;
+        this.importAccount(email ?? 'Earlier default login', readFileSync(defaultFile, 'utf8'));
+      }
+    }
+    mkdirSync(this.defaultHome(), { recursive: true, mode: 0o700 });
+    this.writePrivate(defaultFile, readFileSync(source, 'utf8'));
+  }
+
+  /** The saved profile holding the login in ~/.codex/auth.json (ChatGPT account, else email). */
+  defaultMatch(): string | null {
+    const defaultFile = path.join(this.defaultHome(), 'auth.json');
+    if (!existsSync(defaultFile)) return null;
+    const accounts = this.readRegistry().accounts;
+    // Just switched: the default is a byte-for-byte copy of the saved login.
+    const raw = readFileSync(defaultFile);
+    for (const account of accounts) {
+      const file = path.join(this.home(account.id), 'auth.json');
+      if (existsSync(file) && readFileSync(file).equals(raw)) return account.id;
+    }
+    // Codex refreshed the tokens since: the same ChatGPT account and email.
+    const current = this.loginIdentity(defaultFile);
+    if (!current) return null;
+    for (const account of accounts) {
+      const identity = this.loginIdentity(path.join(this.home(account.id), 'auth.json'));
+      const saved = identity && {
+        account: identity.account,
+        email: identity.email ?? account.email?.toLowerCase() ?? null,
+      };
+      if (
+        saved &&
+        (current.account && saved.account
+          ? current.account === saved.account && current.email === saved.email
+          : current.email !== null && current.email === saved.email)
+      )
+        return account.id;
+    }
+    return null;
+  }
+
+  private loginIdentity(file: string): { account: string | null; email: string | null } | null {
+    if (!existsSync(file)) return null;
+    try {
+      const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+      const auth = normalizeCodexAuth(raw);
+      if (!auth) return null;
+      const tokens = (auth.tokens ?? {}) as Record<string, unknown>;
+      const account = typeof tokens.account_id === 'string' ? tokens.account_id : null;
+      const email = extractCodexAuthMeta(auth, raw).email?.toLowerCase() ?? null;
+      return account || email ? { account, email } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** When Codex last refreshed this login's tokens (0 when unknown). */
+  private lastRefresh(file: string): number {
+    try {
+      const value = (JSON.parse(readFileSync(file, 'utf8')) as { last_refresh?: unknown })
+        .last_refresh;
+      const time = typeof value === 'string' ? Date.parse(value) : NaN;
+      return Number.isFinite(time) ? time : 0;
+    } catch {
+      return 0;
+    }
   }
 
   setAutoSwitchEligible(id: string, eligible: boolean): CodexAccountsState {
@@ -318,20 +410,11 @@ export class CodexAccounts {
     }
     const raw = readFileSync(authFile, 'utf8');
     const meta = this.readAuthMeta(authFile);
-    const state = this.importAccount(name.trim() || meta.email || 'Default login copy', raw);
-    const newest = state.accounts.at(-1);
-    if (newest) {
-      // Move the default auth.json into the saved profile and make that profile active so a
-      // subsequent `codex logout` in the default ~/.codex folder cannot revoke the saved token
-      // on OpenAI's server (PM-173).
-      try {
-        rmSync(authFile, { force: true });
-      } catch {
-        // Best-effort cleanup of default auth.json.
-      }
-      return this.setActive(newest.id);
-    }
-    return state;
+    // Already saved: switching writes the fresh tokens back to that profile, no second copy.
+    if (this.defaultMatch()) return this.state();
+    // The login stays in ~/.codex, where every Codex CLI runs (PM-243); the copy is what a later
+    // switch back restores. Don't run `codex logout` there: it would revoke the saved copy too.
+    return this.importAccount(name.trim() || meta.email || 'Default login copy', raw);
   }
 
   renameAccount(id: string, name: string): CodexAccountsState {
@@ -374,20 +457,16 @@ export class CodexAccounts {
     return this.state();
   }
 
+  /** Where Codex CLIs run (never a saved profile's stored copy: its token may be stale). */
   selectedHome(): string {
-    return this.profile(this.selectedId()).home;
+    return this.runHome();
   }
 
   selectedId(): string {
-    const saved = getSetting<string | null>(this.db, ACTIVE_KEY);
-    if (saved && this.account(saved)) return saved;
-    if (saved === undefined) {
-      const regActive = this.readRegistry().activeProfileId ?? null;
-      if (regActive && this.account(regActive)) return regActive;
-    }
-    return 'default';
+    return this.defaultMatch() ?? 'default';
   }
 
+  /** A login and the folder its credentials are stored in (CLIs run in `runHome()`). */
   profile(id: string): { id: string; name: string; home: string } {
     if (id === 'default') return { id, name: 'Default Codex account', home: this.defaultHome() };
     const account = this.account(id);
@@ -397,8 +476,18 @@ export class CodexAccounts {
     return { id: account.id, name: account.name, home };
   }
 
+  /**
+   * Where every Codex CLI runs: the default CODEX_HOME, whatever the login (PM-243). Switching
+   * copies a saved login into it (`setActive`), so conversations stay in one folder and resume
+   * natively, exactly as after a manual `codex login`.
+   */
+  runHome(): string {
+    return this.defaultHome();
+  }
+
+  /** The login in use, with the folder CLIs run in. */
   selectedProfile(): { id: string; name: string; home: string } {
-    return this.profile(this.selectedId());
+    return { ...this.profile(this.selectedId()), home: this.runHome() };
   }
 
   homeForKey(key: string): string | null {
@@ -426,8 +515,11 @@ export class CodexAccounts {
     tried: readonly string[],
     now = Date.now(),
   ): { id: string; name: string; home: string } | null {
+    // "Default" is just the login in use; once it is a saved profile, rotate over profiles only.
     const accounts = [
-      { id: 'default', name: 'Default Codex account', home: this.defaultHome() },
+      ...(this.defaultMatch()
+        ? []
+        : [{ id: 'default', name: 'Default Codex account', home: this.defaultHome() }]),
       ...this.readRegistry()
         .accounts.filter((account) => account.autoSwitchEligible !== false)
         .map((account) => ({
@@ -546,7 +638,8 @@ export class CodexAccounts {
    * case the caller starts a new conversation.
    */
   carryConversation(fromHome: string, toHome: string, id: string): boolean {
-    if (normalPath(fromHome) === normalPath(toHome)) return true;
+    // Same folder (a login change in ~/.codex): resumable when the conversation is there.
+    if (normalPath(fromHome) === normalPath(toHome)) return this.findRollout(fromHome, id) !== null;
     const source = this.findRollout(fromHome, id);
     if (!source) return false;
     const carried = this.carryRollout(source, fromHome, toHome);
