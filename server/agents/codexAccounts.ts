@@ -30,7 +30,7 @@ const AUTO_SWITCH_KEY = 'codex-accounts-auto-switch';
 /** Last usage read per account home (limits and times only, never credentials). */
 const USAGE_KEY = 'codex-accounts-usage-identity-v2';
 /** Opening the accounts panel re-reads usage older than this, in the background. */
-export const USAGE_MAX_AGE_MS = 10 * 60_000;
+export const USAGE_MAX_AGE_MS = 60_000;
 const MAX_AUTH_BYTES = 1024 * 1024;
 
 interface StoredAccount {
@@ -159,13 +159,16 @@ export class CodexAccounts {
     return this.refreshingUsage;
   }
 
-  async refreshAccountUsage(id: string): Promise<CodexAccountsState> {
+  async refreshAccountUsage(
+    id: string,
+    reader = readCodexAccountUsage,
+  ): Promise<CodexAccountsState> {
     const home = id === 'default' ? this.defaultHome() : this.home(id);
     if (id !== 'default' && !this.account(id))
       throw new CodexAccountError(404, 'Codex account not found');
     if (this.refreshingUsage) await this.refreshingUsage;
     const source = this.usageSources().get(home) ?? home;
-    return this.refreshUsage(readCodexAccountUsage, (candidate) => candidate === source);
+    return this.refreshUsage(reader, (candidate) => candidate === source);
   }
 
   /**
@@ -180,7 +183,16 @@ export class CodexAccounts {
     if (this.refreshingUsage) return;
     const stale = (home: string) => {
       const known = this.knownUsage(home);
-      return !known || !(now - Date.parse(known.checkedAt) <= maxAgeMs);
+      return (
+        !known ||
+        !(now - Date.parse(known.checkedAt) < maxAgeMs) ||
+        !!known.limits?.windows.some(
+          (w) =>
+            w.resetsAt &&
+            Date.parse(w.resetsAt) <= now &&
+            Date.parse(w.resetsAt) > Date.parse(known.checkedAt),
+        )
+      );
     };
     if (!this.usageReadHomes().some(stale)) return;
     void this.refreshUsage(reader, stale).catch((error: Error) => {
@@ -207,14 +219,14 @@ export class CodexAccounts {
   private usageState(home: string, now: number, source = home) {
     // A copy known to be signed out says so, rather than showing the other copy's usage.
     const own = this.knownUsage(home);
-    const current = own?.status === 'expired' ? own : (this.knownUsage(source) ?? own);
+    const current = this.knownUsage(source) ?? own;
     // Conversation rollouts can belong to another login after switching or history carry.
     const limits = current?.limits ?? null;
     const usageStatus =
       current?.status === 'fresh' && now - Date.parse(current.checkedAt) > 60000
         ? ('stale' as const)
         : (current?.status ?? (limits ? ('stale' as const) : ('not_loaded' as const)));
-    return { limits, usageStatus, usageCheckedAt: current?.checkedAt ?? null };
+    return { limits, usageStatus, usageCheckedAt: limits?.asOf ?? current?.checkedAt ?? null };
   }
   private readonly root: string;
 
@@ -582,7 +594,17 @@ export class CodexAccounts {
       if (!tried.includes(candidate.id)) untried.push(candidate);
     }
     if (untried.length === 0) return null;
-    const nonExhausted = untried.find((candidate) => !this.isExhausted(candidate.home, now));
+    const verifiedHealthy = untried.find((candidate) => {
+      const source = this.usageSources().get(candidate.home) ?? candidate.home;
+      const usage = this.knownUsage(source);
+      return (
+        usage?.status === 'fresh' &&
+        now - Date.parse(usage.checkedAt) <= USAGE_MAX_AGE_MS &&
+        !this.isExhausted(candidate.home, now)
+      );
+    });
+    const nonExhausted =
+      verifiedHealthy ?? untried.find((candidate) => !this.isExhausted(candidate.home, now));
     const chosen = nonExhausted ?? untried[0]!;
     if (chosen.id !== 'default') this.syncConfigToml(chosen.home);
     return chosen;
@@ -848,7 +870,8 @@ export class CodexAccounts {
   }
 
   private isExhausted(home: string, now: number): boolean {
-    const limits = this.knownUsage(home)?.limits;
+    const source = this.usageSources().get(home) ?? home;
+    const limits = this.knownUsage(source)?.limits;
     if (!limits) return false;
     return limits.windows.some(
       (w) => w.usedPercent >= 99 && (!w.resetsAt || Date.parse(w.resetsAt) > now),

@@ -36,6 +36,10 @@ Antigravity offers an optional agy-auth account drawer with explicit usage refre
 switching for new launches. It explains that existing sessions retain their login until restarted.
 Codex quota uses identity-verified account-service readings; shared conversation history is never
 a quota source. Switching discards in-flight readings started against earlier credentials.
+Account usage revalidates at most once per minute while visible and after a known reset passes.
+Refresh failures retain the previous observation time and show unavailable/stale status. Reset
+countdowns tick each second from wall time; reaching zero requests fresh evidence rather than
+assuming quota has returned. Refresh-all shares the same action/race guard as account switching.
 Transient action menus, dropdowns and confirmation dialogs start closed.
 Usage status and meters sit in a separate block with an 8px gap below account details and
 6px between status and meters. The open drawer revalidates usage each minute; server-side

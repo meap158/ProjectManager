@@ -1,7 +1,31 @@
 import { expect, it, vi } from 'vitest';
 import { parseAccountLimits, readCodexAccountUsage } from './accountUsage.js';
 import { resolveArgv } from './resolve.js';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 vi.mock('./resolve.js', () => ({ resolveArgv: vi.fn() }));
+
+it('rejects a service account identity that differs from the requested credential file', async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'pm-usage-identity-'));
+  try {
+    const payload = Buffer.from(JSON.stringify({ email: 'expected@example.com' })).toString(
+      'base64url',
+    );
+    writeFileSync(
+      path.join(home, 'auth.json'),
+      JSON.stringify({ tokens: { id_token: `x.${payload}.x` } }),
+    );
+    const script = `process.stdin.setEncoding('utf8');let b='';process.stdin.on('data',c=>{b+=c;let n;while((n=b.indexOf('\\n'))>=0){const m=JSON.parse(b.slice(0,n));b=b.slice(n+1);if(m.method==='initialized')continue;const result=m.id===2?{account:{type:'chatgpt',email:'other@example.com'}}:{};process.stdout.write(JSON.stringify({id:m.id,result})+'\\n');}});`;
+    vi.mocked(resolveArgv).mockResolvedValue([process.execPath, '-e', script]);
+    expect(await readCodexAccountUsage(home)).toMatchObject({
+      status: 'unavailable',
+      limits: null,
+    });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
 
 it('parses current account windows and never turns missing or malformed data into zero usage', () => {
   const now = Date.parse('2026-10-18T00:00:00Z');

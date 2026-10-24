@@ -1,4 +1,5 @@
 import type { ProviderLimits } from '../../../shared/limits';
+import { useEffect, useState } from 'react';
 import { formatRelative, formatReset } from '../format';
 
 /**
@@ -7,6 +8,19 @@ import { formatRelative, formatReset } from '../format';
  * are as of the CLI's last reply, so the source and time sit in the tooltip.
  */
 export function UsageLimits({ limits, now }: { limits: ProviderLimits; now: number }) {
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = () => {
+      if (!document.hidden) setClock(Date.now());
+    };
+    const timer = window.setInterval(tick, 1000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, []);
+  const currentTime = Math.max(now, clock);
   return (
     <span
       className="usage-limits"
@@ -17,7 +31,9 @@ export function UsageLimits({ limits, now }: { limits: ProviderLimits; now: numb
         const reset = w.resetSinceReport
           ? 'reset since'
           : w.resetsAt
-            ? `resets ${formatReset(w.resetsAt, now)}`
+            ? Date.parse(w.resetsAt) <= currentTime
+              ? 'reset due · awaiting refresh'
+              : `resets ${formatReset(w.resetsAt, currentTime)}`
             : null;
         return (
           <span key={w.label} className="usage-window">

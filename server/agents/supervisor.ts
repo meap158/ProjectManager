@@ -82,7 +82,6 @@ import {
   type TimerMemo,
   workingInTail,
 } from './activity.js';
-import { codexLimits, readLimits } from './limits.js';
 import { applyCpuBudget, getCpuBudget } from './cpuBudget.js';
 import { CpuGovernor, type GovernorStats } from './cpuGovernor.js';
 import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
@@ -1417,11 +1416,14 @@ export class AgentSupervisor {
 
   private codexWindowsForSession(row: SessionRow) {
     const profile = this.sessionCodexProfile(row);
-    if (profile) {
-      const profileLimits = codexLimits(os.homedir(), profile.home);
-      if (profileLimits) return profileLimits.windows;
-    }
-    return readLimits(this.dataDir).find((p) => p.providerId === 'codex')?.windows ?? [];
+    const state = this.codexAccounts?.state();
+    if (!profile || !state) return [];
+    return (
+      (profile.id === 'default'
+        ? state.defaultAccount?.limits
+        : state.accounts.find((a) => a.id === profile.id)?.limits
+      )?.windows ?? []
+    );
   }
 
   private armContinuation(row: SessionRow): void {
@@ -2728,9 +2730,9 @@ export class AgentSupervisor {
       return true;
     }
     const windows =
-      (codexHome ? codexLimits(os.homedir(), codexHome) : null)?.windows ??
-      readLimits(this.dataDir).find((p) => p.providerId === 'codex')?.windows ??
-      [];
+      codexHome === this.codexAccounts?.runHome()
+        ? (this.codexAccounts?.state().defaultAccount?.limits?.windows ?? [])
+        : [];
     return allowanceReset(tail, windows, Date.now()) !== null;
   }
 

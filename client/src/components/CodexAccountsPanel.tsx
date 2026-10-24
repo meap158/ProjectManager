@@ -337,12 +337,7 @@ export function CodexAccountsPanel({
                   onClick={async () => {
                     setRefreshingUsage(true);
                     try {
-                      const next = await api.refreshCodexAccountsUsage();
-                      setState(next);
-                      setNow(Date.now());
-                      onError('');
-                    } catch (e) {
-                      onError((e as Error).message);
+                      await act(api.refreshCodexAccountsUsage);
                     } finally {
                       setRefreshingUsage(false);
                     }

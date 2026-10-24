@@ -679,6 +679,75 @@ describe('CodexAccounts (PM-164)', () => {
     ).toBe(15);
   });
 
+  it('rejects cached quota after external login replacement, including across restart', async () => {
+    const login = (id: string) =>
+      JSON.stringify({
+        tokens: {
+          account_id: id,
+          id_token: makeJwt({ email: 'same@example.com' }),
+          access_token: id,
+        },
+      });
+    writeFileSync(path.join(defaultCodexHome, 'auth.json'), login('account-a'));
+    const accounts = new CodexAccounts(tmpDir, db);
+    await accounts.refreshUsage(async () => ({
+      status: 'fresh',
+      checkedAt: new Date().toISOString(),
+      limits: {
+        providerId: 'codex',
+        source: 'test',
+        asOf: new Date().toISOString(),
+        windows: [{ label: '5-hour', windowMinutes: 300, usedPercent: 99, resetsAt: null }],
+      },
+    }));
+    writeFileSync(path.join(defaultCodexHome, 'auth.json'), login('account-b'));
+    expect(accounts.state().defaultAccount.limits).toBeNull();
+    expect(new CodexAccounts(tmpDir, db).state().defaultAccount.limits).toBeNull();
+  });
+
+  it('failed refresh preserves the quota observation time and does not present it as fresh', async () => {
+    writeFileSync(
+      path.join(defaultCodexHome, 'auth.json'),
+      JSON.stringify({ OPENAI_API_KEY: 'test' }),
+    );
+    const accounts = new CodexAccounts(tmpDir, db);
+    const asOf = '2026-10-24T00:00:00Z';
+    await accounts.refreshUsage(async () => ({
+      status: 'fresh',
+      checkedAt: asOf,
+      limits: {
+        providerId: 'codex',
+        source: 'test',
+        asOf,
+        windows: [{ label: '5-hour', windowMinutes: 300, usedPercent: 20, resetsAt: null }],
+      },
+    }));
+    const state = await accounts.refreshUsage(async () => ({
+      status: 'unavailable',
+      checkedAt: '2026-10-24T00:01:00Z',
+      limits: null,
+    }));
+    expect(state.defaultAccount.usageStatus).toBe('unavailable');
+    expect(state.defaultAccount.usageCheckedAt).toBe(asOf);
+    expect(state.defaultAccount.limits?.windows[0]?.usedPercent).toBe(20);
+  });
+
+  it('individual refresh of the active profile reads only its canonical default credential', async () => {
+    const accounts = new CodexAccounts(tmpDir, db);
+    const a = accounts.importAccount('A', JSON.stringify({ OPENAI_API_KEY: 'test-a' }))
+      .accounts[0]!;
+    accounts.importAccount('B', JSON.stringify({ OPENAI_API_KEY: 'test-b' }));
+    accounts.setActive(a.id);
+    const reader = vi.fn(async () => ({
+      status: 'unavailable' as const,
+      checkedAt: new Date().toISOString(),
+      limits: null,
+    }));
+    await accounts.refreshAccountUsage(a.id, reader);
+    expect(reader.mock.calls).toHaveLength(1);
+    expect(reader).toHaveBeenCalledWith(defaultCodexHome);
+  });
+
   it('keeps usage for every profile across restarts and re-reads only stale ones (PM-173)', async () => {
     const accounts = new CodexAccounts(tmpDir, db);
     for (const name of ['One', 'Two'])

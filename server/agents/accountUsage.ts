@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { ProviderLimits, UsageWindow } from '../../shared/limits.js';
 import { resolveArgv } from './resolve.js';
 import { windowLabel } from './limits.js';
@@ -54,6 +56,18 @@ export function parseAccountLimits(result: unknown, now = Date.now()): ProviderL
  * Protocol: https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt */
 export async function readCodexAccountUsage(home: string): Promise<AccountUsageResult> {
   const checkedAt = new Date().toISOString();
+  let expectedEmail: string | null = null;
+  try {
+    const auth = JSON.parse(readFileSync(path.join(home, 'auth.json'), 'utf8')) as {
+      tokens?: { id_token?: string };
+    };
+    const payload = JSON.parse(
+      Buffer.from(auth.tokens?.id_token?.split('.')[1] ?? '', 'base64url').toString(),
+    ) as { email?: unknown };
+    if (typeof payload.email === 'string') expectedEmail = payload.email.toLowerCase();
+  } catch {
+    /* API-key or unavailable metadata: the forced file credential store remains scoped. */
+  }
   let argv: string[];
   try {
     argv = await resolveArgv([
@@ -99,7 +113,7 @@ export async function readCodexAccountUsage(home: string): Promise<AccountUsageR
         buffer = buffer.slice(newline + 1);
         let message: {
           id?: number;
-          result?: { account?: { type?: string } | null };
+          result?: { account?: { type?: string; email?: string } | null };
           error?: { message?: string };
         };
         try {
@@ -122,6 +136,8 @@ export async function readCodexAccountUsage(home: string): Promise<AccountUsageR
         if (message.id === 2) {
           const account = message.result?.account;
           if (!account) return done('expired');
+          if (expectedEmail && account.email?.toLowerCase() !== expectedEmail)
+            return done('unavailable');
           if (account.type !== 'chatgpt' && account.type !== 'chatgptAuthTokens')
             return done('unsupported');
           send({ id: 3, method: 'account/rateLimits/read' });
