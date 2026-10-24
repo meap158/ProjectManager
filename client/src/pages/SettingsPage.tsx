@@ -28,6 +28,7 @@ import { LanAccessPanel } from '../components/LanAccessPanel';
 import { RemoteAccessPanel } from '../components/RemoteAccessPanel';
 import { UsageLimits } from '../components/UsageLimits';
 import { Dropdown } from '../components/Dropdown';
+import { AntigravityAccountsPanel } from '../components/AntigravityAccountsPanel';
 import { useViewPreference } from '../useViewPreference';
 
 const TerminalView = lazy(() =>
@@ -75,7 +76,8 @@ export function SettingsPage() {
   const [expandedCliId, setExpandedCliId] = useViewPreference<string | null>(
     'pm.settings.expandedAccounts',
     null,
-    (value): value is string | null => value === null || value === 'codex' || value === 'claude',
+    (value): value is string | null =>
+      value === null || value === 'codex' || value === 'claude' || value === 'antigravity',
   );
   const [error, setError] = useState<string | null>(null);
   // Plan usage limits per CLI (PM-17) and the clock for "resets in …".
@@ -195,7 +197,8 @@ export function SettingsPage() {
           ) : (
             <ul className="list settings-cli-list">
               {clis.map((p) => {
-                const isExpandable = p.id === 'codex' || p.id === 'claude';
+                const isExpandable =
+                  p.id === 'codex' || p.id === 'claude' || p.id === 'antigravity';
                 const isExpanded = isExpandable && expandedCliId === p.id;
                 const toggleExpand = () =>
                   setExpandedCliId((prev) => (prev === p.id ? null : p.id));
@@ -299,10 +302,14 @@ export function SettingsPage() {
                     </div>
                     {isExpanded && (
                       <div id={`settings-cli-drawer-${p.id}`} className="settings-cli-drawer">
-                        <CodexAccountsPanel
-                          providerId={p.id as 'codex' | 'claude'}
-                          onError={(msg) => setError(msg || null)}
-                        />
+                        {p.id === 'antigravity' ? (
+                          <AntigravityAccountsPanel />
+                        ) : (
+                          <CodexAccountsPanel
+                            providerId={p.id as 'codex' | 'claude'}
+                            onError={(msg) => setError(msg || null)}
+                          />
+                        )}
                       </div>
                     )}
                   </li>

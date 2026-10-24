@@ -5041,6 +5041,21 @@ span.path-link:hover .path-icon {
 .pane-identity {
   display: contents;
 }
+.antigravity-account-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.antigravity-account-list > li {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 768px) {
+  .antigravity-account-list .btn {
+    min-height: 44px;
+  }
+}
 
 @media (max-width: 768px) {
   .workspace-bar {

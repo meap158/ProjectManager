@@ -1,8 +1,8 @@
 # Antigravity account switching reference
 
 Reviewed 2026-10-24: [agy-auth](https://github.com/fikrilal/agy-auth) is applicable as an optional
-adapter for ProjectManager's Antigravity account UI. It is unofficial. This review does not
-install it, switch credentials, or implement an account drawer.
+adapter for ProjectManager's Antigravity account UI. It is unofficial. ProjectManager now has an
+optional adapter and Settings drawer; no tool was installed or live credential switched during validation.
 
 ## Integration contract
 
@@ -37,13 +37,14 @@ or treating background account inventory as authorization to log in or activate 
 
 ## Current gaps and next implementation
 
-ProjectManager has an Antigravity provider, transcript support and continuation controls, but Settings
-account drawers currently support only Codex and Claude. `agy-auth` was not found on PATH during
-this review. An end-to-end switch cannot be validated here yet.
+ProjectManager has an Antigravity provider, transcript support and continuation controls. Settings now
+offers an Antigravity account drawer with missing-tool guidance, metadata, explicit usage refresh and
+confirmed stable-ID switching for new launches. `agy-auth` was not found on PATH during this review.
+An end-to-end switch cannot be validated here yet. Running sessions are not automatically restarted.
 
-Start with optional executable detection and a read-only, validated JSON adapter using fixture tests.
-Then add the existing account-drawer presentation for Antigravity, including missing-tool state,
-explicit refresh and stable-ID manual switching. Add automatic rotation only after named quota
+The adapter uses bounded shell-free commands and validates versioned JSON. Fixture/component tests
+cover metadata allowlisting, remaining-to-used conversion and explicit switch confirmation.
+Add automatic rotation only after named quota
 groups and restart/resume semantics have been validated. Keep installation explicit and optional.
 
 Sources: [README](https://github.com/fikrilal/agy-auth#readme),

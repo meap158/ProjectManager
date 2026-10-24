@@ -1,3 +1,4 @@
+import type { AntigravityAccountsState } from '../../shared/antigravityAccounts';
 import type {
   OrchestratorOverview,
   OrchestratorChatWork,
@@ -452,6 +453,12 @@ export const api = {
   deleteInstall: (id: number) => request<void>('DELETE', `/agent-installs/${id}`),
 
   // ---- Codex accounts (PM-164) ------------------------------------------------------------------
+  getAntigravityAccounts: () =>
+    request<AntigravityAccountsState>('GET', '/agents/antigravity-accounts'),
+  refreshAntigravityAccounts: () =>
+    request<AntigravityAccountsState>('POST', '/agents/antigravity-accounts/usage'),
+  switchAntigravityAccount: (accountId: string) =>
+    request<AntigravityAccountsState>('PUT', '/agents/antigravity-accounts/active', { accountId }),
   refreshCodexAccountsUsage: () =>
     request<CodexAccountsState>('POST', '/agents/codex-accounts/usage'),
   getCodexAccounts: () => request<CodexAccountsState>('GET', '/agents/codex-accounts'),

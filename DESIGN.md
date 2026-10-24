@@ -21,12 +21,17 @@ the Show in pane icon, submitting a message without restarting. Other status fil
 Continue shows pending/sent/queued feedback and prevents duplicate in-flight sends. Show in pane
 uses a pane icon with an accessible name and tooltip. On phones Continue is icon-only and row
 actions retain 44px touch targets with compact gaps; desktop keeps the Continue label.
-The docked CLI header offers icon-only Continue between image and restart actions for an Idle
-session in the Idle-only filter. Mobile keeps it inside the compact session actions menu.
+The docked CLI header offers icon-only Continue between image and restart actions for supported
+live sessions regardless of list filter. List-row Continue remains Idle-filter only.
+Mobile keeps header Continue inside the compact session actions menu.
 
 Settings > Agent CLIs keeps saved accounts inside each Codex/Claude entry's Accounts drawer.
 Account drawer selection and Agents filter expansion persist across navigation and reloads in
 this browser. Reusable view preferences validate stored values and tolerate blocked/full storage.
+Antigravity offers an optional agy-auth account drawer with explicit usage refresh and confirmed
+switching for new launches. It explains that existing sessions retain their login until restarted.
+Codex quota uses identity-verified account-service readings; shared conversation history is never
+a quota source. Switching discards in-flight readings started against earlier credentials.
 Transient action menus, dropdowns and confirmation dialogs start closed.
 Usage status and meters sit in a separate block with an 8px gap below account details and
 6px between status and meters. The open drawer revalidates usage each minute; server-side
