@@ -115,14 +115,14 @@ describe('CodexAccounts (PM-164)', () => {
     );
     const id = state.accounts[0]!.id;
     expect(state.accounts[0]!.autoSwitchEligible).toBe(true);
-    expect(accounts.nextUnused('default', ['default'])?.id).toBe(id);
+    expect(accounts.nextUnused('default', ['default'])).toBeNull();
     accounts.setAutoSwitchEligible(id, false);
     const reloaded = new CodexAccounts(tmpDir, db);
     expect(reloaded.state().accounts[0]!.autoSwitchEligible).toBe(false);
     expect(reloaded.nextUnused('default', ['default'])).toBeNull();
     expect(reloaded.setActive(id).activeProfileId).toBe(id);
     reloaded.setAutoSwitchEligible(id, true);
-    expect(reloaded.nextUnused('default', ['default'])?.id).toBe(id);
+    expect(reloaded.nextUnused('default', ['default'])).toBeNull();
     expect(() => reloaded.setAutoSwitchEligible('missing', false)).toThrow('not found');
   });
 
@@ -294,6 +294,10 @@ describe('CodexAccounts (PM-164)', () => {
   });
 
   it('rotates to the next non-exhausted untried account on usage limits and migrates rollout files', async () => {
+    writeFileSync(
+      path.join(defaultCodexHome, 'auth.json'),
+      JSON.stringify({ OPENAI_API_KEY: 'current' }),
+    );
     const accounts = new CodexAccounts(tmpDir, db);
     const s1 = accounts.importAccount('Acc 1', JSON.stringify({ OPENAI_API_KEY: 'sk-1' }));
     const s2 = accounts.importAccount('Acc 2', JSON.stringify({ OPENAI_API_KEY: 'sk-2' }));
@@ -317,7 +321,7 @@ describe('CodexAccounts (PM-164)', () => {
           {
             label: '5-hour',
             windowMinutes: 300,
-            usedPercent: home === accounts.profile(id1).home ? 100 : 20,
+            usedPercent: home === accounts.profile(id2).home ? 20 : 100,
             resetsAt: new Date(futureSec * 1000).toISOString(),
           },
         ],
@@ -746,6 +750,56 @@ describe('CodexAccounts (PM-164)', () => {
     await accounts.refreshAccountUsage(a.id, reader);
     expect(reader.mock.calls).toHaveLength(1);
     expect(reader).toHaveBeenCalledWith(defaultCodexHome);
+  });
+
+  it('requires verified exhaustion and ranks fresh candidates by their limiting window', async () => {
+    writeFileSync(
+      path.join(defaultCodexHome, 'auth.json'),
+      JSON.stringify({ OPENAI_API_KEY: 'current' }),
+    );
+    const accounts = new CodexAccounts(tmpDir, db);
+    const a = accounts.importAccount('A', JSON.stringify({ OPENAI_API_KEY: 'a' })).accounts[0]!;
+    const b = accounts.importAccount('B', JSON.stringify({ OPENAI_API_KEY: 'b' })).accounts[1]!;
+    const now = Date.now();
+    const read = (used: number, status: 'fresh' | 'unavailable' = 'fresh', age = 0) =>
+      accounts.refreshUsage(async (home) => ({
+        status,
+        checkedAt: new Date(now - age).toISOString(),
+        limits: {
+          providerId: 'codex',
+          source: 'test',
+          asOf: new Date(now - age).toISOString(),
+          windows: [
+            {
+              label: '5-hour',
+              windowMinutes: 300,
+              usedPercent:
+                home === defaultCodexHome ? used : home === accounts.profile(a.id).home ? 10 : 30,
+              resetsAt: new Date(now + 3600000).toISOString(),
+            },
+            {
+              label: 'Weekly',
+              windowMinutes: 10080,
+              usedPercent: home === accounts.profile(a.id).home ? 90 : 20,
+              resetsAt: new Date(now + 3600000).toISOString(),
+            },
+          ],
+        },
+      }));
+    expect(accounts.nextUnused('default', ['default'], now)).toBeNull();
+    await read(99);
+    expect(accounts.nextUnused('default', ['default'], now)).toBeNull();
+    await read(100);
+    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(b.id);
+    accounts.setAutoSwitchEligible(b.id, false);
+    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(a.id);
+    expect(accounts.nextUnused('default', ['default', a.id], now)).toBeNull();
+    await read(100, 'unavailable');
+    expect(accounts.nextUnused('default', ['default'], now)).toBeNull();
+    await read(100, 'fresh', 120000);
+    expect(accounts.nextUnused('default', ['default'], now)).toBeNull();
+    await read(100);
+    expect(accounts.nextUnused('default', ['default'], now + 3600001)).toBeNull();
   });
 
   it('keeps usage for every profile across restarts and re-reads only stale ones (PM-173)', async () => {

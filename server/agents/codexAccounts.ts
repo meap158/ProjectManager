@@ -565,15 +565,16 @@ export class CodexAccounts {
   }
 
   /**
-   * Picks the next untried Codex profile in round-robin order after `currentKey`.
-   * Prefers a candidate whose local rate-limit report is not currently exhausted (>= 99%),
-   * falling back to the first untried candidate when limits are unknown.
+   * Requires verified current-account exhaustion, then ranks untried accounts by their
+   * lowest remaining quota window. Unknown, stale or reset-due readings never authorize a switch.
    */
   nextUnused(
     currentKey: string | null,
     tried: readonly string[],
     now = Date.now(),
   ): { id: string; name: string; home: string } | null {
+    // A manual switch during an awaited refresh invalidates the caller's original selection.
+    if ((currentKey ?? 'default') !== (this.defaultMatch() ?? 'default')) return null;
     // "Default" is just the login in use; once it is a saved profile, rotate over profiles only.
     const accounts = [
       ...(this.defaultMatch()
@@ -587,25 +588,42 @@ export class CodexAccounts {
           home: this.home(account.id),
         })),
     ];
-    const currentIndex = accounts.findIndex((account) => account.id === currentKey);
-    const untried: { id: string; name: string; home: string }[] = [];
-    for (let offset = 1; offset <= accounts.length; offset++) {
-      const candidate = accounts[(Math.max(currentIndex, -1) + offset) % accounts.length]!;
-      if (!tried.includes(candidate.id)) untried.push(candidate);
-    }
-    if (untried.length === 0) return null;
-    const verifiedHealthy = untried.find((candidate) => {
-      const source = this.usageSources().get(candidate.home) ?? candidate.home;
-      const usage = this.knownUsage(source);
-      return (
-        usage?.status === 'fresh' &&
-        now - Date.parse(usage.checkedAt) <= USAGE_MAX_AGE_MS &&
-        !this.isExhausted(candidate.home, now)
-      );
-    });
-    const nonExhausted =
-      verifiedHealthy ?? untried.find((candidate) => !this.isExhausted(candidate.home, now));
-    const chosen = nonExhausted ?? untried[0]!;
+    const sources = this.usageSources();
+    const remaining = (home: string): number | null => {
+      const reading = this.knownUsage(sources.get(home) ?? home);
+      if (
+        !reading ||
+        reading.status !== 'fresh' ||
+        !reading.limits?.windows.length ||
+        !Number.isFinite(Date.parse(reading.checkedAt)) ||
+        now < Date.parse(reading.checkedAt) ||
+        now - Date.parse(reading.checkedAt) > USAGE_MAX_AGE_MS ||
+        reading.limits.windows.some(
+          (w) =>
+            !Number.isFinite(w.usedPercent) ||
+            w.usedPercent < 0 ||
+            w.usedPercent > 100 ||
+            w.resetSinceReport ||
+            (w.resetsAt &&
+              (!Number.isFinite(Date.parse(w.resetsAt)) || Date.parse(w.resetsAt) <= now)),
+        )
+      )
+        return null;
+      return Math.min(...reading.limits.windows.map((w) => 100 - w.usedPercent));
+    };
+    const currentHome =
+      currentKey && currentKey !== 'default' ? this.home(currentKey) : this.defaultHome();
+    if (remaining(currentHome) !== 0) return null;
+    const ranked = accounts
+      .filter((a) => a.id !== currentKey && !tried.includes(a.id))
+      .map((account) => ({ account, remaining: remaining(account.home) }))
+      .filter(
+        (candidate): candidate is { account: (typeof accounts)[number]; remaining: number } =>
+          candidate.remaining !== null && candidate.remaining > 0,
+      )
+      .sort((a, b) => b.remaining - a.remaining);
+    const chosen = ranked[0]?.account;
+    if (!chosen) return null;
     if (chosen.id !== 'default') this.syncConfigToml(chosen.home);
     return chosen;
   }
@@ -867,15 +885,6 @@ export class CodexAccounts {
         // Best-effort.
       }
     }
-  }
-
-  private isExhausted(home: string, now: number): boolean {
-    const source = this.usageSources().get(home) ?? home;
-    const limits = this.knownUsage(source)?.limits;
-    if (!limits) return false;
-    return limits.windows.some(
-      (w) => w.usedPercent >= 99 && (!w.resetsAt || Date.parse(w.resetsAt) > now),
-    );
   }
 
   private syncConfigToml(targetHome: string): void {

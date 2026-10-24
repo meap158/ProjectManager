@@ -37,6 +37,10 @@ switching for new launches. It explains that existing sessions retain their logi
 Codex quota uses identity-verified account-service readings; shared conversation history is never
 a quota source. Switching discards in-flight readings started against earlier credentials.
 Account usage revalidates at most once per minute while visible and after a known reset passes.
+Automatic switching requires fresh verified 100% usage on the current account and verified
+positive quota across every destination window. Unknown, failed, stale or reset-due readings
+cannot authorize rotation. Rank eligible destinations by the lowest remaining window percentage,
+highest first; manual switching remains available regardless of quota.
 Refresh failures retain the previous observation time and show unavailable/stale status. Reset
 countdowns tick each second from wall time; reaching zero requests fresh evidence rather than
 assuming quota has returned. Refresh-all shares the same action/race guard as account switching.

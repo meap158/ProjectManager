@@ -35,8 +35,9 @@ No live account was switched, no OAuth flow was started and no running CLI was r
 this audit. Actual provider quota can change between reads; this remains a sampled reading,
 not a streaming quota feed. Network/auth failures are reported rather than guessed. Native CLI
 cross-account continuation and real-browser visual acceptance remain owner acceptance checks.
-Unknown quota candidates remain eligible for existing automatic-rotation fallback behavior;
-they are never presented as verified healthy accounts.
+Automatic rotation now fails closed for unknown quota: the current account must have fresh
+verified exhaustion, and candidates must have fresh positive quota in every returned window.
+Candidates rank by their minimum remaining percentage. Stale/reset-due readings require refresh.
 
 Restart/reload the server to load the backend changes, then refresh account usage. Browser
 reload loads the countdown changes. No stored credentials need to be recreated.

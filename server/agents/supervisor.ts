@@ -1461,6 +1461,7 @@ export class AgentSupervisor {
         ) {
           if (this.switchingCodexSession.size > 0) continue;
           const currentKey = this.sessionCodexProfile(row)?.id ?? 'default';
+          this.codexAccounts.refreshUsageIfStale();
           const tried = [...new Set([...this.codexRotationTried, currentKey])];
           const next = this.codexAccounts.nextUnused(currentKey, tried, Date.now());
           const tail = this.logTail(row.log_path) ?? '';
@@ -2849,7 +2850,7 @@ export class AgentSupervisor {
 
       proc.onData((text) => log.append(text));
       proc.onError((e) => log.append(`\n[process error: ${e.message}]\n`));
-      proc.onExit((code) => {
+      proc.onExit(async (code) => {
         clearTimeout(timer);
         if (this.live.get(key) === live) this.live.delete(key);
         // Shutdown kills everything: leave wanted rows alone so the next boot relaunches them.
@@ -2868,7 +2869,16 @@ export class AgentSupervisor {
           this.runHitUsageLimit(row.log_path, codexProfile.home)
         ) {
           const tried = [...new Set([...(storedCmd.triedCodexAccounts ?? []), codexProfile.id])];
-          const next = this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now());
+          try {
+            await this.codexAccounts.refreshUsage();
+          } catch {
+            // Selection fails closed unless existing identity-verified readings are still fresh.
+          }
+          if (this.closed) return;
+          const next =
+            !live.stoppedByUser && this.codexAccounts.state().autoSwitch
+              ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now())
+              : null;
           if (next && next.id !== codexProfile.id) {
             this.codexRotationTried = [...new Set([...this.codexRotationTried, codexProfile.id])];
             this.setActiveCodexAccount(next.id === 'default' ? null : next.id, {
