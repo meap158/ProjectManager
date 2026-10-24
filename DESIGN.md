@@ -6,6 +6,9 @@ or chat history.
 
 ## 1. Principles
 
+Session usage-limit account switching uses the shared styled Dropdown, with keyboard navigation,
+viewport-bounded menus and a 44px mobile trigger, matching other app selectors.
+
 PM-242: desktop agent rows align the card tag, state and action buttons with the session title;
 secondary facts sit below. Action groups size to their visible controls without a reserved
 minimum width, including ended sessions. Mobile retains its compact two-row arrangement.

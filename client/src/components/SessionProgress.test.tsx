@@ -146,7 +146,8 @@ describe('SessionProgress', () => {
 
     render(<SessionProgress session={session} />);
     const select = await screen.findByLabelText('Switch Codex account for every session');
-    fireEvent.change(select, { target: { value: '11111111-1111-1111-1111-111111111111' } });
+    fireEvent.click(select);
+    fireEvent.click(screen.getByRole('button', { name: 'Backup Pro' }));
     await waitFor(() =>
       expect(switchMock).toHaveBeenCalledWith(1, '11111111-1111-1111-1111-111111111111', true),
     );

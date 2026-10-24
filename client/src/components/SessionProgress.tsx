@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AgentSession, CodexAccountsState } from '../../../shared/types';
 import { api } from '../api';
+import { Dropdown } from './Dropdown';
 import './session-progress.css';
 
 export function SessionRestartStatus({ session }: { session: AgentSession }) {
@@ -170,29 +171,27 @@ export function SessionProgress({ session }: { session: AgentSession }) {
             {pending === 'retry' ? 'Sending…' : 'Try again'}
           </button>
           {otherAccounts.length > 0 && (
-            <select
-              className="input"
-              aria-label="Switch Codex account for every session"
+            <Dropdown
+              label="Switch Codex account for every session"
               disabled={pending !== null}
               value=""
-              style={{ height: 26, padding: '2px 8px', fontSize: 12, width: 'auto' }}
-              onChange={(e) => {
-                const val = e.target.value;
+              options={[
+                {
+                  value: '',
+                  label:
+                    pending === 'switch' ? 'Switching…' : 'Switch account everywhere & continue…',
+                  disabled: true,
+                  hint: 'Choose an account',
+                },
+                ...otherAccounts.map((acc) => ({ value: acc.id, label: acc.name })),
+              ]}
+              onChange={(val) => {
                 if (!val) return;
                 void act('switch', () =>
                   api.switchSessionCodexAccount(session.id, val === 'default' ? null : val, true),
                 );
               }}
-            >
-              <option value="">
-                {pending === 'switch' ? 'Switching…' : 'Switch account everywhere & continue…'}
-              </option>
-              {otherAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name}
-                </option>
-              ))}
-            </select>
+            />
           )}
           <button
             type="button"

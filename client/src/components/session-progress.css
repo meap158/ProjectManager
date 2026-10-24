@@ -49,3 +49,17 @@
 .session-progress-error {
   color: var(--danger);
 }
+.session-progress > .dropdown {
+  min-width: 0;
+  max-width: 100%;
+}
+.session-progress > .dropdown > .dropdown-trigger {
+  min-height: 26px;
+  max-width: min(280px, calc(100vw - 32px));
+  font-size: 12px;
+}
+@media (max-width: 768px) {
+  .session-progress > .dropdown > .dropdown-trigger {
+    min-height: 44px;
+  }
+}
