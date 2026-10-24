@@ -1458,8 +1458,6 @@ function WorkList({
     filters.status === 'ended' ||
     (Array.isArray(filters.status) && filters.status.length === 1 && filters.status[0] === 'ended');
   const includesEndedFilter = selectedFilters(filters.status, 'all').includes('ended');
-  const statusFilters = selectedFilters(filters.status, 'all');
-  const isIdleFilter = statusFilters.length === 1 && statusFilters[0] === 'idle';
   const includesAttentionFilter = selectedFilters(filters.status, 'all').includes('attention');
   const bulk = async (targets: AgentSession[], action: 'start' | 'stop' | 'restart' | 'delete') => {
     if (bulkBusy) return;
@@ -1498,7 +1496,7 @@ function WorkList({
     const s = w.item;
     return (
       <>
-        {isIdleFilter && (
+        {!isEndedFilter && (
           <SessionContinue session={s} onError={onError} shortcut="session.continue" />
         )}
         <ShowInPaneButton onClick={() => onShowInPane(s.id)} />
@@ -1716,7 +1714,7 @@ function WorkList({
               },
               dockMax,
               () => setDockMax((v) => !v),
-              session.status === 'running',
+              !isEndedFilter && session.status === 'running',
             )}
           </div>
         </>

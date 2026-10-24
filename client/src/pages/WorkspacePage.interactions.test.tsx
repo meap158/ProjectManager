@@ -342,7 +342,7 @@ it('offers bulk Start stopped when a multi-selected status set includes Ended', 
 });
 
 it.each(['all', 'idle', 'running', 'ended'])(
-  'shows Continue only in the Idle filter (%s)',
+  'shows row and header Continue in every filter except Ended (%s)',
   async (status) => {
     vi.stubGlobal('matchMedia', () => ({ matches: false }));
     localStorage.setItem('pm.workspace.view', 'list');
@@ -363,7 +363,7 @@ it.each(['all', 'idle', 'running', 'ended'])(
     );
     await screen.findByRole('button', { name: 'Show Alpha' });
     const button = screen.queryByRole('button', { name: 'Continue Alpha' });
-    if (status === 'idle') {
+    if (status !== 'ended') {
       expect(button).not.toBeNull();
       expect(button?.parentElement?.querySelectorAll('button')[0]).toBe(button);
     } else {
@@ -381,6 +381,10 @@ it.each(['all', 'idle', 'running', 'ended'])(
           'aria-label',
         ),
       ).toBe('Restart Alpha');
+      fireEvent.click(screen.getByRole('button', { name: /^Ended/ }));
+      expect(
+        document.querySelector('.work-panel .pane-head button[aria-label="Continue Alpha"]'),
+      ).toBeNull();
     } else {
       expect(headerContinue).toBeFalsy();
     }

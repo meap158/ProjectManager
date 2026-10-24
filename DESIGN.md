@@ -16,13 +16,13 @@ Terminal header session names use their natural width, truncating only under act
 pressure. Desktop project/card metadata gives way first; mobile metadata can wrap beneath the
 name. Rename and terminal controls remain available, with full names exposed in tooltips.
 
-Agents list rows offer Continue only in the Idle filter for running AI CLIs, immediately before
-the Show in pane icon, submitting a message without restarting. Other status filters hide it.
+Agents list rows offer Continue for running AI CLIs in every status filter except Ended, immediately
+before the Show in pane icon, submitting a message without restarting. Ended sessions never offer it.
 Continue shows pending/sent/queued feedback and prevents duplicate in-flight sends. Show in pane
 uses a pane icon with an accessible name and tooltip. On phones Continue is icon-only and row
 actions retain 44px touch targets with compact gaps; desktop keeps the Continue label.
 The docked CLI header offers icon-only Continue between image and restart actions for supported
-live sessions regardless of list filter. List-row Continue remains Idle-filter only.
+live sessions in every status filter except Ended, matching the list-row rule.
 Mobile keeps header Continue inside the compact session actions menu.
 
 Settings > Agent CLIs keeps saved accounts inside each Codex/Claude entry's Accounts drawer.
