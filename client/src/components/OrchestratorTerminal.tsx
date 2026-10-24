@@ -12,6 +12,21 @@ const TerminalView = lazy(() =>
 );
 
 const CHAT_MAX_KEY = 'pm.orchestrator.chatMaxed';
+const TERMINAL_HEIGHT_KEY = 'pm.orchestrator.terminalHeight';
+export const DEFAULT_ORCHESTRATOR_TERMINAL_HEIGHT = 480;
+export const MIN_ORCHESTRATOR_TERMINAL_HEIGHT = 400;
+
+function readTerminalHeight(): number {
+  try {
+    const raw = localStorage.getItem(TERMINAL_HEIGHT_KEY);
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= MIN_ORCHESTRATOR_TERMINAL_HEIGHT
+      ? parsed
+      : DEFAULT_ORCHESTRATOR_TERMINAL_HEIGHT;
+  } catch {
+    return DEFAULT_ORCHESTRATOR_TERMINAL_HEIGHT;
+  }
+}
 
 function maxScopeKey(session: AgentSession): string {
   return String(session.orchestratorId ?? session.id);
@@ -69,6 +84,28 @@ export function OrchestratorTerminal({
   // Full screen, the same affordance as an agent pane (PM-138): the header double-click or the
   // button grows the pane to fill the window (the whole screen on phones), Escape restores it.
   const scopeKey = maxScopeKey(session);
+  const [terminalHeight, setTerminalHeight] = useState<number>(readTerminalHeight);
+  const resizeTo = (h: number) => {
+    const maxH = Math.max(
+      MIN_ORCHESTRATOR_TERMINAL_HEIGHT,
+      (window.visualViewport?.height ?? window.innerHeight) - 120,
+    );
+    const next = Math.round(Math.min(Math.max(h, MIN_ORCHESTRATOR_TERMINAL_HEIGHT), maxH));
+    setTerminalHeight(next);
+    try {
+      localStorage.setItem(TERMINAL_HEIGHT_KEY, String(next));
+    } catch {
+      // Local storage disabled or full.
+    }
+  };
+  const resetTerminalHeight = () => {
+    setTerminalHeight(DEFAULT_ORCHESTRATOR_TERMINAL_HEIGHT);
+    try {
+      localStorage.removeItem(TERMINAL_HEIGHT_KEY);
+    } catch {
+      // Local storage disabled or full.
+    }
+  };
   const [maxedByScope, setMaxedByScope] = useState<Record<string, boolean>>({});
   const maxed = maxedByScope[scopeKey] ?? readChatMaxed(scopeKey);
   const updateMaxed = (next: boolean | ((prev: boolean) => boolean)) => {
@@ -173,26 +210,82 @@ export function OrchestratorTerminal({
         {sessionView.view === 'chat' ? (
           <SessionChat key={session.id} session={session} onError={setError} pasteRef={pasteRef} />
         ) : (
-          <Suspense fallback={<div className="terminal skeleton" style={{ height: 360 }} />}>
-            <TerminalView
-              key={`${session.id}-${session.startedAt}`}
-              height={maxed ? '100%' : 360}
-              historyBytes={session.logBytes}
-              stopped={session.status !== 'running'}
-              fetchOutput={(after) => api.sessionOutput(session.id, after)}
-              streamUrl={(after) => api.sessionStreamUrl(session.id, after)}
-              onInput={(text) => queue.push(text)}
-              pasteRef={pasteRef}
-              onImage={(file) =>
-                sendImageToSession(session.id, file, pasteRef.current).catch((e: Error) =>
-                  setError(e.message),
-                )
+          <>
+            <Suspense
+              fallback={
+                <div
+                  className="terminal skeleton"
+                  style={{ height: maxed ? '100%' : terminalHeight }}
+                />
               }
-              onResize={(cols, rows) => {
-                void api.resizeSession(session.id, cols, rows).catch(() => undefined);
-              }}
-            />
-          </Suspense>
+            >
+              <TerminalView
+                key={`${session.id}-${session.startedAt}`}
+                height={maxed ? '100%' : terminalHeight}
+                historyBytes={session.logBytes}
+                stopped={session.status !== 'running'}
+                fetchOutput={(after) => api.sessionOutput(session.id, after)}
+                streamUrl={(after) => api.sessionStreamUrl(session.id, after)}
+                onInput={(text) => queue.push(text)}
+                pasteRef={pasteRef}
+                onImage={(file) =>
+                  sendImageToSession(session.id, file, pasteRef.current).catch((e: Error) =>
+                    setError(e.message),
+                  )
+                }
+                onResize={(cols, rows) => {
+                  void api.resizeSession(session.id, cols, rows).catch(() => undefined);
+                }}
+              />
+            </Suspense>
+            {!maxed && (
+              <div
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize orchestrator terminal"
+                aria-valuenow={terminalHeight}
+                tabIndex={0}
+                className="work-resizer"
+                title="Drag to resize · double-click to reset"
+                onPointerDown={(e) => {
+                  try {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  } catch {
+                    // Pointer capture unsupported or denied.
+                  }
+                  const resizerEl = e.currentTarget;
+                  const startY = e.clientY;
+                  const startHeight = terminalHeight;
+                  const onMove = (ev: PointerEvent) => {
+                    const delta = ev.clientY - startY;
+                    resizeTo(startHeight + delta);
+                  };
+                  const onUp = (ev: PointerEvent) => {
+                    try {
+                      if (resizerEl.hasPointerCapture(ev.pointerId)) {
+                        resizerEl.releasePointerCapture(ev.pointerId);
+                      }
+                    } catch {
+                      // Already released.
+                    }
+                    window.removeEventListener('pointermove', onMove);
+                    window.removeEventListener('pointerup', onUp);
+                    window.removeEventListener('pointercancel', onUp);
+                  };
+                  window.addEventListener('pointermove', onMove);
+                  window.addEventListener('pointerup', onUp);
+                  window.addEventListener('pointercancel', onUp);
+                }}
+                onDoubleClick={resetTerminalHeight}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowUp') resizeTo(terminalHeight - 24);
+                  else if (e.key === 'ArrowDown') resizeTo(terminalHeight + 24);
+                  else return;
+                  e.preventDefault();
+                }}
+              />
+            )}
+          </>
         )}
       </div>
     </section>

@@ -52,7 +52,7 @@ export function TerminalView({
   onResize,
   paused = false,
   pollMs = 750,
-  height = 320,
+  height = 480,
   fontSize = 12.5,
   historyBytes = 0,
   stopped = false,
@@ -260,6 +260,10 @@ export function TerminalView({
       disableStdin: !interactive,
       // PTY output already carries CRLF; plain pipe/run logs often have bare LF.
       convertEol: !interactive,
+      windowsPty: {
+        backend: 'conpty',
+        buildNumber: 22631,
+      },
       theme: {
         background: '#121211',
         foreground: '#f4f4f1',

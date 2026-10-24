@@ -70,3 +70,32 @@ it('persists full-screen expanded state across navigation remounts (PM-163)', ()
   expect(document.querySelector('.orchestrator-terminal.is-max')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Restore layout' })).toBeDefined();
 });
+
+it('resizes terminal height with keyboard and persists in localStorage', () => {
+  render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
+  const resizer = screen.getByRole('separator', { name: 'Resize orchestrator terminal' });
+  expect(resizer.getAttribute('aria-valuenow')).toBe('480');
+
+  // Expand with ArrowDown (+24px -> 504px)
+  fireEvent.keyDown(resizer, { key: 'ArrowDown' });
+  expect(resizer.getAttribute('aria-valuenow')).toBe('504');
+  expect(localStorage.getItem('pm.orchestrator.terminalHeight')).toBe('504');
+
+  // Shrink with ArrowUp (-24px -> 480px)
+  fireEvent.keyDown(resizer, { key: 'ArrowUp' });
+  expect(resizer.getAttribute('aria-valuenow')).toBe('480');
+
+  // Double-click resets height
+  fireEvent.keyDown(resizer, { key: 'ArrowDown' });
+  expect(resizer.getAttribute('aria-valuenow')).toBe('504');
+  fireEvent.doubleClick(resizer);
+  expect(resizer.getAttribute('aria-valuenow')).toBe('480');
+  expect(localStorage.getItem('pm.orchestrator.terminalHeight')).toBeNull();
+});
+
+it('hides the terminal resizer when maximized in full screen', () => {
+  render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
+  expect(screen.getByRole('separator', { name: 'Resize orchestrator terminal' })).toBeDefined();
+  fireEvent.click(screen.getByRole('button', { name: 'Full screen' }));
+  expect(screen.queryByRole('separator', { name: 'Resize orchestrator terminal' })).toBeNull();
+});
