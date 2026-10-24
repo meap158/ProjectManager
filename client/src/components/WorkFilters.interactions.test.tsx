@@ -3,7 +3,19 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { WorkFilters, NO_FILTERS, type WorkFilterState } from './WorkFilters';
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
+it('remembers expanded filters after navigating away and returning', () => {
+  const first = render(<Harness />);
+  fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+  first.unmount();
+  render(<Harness />);
+  expect(screen.getByRole('button', { name: 'Filters' }).getAttribute('aria-expanded')).toBe(
+    'true',
+  );
+});
 it('marks the phone filter toggle expanded only while its controls are open', () => {
   render(<Harness />);
   const toggle = screen.getByRole('button', { name: 'Filters' });

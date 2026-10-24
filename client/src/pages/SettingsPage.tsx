@@ -28,6 +28,7 @@ import { LanAccessPanel } from '../components/LanAccessPanel';
 import { RemoteAccessPanel } from '../components/RemoteAccessPanel';
 import { UsageLimits } from '../components/UsageLimits';
 import { Dropdown } from '../components/Dropdown';
+import { useViewPreference } from '../useViewPreference';
 
 const TerminalView = lazy(() =>
   import('../components/TerminalView').then((m) => ({ default: m.TerminalView })),
@@ -71,7 +72,11 @@ export function SettingsPage() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [openLog, setOpenLog] = useState<number | null>(null);
-  const [expandedCliId, setExpandedCliId] = useState<string | null>(null);
+  const [expandedCliId, setExpandedCliId] = useViewPreference<string | null>(
+    'pm.settings.expandedAccounts',
+    null,
+    (value): value is string | null => value === null || value === 'codex' || value === 'claude',
+  );
   const [error, setError] = useState<string | null>(null);
   // Plan usage limits per CLI (PM-17) and the clock for "resets in …".
   const limits = useAgentLimits();

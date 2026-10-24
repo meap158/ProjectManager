@@ -17,6 +17,9 @@ uses a pane icon with an accessible name and tooltip. On phones Continue is icon
 actions retain 44px touch targets with compact gaps; desktop keeps the Continue label.
 
 Settings > Agent CLIs keeps saved accounts inside each Codex/Claude entry's Accounts drawer.
+Account drawer selection and Agents filter expansion persist across navigation and reloads in
+this browser. Reusable view preferences validate stored values and tolerate blocked/full storage.
+Transient action menus, dropdowns and confirmation dialogs start closed.
 Usage status and meters sit in a separate block with an 8px gap below account details and
 6px between status and meters. The open drawer revalidates usage each minute; server-side
 freshness limits account reads, and polling pauses in hidden tabs and stops on unmount.

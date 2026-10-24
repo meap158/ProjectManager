@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useViewPreference } from '../useViewPreference';
 import { WORK_STATUS_LABELS, workStatus, type WorkItem, type WorkStatus } from './AgentWorkList';
 import { Dropdown } from './Dropdown';
 import { PROVIDER_LABELS, ProviderIcon } from './icons';
@@ -131,7 +132,11 @@ export function WorkFilters({
     (projectNames.get(a) ?? '').localeCompare(projectNames.get(b) ?? ''),
   );
   const set = (patch: Partial<WorkFilterState>) => onChange({ ...filters, ...patch });
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useViewPreference(
+    'pm.workspace.filtersExpanded',
+    false,
+    (value): value is boolean => typeof value === 'boolean',
+  );
   // The phone status menu: tap picks one, long press adds / removes (PM-124).
   const picker = useRef<HTMLDivElement>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
