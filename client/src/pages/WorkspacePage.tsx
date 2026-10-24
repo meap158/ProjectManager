@@ -1716,7 +1716,7 @@ function WorkList({
               },
               dockMax,
               () => setDockMax((v) => !v),
-              isIdleFilter && sessionActivity(session) === 'idle',
+              session.status === 'running',
             )}
           </div>
         </>
