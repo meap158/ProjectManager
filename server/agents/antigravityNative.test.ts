@@ -81,6 +81,24 @@ it('fails invalid imports without saving profiles', async () => {
   await expect(service.import('{"token":{}}')).rejects.toThrow();
   expect((await service.state()).accounts).toEqual([]);
 });
+it('auto-detects default email without creating a saved profile', async () => {
+  const { service, setLive } = setup();
+  setLive(credential('default@example.com'));
+  const state = await service.state();
+  expect(state.defaultAccount).toMatchObject({ email: 'default@example.com', active: true });
+  expect(state.accounts).toEqual([]);
+});
+it('renames and removes saved profiles without changing the default login', async () => {
+  const { service, setLive, store } = setup();
+  setLive(credential('default@example.com'));
+  const saved = await service.import(credential('saved@example.com'));
+  const id = saved.accounts[0]!.id;
+  expect((await service.rename(id, 'Work')).accounts[0]?.name).toBe('Work');
+  const result = await service.remove(id);
+  expect(result.accounts).toEqual([]);
+  expect(result.defaultAccount?.email).toBe('default@example.com');
+  expect(store.write).not.toHaveBeenCalled();
+});
 it('rolls back a switch when keyring verification returns different credentials', async () => {
   const { root, store, service, setLive } = setup();
   const a = credential('a@example.com'),

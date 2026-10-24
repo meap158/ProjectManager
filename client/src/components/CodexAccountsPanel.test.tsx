@@ -83,6 +83,15 @@ const baseState: CodexAccountsState = {
 };
 
 describe('CodexAccountsPanel (PM-164)', () => {
+  it('uses the standard refresh controls for Claude without calling Codex usage', async () => {
+    vi.mocked(api.getClaudeAccounts).mockResolvedValue(baseState);
+    render(<CodexAccountsPanel providerId="claude" onError={vi.fn()} />);
+    await screen.findByText('Default Claude account');
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh usage for Work Pro' }));
+    await waitFor(() => expect(api.getClaudeAccounts).toHaveBeenCalledTimes(2));
+    expect(api.refreshCodexAccountUsage).not.toHaveBeenCalled();
+    expect(api.refreshCodexAccountsUsage).not.toHaveBeenCalled();
+  });
   it('refreshes only the requested account and remembers reordered rows', async () => {
     const state = {
       ...baseState,

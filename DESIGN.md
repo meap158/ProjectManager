@@ -26,6 +26,11 @@ live sessions in every status filter except Ended, matching the list-row rule.
 Mobile keeps header Continue inside the compact session actions menu.
 
 Settings > Agent CLIs keeps saved accounts inside each Codex/Claude entry's Accounts drawer.
+Codex is the account-switcher UI standard for Codex, Claude and Antigravity: shared account-row
+classes, toolbar icons, default identity/email, usage meters, active badges, nickname/remove actions,
+and optional drag-reorder mode. Provider-specific authentication and refresh capabilities remain
+explicit; Claude refresh rereads attributed snapshots. Antigravity detects the current default login
+without silently creating a saved profile.
 Saved accounts offer a Reorder mode with touch/pointer drag handles and keyboard Up/Down support;
 order persists per provider in this
 browser, with Default pinned first. Codex accounts offer individual usage refresh, resolving the

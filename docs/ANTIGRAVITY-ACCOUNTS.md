@@ -3,6 +3,9 @@
 ProjectManager manages Antigravity account profiles directly on Windows. No agy-auth executable
 or npm installation is required. Settings > Agent CLIs > Antigravity > Accounts offers Save current
 CLI login, Import credential file, Refresh usage and confirmed switching for future launches.
+The drawer follows the Codex account UI: automatically detected Default email/active state,
+saved rows, usage meters, individual refresh, nickname/remove actions and drag-reorder mode.
+Default detection does not save a profile. Removing a saved row does not sign out the current CLI.
 
 The Windows bridge reads/writes generic Credential Manager target gemini:antigravity using UTF-8
 blobs. Windows Credential Manager is authoritative; the CLI fallback file at

@@ -8,7 +8,7 @@ import { UsageLimits } from './UsageLimits';
 import { serialPoll } from '../lib/serialPoll';
 import { useViewPreference } from '../useViewPreference';
 
-function AccountActionIcon({
+export function AccountActionIcon({
   action,
 }: {
   action: 'switch' | 'rename' | 'remove' | 'refresh' | 'save' | 'import' | 'cancel';
@@ -327,28 +327,26 @@ export function CodexAccountsPanel({
               </label>
             )}
             <span className="actions codex-accounts-toolbar-actions">
-              {!isClaude && (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={busy || refreshingUsage}
-                  aria-label={refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
-                  title="Refresh usage for all accounts"
-                  onClick={async () => {
-                    setRefreshingUsage(true);
-                    try {
-                      await act(api.refreshCodexAccountsUsage);
-                    } finally {
-                      setRefreshingUsage(false);
-                    }
-                  }}
-                >
-                  <AccountActionIcon action="refresh" />
-                  <span className="account-action-label">
-                    {refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
-                  </span>
-                </button>
-              )}
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busy || refreshingUsage}
+                aria-label={refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
+                title="Refresh usage for all accounts"
+                onClick={async () => {
+                  setRefreshingUsage(true);
+                  try {
+                    await act(isClaude ? api.getClaudeAccounts : api.refreshCodexAccountsUsage);
+                  } finally {
+                    setRefreshingUsage(false);
+                  }
+                }}
+              >
+                <AccountActionIcon action="refresh" />
+                <span className="account-action-label">
+                  {refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
+                </span>
+              </button>
               {state.defaultAccount?.available && (
                 <button
                   type="button"
@@ -499,18 +497,20 @@ export function CodexAccountsPanel({
                 )}
               </span>
               <span className="actions codex-account-actions">
-                {!isClaude && (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={busy || loadingUsage}
-                    aria-label="Refresh usage for default account"
-                    title="Refresh usage for default account"
-                    onClick={() => void act(() => api.refreshCodexAccountUsage('default'))}
-                  >
-                    <AccountActionIcon action="refresh" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy || loadingUsage}
+                  aria-label="Refresh usage for default account"
+                  title="Refresh usage for default account"
+                  onClick={() =>
+                    void act(() =>
+                      isClaude ? api.getClaudeAccounts() : api.refreshCodexAccountUsage('default'),
+                    )
+                  }
+                >
+                  <AccountActionIcon action="refresh" />
+                </button>
                 {defaultInUse ? (
                   <span className="badge badge-done">active</span>
                 ) : (
@@ -681,18 +681,20 @@ export function CodexAccountsPanel({
                     <AccountUsage account={acc} loading={loadingUsage} now={now} />
                   </span>
                   <span className="actions codex-account-actions">
-                    {!isClaude && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={busy || loadingUsage}
-                        aria-label={`Refresh usage for ${acc.name}`}
-                        title={`Refresh usage for ${acc.name}`}
-                        onClick={() => void act(() => api.refreshCodexAccountUsage(acc.id))}
-                      >
-                        <AccountActionIcon action="refresh" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={busy || loadingUsage}
+                      aria-label={`Refresh usage for ${acc.name}`}
+                      title={`Refresh usage for ${acc.name}`}
+                      onClick={() =>
+                        void act(() =>
+                          isClaude ? api.getClaudeAccounts() : api.refreshCodexAccountUsage(acc.id),
+                        )
+                      }
+                    >
+                      <AccountActionIcon action="refresh" />
+                    </button>
                     {isActive ? (
                       <span className="badge badge-done">active</span>
                     ) : (

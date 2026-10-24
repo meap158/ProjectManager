@@ -50,3 +50,6 @@ export const antigravityAccounts = (refresh = false) =>
 export const switchAntigravityAccount = (id: string) => native.switch(id);
 export const saveAntigravityAccount = (name?: string) => native.saveCurrent(name);
 export const importAntigravityAccount = (raw: string, name?: string) => native.import(raw, name);
+export const refreshAntigravityAccount = (id: string) => native.refresh(id);
+export const renameAntigravityAccount = (id: string, name: string) => native.rename(id, name);
+export const removeAntigravityAccount = (id: string) => native.remove(id);

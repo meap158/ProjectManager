@@ -4,6 +4,9 @@ import {
   switchAntigravityAccount,
   saveAntigravityAccount,
   importAntigravityAccount,
+  refreshAntigravityAccount,
+  renameAntigravityAccount,
+  removeAntigravityAccount,
 } from './antigravityAccounts.js';
 // HTTP routes for agent CLI sessions and runs. Validation lives here at the
 // boundary (pstack boundary-discipline); the supervisor trusts internal types.
@@ -211,6 +214,40 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
 
   // ---- Codex accounts (PM-164: saved auth.json profiles + automatic usage-limit rotation) ----
   app.get('/agents/antigravity-accounts', async (c) => c.json(await antigravityAccounts()));
+  app.post('/agents/antigravity-accounts/:id/usage', async (c) =>
+    c.json(
+      await refreshAntigravityAccount(
+        z
+          .string()
+          .regex(/^(default|acct_[a-f0-9]{24})$/)
+          .parse(c.req.param('id')),
+      ),
+    ),
+  );
+  app.patch('/agents/antigravity-accounts/:id', async (c) => {
+    const { name } = z
+      .object({ name: z.string().trim().min(1).max(160) })
+      .parse(await c.req.json());
+    return c.json(
+      await renameAntigravityAccount(
+        z
+          .string()
+          .regex(/^acct_[a-f0-9]{24}$/)
+          .parse(c.req.param('id')),
+        name,
+      ),
+    );
+  });
+  app.delete('/agents/antigravity-accounts/:id', async (c) =>
+    c.json(
+      await removeAntigravityAccount(
+        z
+          .string()
+          .regex(/^acct_[a-f0-9]{24}$/)
+          .parse(c.req.param('id')),
+      ),
+    ),
+  );
   app.post('/agents/antigravity-accounts', async (c) => {
     const body = z
       .object({

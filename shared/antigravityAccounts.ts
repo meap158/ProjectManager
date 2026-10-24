@@ -9,4 +9,5 @@ export interface AntigravityAccount {
 export interface AntigravityAccountsState {
   available: boolean;
   accounts: AntigravityAccount[];
+  defaultAccount?: AntigravityAccount | null;
 }

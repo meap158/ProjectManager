@@ -461,6 +461,22 @@ export const api = {
     request<AntigravityAccountsState>('POST', '/agents/antigravity-accounts', { authJson }),
   refreshAntigravityAccounts: () =>
     request<AntigravityAccountsState>('POST', '/agents/antigravity-accounts/usage'),
+  refreshAntigravityAccount: (id: string) =>
+    request<AntigravityAccountsState>(
+      'POST',
+      `/agents/antigravity-accounts/${encodeURIComponent(id)}/usage`,
+    ),
+  renameAntigravityAccount: (id: string, name: string) =>
+    request<AntigravityAccountsState>(
+      'PATCH',
+      `/agents/antigravity-accounts/${encodeURIComponent(id)}`,
+      { name },
+    ),
+  removeAntigravityAccount: (id: string) =>
+    request<AntigravityAccountsState>(
+      'DELETE',
+      `/agents/antigravity-accounts/${encodeURIComponent(id)}`,
+    ),
   switchAntigravityAccount: (accountId: string) =>
     request<AntigravityAccountsState>('PUT', '/agents/antigravity-accounts/active', { accountId }),
   refreshCodexAccountsUsage: () =>

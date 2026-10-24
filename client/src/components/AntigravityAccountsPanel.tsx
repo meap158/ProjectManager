@@ -1,18 +1,64 @@
-import { useEffect, useRef, useState } from 'react';
-import type { AntigravityAccountsState } from '../../../shared/antigravityAccounts';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  AntigravityAccount,
+  AntigravityAccountsState,
+} from '../../../shared/antigravityAccounts';
 import { api } from '../api';
+import { useViewPreference } from '../useViewPreference';
+import { AccountActionIcon } from './CodexAccountsPanel';
+import { ProviderIcon } from './icons';
+import { UsageLimits } from './UsageLimits';
+import { ConfirmDelete } from './ConfirmDelete';
+
+function AccountToolbarAction({
+  kind,
+  label,
+  disabled,
+  onClick,
+  primary = false,
+}: {
+  kind: 'refresh' | 'save' | 'import';
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-sm${primary ? ' btn-primary' : ''}`}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      <AccountActionIcon action={kind} />
+      <span className="account-action-label">{label}</span>
+    </button>
+  );
+}
 
 export function AntigravityAccountsPanel() {
+  const [now] = useState(() => Date.now());
   const [state, setState] = useState<AntigravityAccountsState | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [chosen, setChosen] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const acting = useRef(false),
+    fileRef = useRef<HTMLInputElement>(null);
+  const [chosen, setChosen] = useState<string | null>(null),
+    [renaming, setRenaming] = useState<string | null>(null),
+    [draft, setDraft] = useState('');
+  const [reordering, setReordering] = useState(false);
+  const [order, setOrder] = useViewPreference<string[]>(
+    'pm.accounts.order.antigravity',
+    [],
+    (v): v is string[] => Array.isArray(v) && v.every((id) => typeof id === 'string'),
+  );
   useEffect(() => {
     let mounted = true;
     api.getAntigravityAccounts().then(
       (s) => {
-        if (mounted) setState(s);
+        if (mounted && !acting.current) setState(s);
       },
       () => {
         if (mounted) setError('Unable to read Antigravity accounts.');
@@ -22,28 +68,245 @@ export function AntigravityAccountsPanel() {
       mounted = false;
     };
   }, []);
-  async function act(fn: () => Promise<AntigravityAccountsState>) {
-    if (busy) return;
+  const act = useCallback(async (fn: () => Promise<AntigravityAccountsState>) => {
+    if (acting.current) return;
+    acting.current = true;
     setBusy(true);
     setError('');
     try {
       setState(await fn());
       setChosen(null);
+      setRenaming(null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      acting.current = false;
       setBusy(false);
     }
+  }, []);
+  const rows = [...(state?.accounts ?? [])].sort(
+    (a, b) =>
+      (order.indexOf(a.id) < 0 ? order.length : order.indexOf(a.id)) -
+      (order.indexOf(b.id) < 0 ? order.length : order.indexOf(b.id)),
+  );
+  function move(id: string, target: number) {
+    const ids = rows.map((a) => a.id),
+      from = ids.indexOf(id);
+    if (from < 0 || target < 0 || target >= ids.length) return;
+    ids.splice(from, 1);
+    ids.splice(target, 0, id);
+    setOrder(ids);
+  }
+  function usage(a: AntigravityAccount | null | undefined) {
+    const windows = [
+      { label: '5-hour', windowMinutes: 300, usedPercent: a?.usage.fiveHour },
+      { label: 'Weekly', windowMinutes: 10080, usedPercent: a?.usage.weekly },
+    ].filter(
+      (w): w is { label: string; windowMinutes: number; usedPercent: number } =>
+        typeof w.usedPercent === 'number',
+    );
+    return (
+      <span className="codex-account-usage">
+        <span className="codex-account-usage-status faint">
+          {busy
+            ? 'Updating...'
+            : a?.usage.updatedAt
+              ? `Usage checked ${new Date(a.usage.updatedAt).toLocaleString()}`
+              : 'Usage not refreshed'}
+        </span>
+        {windows.length > 0 && (
+          <UsageLimits
+            now={now}
+            limits={{
+              providerId: 'antigravity',
+              source: 'Antigravity account service',
+              asOf: a?.usage.updatedAt ?? '',
+              windows: windows.map((w) => ({ ...w, resetsAt: null })),
+            }}
+          />
+        )}
+      </span>
+    );
+  }
+  function row(a: AntigravityAccount | null, isDefault = false) {
+    const id = isDefault ? 'default' : a!.id;
+    return (
+      <li key={id} data-account-id={id} className="codex-account-row">
+        {reordering && !isDefault && (
+          <button
+            type="button"
+            className="btn btn-sm account-drag-handle"
+            aria-label={`Reorder ${a!.name}`}
+            title="Drag to reorder; Up/Down keys also move this account"
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                move(id, rows.findIndex((x) => x.id === id) + (e.key === 'ArrowUp' ? -1 : 1));
+              }
+            }}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              e.currentTarget.focus();
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+              const target = document
+                .elementFromPoint(e.clientX, e.clientY)
+                ?.closest('[data-account-id]')
+                ?.getAttribute('data-account-id');
+              if (target && target !== id)
+                move(
+                  id,
+                  rows.findIndex((x) => x.id === target),
+                );
+            }}
+            onPointerUp={(e) => {
+              if (e.currentTarget.hasPointerCapture(e.pointerId))
+                e.currentTarget.releasePointerCapture(e.pointerId);
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+              <circle cx="5" cy="4" r="1" />
+              <circle cx="11" cy="4" r="1" />
+              <circle cx="5" cy="8" r="1" />
+              <circle cx="11" cy="8" r="1" />
+              <circle cx="5" cy="12" r="1" />
+              <circle cx="11" cy="12" r="1" />
+            </svg>
+          </button>
+        )}
+        <span
+          className={`status-dot${a?.active ? ' green' : ''}`}
+          role="img"
+          aria-label={a?.active ? 'Active account' : 'Saved account'}
+        />
+        <span className="codex-account-info">
+          <span className="codex-account-heading">
+            <b>{isDefault ? 'Default Antigravity account' : a!.name}</b>
+            {isDefault && (
+              <span className="faint">
+                {' '}
+                · {a ? a.email || 'email unavailable' : 'not signed in'}
+              </span>
+            )}
+            {!isDefault && a?.email && a.email !== a.name && (
+              <span className="faint"> · {a.email}</span>
+            )}
+            {a?.plan && <span className="badge">{a.plan}</span>}
+          </span>
+          {usage(a)}
+        </span>
+        <span className="actions codex-account-actions">
+          {a?.active && <span className="badge badge-done">active</span>}
+          <AccountToolbarAction
+            kind="refresh"
+            label={`Refresh usage for ${isDefault ? 'default account' : a!.name}`}
+            disabled={busy}
+            onClick={() => void act(() => api.refreshAntigravityAccount(id))}
+          />
+          {!isDefault && (
+            <>
+              {!a!.active && (
+                <button
+                  className="btn btn-sm"
+                  disabled={busy}
+                  aria-label={`Switch to account ${a!.name}`}
+                  onClick={() => setChosen(id)}
+                >
+                  <AccountActionIcon action="switch" />
+                  <span className="account-action-label">Switch to account</span>
+                </button>
+              )}
+              <button
+                className="btn btn-sm"
+                disabled={busy}
+                aria-label={`Add nickname for ${a!.name}`}
+                onClick={() => {
+                  setRenaming(id);
+                  setDraft(a!.name);
+                }}
+              >
+                <AccountActionIcon action="rename" />
+                <span className="account-action-label">Add nickname</span>
+              </button>
+              <ConfirmDelete
+                small
+                label={`Remove ${a!.name}`}
+                text="Remove"
+                heading={`Remove ${a!.name}?`}
+                message="Removes only the saved profile. The current CLI login and running sessions remain available."
+                onConfirm={() => act(() => api.removeAntigravityAccount(id)).then(() => undefined)}
+                disabled={busy}
+              />
+            </>
+          )}
+        </span>
+        {renaming === id && (
+          <form
+            className="actions"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void act(() => api.renameAntigravityAccount(id, draft));
+            }}
+          >
+            <input
+              className="input"
+              aria-label={`Rename ${a!.name}`}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              maxLength={160}
+            />
+            <button className="btn btn-primary btn-sm" disabled={busy || !draft.trim()}>
+              Save
+            </button>
+            <button type="button" className="btn btn-sm" onClick={() => setRenaming(null)}>
+              Cancel
+            </button>
+          </form>
+        )}
+        {chosen === id && (
+          <div>
+            <p>Use {a!.name} for new launches? Running sessions will keep their current login.</p>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={busy}
+              onClick={() => void act(() => api.switchAntigravityAccount(id))}
+            >
+              Confirm switch
+            </button>{' '}
+            <button className="btn btn-sm" onClick={() => setChosen(null)}>
+              Cancel
+            </button>
+          </div>
+        )}
+      </li>
+    );
   }
   return (
-    <section aria-label="Antigravity accounts">
-      <h3>Antigravity accounts</h3>
+    <div className="codex-accounts-panel" role="region" aria-label="Antigravity accounts">
+      <div
+        className="panel-header"
+        style={{ marginBottom: 6, paddingBottom: 0, borderBottom: 'none' }}
+      >
+        <span className="actions">
+          <ProviderIcon id="antigravity" size={14} />
+          <strong style={{ fontSize: 13 }}>Antigravity accounts</strong>
+        </span>
+        <span className="meta">
+          active:{' '}
+          {state?.defaultAccount?.email ||
+            state?.accounts.find((a) => a.active)?.email ||
+            'not signed in'}
+        </span>
+      </div>
       {error && (
         <p className="error-banner" role="alert">
           {error}
         </p>
       )}
-      {!state && !error && <p role="status">Loading accounts…</p>}
+      {!state && !error && <div className="skeleton" style={{ height: 100 }} />}
       {state && !state.available && (
         <p>Native Antigravity account management is unavailable on this platform.</p>
       )}
@@ -53,27 +316,30 @@ export function AntigravityAccountsPanel() {
             Switching changes the login for new Antigravity launches. Existing sessions keep their
             login until restarted.
           </p>
-          <p className="faint">
-            Saved logins are encrypted locally. If usage is unavailable because a login expired,
-            sign in with Antigravity and save that login again.
-          </p>
-          <button
-            className="btn btn-sm"
-            disabled={busy}
-            onClick={() => void act(api.refreshAntigravityAccounts)}
-          >
-            Refresh usage
-          </button>{' '}
-          <button
-            className="btn btn-sm"
-            disabled={busy}
-            onClick={() => void act(api.saveAntigravityAccount)}
-          >
-            Save current CLI login
-          </button>{' '}
-          <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current?.click()}>
-            Import credential file
-          </button>
+          <div className="codex-accounts-toolbar">
+            <span className="faint">Saved logins are encrypted locally.</span>
+            <span className="actions codex-accounts-toolbar-actions">
+              <AccountToolbarAction
+                kind="refresh"
+                label="Refresh usage"
+                disabled={busy}
+                onClick={() => void act(api.refreshAntigravityAccounts)}
+              />
+              <AccountToolbarAction
+                kind="save"
+                label="Save current CLI login"
+                disabled={busy}
+                onClick={() => void act(api.saveAntigravityAccount)}
+              />
+              <AccountToolbarAction
+                kind="import"
+                label="Import credential file"
+                primary
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+              />
+            </span>
+          </div>
           <input
             ref={fileRef}
             type="file"
@@ -88,59 +354,31 @@ export function AntigravityAccountsPanel() {
                 setError('Credential file is too large.');
                 return;
               }
-              const raw = await file.text();
-              await act(() => api.importAntigravityAccount(raw));
+              await act(async () => api.importAntigravityAccount(await file.text()));
             }}
           />
-          {!state.accounts.length && (
-            <p>
-              No saved accounts. Sign in with Antigravity, then save the current CLI login, or
-              import a credential file.
+          {rows.length > 1 && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              aria-pressed={reordering}
+              onClick={() => setReordering(!reordering)}
+            >
+              {reordering ? 'Done reordering' : 'Reorder accounts'}
+            </button>
+          )}
+          {reordering && <p className="faint">Drag a handle, or focus it and use Up/Down.</p>}
+          <ul className="list codex-accounts-list">
+            {row(state.defaultAccount ?? null, true)}
+            {rows.map((a) => row(a))}
+          </ul>
+          {!rows.length && (
+            <p className="faint">
+              No saved accounts. Save the current CLI login or import a credential file.
             </p>
           )}
-          <ul className="antigravity-account-list">
-            {state.accounts.map((a) => (
-              <li key={a.id}>
-                <div>
-                  <strong>{a.name}</strong> {a.plan}{' '}
-                  {a.active && <span className="badge badge-live">active</span>}
-                </div>
-                <p className="faint">
-                  {a.usage.updatedAt
-                    ? `Usage checked ${new Date(a.usage.updatedAt).toLocaleString()}`
-                    : 'Usage not refreshed'}
-                </p>
-                <p>
-                  5-hour: {a.usage.fiveHour === null ? 'Unavailable' : `${a.usage.fiveHour}% used`}{' '}
-                  · Weekly: {a.usage.weekly === null ? 'Unavailable' : `${a.usage.weekly}% used`}
-                </p>
-                {!a.active && (
-                  <button className="btn btn-sm" disabled={busy} onClick={() => setChosen(a.id)}>
-                    Switch to account
-                  </button>
-                )}
-                {chosen === a.id && (
-                  <div>
-                    <p>
-                      Use {a.name} for new launches? Running sessions will keep their current login.
-                    </p>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      disabled={busy}
-                      onClick={() => void act(() => api.switchAntigravityAccount(a.id))}
-                    >
-                      Confirm switch
-                    </button>{' '}
-                    <button className="btn btn-sm" disabled={busy} onClick={() => setChosen(null)}>
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
         </>
       )}
-    </section>
+    </div>
   );
 }

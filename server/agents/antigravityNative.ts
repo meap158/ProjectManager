@@ -102,6 +102,7 @@ async function credentialBridge(
 }
 export class NativeAntigravityAccounts {
   private busy = false;
+  private defaultUsage: AntigravityAccount | null = null;
   private readonly root: string;
   private readonly tokenFile: string;
   constructor(
@@ -190,9 +191,24 @@ export class NativeAntigravityAccounts {
   async state(): Promise<AntigravityAccountsState> {
     const raw = await this.current();
     const active = raw ? identity(raw).id : null;
+    const accounts = this.registry().map((a) => ({ ...a, active: a.id === active }));
+    const meta = raw ? identity(raw) : null;
+    const defaultAccount = meta
+      ? (accounts.find((a) => a.id === active) ??
+        (this.defaultUsage?.id === active
+          ? this.defaultUsage
+          : {
+              ...meta,
+              name: meta.email || 'Default Antigravity account',
+              active: true,
+              plan: null,
+              usage: { fiveHour: null, weekly: null, updatedAt: null },
+            }))
+      : null;
     return {
       available: true,
-      accounts: this.registry().map((a) => ({ ...a, active: a.id === active })),
+      accounts,
+      defaultAccount,
     };
   }
   private async exclusive(fn: () => Promise<AntigravityAccountsState>) {
@@ -265,11 +281,47 @@ export class NativeAntigravityAccounts {
       return this.state();
     });
   }
-  async refresh() {
+  async rename(id: string, name: string) {
+    return this.exclusive(async () => {
+      const rows = this.registry();
+      const row = rows.find((a) => a.id === id);
+      if (!row) throw new Error('Account not found.');
+      row.name = name.trim() || row.email || 'Antigravity account';
+      this.saveRegistry(rows);
+      return this.state();
+    });
+  }
+  async remove(id: string) {
+    return this.exclusive(async () => {
+      const rows = this.registry();
+      if (!rows.some((a) => a.id === id)) throw new Error('Account not found.');
+      this.saveRegistry(rows.filter((a) => a.id !== id));
+      rmSync(path.join(this.root, id + '.enc'), { force: true });
+      return this.state();
+    });
+  }
+  async refresh(onlyId?: string) {
     return this.exclusive(async () => {
       const rows = this.registry();
       const active = await this.current();
+      const savedIds = new Set(rows.map((a) => a.id));
+      if (active && !savedIds.has(identity(active).id)) {
+        const meta = identity(active);
+        rows.unshift({
+          ...meta,
+          name: meta.email || 'Default Antigravity account',
+          active: true,
+          plan: null,
+          usage: { fiveHour: null, weekly: null, updatedAt: null },
+        });
+      }
       for (const row of rows) {
+        if (
+          onlyId &&
+          row.id !== onlyId &&
+          !(onlyId === 'default' && active && row.id === identity(active).id)
+        )
+          continue;
         row.usage = { fiveHour: null, weekly: null, updatedAt: null };
         try {
           const raw = active && identity(active).id === row.id ? active : this.decrypt(row.id);
@@ -359,7 +411,8 @@ export class NativeAntigravityAccounts {
           /* Failed quota stays unavailable, never another account's cached value. */
         }
       }
-      this.saveRegistry(rows);
+      if (active) this.defaultUsage = rows.find((a) => a.id === identity(active).id) ?? null;
+      this.saveRegistry(rows.filter((a) => savedIds.has(a.id)));
       return this.state();
     });
   }
