@@ -369,6 +369,21 @@ it.each(['all', 'idle', 'running', 'ended'])(
     } else {
       expect(button).toBeNull();
     }
+    fireEvent.click(screen.getByRole('button', { name: 'Show Alpha' }));
+    const header = document.querySelector('.work-panel .pane-head');
+    const headerContinue = header?.querySelector('button[aria-label="Continue Alpha"]');
+    if (status === 'idle') {
+      expect(headerContinue).toBeTruthy();
+      expect(headerContinue?.classList.contains('icon-btn')).toBe(true);
+      const buttons = [...headerContinue!.parentElement!.querySelectorAll('button')];
+      expect(
+        buttons[buttons.indexOf(headerContinue as HTMLButtonElement) + 1]?.getAttribute(
+          'aria-label',
+        ),
+      ).toBe('Restart Alpha');
+    } else {
+      expect(headerContinue).toBeFalsy();
+    }
   },
 );
 

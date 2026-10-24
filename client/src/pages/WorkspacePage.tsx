@@ -575,12 +575,13 @@ export function WorkspacePage() {
           projectName={projectName}
           selected={selectedWork}
           onSelect={setSelectedWork}
-          renderSession={(session, close, maximized, toggleMaximize) => (
+          renderSession={(session, close, maximized, toggleMaximize, showContinue) => (
             // The same pane as the grid, docked under the list like VS Code's panel.
             <Pane
               key={session.id}
               index={0}
               inList
+              showContinue={showContinue}
               fontSize={fontSize}
               onDragStart={() => undefined}
               onDragEnd={() => undefined}
@@ -705,6 +706,7 @@ interface DropTargetProps {
 function Pane({
   index,
   inList,
+  showContinue = false,
   fontSize,
   onDragStart,
   onDragEnd,
@@ -723,6 +725,7 @@ function Pane({
 }: DropTargetProps & {
   index: number;
   inList?: boolean;
+  showContinue?: boolean;
   fontSize: number;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -905,6 +908,9 @@ function Pane({
             {/* The chat's composer has its own image button. */}
             {running && s.terminal === 'pty' && sessionView.view !== 'chat' && (
               <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
+            )}
+            {showContinue && sessionView.view !== 'chat' && (
+              <SessionContinue session={s} onError={onError} iconOnly />
             )}
             {running ? (
               <>
@@ -1359,6 +1365,7 @@ function WorkList({
     close: () => void,
     maximized: boolean,
     toggleMaximize: () => void,
+    showContinue: boolean,
   ) => ReactNode;
   onShowInPane: (sessionId: number) => void;
   onShowAllInPanes: (sessionIds: number[]) => void;
@@ -1709,6 +1716,7 @@ function WorkList({
               },
               dockMax,
               () => setDockMax((v) => !v),
+              isIdleFilter && sessionActivity(session) === 'idle',
             )}
           </div>
         </>

@@ -8,11 +8,13 @@ export function SessionContinue({
   session,
   onError,
   shortcut,
+  iconOnly = false,
 }: {
   session: AgentSession;
   onError: (message: string) => void;
   /** The keyboard shortcut this button answers to (PM-244). */
   shortcut?: ShortcutId;
+  iconOnly?: boolean;
 }) {
   const sending = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -29,7 +31,7 @@ export function SessionContinue({
     <>
       <button
         type="button"
-        className="btn btn-sm session-continue"
+        className={iconOnly ? 'icon-btn session-continue' : 'btn btn-sm session-continue'}
         aria-label={`Continue ${session.name}`}
         title={result || title}
         {...keys}
@@ -88,7 +90,7 @@ export function SessionContinue({
             <path d="m5 5 10 7-10 7V5ZM19 5v14" />
           </svg>
         )}
-        <span className="session-continue-label">
+        <span className={iconOnly ? 'sr-only' : 'session-continue-label'}>
           {result ? (result.includes('queued') ? 'Queued' : 'Sent') : 'Continue'}
         </span>
       </button>

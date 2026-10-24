@@ -1,5 +1,9 @@
 /* PM-57: account usage gets a dedicated desktop row below the workspace controls. */
 @media (max-width: 768px) {
+  .workspace .pane-head .pane-controls .session-continue {
+    min-width: 44px;
+    min-height: 44px;
+  }
   .workspace .workspace-orchestrator-link {
     display: none;
   }
