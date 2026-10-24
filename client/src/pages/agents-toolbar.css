@@ -39,6 +39,7 @@
     align-items: center;
     gap: 8px;
     min-width: 0;
+    flex: 0 1 auto;
   }
   .workspace .pane-identity > .inline-rename,
   .workspace .pane-identity > .pane-meta {
@@ -49,8 +50,8 @@
     flex-shrink: 20;
   }
   .workspace .pane-identity > .inline-rename {
-    flex-shrink: 0;
-    max-width: 50%;
+    flex: 0 1 auto;
+    max-width: none;
   }
   .workspace .pane-meta > a {
     display: inline-flex;

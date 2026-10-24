@@ -9,6 +9,9 @@ or chat history.
 PM-242: desktop agent rows align the card tag, state and action buttons with the session title;
 secondary facts sit below. Action groups size to their visible controls without a reserved
 minimum width, including ended sessions. Mobile retains its compact two-row arrangement.
+Terminal header session names use their natural width, truncating only under actual space
+pressure. Desktop project/card metadata gives way first; mobile metadata can wrap beneath the
+name. Rename and terminal controls remain available, with full names exposed in tooltips.
 
 Agents list rows offer Continue only in the Idle filter for running AI CLIs, immediately before
 the Show in pane icon, submitting a message without restarting. Other status filters hide it.
