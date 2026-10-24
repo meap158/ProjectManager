@@ -204,6 +204,21 @@ describe('detectAttentionOverlay on real screen shapes (PM-165)', () => {
 });
 
 describe('BatchAttentionActions (PM-165)', () => {
+  it('refuses Continue remaining if a prompt appears after loading the dialog', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    const session = { ...makeSession(1, 'Changed'), providerId: 'codex' };
+    vi.mocked(api.sessionScreen)
+      .mockResolvedValueOnce({ text: 'Ask Codex to do anything' })
+      .mockResolvedValue({ text: CODEX_GOAL_POPUP_SCREEN });
+    render(<BatchAttentionActions sessions={[session]} isAttentionFilter />);
+    fireEvent.click(screen.getByRole('button', { name: /Batch CLI choices/ }));
+    const button = await screen.findByRole('button', { name: 'Continue remaining', hidden: true });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    await screen.findByText(/Prompt appeared; refresh screens before continuing/);
+    expect(api.sendSessionInput).not.toHaveBeenCalled();
+  });
   it('continues only selected sessions without detected prompts', async () => {
     HTMLDialogElement.prototype.showModal = vi.fn();
     HTMLDialogElement.prototype.close = vi.fn();
