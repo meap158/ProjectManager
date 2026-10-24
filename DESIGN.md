@@ -566,8 +566,8 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   (in the same injected `--settings` as the hooks): it saves that block to
   `<dataDir>/claude-limits.json`, then runs the user's own status line (project-local, project,
   then user settings; PowerShell on Windows, sh elsewhere) and passes its output through, so
-  what they see is unchanged. Resets read like Claude Code: "in 3h 49m" within a day, else
-  "Mon 7:00 PM" (`formatReset`).
+  what they see is unchanged. Resets read: "in 3h 49m" within a day, else the date,
+  time and timezone (e.g. "Sat, Oct 31, 1:21 AM GMT+7") in the viewer's timezone (`formatReset`).
 - **Sidebar plan usage (PM-41):** a card above the totals in the sidebar footer, after Claude
   Code's usage popover: per CLI a name row, then each window as label · "Resets …" · percent with
   a 4px bar beneath (amber from 75%, red from 90%). The header collapses it to a one-line summary

@@ -37,6 +37,8 @@ const shortTime = (iso: string) =>
 const fullTime = (iso: string) =>
   new Date(iso).toLocaleString([], {
     weekday: 'short',
+    month: 'short',
+    day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     timeZoneName: 'short',

@@ -4528,6 +4528,7 @@ span.path-link:hover .path-icon {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .usage-label {
   width: 48px;

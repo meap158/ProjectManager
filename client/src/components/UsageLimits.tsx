@@ -35,8 +35,22 @@ export function UsageLimits({ limits, now }: { limits: ProviderLimits; now: numb
               ? 'reset due · awaiting refresh'
               : `resets ${formatReset(w.resetsAt, currentTime)}`
             : null;
+        const resetTooltip = w.resetSinceReport
+          ? 'Reset since the last report'
+          : w.resetsAt
+            ? Date.parse(w.resetsAt) <= currentTime
+              ? 'Reset due · awaiting refresh'
+              : `Resets ${new Date(w.resetsAt).toLocaleString(undefined, {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  timeZoneName: 'short',
+                })}`
+            : undefined;
         return (
-          <span key={w.label} className="usage-window">
+          <span key={w.label} className="usage-window" title={resetTooltip}>
             <span className="usage-label">{w.label}</span>
             <span
               className={`usage-meter is-${level}`}

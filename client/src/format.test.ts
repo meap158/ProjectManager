@@ -23,11 +23,15 @@ describe('format helpers', () => {
 });
 
 describe('formatReset', () => {
-  it('says "in 3h 49m" within a day and the weekday and time beyond', () => {
+  it('says "in 3h 49m" within a day and date, time and timezone beyond', () => {
     const now = Date.parse('2026-10-06T13:00:00Z');
     expect(formatReset('2026-10-06T16:49:00Z', now)).toBe('in 3h 49m');
-    expect(formatReset('2026-10-12T19:00:00Z', now)).toMatch(/\d/);
-    expect(formatReset('2026-10-12T19:00:00Z', now)).not.toMatch(/^in /);
+    const reset = formatReset('2026-10-12T19:00:00Z', now);
+    expect(reset).toMatch(/\d/);
+    expect(reset).not.toMatch(/^in /);
+    expect(reset).toMatch(/Oct/);
+    // Includes timezone indicator (e.g. GMT+7, UTC, EDT)
+    expect(reset).toMatch(/GMT|UTC|[A-Z]{2,4}/);
   });
 });
 

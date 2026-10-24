@@ -56,16 +56,20 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * When a usage window resets, the way Claude Code words it: "in 3h 49m" within a day, else the
- * day and time ("Mon 7:00 PM").
+ * When a usage window resets: "in 3h 49m" within a day, else the date, time and timezone
+ * (e.g. "Sat, Oct 31, 1:21 AM GMT+7") in the viewer's own timezone so the date and timezone
+ * are unambiguous.
  */
 export function formatReset(iso: string, now: number): string {
   const ms = Date.parse(iso) - now;
   if (ms < 24 * 3600_000) return `in ${formatDuration(ms)}`;
   return new Date(iso).toLocaleString(undefined, {
     weekday: 'short',
+    month: 'short',
+    day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    timeZoneName: 'short',
   });
 }
 

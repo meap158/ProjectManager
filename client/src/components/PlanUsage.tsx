@@ -62,8 +62,20 @@ export function PlanUsage() {
             </div>
             {l.windows.map((w) => {
               const level = w.usedPercent >= 90 ? 'high' : w.usedPercent >= 75 ? 'warn' : 'ok';
+              const resetTooltip = w.resetSinceReport
+                ? 'Reset since the last report'
+                : w.resetsAt
+                  ? `Resets ${new Date(w.resetsAt).toLocaleString(undefined, {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      timeZoneName: 'short',
+                    })}`
+                  : undefined;
               return (
-                <div key={w.label} className="plan-usage-row">
+                <div key={w.label} className="plan-usage-row" title={resetTooltip}>
                   <div className="plan-usage-line">
                     <span>{w.label}</span>
                     <span className="faint">
