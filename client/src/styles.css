@@ -5041,6 +5041,15 @@ span.path-link:hover .path-icon {
 .pane-identity {
   display: contents;
 }
+.account-drag-handle {
+  touch-action: none;
+  cursor: grab;
+  min-width: 44px;
+  min-height: 44px;
+}
+.codex-account-row.is-reordering {
+  background: var(--accent-soft);
+}
 .antigravity-account-list {
   list-style: none;
   padding: 0;

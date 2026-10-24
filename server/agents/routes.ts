@@ -224,6 +224,10 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   app.get('/agents/codex-accounts', (c) =>
     c.json(supervisor.codexAccountsState(c.req.query('refresh') === 'stale')),
   );
+  app.post('/agents/codex-accounts/:accountId/usage', async (c) => {
+    const id = z.union([z.literal('default'), z.string().uuid()]).parse(c.req.param('accountId'));
+    return c.json(await supervisor.refreshCodexAccountsUsage(id));
+  });
   app.post('/agents/codex-accounts/usage', async (c) =>
     c.json(await supervisor.refreshCodexAccountsUsage()),
   );

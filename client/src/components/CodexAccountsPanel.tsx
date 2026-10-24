@@ -6,6 +6,7 @@ import { InfoIcon, ProviderIcon } from './icons';
 import './project-agents.css';
 import { UsageLimits } from './UsageLimits';
 import { serialPoll } from '../lib/serialPoll';
+import { useViewPreference } from '../useViewPreference';
 
 function AccountActionIcon({
   action,
@@ -62,6 +63,25 @@ export function CodexAccountsPanel({
   const [state, setState] = useState<CodexAccountsState | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshingUsage, setRefreshingUsage] = useState(false);
+  const [reordering, setReordering] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [order, setOrder] = useViewPreference<string[]>(
+    `pm.accounts.order.${providerId}`,
+    [],
+    (v): v is string[] => Array.isArray(v) && v.every((id) => typeof id === 'string'),
+  );
+  const orderedAccounts = [...(state?.accounts ?? [])].sort((a, b) => {
+    const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
+    return rank(a.id) - rank(b.id);
+  });
+  const moveAccount = (id: string, delta: number) => {
+    const ids = orderedAccounts.map((a) => a.id);
+    const from = ids.indexOf(id),
+      to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to]!, ids[from]!];
+    setOrder(ids);
+  };
   const [showAdd, setShowAdd] = useState(false);
   const [importName, setImportName] = useState('');
   const [importJson, setImportJson] = useState('');
@@ -434,6 +454,21 @@ export function CodexAccountsPanel({
             </form>
           )}
 
+          {state.accounts.length > 1 && (
+            <button
+              type="button"
+              className={`btn btn-sm${reordering ? ' is-active' : ''}`}
+              aria-pressed={reordering}
+              onClick={() => setReordering(!reordering)}
+            >
+              {reordering ? 'Done reordering' : 'Reorder accounts'}
+            </button>
+          )}
+          {reordering && (
+            <p className="faint">
+              Drag a handle to reorder. With a keyboard, focus a handle and use Up or Down.
+            </p>
+          )}
           <ul className="list codex-accounts-list">
             <li className="codex-account-row">
               <span
@@ -469,6 +504,18 @@ export function CodexAccountsPanel({
                 )}
               </span>
               <span className="actions codex-account-actions">
+                {!isClaude && (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy || loadingUsage}
+                    aria-label="Refresh usage for default account"
+                    title="Refresh usage for default account"
+                    onClick={() => void act(() => api.refreshCodexAccountUsage('default'))}
+                  >
+                    <AccountActionIcon action="refresh" />
+                  </button>
+                )}
                 {defaultInUse ? (
                   <span className="badge badge-done">active</span>
                 ) : (
@@ -493,7 +540,7 @@ export function CodexAccountsPanel({
               </span>
             </li>
 
-            {state.accounts.map((acc) => {
+            {orderedAccounts.map((acc) => {
               const isActive = state.activeProfileId === acc.id;
               const isRenaming = renamingId === acc.id;
               const sameAsEmail =
@@ -501,7 +548,52 @@ export function CodexAccountsPanel({
                 acc.email!.trim().toLowerCase() === acc.name.trim().toLowerCase();
               const showEmail = Boolean(acc.email) && !sameAsEmail;
               return (
-                <li key={acc.id} className="codex-account-row">
+                <li
+                  key={acc.id}
+                  data-account-id={acc.id}
+                  className={`codex-account-row${draggingId === acc.id ? ' is-reordering' : ''}`}
+                >
+                  {reordering && (
+                    <button
+                      type="button"
+                      className="btn btn-sm account-drag-handle"
+                      aria-label={`Reorder ${acc.name}`}
+                      title="Drag to reorder; Up/Down keys also move this account"
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          moveAccount(acc.id, e.key === 'ArrowUp' ? -1 : 1);
+                        }
+                      }}
+                      onPointerDown={(e) => {
+                        if (e.button !== 0) return;
+                        e.preventDefault();
+                        e.currentTarget.focus();
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        setDraggingId(acc.id);
+                      }}
+                      onPointerMove={(e) => {
+                        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                        const target = document
+                          .elementFromPoint(e.clientX, e.clientY)
+                          ?.closest('[data-account-id]')
+                          ?.getAttribute('data-account-id');
+                        if (target && target !== acc.id) {
+                          const from = orderedAccounts.findIndex((a) => a.id === acc.id),
+                            to = orderedAccounts.findIndex((a) => a.id === target);
+                          moveAccount(acc.id, to - from);
+                        }
+                      }}
+                      onPointerUp={(e) => {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId))
+                          e.currentTarget.releasePointerCapture(e.pointerId);
+                        setDraggingId(null);
+                      }}
+                      onPointerCancel={() => setDraggingId(null)}
+                    >
+                      ⠿
+                    </button>
+                  )}
                   <span
                     className={`status-dot${isActive ? ' green' : ''}`}
                     role="img"
@@ -594,6 +686,18 @@ export function CodexAccountsPanel({
                     <AccountUsage account={acc} loading={loadingUsage} now={now} />
                   </span>
                   <span className="actions codex-account-actions">
+                    {!isClaude && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={busy || loadingUsage}
+                        aria-label={`Refresh usage for ${acc.name}`}
+                        title={`Refresh usage for ${acc.name}`}
+                        onClick={() => void act(() => api.refreshCodexAccountUsage(acc.id))}
+                      >
+                        <AccountActionIcon action="refresh" />
+                      </button>
+                    )}
                     {isActive ? (
                       <span className="badge badge-done">active</span>
                     ) : (

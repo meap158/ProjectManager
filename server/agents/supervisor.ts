@@ -478,8 +478,10 @@ export class AgentSupervisor {
     this.managedTimer.unref();
   }
 
-  refreshCodexAccountsUsage(): Promise<CodexAccountsState> {
-    return this.withCodexAccounts((accounts) => accounts.refreshUsage());
+  refreshCodexAccountsUsage(accountId?: string): Promise<CodexAccountsState> {
+    return this.withCodexAccounts((accounts) =>
+      accountId ? accounts.refreshAccountUsage(accountId) : accounts.refreshUsage(),
+    );
   }
 
   codexAccountsState(refreshStale = false): CodexAccountsState {

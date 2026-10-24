@@ -159,6 +159,15 @@ export class CodexAccounts {
     return this.refreshingUsage;
   }
 
+  async refreshAccountUsage(id: string): Promise<CodexAccountsState> {
+    const home = id === 'default' ? this.defaultHome() : this.home(id);
+    if (id !== 'default' && !this.account(id))
+      throw new CodexAccountError(404, 'Codex account not found');
+    if (this.refreshingUsage) await this.refreshingUsage;
+    const source = this.usageSources().get(home) ?? home;
+    return this.refreshUsage(readCodexAccountUsage, (candidate) => candidate === source);
+  }
+
   /**
    * Stale-while-revalidate for the accounts panel: answers with what is known now and starts a
    * background read of accounts whose usage is missing or older than `maxAgeMs`.

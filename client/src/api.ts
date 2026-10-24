@@ -461,6 +461,8 @@ export const api = {
     request<AntigravityAccountsState>('PUT', '/agents/antigravity-accounts/active', { accountId }),
   refreshCodexAccountsUsage: () =>
     request<CodexAccountsState>('POST', '/agents/codex-accounts/usage'),
+  refreshCodexAccountUsage: (id: string) =>
+    request<CodexAccountsState>('POST', `/agents/codex-accounts/${encodeURIComponent(id)}/usage`),
   getCodexAccounts: () => request<CodexAccountsState>('GET', '/agents/codex-accounts'),
   /** The accounts panel: also starts a background re-read of missing or old usage (PM-173). */
   getCodexAccountsRefreshing: () =>

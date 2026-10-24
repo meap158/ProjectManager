@@ -26,6 +26,10 @@ live sessions in every status filter except Ended, matching the list-row rule.
 Mobile keeps header Continue inside the compact session actions menu.
 
 Settings > Agent CLIs keeps saved accounts inside each Codex/Claude entry's Accounts drawer.
+Saved accounts offer a Reorder mode with touch/pointer drag handles and keyboard Up/Down support;
+order persists per provider in this
+browser, with Default pinned first. Codex accounts offer individual usage refresh, resolving the
+active saved copy to the default login's credential source. Refresh never switches credentials.
 Account drawer selection and Agents filter expansion persist across navigation and reloads in
 this browser. Reusable view preferences validate stored values and tolerate blocked/full storage.
 Antigravity offers an optional agy-auth account drawer with explicit usage refresh and confirmed

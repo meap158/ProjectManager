@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CodexAccountsState } from '../../../shared/types';
 import { api } from '../api';
 import { SettingsPage } from '../pages/SettingsPage';
+import { MemoryRouter } from 'react-router';
 import { CodexAccountsPanel } from './CodexAccountsPanel';
 
 vi.mock('../agentLimits', () => ({
@@ -31,6 +32,7 @@ vi.mock('../api', () => ({
     getCodexAccounts: vi.fn(),
     getCodexAccountsRefreshing: vi.fn(),
     refreshCodexAccountsUsage: vi.fn(),
+    refreshCodexAccountUsage: vi.fn(),
     importCodexAccount: vi.fn(),
     saveCurrentCodexAccount: vi.fn(),
     setActiveCodexAccount: vi.fn(),
@@ -55,6 +57,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.resetAllMocks();
 });
 
@@ -80,6 +83,39 @@ const baseState: CodexAccountsState = {
 };
 
 describe('CodexAccountsPanel (PM-164)', () => {
+  it('refreshes only the requested account and remembers reordered rows', async () => {
+    const state = {
+      ...baseState,
+      accounts: [
+        ...baseState.accounts,
+        { ...baseState.accounts[0]!, id: '22222222-2222-2222-2222-222222222222', name: 'Personal' },
+      ],
+    };
+    vi.mocked(api.getCodexAccounts).mockResolvedValue(state);
+    vi.mocked(api.refreshCodexAccountUsage).mockResolvedValue(state);
+    const first = render(<CodexAccountsPanel onError={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Refresh usage for Work Pro' }));
+    await waitFor(() =>
+      expect(api.refreshCodexAccountUsage).toHaveBeenCalledWith(state.accounts[0]!.id),
+    );
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: 'Refresh usage for Work Pro' }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder accounts' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Personal' }), { key: 'ArrowUp' });
+    const names = () =>
+      [...document.querySelectorAll('.codex-accounts-list > li .codex-account-info b')].map(
+        (el) => el.textContent,
+      );
+    expect(names()).toEqual(['Default Codex account', 'Personal', 'Work Pro']);
+    first.unmount();
+    render(<CodexAccountsPanel onError={vi.fn()} />);
+    await screen.findByText('Personal');
+    expect(names()).toEqual(['Default Codex account', 'Personal', 'Work Pro']);
+  });
   it('renders default and saved Codex accounts and switches active account', async () => {
     vi.mocked(api.getCodexAccounts).mockResolvedValue(baseState);
     vi.mocked(api.setActiveCodexAccount).mockResolvedValue({
@@ -172,7 +208,11 @@ describe('CodexAccountsPanel (PM-164)', () => {
     vi.mocked(api.listProjects).mockResolvedValue([]);
     vi.mocked(api.getCodexAccounts).mockResolvedValue(baseState);
 
-    render(<SettingsPage />);
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    );
 
     const cliSection = await screen.findByRole('region', { name: 'Agent CLIs' });
     const expandButtons = await within(cliSection).findAllByRole('button', { name: 'Accounts' });
