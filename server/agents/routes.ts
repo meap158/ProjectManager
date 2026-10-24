@@ -1,5 +1,10 @@
 import path from 'node:path';
-import { antigravityAccounts, switchAntigravityAccount } from './antigravityAccounts.js';
+import {
+  antigravityAccounts,
+  switchAntigravityAccount,
+  saveAntigravityAccount,
+  importAntigravityAccount,
+} from './antigravityAccounts.js';
 // HTTP routes for agent CLI sessions and runs. Validation lives here at the
 // boundary (pstack boundary-discipline); the supervisor trusts internal types.
 
@@ -206,6 +211,19 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
 
   // ---- Codex accounts (PM-164: saved auth.json profiles + automatic usage-limit rotation) ----
   app.get('/agents/antigravity-accounts', async (c) => c.json(await antigravityAccounts()));
+  app.post('/agents/antigravity-accounts', async (c) => {
+    const body = z
+      .object({
+        name: z.string().trim().max(160).optional(),
+        authJson: z.string().max(65536).optional(),
+      })
+      .parse(await c.req.json());
+    return c.json(
+      await (body.authJson
+        ? importAntigravityAccount(body.authJson, body.name)
+        : saveAntigravityAccount(body.name)),
+    );
+  });
   app.post('/agents/antigravity-accounts/usage', async (c) =>
     c.json(await antigravityAccounts(true)),
   );

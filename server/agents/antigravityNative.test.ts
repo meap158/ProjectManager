@@ -1,0 +1,132 @@
+import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, expect, it, vi } from 'vitest';
+import { NativeAntigravityAccounts } from './antigravityNative.js';
+const dirs: string[] = [];
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+function setup() {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pm-agy-native-'));
+  dirs.push(root);
+  let live: string | null = null;
+  const store = {
+    read: vi.fn(async () => live),
+    write: vi.fn(async (raw: string) => {
+      live = raw;
+    }),
+  };
+  const service = new NativeAntigravityAccounts(
+    path.join(root, 'data'),
+    path.join(root, 'home'),
+    store,
+  );
+  return {
+    root,
+    store,
+    service,
+    setLive: (raw: string) => {
+      live = raw;
+    },
+  };
+}
+const credential = (email: string) =>
+  JSON.stringify({
+    token: {
+      access_token: 'access-' + email,
+      refresh_token: 'refresh-' + email,
+      expiry: '2099-01-01T00:00:00Z',
+    },
+    id_token:
+      'x.' + Buffer.from(JSON.stringify({ email, sub: email })).toString('base64url') + '.x',
+  });
+it('saves/imports encrypted profiles and switches both stores while retaining previous login', async () => {
+  const { root, store, service, setLive } = setup();
+  const a = credential('a@example.com'),
+    b = credential('b@example.com');
+  setLive(a);
+  await service.saveCurrent();
+  const imported = await service.import(b);
+  const id = imported.accounts.find((x) => x.email === 'b@example.com')!.id;
+  expect(
+    readFileSync(path.join(root, 'data', 'antigravity-accounts', id + '.enc')).includes(
+      Buffer.from('refresh-'),
+    ),
+  ).toBe(false);
+  const state = await service.switch(id);
+  expect(store.write).toHaveBeenCalledWith(b);
+  expect(
+    readFileSync(
+      path.join(root, 'home', '.gemini', 'antigravity-cli', 'antigravity-oauth-token'),
+      'utf8',
+    ),
+  ).toBe(b);
+  expect(state.accounts.find((x) => x.id === id)?.active).toBe(true);
+  expect(existsSync(path.join(root, 'data', 'antigravity-accounts', 'previous.enc'))).toBe(true);
+  expect(JSON.stringify(state)).not.toContain('access-');
+});
+it('does not replace the file mirror when keyring write fails', async () => {
+  const { root, store, service, setLive } = setup();
+  setLive(credential('a@example.com'));
+  const state = await service.import(credential('b@example.com'));
+  store.write.mockRejectedValueOnce(new Error('unavailable'));
+  await expect(service.switch(state.accounts[0]!.id)).rejects.toThrow();
+  expect(
+    existsSync(path.join(root, 'home', '.gemini', 'antigravity-cli', 'antigravity-oauth-token')),
+  ).toBe(false);
+});
+it('fails invalid imports without saving profiles', async () => {
+  const { service } = setup();
+  await expect(service.import('{"token":{}}')).rejects.toThrow();
+  expect((await service.state()).accounts).toEqual([]);
+});
+it('rolls back a switch when keyring verification returns different credentials', async () => {
+  const { root, store, service, setLive } = setup();
+  const a = credential('a@example.com'),
+    b = credential('b@example.com');
+  setLive(a);
+  const imported = await service.import(b);
+  store.read.mockResolvedValueOnce(a).mockResolvedValueOnce(a);
+  await expect(service.switch(imported.accounts[0]!.id)).rejects.toThrow(
+    'previous login preserved',
+  );
+  expect(await store.read()).toBe(a);
+  expect(
+    existsSync(path.join(root, 'home', '.gemini', 'antigravity-cli', 'antigravity-oauth-token')),
+  ).toBe(false);
+});
+it('refuses replacing a lost encryption key when saved profiles exist', async () => {
+  const { root, service } = setup();
+  await service.import(credential('a@example.com'));
+  rmSync(path.join(root, 'data', 'antigravity-accounts', 'encryption.key'));
+  await expect(service.import(credential('b@example.com'))).rejects.toThrow(
+    'encryption key is missing',
+  );
+});
+it('uses the selected credential token for quota and preserves missing quota as unavailable', async () => {
+  const { root, store } = setup();
+  const request = vi.fn(
+    async (url: string | URL | Request, _init?: RequestInit) =>
+      new Response(
+        JSON.stringify(
+          String(url).endsWith(':loadCodeAssist')
+            ? { paidTier: { name: 'Pro' } }
+            : { groups: [{ buckets: [{ window: '5h', remainingFraction: 0.75 }] }] },
+        ),
+        { status: 200 },
+      ),
+  );
+  const service = new NativeAntigravityAccounts(
+    path.join(root, 'data'),
+    path.join(root, 'home'),
+    store,
+    request as typeof fetch,
+  );
+  await service.import(credential('a@example.com'));
+  const result = await service.refresh();
+  expect(result.accounts[0]?.usage).toMatchObject({ fiveHour: 25, weekly: null });
+  expect(request.mock.calls[0]?.[1]?.headers).toMatchObject({
+    Authorization: 'Bearer access-a@example.com',
+  });
+});

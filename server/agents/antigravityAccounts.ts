@@ -1,7 +1,7 @@
-import { execFile } from 'node:child_process';
+import { config } from '../config.js';
+import { NativeAntigravityAccounts } from './antigravityNative.js';
 import { z } from 'zod';
 import type { AntigravityAccountsState } from '../../shared/antigravityAccounts.js';
-import { resolveArgv } from './resolve.js';
 
 const windowSchema = z.object({ remaining_percent: z.number().min(0).max(100) }).passthrough();
 const accountSchema = z.object({
@@ -44,68 +44,9 @@ export function parseAntigravityAccounts(raw: string): AntigravityAccountsState 
     })),
   };
 }
-async function run(args: string[]): Promise<string> {
-  const argv = await resolveArgv(['agy-auth', ...args]);
-  return new Promise((resolve, reject) =>
-    execFile(
-      argv[0]!,
-      argv.slice(1),
-      {
-        timeout: 30_000,
-        maxBuffer: 1024 * 1024,
-        windowsHide: true,
-        env: { ...process.env, AGY_AUTH_NO_UPDATE_CHECK: '1' },
-      },
-      (error, stdout) =>
-        error
-          ? reject(
-              Object.assign(
-                new Error('Antigravity account operation failed. Check agy-auth locally.'),
-                { code: error.code },
-              ),
-            )
-          : resolve(stdout),
-    ),
-  );
-}
-export async function antigravityAccounts(refresh = false): Promise<AntigravityAccountsState> {
-  try {
-    await resolveArgv(['agy-auth']);
-  } catch {
-    return { available: false, accounts: [] };
-  }
-  try {
-    return parseAntigravityAccounts(
-      await run(['list', '--json', '--no-sync', ...(refresh ? [] : ['--no-usage'])]),
-    );
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      return { available: false, accounts: [] };
-    throw new Error('Unable to read Antigravity accounts. Check agy-auth locally.', {
-      cause: error,
-    });
-  }
-}
-let switching = false;
-export async function switchAntigravityAccount(id: string): Promise<AntigravityAccountsState> {
-  if (switching) throw new Error('An Antigravity account switch is already in progress.');
-  switching = true;
-  try {
-    const before = await antigravityAccounts();
-    if (!before.accounts.some((a) => a.id === id))
-      throw new Error('Antigravity account not found.');
-    const result = JSON.parse(await run(['switch', id, '--json'])) as {
-      schema_version?: number;
-      command?: string;
-      error?: unknown;
-    };
-    if (result.schema_version !== 1 || result.command !== 'switch' || result.error)
-      throw new Error('Antigravity account switch failed.');
-    const after = await antigravityAccounts();
-    if (!after.accounts.some((a) => a.id === id && a.active))
-      throw new Error('Account switch could not be verified. Refresh accounts before retrying.');
-    return after;
-  } finally {
-    switching = false;
-  }
-}
+const native = new NativeAntigravityAccounts(config.dataDir);
+export const antigravityAccounts = (refresh = false) =>
+  refresh ? native.refresh() : native.state();
+export const switchAntigravityAccount = (id: string) => native.switch(id);
+export const saveAntigravityAccount = (name?: string) => native.saveCurrent(name);
+export const importAntigravityAccount = (raw: string, name?: string) => native.import(raw, name);

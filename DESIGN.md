@@ -32,8 +32,10 @@ browser, with Default pinned first. Codex accounts offer individual usage refres
 active saved copy to the default login's credential source. Refresh never switches credentials.
 Account drawer selection and Agents filter expansion persist across navigation and reloads in
 this browser. Reusable view preferences validate stored values and tolerate blocked/full storage.
-Antigravity offers an optional agy-auth account drawer with explicit usage refresh and confirmed
-switching for new launches. It explains that existing sessions retain their login until restarted.
+Antigravity account management is built into ProjectManager on Windows: save the current CLI login,
+import credentials, refresh usage and confirm switching for new launches. It writes Windows Credential
+Manager and the CLI file mirror, stores encrypted profile snapshots and preserves the previous login.
+No agy-auth installation is required. Existing sessions retain their login until restarted.
 Codex quota uses identity-verified account-service readings; shared conversation history is never
 a quota source. Switching discards in-flight readings started against earlier credentials.
 Account usage revalidates at most once per minute while visible and after a known reset passes.

@@ -17,7 +17,7 @@ afterEach(() => {
 it('explains missing optional tool without offering account mutations', async () => {
   vi.mocked(api.getAntigravityAccounts).mockResolvedValue({ available: false, accounts: [] });
   render(<AntigravityAccountsPanel />);
-  await screen.findByText('@fikrilal/agy-auth');
+  await screen.findByText('Native Antigravity account management is unavailable on this platform.');
   expect(screen.queryByRole('button', { name: 'Switch to account' })).toBeNull();
 });
 it('requires explicit confirmation before changing the account and explains running sessions', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AntigravityAccountsState } from '../../../shared/antigravityAccounts';
 import { api } from '../api';
 
@@ -7,6 +7,7 @@ export function AntigravityAccountsPanel() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [chosen, setChosen] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     let mounted = true;
     api.getAntigravityAccounts().then(
@@ -44,12 +45,7 @@ export function AntigravityAccountsPanel() {
       )}
       {!state && !error && <p role="status">Loading accounts…</p>}
       {state && !state.available && (
-        <p>
-          Install <code>@fikrilal/agy-auth</code> to manage saved accounts.{' '}
-          <a href="https://github.com/fikrilal/agy-auth" target="_blank" rel="noreferrer">
-            Setup guide
-          </a>
-        </p>
+        <p>Native Antigravity account management is unavailable on this platform.</p>
       )}
       {state?.available && (
         <>
@@ -57,17 +53,49 @@ export function AntigravityAccountsPanel() {
             Switching changes the login for new Antigravity launches. Existing sessions keep their
             login until restarted.
           </p>
+          <p className="faint">
+            Saved logins are encrypted locally. If usage is unavailable because a login expired,
+            sign in with Antigravity and save that login again.
+          </p>
           <button
             className="btn btn-sm"
             disabled={busy}
             onClick={() => void act(api.refreshAntigravityAccounts)}
           >
             Refresh usage
+          </button>{' '}
+          <button
+            className="btn btn-sm"
+            disabled={busy}
+            onClick={() => void act(api.saveAntigravityAccount)}
+          >
+            Save current CLI login
+          </button>{' '}
+          <button className="btn btn-sm" disabled={busy} onClick={() => fileRef.current?.click()}>
+            Import credential file
           </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            aria-label="Antigravity credential file"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              if (file.size > 65536) {
+                setError('Credential file is too large.');
+                return;
+              }
+              const raw = await file.text();
+              await act(() => api.importAntigravityAccount(raw));
+            }}
+          />
           {!state.accounts.length && (
             <p>
-              No saved accounts. Add one with <code>agy-auth login</code> or{' '}
-              <code>agy-auth add</code>.
+              No saved accounts. Sign in with Antigravity, then save the current CLI login, or
+              import a credential file.
             </p>
           )}
           <ul className="antigravity-account-list">

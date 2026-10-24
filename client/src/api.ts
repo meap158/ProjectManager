@@ -455,6 +455,10 @@ export const api = {
   // ---- Codex accounts (PM-164) ------------------------------------------------------------------
   getAntigravityAccounts: () =>
     request<AntigravityAccountsState>('GET', '/agents/antigravity-accounts'),
+  saveAntigravityAccount: () =>
+    request<AntigravityAccountsState>('POST', '/agents/antigravity-accounts', {}),
+  importAntigravityAccount: (authJson: string) =>
+    request<AntigravityAccountsState>('POST', '/agents/antigravity-accounts', { authJson }),
   refreshAntigravityAccounts: () =>
     request<AntigravityAccountsState>('POST', '/agents/antigravity-accounts/usage'),
   switchAntigravityAccount: (accountId: string) =>
