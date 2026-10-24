@@ -191,8 +191,13 @@ export class NativeAntigravityAccounts {
   async state(): Promise<AntigravityAccountsState> {
     const raw = await this.current();
     const active = raw ? identity(raw).id : null;
-    const accounts = this.registry().map((a) => ({ ...a, active: a.id === active }));
     const meta = raw ? identity(raw) : null;
+    // Current credential metadata is authoritative, even if a previously saved row lacks it.
+    const accounts = this.registry().map((a) => ({
+      ...a,
+      email: a.id === active && meta?.email ? meta.email : a.email,
+      active: a.id === active,
+    }));
     const defaultAccount = meta
       ? (accounts.find((a) => a.id === active) ??
         (this.defaultUsage?.id === active

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -87,6 +87,19 @@ it('auto-detects default email without creating a saved profile', async () => {
   const state = await service.state();
   expect(state.defaultAccount).toMatchObject({ email: 'default@example.com', active: true });
   expect(state.accounts).toEqual([]);
+});
+it('uses current credential email when the saved matching row has missing metadata', async () => {
+  const { service, setLive, root } = setup();
+  const raw = credential('current@example.com');
+  setLive(raw);
+  await service.saveCurrent();
+  const file = path.join(root, 'data', 'antigravity-accounts', 'registry.json');
+  const rows = JSON.parse(readFileSync(file, 'utf8'));
+  rows[0].email = '';
+  writeFileSync(file, JSON.stringify(rows));
+  const state = await service.state();
+  expect(state.defaultAccount?.email).toBe('current@example.com');
+  expect(state.accounts[0]?.email).toBe('current@example.com');
 });
 it('renames and removes saved profiles without changing the default login', async () => {
   const { service, setLive, store } = setup();
