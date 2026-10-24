@@ -293,7 +293,7 @@ describe('CodexAccounts (PM-164)', () => {
     expect(removed.activeProfileId).toBeNull();
   });
 
-  it('rotates to the next non-exhausted untried account on usage limits and migrates rollout files', () => {
+  it('rotates to the next non-exhausted untried account on usage limits and migrates rollout files', async () => {
     const accounts = new CodexAccounts(tmpDir, db);
     const s1 = accounts.importAccount('Acc 1', JSON.stringify({ OPENAI_API_KEY: 'sk-1' }));
     const s2 = accounts.importAccount('Acc 2', JSON.stringify({ OPENAI_API_KEY: 'sk-2' }));
@@ -306,6 +306,23 @@ describe('CodexAccounts (PM-164)', () => {
     // Mark Acc 1 as exhausted (100% used) and Acc 2 as having plenty of quota (20% used).
     writeRolloutWithRateLimit(accounts.profile(id1).home, 100, futureSec);
     writeRolloutWithRateLimit(accounts.profile(id2).home, 20, futureSec);
+    await accounts.refreshUsage(async (home) => ({
+      status: 'fresh',
+      checkedAt: new Date(nowMs).toISOString(),
+      limits: {
+        providerId: 'codex',
+        source: 'test',
+        asOf: new Date(nowMs).toISOString(),
+        windows: [
+          {
+            label: '5-hour',
+            windowMinutes: 300,
+            usedPercent: home === accounts.profile(id1).home ? 100 : 20,
+            resetsAt: new Date(futureSec * 1000).toISOString(),
+          },
+        ],
+      },
+    }));
 
     const next = accounts.nextUnused('default', ['default'], nowMs);
     expect(next?.id).toBe(id2);
@@ -608,6 +625,58 @@ describe('CodexAccounts (PM-164)', () => {
     expect(accounts.state().defaultAccount.limits?.windows[0]?.usedPercent).toBe(10);
     accounts.setActive(a.id);
     expect(used()).toEqual({ A: 100, B: 10 });
+  });
+
+  it('discards usage finishing after a default account switch and ignores shared rollout quota', async () => {
+    const login = (email: string) =>
+      JSON.stringify({ tokens: { id_token: makeJwt({ email }), access_token: email } });
+    writeFileSync(path.join(defaultCodexHome, 'auth.json'), login('a@example.com'));
+    const accounts = new CodexAccounts(tmpDir, db);
+    accounts.importAccount('A', login('a@example.com'));
+    const b = accounts.importAccount('B', login('b@example.com')).accounts[1]!;
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const refresh = accounts.refreshUsage(async (home) => {
+      if (home === defaultCodexHome) await waiting;
+      return {
+        status: 'fresh',
+        checkedAt: new Date().toISOString(),
+        limits: {
+          providerId: 'codex',
+          source: 'test',
+          asOf: new Date().toISOString(),
+          windows: [
+            {
+              label: '5-hour',
+              windowMinutes: 300,
+              usedPercent: home === defaultCodexHome ? 100 : 15,
+              resetsAt: null,
+            },
+          ],
+        },
+      };
+    });
+    accounts.setActive(b.id);
+    writeRolloutWithRateLimit(defaultCodexHome, 100, Math.floor(Date.now() / 1000) + 3600);
+    release();
+    await refresh;
+    expect(accounts.state().defaultAccount.limits).toBeNull();
+    await accounts.refreshUsage(async () => ({
+      status: 'fresh',
+      checkedAt: new Date().toISOString(),
+      limits: {
+        providerId: 'codex',
+        source: 'test',
+        asOf: new Date().toISOString(),
+        windows: [{ label: '5-hour', windowMinutes: 300, usedPercent: 15, resetsAt: null }],
+      },
+    }));
+    expect(accounts.state().defaultAccount.limits?.windows[0]?.usedPercent).toBe(15);
+    expect(
+      accounts.state().accounts.find((a) => a.id === b.id)?.limits?.windows[0]?.usedPercent,
+    ).toBe(15);
   });
 
   it('keeps usage for every profile across restarts and re-reads only stale ones (PM-173)', async () => {

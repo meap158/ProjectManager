@@ -21,14 +21,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Db } from '../db.js';
 import { getSetting, setSetting } from '../store.js';
 import type { CodexAccount, CodexAccountsState } from '../../shared/types.js';
-import { claudeLimits, codexLimits } from './limits.js';
+import { claudeLimits } from './limits.js';
 import { readCodexAccountUsage, type AccountUsageResult } from './accountUsage.js';
 
 const REGISTRY = 'codex-accounts.json';
 const ACTIVE_KEY = 'codex-accounts-active';
 const AUTO_SWITCH_KEY = 'codex-accounts-auto-switch';
 /** Last usage read per account home (limits and times only, never credentials). */
-const USAGE_KEY = 'codex-accounts-usage';
+const USAGE_KEY = 'codex-accounts-usage-identity-v2';
 /** Opening the accounts panel re-reads usage older than this, in the background. */
 export const USAGE_MAX_AGE_MS = 10 * 60_000;
 const MAX_AUTH_BYTES = 1024 * 1024;
@@ -58,8 +58,24 @@ export class CodexAccountError extends Error {
 }
 
 export class CodexAccounts {
-  private readonly usage = new Map<string, AccountUsageResult>();
+  private readonly usage = new Map<string, AccountUsageResult & { owner: string }>();
+  private usageIdentity(home: string): string {
+    const file = path.join(home, 'auth.json');
+    try {
+      const identity = this.loginIdentity(file);
+      return createHash('sha256')
+        .update(identity ? JSON.stringify(identity) : readFileSync(file))
+        .digest('hex');
+    } catch {
+      return '';
+    }
+  }
+  private knownUsage(home: string) {
+    const result = this.usage.get(home);
+    return result?.owner === this.usageIdentity(home) ? result : undefined;
+  }
   private refreshingUsage: Promise<CodexAccountsState> | null = null;
+  private credentialRevision = 0;
 
   /** Every signed-in account home: the default login and each saved profile. */
   private usageHomes(): string[] {
@@ -75,19 +91,12 @@ export class CodexAccounts {
    * and refresh tokens are single-use, so that could end the other copy's session.
    */
   private usageSources(): Map<string, string> {
-    const emails = new Map(
-      this.readRegistry().accounts.map((a) => [this.home(a.id), a.email ?? undefined]),
-    );
-    const firstByEmail = new Map<string, string>();
+    const firstByIdentity = new Map<string, string>();
     const sources = new Map<string, string>();
     for (const home of this.usageHomes()) {
-      const email = (
-        home === this.defaultHome() || emails.get(home) === undefined
-          ? this.readAuthMeta(path.join(home, 'auth.json')).email
-          : emails.get(home)
-      )?.toLowerCase();
-      if (email && !firstByEmail.has(email)) firstByEmail.set(email, home);
-      sources.set(home, (email && firstByEmail.get(email)) || home);
+      const identity = this.usageIdentity(home);
+      if (identity && !firstByIdentity.has(identity)) firstByIdentity.set(identity, home);
+      sources.set(home, (identity && firstByIdentity.get(identity)) || home);
     }
     // The saved copy of the login in ~/.codex is never started: its refresh token is stale once
     // Codex refreshes the default one (PM-243), and using it could sign the default out.
@@ -116,10 +125,21 @@ export class CodexAccounts {
       for (let i = 0; i < homes.length; i += 2) {
         await Promise.all(
           homes.slice(i, i + 2).map(async (home) => {
+            const owner = this.usageIdentity(home);
+            const revision = this.credentialRevision;
             const result = await reader(home);
+            if (
+              !owner ||
+              revision !== this.credentialRevision ||
+              owner !== this.usageIdentity(home)
+            )
+              return;
             // A failed read keeps the last known numbers, labelled with the failure.
-            const known = this.usage.get(home)?.limits;
-            this.usage.set(home, result.limits || !known ? result : { ...result, limits: known });
+            const known = this.knownUsage(home)?.limits;
+            this.usage.set(home, {
+              ...(result.limits || !known ? result : { ...result, limits: known }),
+              owner,
+            });
           }),
         );
         this.saveUsage();
@@ -150,7 +170,7 @@ export class CodexAccounts {
   ): void {
     if (this.refreshingUsage) return;
     const stale = (home: string) => {
-      const known = this.usage.get(home);
+      const known = this.knownUsage(home);
       return !known || !(now - Date.parse(known.checkedAt) <= maxAgeMs);
     };
     if (!this.usageReadHomes().some(stale)) return;
@@ -160,7 +180,8 @@ export class CodexAccounts {
   }
 
   private loadUsage(): void {
-    const saved = getSetting<Record<string, AccountUsageResult>>(this.db, USAGE_KEY) ?? {};
+    const saved =
+      getSetting<Record<string, AccountUsageResult & { owner: string }>>(this.db, USAGE_KEY) ?? {};
     for (const [home, result] of Object.entries(saved)) this.usage.set(home, result);
   }
 
@@ -176,9 +197,10 @@ export class CodexAccounts {
 
   private usageState(home: string, now: number, source = home) {
     // A copy known to be signed out says so, rather than showing the other copy's usage.
-    const own = this.usage.get(home);
-    const current = own?.status === 'expired' ? own : (this.usage.get(source) ?? own);
-    const limits = current?.limits ?? codexLimits(os.homedir(), home, now);
+    const own = this.knownUsage(home);
+    const current = own?.status === 'expired' ? own : (this.knownUsage(source) ?? own);
+    // Conversation rollouts can belong to another login after switching or history carry.
+    const limits = current?.limits ?? null;
     const usageStatus =
       current?.status === 'fresh' && now - Date.parse(current.checkedAt) > 60000
         ? ('stale' as const)
@@ -268,6 +290,9 @@ export class CodexAccounts {
     const defaultFile = path.join(defaultHome, 'auth.json');
     const current = this.defaultMatch();
     if (current === id) return; // Already the default login.
+    this.credentialRevision++;
+    const leavingUsage = this.knownUsage(defaultHome);
+    const arrivingUsage = this.knownUsage(this.home(id));
     let leaving = current;
     if (existsSync(defaultFile)) {
       if (current) {
@@ -288,9 +313,7 @@ export class CodexAccounts {
     // Usage is cached per folder: ~/.codex's reading belongs to the login leaving it, and the
     // arriving login brings its own last reading. Otherwise the account just switched to showed
     // the previous account's usage until the next refresh.
-    const leavingUsage = this.usage.get(defaultHome);
     if (leaving && leavingUsage) this.usage.set(this.home(leaving), leavingUsage);
-    const arrivingUsage = this.usage.get(this.home(id));
     if (arrivingUsage) this.usage.set(defaultHome, arrivingUsage);
     else this.usage.delete(defaultHome);
     this.saveUsage();
@@ -816,7 +839,7 @@ export class CodexAccounts {
   }
 
   private isExhausted(home: string, now: number): boolean {
-    const limits = codexLimits(os.homedir(), home, now);
+    const limits = this.knownUsage(home)?.limits;
     if (!limits) return false;
     return limits.windows.some(
       (w) => w.usedPercent >= 99 && (!w.resetsAt || Date.parse(w.resetsAt) > now),
