@@ -419,6 +419,11 @@ export function BatchAttentionActions({
       const cmd = resolveCommand(entry)!;
       setProgress((p) => ({ ...p, current: session.name }));
       try {
+        if (cmd.kind === 'line' && cmd.text === 'continue' && !entry.overlay) {
+          const fresh = await api.sessionScreen(session.id);
+          if (detectAttentionOverlay(fresh.text, session))
+            throw new Error('Prompt appeared; refresh screens before continuing');
+        }
         if (entry.overlay && (cmd.kind === 'key' || cmd.kind === 'line')) {
           const fresh = await api.sessionScreen(session.id);
           const overlay = detectAttentionOverlay(fresh.text, session);
@@ -653,6 +658,34 @@ export function BatchAttentionActions({
                 className="batch-attention-keys"
               >
                 <span className="faint">All selected ({selectedStates.length}):</span>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={
+                    busy ||
+                    !selectedStates.some(
+                      (entry) =>
+                        !entry.overlay &&
+                        ['codex', 'claude', 'opencode', 'grok', 'antigravity'].includes(
+                          entry.session.providerId,
+                        ) &&
+                        entry.session.status === 'running',
+                    )
+                  }
+                  onClick={() =>
+                    void runBatchOption('Continue remaining', (entry) =>
+                      !entry.overlay &&
+                      ['codex', 'claude', 'opencode', 'grok', 'antigravity'].includes(
+                        entry.session.providerId,
+                      ) &&
+                      entry.session.status === 'running'
+                        ? { kind: 'line', text: 'continue' }
+                        : null,
+                    )
+                  }
+                >
+                  Continue remaining
+                </button>
                 <button
                   type="button"
                   className="btn btn-sm"

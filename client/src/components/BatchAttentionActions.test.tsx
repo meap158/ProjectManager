@@ -204,6 +204,28 @@ describe('detectAttentionOverlay on real screen shapes (PM-165)', () => {
 });
 
 describe('BatchAttentionActions (PM-165)', () => {
+  it('continues only selected sessions without detected prompts', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+    const sessions = [
+      { ...makeSession(1, 'Ready'), providerId: 'codex' },
+      { ...makeSession(2, 'Menu'), providerId: 'codex' },
+    ];
+    vi.mocked(api.sessionScreen).mockImplementation(
+      async (id) =>
+        ({ text: id === 1 ? 'Ask Codex to do anything' : CODEX_GOAL_POPUP_SCREEN }) as Awaited<
+          ReturnType<typeof api.sessionScreen>
+        >,
+    );
+    vi.mocked(api.sendSessionInput).mockResolvedValue({ queued: false, session: sessions[0]! });
+    render(<BatchAttentionActions sessions={sessions} isAttentionFilter />);
+    fireEvent.click(screen.getByRole('button', { name: /Batch CLI choices/ }));
+    const button = await screen.findByRole('button', { name: 'Continue remaining', hidden: true });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledWith(1, '\r'));
+    expect(vi.mocked(api.sendSessionInput).mock.calls.every(([id]) => id === 1)).toBe(true);
+  });
   it('batch-applies usage-limit choices through the session actions, not keystrokes', async () => {
     HTMLDialogElement.prototype.showModal = vi.fn();
     HTMLDialogElement.prototype.close = vi.fn();

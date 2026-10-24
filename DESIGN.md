@@ -59,6 +59,8 @@ Ended, unsupervised card sessions offer Dispose session with a named confirmatio
 removes the session and recorded output while retaining its board card.
 Batch CLI choices inspects the selected attention sessions, groups detected choices and
 reports delivered, queued and failed input. Only failed recipients remain selected for retry.
+Continue remaining targets only checked live AI CLIs with no detected prompt, rechecking screens
+before sending and refusing any newly appeared prompt. Detected choice groups never receive it.
 
 Orchestrators speak plainly: each one is "an orchestrator" (never "master") and every card reads
 top to bottom as what it looks after (one sentence), Ask this orchestrator (chat and one-time
