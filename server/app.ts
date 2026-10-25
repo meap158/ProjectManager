@@ -17,6 +17,7 @@ import type {
   ShortcutOverrides,
 } from '../shared/types.js';
 import { LAN_HEADER } from './lan.js';
+import { FileAccessError, listFolder, previewFile, readRaw } from './projectFiles.js';
 import { REMOTE_HEADER } from './remote.js';
 import type { Db } from './db.js';
 import { Scanner } from './scanner.js';
@@ -102,7 +103,7 @@ const updateCardBody = z
 
 class HttpError extends Error {
   constructor(
-    public status: 400 | 403 | 404 | 409 | 415,
+    public status: 400 | 403 | 404 | 409 | 413 | 415,
     message: string,
   ) {
     super(message);
@@ -310,6 +311,44 @@ export function createApp(
     if (checked.value.name === null) store.deleteSetting(db, gitIdentitySettingKey(project.id));
     else store.setSetting(db, gitIdentitySettingKey(project.id), checked.value);
     return c.json(checked.value);
+  });
+
+  // ---- Files tab (PM-252): read-only tree and previews --------------------------------------
+  const projectRoot = (c: Context) => {
+    const project = store.getProjectRow(db, parseId(c));
+    if (!project) throw new HttpError(404, 'Project not found');
+    return project.path;
+  };
+  const fileErrors = async <T>(run: () => Promise<T>): Promise<T> => {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof FileAccessError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
+  };
+
+  app.get('/projects/:id/tree', async (c) => {
+    const root = projectRoot(c);
+    return c.json(await fileErrors(() => listFolder(root, c.req.query('path') ?? '')));
+  });
+
+  app.get('/projects/:id/file', async (c) => {
+    const root = projectRoot(c);
+    return c.json(await fileErrors(() => previewFile(root, c.req.query('path') ?? '')));
+  });
+
+  // Bytes for image previews and a previewed page's own styles and images. Never runnable on
+  // this origin: a sandbox CSP and nosniff, so an .html or .svg can't script the app.
+  app.get('/projects/:id/raw', async (c) => {
+    const root = projectRoot(c);
+    const { bytes, type } = await fileErrors(() => readRaw(root, c.req.query('path') ?? ''));
+    return c.body(new Uint8Array(bytes), 200, {
+      'content-type': type,
+      'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+      'x-content-type-options': 'nosniff',
+      'cache-control': 'private, no-cache',
+    });
   });
 
   app.get('/projects/:id/pull-requests', async (c) => {

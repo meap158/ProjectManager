@@ -6,7 +6,8 @@ import { remoteWebUrl } from '../gitRemote';
 import { rememberProjectTab } from '../projectTabs';
 import { PullRequestsPanel } from '../components/PullRequestsPanel';
 import { AgentsPanel } from '../components/AgentsPanel';
-import { BoardIcon, GridIcon, TerminalIcon } from '../components/icons';
+import { BoardIcon, FoldersIcon, GridIcon, TerminalIcon } from '../components/icons';
+import { ProjectFiles } from '../components/ProjectFiles';
 import {
   HEAT_SCALE,
   HorizontalBars,
@@ -23,12 +24,13 @@ import { formatBytes, formatDate, formatNumber, formatRelative } from '../format
 import { isRemoteClient } from '../remote';
 
 const POLL_MS = 1000;
-const TABS = ['overview', 'board', 'agents', 'pull-requests'] as const;
+const TABS = ['overview', 'board', 'agents', 'files', 'pull-requests'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
   overview: 'Overview',
   board: 'Board',
   agents: 'Agents',
+  files: 'Files',
   'pull-requests': 'Pull requests',
 };
 
@@ -37,11 +39,14 @@ const TAB_ICONS: Record<Tab, ReactNode> = {
   overview: <GridIcon />,
   board: <BoardIcon />,
   agents: <TerminalIcon />,
+  files: <FoldersIcon />,
   'pull-requests': <ExternalIcon />,
 };
 
 function parseTab(value: string | null): Tab {
-  return value === 'board' || value === 'agents' || value === 'pull-requests' ? value : 'overview';
+  return value === 'board' || value === 'agents' || value === 'pull-requests' || value === 'files'
+    ? value
+    : 'overview';
 }
 
 export function ProjectPage() {
@@ -243,6 +248,9 @@ export function ProjectPage() {
           reloadKey={cardsVersion}
           preset={project.boardPreset}
         />
+      </div>
+      <div className="tab-panel" hidden={tab !== 'files'}>
+        {tab === 'files' && <ProjectFiles key={id} projectId={id} />}
       </div>
       <div className="tab-panel" hidden={tab !== 'pull-requests'}>
         <PullRequestsPanel key={id} projectId={id} visible={tab === 'pull-requests'} />

@@ -6,7 +6,7 @@ import { useLocation, useNavigate } from 'react-router';
 const PAGE_KEY = 'pm-last-page';
 const GATE_KEY = 'pm-last-page-gate';
 
-const TABS = new Set(['board', 'agents', 'pull-requests']);
+const TABS = new Set(['board', 'agents', 'pull-requests', 'files']);
 const SHOWS = new Set(['planned', 'active']);
 
 /** A same-app path, or null when the value is not one of ours. Query keys we don't use are dropped. */

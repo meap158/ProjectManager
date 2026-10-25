@@ -818,3 +818,25 @@ export const SHORTCUT_IDS = [
 export type ShortcutId = (typeof SHORTCUT_IDS)[number];
 /** A combo ("Alt+Shift+C"), or null for an action left without one. */
 export type ShortcutOverrides = Partial<Record<ShortcutId, string | null>>;
+
+/** Project page Files tab (PM-252): one folder's entry. */
+export interface TreeEntry {
+  name: string;
+  /** Relative to the project, forward slashes. */
+  path: string;
+  kind: 'dir' | 'file';
+  size: number | null;
+  /** Ignored by git (shown greyed, like VS Code). */
+  ignored: boolean;
+  symlink: boolean;
+}
+
+export interface FolderListing {
+  path: string;
+  entries: TreeEntry[];
+  truncated: boolean;
+}
+
+export type FilePreview =
+  | { kind: 'text'; path: string; size: number; mtime: string; content: string }
+  | { kind: 'image' | 'binary' | 'too-large'; path: string; size: number; mtime: string };

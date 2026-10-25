@@ -1,0 +1,179 @@
+/* Project page > Files (PM-252): tree on the left, preview on the right; stacked on phones. */
+.project-files {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.files-tree-panel,
+.files-preview-panel {
+  min-width: 0;
+}
+.files-tree-panel {
+  position: sticky;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 180px);
+}
+.files-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.files-filter {
+  flex: 1;
+  min-width: 0;
+}
+.files-tree {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.files-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  padding-right: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.files-row:hover {
+  background: var(--surface-hover);
+}
+.files-row.is-current {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.files-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.files-row.is-ignored .files-name,
+.files-row.is-ignored .files-icon {
+  opacity: 0.5;
+}
+.files-chevron {
+  flex: none;
+  width: 12px;
+  color: var(--text-3);
+  font-size: 11px;
+  text-align: center;
+}
+.files-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-3);
+}
+.files-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.files-meta {
+  flex: none;
+  font-size: 11.5px;
+}
+.files-empty {
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+
+.files-view-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.files-crumbs {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 13px;
+}
+.files-back {
+  display: none;
+}
+.files-source {
+  margin: 0;
+  max-height: calc(100dvh - 220px);
+  overflow: auto;
+  padding: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.files-line {
+  display: flex;
+  white-space: pre;
+}
+.files-ln {
+  flex: none;
+  min-width: 4.5ch;
+  padding: 0 10px 0 6px;
+  color: var(--text-3);
+  text-align: right;
+  user-select: none;
+}
+.files-line code {
+  padding-right: 12px;
+  font: inherit;
+  background: none;
+}
+.files-frame {
+  display: block;
+  width: 100%;
+  height: calc(100dvh - 220px);
+  min-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.files-image {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.files-image img {
+  max-width: 100%;
+  max-height: calc(100dvh - 260px);
+}
+
+/* Phones: one column. The tree until a file opens, then its preview with a way back. */
+@media (max-width: 768px) {
+  .project-files {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .files-tree-panel {
+    position: static;
+    max-height: none;
+  }
+  .project-files.has-file .files-tree-panel,
+  .project-files:not(.has-file) .files-preview-panel {
+    display: none;
+  }
+  .files-back {
+    display: inline-flex;
+  }
+  .files-source,
+  .files-frame {
+    max-height: none;
+    height: auto;
+    min-height: 60dvh;
+  }
+}

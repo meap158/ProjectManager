@@ -41,6 +41,8 @@ import type {
   PullRequestListState,
   PullRequestsResult,
   ProjectSummary,
+  FilePreview,
+  FolderListing,
   ShortcutOverrides,
   WorkspaceLayout,
 } from '../../shared/types';
@@ -302,6 +304,14 @@ export const api = {
     request<{ theme: 'system' | 'light' | 'dark' | null }>('GET', '/preferences/theme'),
   saveTheme: (theme: 'system' | 'light' | 'dark') =>
     request<{ theme: string }>('PUT', '/preferences/theme', { theme }),
+  /** Files tab (PM-252): one folder of the project, and a file's preview. */
+  projectFolder: (id: number, path: string) =>
+    request<FolderListing>('GET', `/projects/${id}/tree?path=${encodeURIComponent(path)}`),
+  projectFile: (id: number, path: string) =>
+    request<FilePreview>('GET', `/projects/${id}/file?path=${encodeURIComponent(path)}`),
+  /** A file's bytes (images, a previewed page's styles), as a URL for the page to load. */
+  projectRawUrl: (id: number, path: string) =>
+    `/api/projects/${id}/raw?path=${encodeURIComponent(path)}`,
   /** Keyboard shortcuts changed from their defaults (PM-244). */
   getShortcuts: () => request<{ overrides: ShortcutOverrides }>('GET', '/preferences/shortcuts'),
   saveShortcuts: (overrides: ShortcutOverrides) =>

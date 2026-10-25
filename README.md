@@ -71,7 +71,9 @@ for you, and switch saved Codex and Claude accounts under **Settings > Agent CLI
 Link sessions to board cards and hand work to an agent. Commits and pull requests move cards
 through **Backlog → To do → In progress → Review → Done**. Code stats, languages, disk usage and
 commit heatmaps sit beside the work. The **Pull requests** tab shows checks, reviews and
-mergeability, and merges, updates or closes PRs as the repo owner's `gh` account.
+mergeability, and merges, updates or closes PRs as the repo owner's `gh` account. The **Files**
+tab browses the project like VS Code's explorer and previews Markdown, HTML, images and code
+(read only; previews can't run scripts).
 
 </td>
 <td width="50%" valign="top">
