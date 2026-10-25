@@ -357,7 +357,7 @@ email allowlist and an authenticator code in front of it: see
 
 - [ ] Project file tree with a VS Code-style explorer and Markdown/HTML preview (PM-252)
 - [x] Files context menu: open, open in the system app, reveal, copy path, rename in place (PM-259)
-- [x] Inbox: a top-bar tray shows every agent session waiting for your decision, from any page, and opens it (PM-261)
+- [x] Inbox: a top-bar bell lists every session that needs a decision, failed, hit a usage limit or finished its reply, with the question or reply on each row, answerable in place (PM-261)
 - [x] Built-in browser: a **Preview** page lists running `localhost` apps (front ends first) beside a small browser; apps run on their own origin with live reload, and over the LAN or remotely it is a read-only view (PM-253)
 - [ ] More agent options, such as OpenCode with other models and Cline (PM-212)
 - [ ] Ideas from terminal agent managers: agent state, inbox, hooks (PM-211)

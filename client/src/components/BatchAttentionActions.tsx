@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
-import { splitSessionInput } from '../lib/sessionInput';
+import { sendAttentionCommand } from '../lib/attentionCommands';
 import { ProviderIcon } from './icons';
 import './batch-attention.css';
 
@@ -274,6 +274,18 @@ export function detectAttentionOverlay(
   return options.length ? { title: title || 'CLI overlay', options } : null;
 }
 
+/**
+ * Re-reads a CLI's screen right before an answer is sent: true only if it still shows the same
+ * prompt, so a choice never lands on a different question that appeared meanwhile.
+ */
+export async function promptStillShown(
+  session: AgentSession,
+  overlay: DetectedAttentionOverlay,
+): Promise<boolean> {
+  const fresh = await api.sessionScreen(session.id);
+  return JSON.stringify(detectAttentionOverlay(fresh.text, session)) === JSON.stringify(overlay);
+}
+
 interface SessionOverlayState {
   session: AgentSession;
   loading: boolean;
@@ -360,33 +372,6 @@ export function BatchAttentionActions({
     setStates(loaded);
   }
 
-  async function sendCommand(target: AgentSession, cmd: AttentionCommand): Promise<boolean> {
-    if (cmd.kind === 'auto-continue') {
-      await api.setAutoContinue(target.id, true);
-      return false;
-    }
-    if (cmd.kind === 'continue-now') {
-      await api.continueSessionNow(target.id);
-      return false;
-    }
-    if (cmd.kind === 'key') {
-      const ack = await api.sendSessionInput(target.id, cmd.data);
-      return ack.queued;
-    }
-    let queued = false;
-    const data =
-      target.terminal === 'pty'
-        ? `\x1b[200~${cmd.text.replace(/\r\n?/g, '\n')}\x1b[201~`
-        : cmd.text;
-    for (const part of splitSessionInput(data)) {
-      const ack = await api.sendSessionInput(target.id, part);
-      queued ||= ack.queued;
-    }
-    const ack = await api.sendSessionInput(target.id, target.terminal === 'pty' ? '\r' : '\n');
-    queued ||= ack.queued;
-    return queued;
-  }
-
   async function runBatchOption(
     label: string,
     resolveCommand: (entry: SessionOverlayState) => AttentionCommand | null,
@@ -425,12 +410,10 @@ export function BatchAttentionActions({
             throw new Error('Prompt appeared; refresh screens before continuing');
         }
         if (entry.overlay && (cmd.kind === 'key' || cmd.kind === 'line')) {
-          const fresh = await api.sessionScreen(session.id);
-          const overlay = detectAttentionOverlay(fresh.text, session);
-          if (JSON.stringify(overlay) !== JSON.stringify(entry.overlay))
+          if (!(await promptStillShown(session, entry.overlay)))
             throw new Error('Prompt changed; refresh screens before applying a choice');
         }
-        const queued = await sendCommand(session, cmd);
+        const queued = await sendAttentionCommand(session, cmd);
         if (queued) queuedCount++;
         setDeliveries((rows) => [
           ...rows.filter((r) => r.id !== session.id),

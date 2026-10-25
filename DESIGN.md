@@ -314,11 +314,18 @@ adjacent-pair CVD separation in both modes).
   Enter renames, Escape or leaving the field cancels, so it only happens on purpose; a refusal shows in
   the error banner and the old name stays. After a rename the tree, the focus and the open file's
   address follow the new name.
-- **Inbox (top bar, left of the theme switch):** a tray icon with a count badge (`--accent`) of what waits
-  on you from any page: sessions asking you to choose or approve something (the same `tailState` as the
-  Needs input badge, dot in `--status-review`) and failed restarts (`--danger`). It polls every 5 s
-  while the tab is visible. The panel (Escape or an outside click closes it) lists one row per item
-  and a row opens that session in Agents (`/workspace?open=<id>`). 36px button, 44px on touch, a bell (filled with a red count badge, capped at 9+, when something waits).
+- **Inbox (top bar, left of the theme switch):** a bell with a count badge of what is new: red
+  (`--danger`) when something needs a decision or failed, `--accent` when only finished replies wait.
+  It polls every 5 s while the tab is visible. The panel (420px; Escape or an outside click closes it)
+  has a sticky header (counts, Mark all seen) and sections in urgency order: Needs a decision
+  (`tailState` input), Problems (failed restart, with its error and a Restart button), Usage limits
+  (reset time), Finished · your turn (idle after answering your last message). Each row is a card
+  with a coloured left edge per section, and it says what the session is ON: the question with its
+  choices as buttons (the screen is re-read before sending, so a changed prompt is never answered),
+  or the start of the unread reply with a Reply box. The title opens the session
+  (`/workspace?open=<id>`). Seen state is per browser (localStorage, keyed by session + your last
+  message, so the next turn comes back); seen rows dim. Times are shown only when they mean
+  something (the reply's own time, the failed restart). 36px button; 44px buttons on touch.
 - **Preview page (`/preview`):** full width (`.page-wide`, no centred 1280px column) and without a
   visible page header. A list panel (190-230px, sticky) beside a small browser, modelled on the one
   built into Claude's desktop app. **Tabs** (36px strip, up to 12; each prefers 14% of the browser pane, kept between 128px and 184px, so a lone tab never fills a wide pane; they shrink equally to 88px, then the strip scrolls with + staying beside the last tab): each shows the page's own icon
