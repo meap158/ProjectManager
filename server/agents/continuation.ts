@@ -17,12 +17,17 @@ export function allowanceReset(tail: string, windows: UsageWindow[], now: number
  * The usage limit a screen shows (PM-58): when the exhausted windows reset (the latest of
  * them), or null for an unknown time. Undefined when no limit is showing, or it has reset.
  */
+/** Whether Codex's usage-limit message is on screen (cheap: check before reading quota). */
+export function mentionsUsageLimit(screen: string): boolean {
+  return /you[’']ve hit your usage limit/i.test(screen);
+}
+
 export function usageLimitShown(
   screen: string,
   windows: UsageWindow[],
   now: number,
 ): { resetsAt: string | null } | undefined {
-  if (!/you[’']ve hit your usage limit/i.test(screen)) return undefined;
+  if (!mentionsUsageLimit(screen)) return undefined;
   const resets = windows
     .filter((w) => w.usedPercent >= 99 && w.resetsAt)
     .map((w) => Date.parse(w.resetsAt!))

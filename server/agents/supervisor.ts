@@ -85,7 +85,12 @@ import {
 } from './activity.js';
 import { applyCpuBudget, getCpuBudget } from './cpuBudget.js';
 import { CpuGovernor, type GovernorStats } from './cpuGovernor.js';
-import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
+import {
+  allowanceReset,
+  emptyCodexPrompt,
+  mentionsUsageLimit,
+  usageLimitShown,
+} from './continuation.js';
 import { claudeSessionId, codexResumeId, codexSessionFor, staleClaudeResume } from './usage.js';
 import { slimResumeImages } from './codexImages.js';
 import {
@@ -409,6 +414,10 @@ export class AgentSupervisor {
   private codexRotationTried = new Map<string, number>();
   private switchingCodexSession = new Set<number>();
   private tailCache = new Map<string, { version: string; tail: string | null }>();
+  private limitScreens = new Map<
+    number,
+    { version: string; lastSeen: string; at: number; screen: string }
+  >();
   /**
    * Sessions this process (re)started that have not been sent a message since. A usage limit
    * still on their screen is from before the restart (the old login, PM-243): it would rotate
@@ -1483,6 +1492,35 @@ export class AgentSupervisor {
       setSetting(this.db, key, { ...state, enabled: false, resumesAt: null, message });
   }
 
+  /**
+   * Whether a Codex session shows its usage limit, checked every 10s for every running one.
+   * Rendering the screen (a terminal emulation over 256 KB of log) and reading quota for every
+   * session each tick stalled the whole server for 200-300 ms, so:
+   * - an unchanged log (or terminal size) reuses the last render;
+   * - a log still changing is re-rendered at most every 30s: Codex goes quiet once it hits the
+   *   limit, so the tick after it settles renders it at once;
+   * - quota is read only when the message is on screen.
+   */
+  private usageLimitOnScreen(row: SessionRow): { resetsAt: string | null } | undefined {
+    const { size, mtime } = this.fileStat(row.log_path);
+    const dims = this.sessionSizes.get(row.id);
+    const version = `${size}|${mtime}|${dims?.cols}x${dims?.rows}`;
+    let cached = this.limitScreens.get(row.id);
+    const now = Date.now();
+    const settled = cached?.lastSeen === version;
+    if (!cached || (cached.version !== version && (settled || now - cached.at >= 30_000))) {
+      cached = {
+        version,
+        lastSeen: version,
+        at: now,
+        screen: this.sessionScreen(row.id, 4000) ?? '',
+      };
+      this.limitScreens.set(row.id, cached);
+    } else cached.lastSeen = version;
+    if (!mentionsUsageLimit(cached.screen)) return undefined;
+    return usageLimitShown(cached.screen, this.codexWindowsForSession(row), Date.now());
+  }
+
   private codexWindowsForSession(row: SessionRow) {
     const profile = this.sessionCodexProfile(row);
     const state = this.codexAccounts?.state();
@@ -1522,24 +1560,29 @@ export class AgentSupervisor {
     // Whether each one is showing its usage limit, opted in or not, for the limit notice.
     const running = new Set(rows.map((r) => r.id));
     for (const id of this.usageLimits.keys()) if (!running.has(id)) this.usageLimits.delete(id);
+    for (const id of this.limitScreens.keys()) if (!running.has(id)) this.limitScreens.delete(id);
+    // Every Codex CLI uses the one selected login, so the switch decision is the same for all of
+    // them: worked out once per tick, and only if a session shows its limit (it reads several
+    // credential and usage files).
+    let decision: { currentKey: string; next: { id: string } | null } | null | undefined;
+    const switchDecision = () => {
+      if (decision !== undefined) return decision;
+      const accounts = this.codexAccounts;
+      if (!accounts?.state().autoSwitch) return (decision = null);
+      const currentKey = accounts.selectedId();
+      accounts.refreshUsageIfStale();
+      const next = accounts.nextUnused(currentKey, this.codexTried(currentKey), Date.now());
+      return (decision = { currentKey, next });
+    };
     for (const row of rows) {
-      const windows = this.codexWindowsForSession(row);
-      const shown = this.noTurnSinceStart.has(row.id)
-        ? null
-        : usageLimitShown(this.sessionScreen(row.id, 4000) ?? '', windows, Date.now());
+      const shown = this.noTurnSinceStart.has(row.id) ? null : this.usageLimitOnScreen(row);
       if (shown) {
         this.usageLimits.set(row.id, shown);
-        if (
-          this.codexAccounts &&
-          this.codexAccounts.state().autoSwitch &&
-          !this.switchingCodexSession.has(row.id) &&
-          !this.restarting.has(row.id)
-        ) {
+        if (!this.switchingCodexSession.has(row.id) && !this.restarting.has(row.id)) {
           if (this.switchingCodexSession.size > 0) continue;
-          const currentKey = this.sessionCodexProfile(row)?.id ?? 'default';
-          this.codexAccounts.refreshUsageIfStale();
-          const tried = this.codexTried(currentKey);
-          const next = this.codexAccounts.nextUnused(currentKey, tried, Date.now());
+          const choice = switchDecision();
+          if (!choice) continue;
+          const { currentKey, next } = choice;
           const tail = this.logTail(row.log_path) ?? '';
           if (next && next.id !== currentKey && emptyCodexPrompt(tail)) {
             this.codexRotationTried.set(currentKey, Date.now());
@@ -2641,6 +2684,8 @@ export class AgentSupervisor {
         `SELECT * FROM agent_sessions WHERE status = 'running' AND provider_id IN ('claude', 'codex', 'grok')`,
       )
       .all() as unknown as SessionRow[];
+    // The selected Codex login reads several credential files: once per pass, not per session.
+    const batch = { autoContinue: new Map(), queued: new Map(), baseFiles: new Map() };
     for (const row of rows) {
       if (!this.live.has(`session:${row.id}`)) continue;
       const pending = getSetting<string>(this.db, renameKey(row.id));
@@ -2656,8 +2701,8 @@ export class AgentSupervisor {
         deleteSetting(this.db, renameKey(row.id));
         continue;
       }
-      const id = this.conversationOf(row);
-      const title = id ? this.cliTitle(row, id) : null;
+      const id = this.conversationOf(row, batch);
+      const title = id ? this.cliTitle(row, id, batch) : null;
       if (!title || title === getSetting<string>(this.db, seenTitleKey(row.id))) continue;
       setSetting(this.db, seenTitleKey(row.id), title);
       if (title !== row.name) {
@@ -2678,14 +2723,14 @@ export class AgentSupervisor {
   }
 
   /** The CLI conversation a running session is in (Codex: found once, then remembered). */
-  private conversationOf(row: SessionRow): string | null {
+  private conversationOf(row: SessionRow, batch?: SessionBatch): string | null {
     const resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
     const { command } = JSON.parse(row.command_json) as { command: string[] };
     if (row.provider_id !== 'codex') return claudeSessionId(resume, command);
     const pinned = codexResumeId(resume) ?? codexResumeId(command);
     if (pinned) return pinned;
     if (command[0] !== 'codex') return null;
-    const codexHome = this.sessionCodexProfile(row)?.home;
+    const codexHome = this.sessionCodexProfile(row, batch)?.home;
     const id = codexSessionFor(
       row.cwd,
       row.started_at,
@@ -2697,10 +2742,10 @@ export class AgentSupervisor {
     return id;
   }
 
-  private cliTitle(row: SessionRow, id: string): string | null {
+  private cliTitle(row: SessionRow, id: string, batch?: SessionBatch): string | null {
     if (row.provider_id === 'claude') return claudeCustomTitle(row.cwd, id);
     if (row.provider_id === 'codex')
-      return codexThreadName(id, os.homedir(), this.sessionCodexProfile(row)?.home);
+      return codexThreadName(id, os.homedir(), this.sessionCodexProfile(row, batch)?.home);
     return grokManualTitle(row.cwd, id);
   }
 

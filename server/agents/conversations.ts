@@ -49,18 +49,24 @@ function tail(file: string, max: number): string {
   }
 }
 
-/** Parsed JSON lines, newest first; malformed lines skipped. */
-function linesNewestFirst<T>(text: string): T[] {
-  const out: T[] = [];
-  for (const line of text.split('\n').reverse()) {
-    if (!line.trim()) continue;
+/**
+ * Parsed JSON lines, newest first, parsed only as the caller reads them; malformed lines skipped.
+ * With `mustInclude`, lines without that text are skipped unparsed: the name lookups run every
+ * 10s for every running session over up to 1 MB each, and parsing it all stalled the server.
+ */
+function* linesNewestFirst<T>(text: string, mustInclude?: string): Generator<T> {
+  let end = text.length;
+  while (end > 0) {
+    const start = text.lastIndexOf('\n', end - 1) + 1;
+    const line = text.slice(start, end);
+    end = start - 1;
+    if (!line.trim() || (mustInclude && !line.includes(mustInclude))) continue;
     try {
-      out.push(JSON.parse(line) as T);
+      yield JSON.parse(line) as T;
     } catch {
       // Partial line.
     }
   }
-  return out;
 }
 
 /** Grok keeps each conversation in ~/.grok/sessions/<url-encoded cwd>/<id>/ once it's saved. */
@@ -176,6 +182,7 @@ export function claudeCustomTitle(cwd: string, id: string, home = os.homedir()):
   // Claude repeats the title line as the transcript grows, so the tail nearly always has it.
   for (const line of linesNewestFirst<{ type?: string; customTitle?: string }>(
     tail(file, 512_000),
+    'custom-title',
   )) {
     if (line.type === 'custom-title' && line.customTitle?.trim()) return line.customTitle.trim();
   }
@@ -191,6 +198,7 @@ export function codexThreadName(
   const file = path.join(codexHome || path.join(home, '.codex'), 'session_index.jsonl');
   for (const line of linesNewestFirst<{ id?: string; thread_name?: string }>(
     tail(file, 1_000_000),
+    id,
   )) {
     if (line.id === id) return line.thread_name?.trim() || null;
   }
