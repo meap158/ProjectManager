@@ -120,6 +120,7 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
               <label className="remote-field">
                 <span>Team name</span>
                 <input
+                  className="input"
                   value={form.team}
                   placeholder="myteam (from myteam.cloudflareaccess.com)"
                   onChange={(e) => setForm({ ...form, team: e.target.value })}
@@ -128,6 +129,7 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
               <label className="remote-field">
                 <span>Public hostname</span>
                 <input
+                  className="input"
                   value={form.hostname}
                   placeholder="pm.example.com"
                   onChange={(e) => setForm({ ...form, hostname: e.target.value })}
@@ -136,6 +138,7 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
               <label className="remote-field remote-field-wide">
                 <span>Application AUD tag</span>
                 <input
+                  className="input mono"
                   value={form.aud}
                   placeholder="64 hex characters"
                   spellCheck={false}
@@ -145,6 +148,7 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
               <label className="remote-field remote-field-wide">
                 <span>Allowed emails (one per line)</span>
                 <textarea
+                  className="textarea"
                   rows={3}
                   value={form.emails}
                   onChange={(e) => setForm({ ...form, emails: e.target.value })}
@@ -189,6 +193,7 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
                   <label className="remote-field">
                     <span>Code from the app</span>
                     <input
+                      className="input mono"
                       value={code}
                       inputMode="numeric"
                       autoComplete="one-time-code"

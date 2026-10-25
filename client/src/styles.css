@@ -4868,6 +4868,10 @@ span.path-link:hover .path-icon {
   width: 100%;
   box-sizing: border-box;
 }
+/* An email list, not a document: shorter than the shared .textarea. */
+.remote-field textarea {
+  min-height: 72px;
+}
 .remote-field-wide {
   grid-column: 1 / -1;
 }
