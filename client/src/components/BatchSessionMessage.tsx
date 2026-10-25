@@ -162,6 +162,7 @@ export function BatchSessionMessage({ sessions }: { sessions: AgentSession[] }) 
               Message
               <textarea
                 ref={messageInput}
+                className="textarea"
                 value={message}
                 disabled={busy}
                 maxLength={16000}

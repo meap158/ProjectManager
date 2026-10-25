@@ -528,6 +528,15 @@ code,
   white-space: nowrap;
   cursor: pointer;
 }
+/* Pressing and holding a choice (several, on a phone) must not start a text selection or the
+   system callout (PM-299); the same goes for triggers and filter chips below. */
+.dropdown-trigger,
+.dropdown-list,
+.filter-chips {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 .dropdown-list li button:hover {
   background: var(--accent-soft);
 }
@@ -6566,15 +6575,16 @@ span.path-link:hover .path-icon {
 .inbox {
   position: relative;
 }
+/* Outlined like the theme switch beside it (PM-300), so it reads as a button. */
 .inbox-button {
   position: relative;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--text-3);
   cursor: pointer;
 }

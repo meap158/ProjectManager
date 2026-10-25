@@ -278,6 +278,8 @@ export function Dropdown<T extends string | number>({
             aria-multiselectable={multiple ? true : undefined}
             aria-label={label}
             id={listId}
+            // Holding a choice on a phone opens no context menu (PM-299).
+            onContextMenu={(e) => e.preventDefault()}
           >
             {visible.map(({ option, index: i }) => (
               <li
