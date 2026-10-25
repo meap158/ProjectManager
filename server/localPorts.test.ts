@@ -25,9 +25,9 @@ describe('parseNetstat', () => {
       '  UDP    0.0.0.0:5353           *:*                                    400',
     ].join('\r\n');
     expect(parseNetstat(out)).toEqual([
-      { port: 3001, pid: 32348 },
-      { port: 5173, pid: 100 },
-      { port: 8080, pid: 200 },
+      { port: 3001, pid: 32348, host: '[::]' },
+      { port: 5173, pid: 100, host: '127.0.0.1' },
+      { port: 8080, pid: 200, host: '[::1]' },
     ]);
   });
 });
@@ -36,9 +36,9 @@ describe('parseLsof', () => {
   it('reads pid and name lines', () => {
     const out = 'p100\nn127.0.0.1:5173\np200\nn*:3000\nn[::1]:8080\np300\nn10.0.0.2:9000\n';
     expect(parseLsof(out)).toEqual([
-      { port: 5173, pid: 100 },
-      { port: 3000, pid: 200 },
-      { port: 8080, pid: 200 },
+      { port: 5173, pid: 100, host: '127.0.0.1' },
+      { port: 3000, pid: 200, host: '*' },
+      { port: 8080, pid: 200, host: '[::1]' },
     ]);
   });
 });
@@ -95,6 +95,34 @@ describe('readPageMeta', () => {
     expect(readPageMeta('<link rel="icon" href="//evil.example/i.png">', 3000).icon).toBe(
       '/favicon.ico',
     );
+  });
+});
+
+describe('candidates', () => {
+  it('lists one app for a port two programs share: the one 127.0.0.1 reaches', () => {
+    const found = candidates(
+      [
+        { port: 3000, pid: 10, host: '0.0.0.0' },
+        { port: 3000, pid: 11, host: '[::]' },
+        { port: 3000, pid: 12, host: '127.0.0.1' },
+        { port: 4000, pid: 13, host: '0.0.0.0' },
+      ],
+      new Set(),
+    );
+    expect(found.map((l) => [l.port, l.pid])).toEqual([
+      [3000, 12],
+      [4000, 13],
+    ]);
+  });
+  it('keeps every listener when none is bound to 127.0.0.1', () => {
+    const found = candidates(
+      [
+        { port: 3000, pid: 10, host: '0.0.0.0' },
+        { port: 3000, pid: 11, host: '[::]' },
+      ],
+      new Set(),
+    );
+    expect(found).toHaveLength(2);
   });
 });
 

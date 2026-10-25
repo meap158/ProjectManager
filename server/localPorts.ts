@@ -9,6 +9,8 @@ import { run } from './analysis/exec.js';
 export interface Listener {
   port: number;
   pid: number;
+  /** The address it is bound to ("127.0.0.1", "0.0.0.0", "::"...), when known. */
+  host?: string;
 }
 
 /** Windows ephemeral and RPC ports (49152+) are almost never an app someone wants to open. */
@@ -31,7 +33,7 @@ export function parseNetstat(output: string): Listener[] {
   for (const line of output.split(/\r?\n/)) {
     const m = /^\s*TCP\s+(\S+):(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i.exec(line);
     if (!m || !LOOPBACK_REACHABLE.has(m[1]!)) continue;
-    const listener = { port: Number(m[2]), pid: Number(m[3]) };
+    const listener = { port: Number(m[2]), pid: Number(m[3]), host: m[1]! };
     out.set(`${listener.port}:${listener.pid}`, listener);
   }
   return [...out.values()];
@@ -46,7 +48,7 @@ export function parseLsof(output: string): Listener[] {
     else if (line.startsWith('n') && pid) {
       const m = /^n(.+):(\d+)$/.exec(line);
       if (m && LOOPBACK_REACHABLE.has(m[1]!))
-        out.set(`${m[2]}:${pid}`, { port: Number(m[2]), pid });
+        out.set(`${m[2]}:${pid}`, { port: Number(m[2]), pid, host: m[1]! });
     }
   }
   return [...out.values()];
@@ -54,9 +56,20 @@ export function parseLsof(output: string): Listener[] {
 
 /** Ports an app could be opened on: not privileged, not ephemeral, not this app's own. */
 export function candidates(listeners: Listener[], blocked: ReadonlySet<number>): Listener[] {
-  return listeners
-    .filter((l) => l.port >= MIN_PORT && l.port < EPHEMERAL_FROM && !blocked.has(l.port))
-    .sort((a, b) => a.port - b.port);
+  const open = listeners.filter(
+    (l) => l.port >= MIN_PORT && l.port < EPHEMERAL_FROM && !blocked.has(l.port),
+  );
+  // Two programs can share a port when one binds 127.0.0.1 and another a wildcard (0.0.0.0 or ::).
+  // A connection to 127.0.0.1 reaches the specific one, so that is the app this list can open; the
+  // other is shadowed and would only show the same page twice.
+  const byPort = new Map<number, Listener[]>();
+  for (const l of open) byPort.set(l.port, [...(byPort.get(l.port) ?? []), l]);
+  const picked: Listener[] = [];
+  for (const group of byPort.values()) {
+    const specific = group.filter((l) => l.host === '127.0.0.1');
+    picked.push(...(group.length > 1 && specific.length > 0 ? specific : group));
+  }
+  return picked.sort((a, b) => a.port - b.port);
 }
 
 /** Lower-cases and unifies separators so "S:\\Vibe Coding\\A" matches "s:/vibe coding/a/x.js". */
