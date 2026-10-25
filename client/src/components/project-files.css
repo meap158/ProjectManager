@@ -85,6 +85,12 @@
   display: flex;
   align-items: center;
   min-width: 0;
+  border-radius: 4px;
+}
+/* One highlight for the whole row, including the actions button. */
+.files-pin:hover,
+.files-pin:focus-within {
+  background: var(--surface-hover);
 }
 .files-pin-open {
   display: flex;
@@ -101,14 +107,22 @@
   font: inherit;
   font-size: 13px;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
-.files-pin-open:hover {
-  background: var(--surface-hover);
+.files-pin-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* The actions button always takes its space and only fades in, so hovering never reflows the row
+   (a name used to wrap onto two lines when the button appeared). */
+.files-pin .files-more {
+  display: grid;
+  opacity: 0;
 }
 .files-pin:hover .files-more,
 .files-pin:focus-within .files-more {
-  display: grid;
+  opacity: 1;
 }
 .files-pin.is-missing .files-name,
 .files-pin.is-missing .files-icon {
@@ -353,6 +367,9 @@
   color: var(--text);
 }
 @media (pointer: coarse) {
+  .files-pin .files-more {
+    opacity: 1; /* No hover on touch: always there. */
+  }
   .files-more {
     display: grid;
     width: 40px;
