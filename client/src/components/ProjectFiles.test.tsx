@@ -397,6 +397,15 @@ describe('links inside a previewed page', () => {
       `href="${base}?tab=files&file=${encodeURIComponent('References/owner-pages/owner-desk.html')}"`,
     );
     expect(out).toContain('href="https://x.test/"');
+    // Project links go to the top window (this tab); a web link keeps the page's own target.
+    expect(out).toMatch(/<a href="[^"]*owner-desk\.html" target="_top">desk<\/a>/);
+    expect(out).toContain('<a href="https://x.test/">web</a>');
+    expect(
+      rewriteRelative('<a target="_blank" href="../x.md">x</a>', '/r?p=', 'a/b', base),
+    ).toMatch(/<a href="[^"]*" target="_top">x<\/a>/);
+    expect(rewriteRelative('<a href="../../../x">x</a>', '/r?p=', 'a', base)).toContain(
+      '<a href="#" target="_self">',
+    );
     expect(out).toContain(`src="/raw?path=${encodeURIComponent('References/owner-pages/a.png')}"`);
     expect(out).toContain(`href="/raw?path=${encodeURIComponent('References/owner-pages/s.css')}"`);
   });

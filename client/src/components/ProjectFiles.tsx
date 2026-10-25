@@ -1012,7 +1012,7 @@ function RenderedFrame({
     <iframe
       className="files-frame"
       title={`Preview of ${path}`}
-      sandbox="allow-popups allow-popups-to-escape-sandbox"
+      sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
       referrerPolicy="no-referrer"
       srcDoc={doc}
     />
@@ -1075,12 +1075,20 @@ export function rewriteRelative(
     });
     return `srcset="${candidates.join(', ')}"`;
   });
-  // Links to other files of the project open that file in the Files tab (in a new tab: the frame
-  // may not navigate this app away).
+  // Links to other files of the project open that file in the Files tab, in this same tab: the
+  // anchor targets the top window, which the frame may only do on a click (sandbox
+  // allow-top-navigation-by-user-activation; the frame runs no scripts, so nothing else can
+  // navigate). An inert link stays in the frame; web and mail links keep the base's new-tab target.
   const withLinks = pageBase
-    ? withSrcset.replace(/(<a\b[^>]*?\shref=)"([^"]*)"/gi, (match, before: string, url: string) => {
-        const href = projectLinkHref(url, dir, pageBase);
-        return href === null ? match : `${before}"${href}"`;
+    ? withSrcset.replace(/<a\b[^>]*>/gi, (tag) => {
+        const found = /\shref="([^"]*)"/i.exec(tag);
+        const href = found ? projectLinkHref(found[1]!, dir, pageBase) : null;
+        if (href === null) return tag;
+        const base = tag
+          .replace(/\shref="[^"]*"/i, ` href="${href}"`)
+          .replace(/\starget="[^"]*"/i, '')
+          .replace(/\/?>$/, '');
+        return `${base} target="${href === '#' ? '_self' : '_top'}">`;
       })
     : withSrcset;
   return withLinks.replace(
