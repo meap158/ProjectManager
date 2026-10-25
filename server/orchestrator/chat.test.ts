@@ -119,6 +119,54 @@ describe('orchestrator chat tools (PM-89)', () => {
     await expect(call('create_card', { projectId: b, title: 'x' })).rejects.toThrow(/not in this/);
   });
 
+  it('owns "All projects" cards when it covers every project: list, read, annotate, create', async () => {
+    const { call, db, mine, other } = setup({ projectIds: [] });
+    const global = insertCard(db, 0, { title: 'Align Projects', description: '', status: 'todo' });
+    const overview = (await call('overview')) as {
+      todo: { cards: { key: string; project: string }[] };
+    };
+    expect(overview.todo.cards.map((c) => c.key).sort()).toEqual(
+      [global.key, mine.key, other.key].sort(),
+    );
+    expect(overview.todo.cards.find((c) => c.key === global.key)?.project).toBe('All projects');
+    const list = (await call('list_cards', { status: 'todo' })) as { cards: { id: number }[] };
+    expect(list.cards.map((c) => c.id)).toContain(global.id);
+    const onlyGlobal = (await call('list_cards', { projectId: 0 })) as { cards: { id: number }[] };
+    expect(onlyGlobal.cards.map((c) => c.id)).toEqual([global.id]);
+    expect(await call('get_card', { card: global.key })).toMatchObject({ key: global.key });
+    await call('update_card', { card: global.key, status: 'review', note: 'Checked it' });
+    expect(getCard(db, global.id)).toMatchObject({ status: 'review', projectId: 0 });
+    const made = (await call('create_card', { projectId: 0, title: 'Portfolio task' })) as {
+      id: number;
+    };
+    expect(getCard(db, made.id)?.projectId).toBe(0);
+  });
+
+  it('cannot start a worker on a card that belongs to no project, and says what to do', async () => {
+    const { call, db, supervisor } = setup({ projectIds: [] });
+    const global = insertCard(db, 0, { title: 'Align Projects', description: '', status: 'todo' });
+    await expect(call('dispatch_worker', { card: global.key })).rejects.toThrow(
+      /belongs to no project.*directly in this chat/s,
+    );
+    expect(supervisor.dispatchCard).not.toHaveBeenCalled();
+  });
+
+  it('leaves "All projects" cards alone when it is limited to chosen projects', async () => {
+    const { call, db, mine } = setup(); // projectIds: [Alpha]
+    const global = insertCard(db, 0, { title: 'Align Projects', description: '', status: 'todo' });
+    const overview = (await call('overview')) as { todo: { cards: { key: string }[] } };
+    expect(overview.todo.cards.map((c) => c.key)).toEqual([mine.key]);
+    // "All projects" is a project it does not have, like any other project outside its scope.
+    await expect(call('list_cards', { projectId: 0 })).rejects.toThrow(/not in this orchestrator/);
+    await expect(call('get_card', { card: global.key })).rejects.toThrow(
+      /not in this orchestrator/,
+    );
+    await expect(call('update_card', { card: global.key, note: 'x' })).rejects.toThrow(
+      /not in this orchestrator/,
+    );
+    await expect(call('create_card', { projectId: 0, title: 'x' })).rejects.toThrow(/not in this/);
+  });
+
   it('moves a card with a note, audited and recorded in Decision history', async () => {
     const { call, db, mine, record } = setup();
     await call('update_card', { card: mine.key, status: 'in_progress', note: 'Starting it' });

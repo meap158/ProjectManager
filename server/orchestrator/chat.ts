@@ -6,7 +6,18 @@ import type { Db } from '../db.js';
 import { AgentError, type AgentSupervisor } from '../agents/supervisor.js';
 import { providerStatuses } from '../agents/providers.js';
 import { stripTerminal } from '../agents/activity.js';
-import { getCard, getSetting, setSetting, insertCard, listCards, updateCard } from '../store.js';
+import {
+  getCard,
+  getSetting,
+  setSetting,
+  insertCard,
+  listCards,
+  listProjectlessCards,
+  updateCard,
+} from '../store.js';
+
+/** How a card that belongs to no project is labelled (PM-138). */
+const ALL_PROJECTS = 'All projects';
 import {
   CARD_STATUSES,
   type AgentRun,
@@ -209,6 +220,16 @@ export class OrchestratorChat implements OrchestratorToolHost {
     return instance.projectIds.length ? all.filter((p) => instance.projectIds.includes(p.id)) : all;
   }
 
+  /**
+   * Whether a project, by id, is this orchestrator's. Id 0 is "All projects" (a card that belongs
+   * to no project, PM-138): it is owned by an orchestrator that covers every project, and not by
+   * one limited to chosen projects.
+   */
+  private inScope(instance: OrchestratorConfig, projectId: number): boolean {
+    if (projectId === 0) return instance.projectIds.length === 0;
+    return this.scope(instance).some((p) => p.id === projectId);
+  }
+
   /** The newest chat session of an orchestrator, live or stopped. */
   session(id: string): AgentSession | null {
     const row = this.db
@@ -223,7 +244,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     const session = this.session(id);
     if (!work || !session || session.id !== work.sessionId || session.status !== 'running')
       return null;
-    if (!this.scope(instance).some((p) => p.id === work.projectId)) return null;
+    if (!this.inScope(instance, work.projectId)) return null;
     if (work.cardId !== null) {
       const card = getCard(this.db, work.cardId);
       if (
@@ -376,11 +397,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
   sendCard(id: string, cardId: number): AgentSession {
     const instance = this.instance(id);
     const found = getCard(this.db, cardId);
-    if (
-      !found ||
-      found.projectId === null ||
-      !this.scope(instance).some((p) => p.id === found.projectId)
-    )
+    if (!found || found.projectId === null || !this.inScope(instance, found.projectId))
       throw new AgentError(404, "Card not found in this orchestrator's projects");
     if (found.status === 'done')
       throw new AgentError(409, `${found.key} is done; move it back first if it needs more work`);
@@ -399,10 +416,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
           ? 'The orchestrator chat is asking you something; answer it first'
           : 'The orchestrator chat is busy; wait for it or open it to steer',
       );
-    const project = this.scope(instance).find((p) => p.id === found.projectId)!;
+    const projectLabel =
+      this.scope(instance).find((p) => p.id === found.projectId)?.name ?? ALL_PROJECTS;
     this.supervisor.sendInput(
       live.id,
-      `\x1b[200~${cardPrompt(instance, found, project.name)}\x1b[201~\r`,
+      `\x1b[200~${cardPrompt(instance, found, projectLabel)}\x1b[201~\r`,
       false,
     );
     this.record(id, 'send-card', `Sent ${found.key} to the chat`, found.id);
@@ -437,9 +455,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
   ): Promise<unknown> {
     const instance = this.instance(orchestratorId);
     const projects = this.scope(instance);
-    const inScope = (projectId: number) => projects.some((p) => p.id === projectId);
+    const inScope = (projectId: number) => this.inScope(instance, projectId);
     const projectName = (projectId: number) =>
-      projects.find((p) => p.id === projectId)?.name ?? `Project ${projectId}`;
+      projectId === 0
+        ? ALL_PROJECTS
+        : (projects.find((p) => p.id === projectId)?.name ?? `Project ${projectId}`);
     const card = (ref: unknown): Card => {
       const parsed = cardRef.parse(ref);
       const id = typeof parsed === 'number' ? parsed : Number(/\d+$/.exec(parsed)![0]);
@@ -505,7 +525,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
       }
       const task = input.card === undefined ? null : card(input.card);
       const projectId = task?.projectId ?? input.projectId;
-      if (!projectId || !inScope(projectId)) fail('Choose a project in this orchestrator scope');
+      if (projectId === undefined || !inScope(projectId))
+        fail('Choose a project in this orchestrator scope');
       if (!task && !input.title) fail('Provide a card or a repository task title');
       if (task && input.projectId !== undefined && input.projectId !== task.projectId)
         fail('Card and project must match');
@@ -526,8 +547,10 @@ export class OrchestratorChat implements OrchestratorToolHost {
       z.object({}).strict().parse(args);
       const situation = this.service.situation(orchestratorId)!;
       const { sessions, runs } = workers();
-      const todo = projects
-        .flatMap((p) => listCards(this.db, p.id))
+      const todo = [
+        ...projects.flatMap((p) => listCards(this.db, p.id)),
+        ...(inScope(0) ? listProjectlessCards(this.db) : []),
+      ]
         .filter((c) => c.status === 'todo')
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return {
@@ -552,7 +575,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     if (name === 'list_cards') {
       const input = z
         .object({
-          projectId: z.number().int().positive().optional(),
+          projectId: z.number().int().nonnegative().optional(),
           status: z.enum(CARD_STATUSES).optional(),
           query: z.string().max(200).optional(),
           limit: z.number().int().min(1).max(LIST_LIMIT).default(50),
@@ -562,9 +585,15 @@ export class OrchestratorChat implements OrchestratorToolHost {
       if (input.projectId !== undefined && !inScope(input.projectId))
         fail(`Project ${input.projectId} is not in this orchestrator's scope`);
       const q = input.query?.trim().toLowerCase();
-      const cards = projects
-        .filter((p) => input.projectId === undefined || p.id === input.projectId)
-        .flatMap((p) => listCards(this.db, p.id))
+      const cards = [
+        ...projects
+          .filter((p) => input.projectId === undefined || p.id === input.projectId)
+          .flatMap((p) => listCards(this.db, p.id)),
+        // Cards that belong to no project ("All projects"), for an orchestrator that covers all.
+        ...((input.projectId === undefined || input.projectId === 0) && inScope(0)
+          ? listProjectlessCards(this.db)
+          : []),
+      ]
         .filter((c) => !input.status || c.status === input.status)
         .filter(
           (c) => !q || c.title.toLowerCase().includes(q) || c.description.toLowerCase().includes(q),
@@ -641,7 +670,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     if (name === 'create_card') {
       const input = z
         .object({
-          projectId: z.number().int().positive(),
+          projectId: z.number().int().nonnegative(),
           title: z.string().trim().min(1).max(200),
           notes: z.string().max(4000).default(''),
           status: z.enum(CARD_STATUSES).default('todo'),
@@ -671,6 +700,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
         .strict()
         .parse(args);
       const c = card(input.card);
+      if (c.projectId === 0)
+        fail(
+          `${c.key} belongs to no project ("All projects"), so a worker has no folder to run in; ` +
+            'work on it directly in this chat, or move it to a project first',
+        );
       const fingerprint = createHash('sha256')
         .update(
           JSON.stringify({

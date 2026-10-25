@@ -273,6 +273,17 @@ export function listCards(db: Db, projectId: number): Card[] {
   return rows.map(toCard);
 }
 
+/**
+ * Cards that belong to no project (the "All projects" save target, PM-138). An orchestrator that
+ * covers every project owns them; one limited to chosen projects does not see them.
+ */
+export function listProjectlessCards(db: Db): Card[] {
+  const rows = db
+    .prepare('SELECT * FROM cards WHERE project_id IS NULL ORDER BY status, position, id')
+    .all() as unknown as CardRow[];
+  return rows.map(toCard);
+}
+
 /** Board tasks eligible for Orchestrator planning, loaded in one scoped query. */
 export function listSchedulableCards(db: Db, projectIds: readonly number[] = []): Card[] {
   const scope = projectIds.length
