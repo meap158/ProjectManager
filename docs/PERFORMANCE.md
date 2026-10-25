@@ -98,8 +98,17 @@ newest-first order, so a dropped card is never past the cap.
 | Cards drawn                                             | 296    | 105   |
 | Page elements                                           | 2,431  | 1,286 |
 
-A compact density and grouping by project stay on PM-296. Scroll smoothness has to be measured
-in a focused browser window (automated tabs throttle animation frames).
+**Scroll smoothness** (headless Chrome at 1440×900, driven over the DevTools protocol so animation
+frames are not throttled as in a background tab; 359 frames scrolling the board up and down):
+
+| Board                       | Median frame | Worst frame | Frames over 20 ms |
+| --------------------------- | ------------ | ----------- | ----------------- |
+| All 301 cards (no cap)      | 16.7 ms      | 50 ms       | 2                 |
+| Done capped at 40 (default) | 16.7 ms      | 16.8 ms     | 0                 |
+| Compact density             | 16.7 ms      | 16.8 ms     | 0                 |
+
+A steady 60 fps either way; the cap removes the two dropped frames. The Board also has a filter
+(`/` to focus), Compact density, Group by project and a WIP limit on In progress (PM-296).
 
 ### What changed
 

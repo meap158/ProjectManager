@@ -167,6 +167,14 @@ a populated pane.
   running: localhost:3000". Icon only and only when something runs, so idle rows and the 150px
   tablet chips lose no width; the row stays one link (the globe is not a nested control). Polled
   every 15s, paused while the tab is hidden.
+- **Board tool row (PM-296):** the Board/List tabs share their underline with a card filter
+  ("Filter cards /": `/` focuses it, Esc clears it; every word must appear in the title, key or
+  project) and, on the Board view, three view options saved per browser: Comfortable/Compact
+  density (one line per card), No grouping/Group by project (a small heading per project inside
+  each column, cards drop their tag), and a WIP limit for In progress ("4/3 over" in
+  `--status-review`, the word as well as the colour). Done draws its newest 40 cards until
+  "Show N older". On phones the row joins the header grid: the filter gets its own row and the
+  view options scroll sideways in one row instead of stacking.
 - **Sorter (KDP Library sorter):** modes Name / Recent commit / Lines of code, each with a
   natural direction (A–Z, newest first, most code first). Re-selecting the active mode flips
   its direction; switching modes restarts from the new mode's natural direction. The trigger

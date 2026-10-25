@@ -59,3 +59,22 @@ export function useCollapsedGroups(): [Set<CardStatus>, (status: CardStatus) => 
     },
   ];
 }
+
+/** One of a fixed set of choices, saved per browser (the Board's density, grouping, WIP limit). */
+export function useStoredChoice<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): [T, (value: T) => void] {
+  const [value, setValue] = useState<T>(() => {
+    const saved = read(key);
+    return allowed.includes(saved as T) ? (saved as T) : fallback;
+  });
+  return [
+    value,
+    (next) => {
+      setValue(next);
+      write(key, next);
+    },
+  ];
+}

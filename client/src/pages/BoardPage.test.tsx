@@ -45,7 +45,10 @@ beforeAll(() => {
     this.open = false;
   };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 const renderAt = (url: string) =>
   render(
@@ -128,5 +131,43 @@ describe('BoardPage', () => {
     fireEvent.click(within(done).getByRole('button', { name: 'Show 5 older' }));
     expect(within(done).getAllByText(/^Done \d+$/)).toHaveLength(45);
     expect(within(done).queryByRole('button', { name: /older/ })).toBeNull();
+  });
+
+  it('filters by title, key or project, with / to focus and Esc to clear (PM-296)', async () => {
+    renderAt('/board');
+    await screen.findByText('Plan the release');
+    fireEvent.keyDown(document.body, { key: '/' });
+    const filter = screen.getByRole('searchbox', { name: /Filter cards/ });
+    expect(document.activeElement).toBe(filter);
+    fireEvent.change(filter, { target: { value: 'beta login' } });
+    expect(screen.getByText('Fix login')).toBeTruthy();
+    expect(screen.queryByText('Plan the release')).toBeNull();
+    fireEvent.change(filter, { target: { value: 'PM-3' } });
+    expect(screen.getByText('Ship v1')).toBeTruthy();
+    expect(screen.queryByText('Fix login')).toBeNull();
+    fireEvent.keyDown(filter, { key: 'Escape' });
+    expect(screen.getByText('Plan the release')).toBeTruthy();
+  });
+
+  it('groups by project, goes compact, and flags In progress past its WIP limit', async () => {
+    localStorage.setItem('pm.board.group', 'project');
+    localStorage.setItem('pm.board.density', 'compact');
+    localStorage.setItem('pm.board.wip', '3');
+    vi.mocked(api.listAllCards).mockResolvedValueOnce([
+      card(1, 1, 'Alpha', 'in_progress', 'A1'),
+      card(2, 2, 'Beta', 'in_progress', 'B1'),
+      card(3, 1, 'Alpha', 'in_progress', 'A2'),
+      card(4, 2, 'Beta', 'in_progress', 'B2'),
+    ]);
+    const { container } = renderAt('/board');
+    const column = await screen.findByRole('region', { name: 'In progress' });
+    await within(column).findByText('A1');
+    expect(
+      [...column.querySelectorAll('.gcolumn-group-head .truncate')].map((h) => h.textContent),
+    ).toEqual(['Alpha', 'Beta']);
+    expect(within(column).getByTitle('Over the work-in-progress limit of 3').textContent).toBe(
+      '4/3 over',
+    );
+    expect(container.querySelector('.gboard.is-compact')).toBeTruthy();
   });
 });

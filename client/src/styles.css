@@ -3301,6 +3301,52 @@ span.path-link:hover .path-icon {
   margin: 4px;
   font-size: 12.5px;
 }
+/* In progress past its WIP limit says so in words as well as colour. */
+.gcolumn-wip {
+  color: var(--text-3);
+}
+.gcolumn-wip.is-over {
+  color: var(--status-review);
+  font-weight: 700;
+}
+/* Group by project: a small heading per project inside each column; the cards drop their tag. */
+.gcolumn-group {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+.gcolumn-group + .gcolumn-group {
+  margin-top: 6px;
+}
+.gcolumn-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 2px 2px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.gcolumn-group .project-tag {
+  display: none;
+}
+/* Compact density: one line per card, its key under it; twice as many cards per screen. */
+.gboard.is-compact .gcolumn-cards {
+  gap: 4px;
+}
+.gboard.is-compact .gcard {
+  padding: 6px 10px;
+  gap: 2px;
+}
+.gboard.is-compact .gcard-title {
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gboard.is-compact .gcard-meta > :not(.mono) {
+  display: none;
+}
 /* Below a capped column: draws the rest on demand (BoardPage DONE_LIMIT). */
 .gcolumn-more {
   width: 100%;
@@ -3601,6 +3647,30 @@ span.path-link:hover .path-icon {
 .view-tab[aria-checked='true'] {
   color: var(--text);
   border-bottom-color: var(--text);
+}
+/* The Board's tool row (PM-296): view tabs, then the filter and view options on the same
+   underline. Tabs sit on the line; the other controls keep a little air above it. */
+.board-tools {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.board-tools .view-tabs {
+  border-bottom: none;
+}
+.board-tools > :not(.view-tabs) {
+  margin-bottom: 6px;
+}
+.board-filter {
+  width: 220px;
+  height: 30px;
+  margin-left: auto;
+}
+.board-options {
+  display: flex;
+  gap: 8px;
 }
 
 .blist {
@@ -5532,6 +5602,30 @@ span.path-link:hover .path-icon {
     color: var(--accent);
     background: var(--accent-soft);
     border-color: var(--accent);
+  }
+  /* The tool row joins the grid: the filter gets a row of its own, and the view options one
+     sideways-scrolling row (filter chips, as in Gmail or Linear) instead of three stacked. */
+  .board-page .board-tools {
+    display: contents;
+  }
+  .board-page .board-tools > :not(.view-tabs) {
+    margin: 0;
+  }
+  .board-page .board-filter {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    width: 100%;
+    height: 36px;
+  }
+  .board-page .board-options {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .board-page .board-options .dropdown {
+    flex: none;
   }
   .board-page .board-new {
     grid-column: 2;

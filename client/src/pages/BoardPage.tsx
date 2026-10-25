@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
   CARD_STATUSES,
@@ -10,7 +10,7 @@ import {
 } from '../../../shared/types';
 import { serialPoll } from '../lib/serialPoll';
 import { api } from '../api';
-import { useBoardView } from '../boardView';
+import { useBoardView, useStoredChoice } from '../boardView';
 import { BoardListView, BoardViewTabs } from '../components/BoardListView';
 import { CardDialog } from '../components/CardDialog';
 import { Dropdown } from '../components/Dropdown';
@@ -48,6 +48,24 @@ const projectNameOf = (projects: ProjectSummary[], projectId: number): string =>
  * board; the working columns always show every card, so nothing waiting on you is hidden.
  */
 const DONE_LIMIT = 40;
+
+// View options (PM-296), saved per browser: what Linear, Jira and GitHub Projects offer on a
+// board with hundreds of cards.
+const DENSITIES = ['comfortable', 'compact'] as const;
+const GROUPINGS = ['none', 'project'] as const;
+/** In progress turns amber past this many cards (0: no limit). Kanban's WIP limit. */
+const WIP_LIMITS = ['0', '3', '5', '8', '12'] as const;
+
+/** Every word of the filter appears in the card's title, key or project. */
+const matchesFilter = (card: CardWithProject, words: string[]) => {
+  const text = `${card.title} ${card.key} ${card.projectName}`.toLowerCase();
+  return words.every((w) => text.includes(w));
+};
+
+/** Focus is in a text field, where "/" is typed rather than a shortcut. */
+const typingIn = (el: EventTarget | null) =>
+  el instanceof HTMLElement &&
+  (el.isContentEditable || !!el.closest('input, textarea, select, .xterm'));
 
 export function BoardPage() {
   const [params, setParams] = useSearchParams();
@@ -113,7 +131,27 @@ export function BoardPage() {
     setParams(next, { replace: true });
   };
 
-  const visible = (cards ?? []).filter((c) => !projectFilter || c.projectId === projectFilter);
+  const [density, setDensity] = useStoredChoice('pm.board.density', DENSITIES, 'comfortable');
+  const [grouping, setGrouping] = useStoredChoice('pm.board.group', GROUPINGS, 'none');
+  const [wip, setWip] = useStoredChoice('pm.board.wip', WIP_LIMITS, '0');
+  const wipLimit = Number(wip);
+  const [filter, setFilter] = useState('');
+  const filterRef = useRef<HTMLInputElement>(null);
+  // "/" jumps to the filter, as in GitHub, Linear and Gmail; Esc in it clears it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || typingIn(e.target)) return;
+      if (document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      filterRef.current?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+  const words = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const visible = (cards ?? []).filter(
+    (c) => (!projectFilter || c.projectId === projectFilter) && matchesFilter(c, words),
+  );
   const columns = SHOW_COLUMNS[show];
 
   async function move(card: CardWithProject, status: CardStatus) {
@@ -150,6 +188,37 @@ export function BoardPage() {
             : c,
         ) ?? prev,
     );
+
+  const renderCard = (c: CardWithProject): ReactNode => (
+    <button
+      key={c.id}
+      type="button"
+      className="gcard"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', c.key);
+        setDragId(c.id);
+      }}
+      onDragEnd={() => {
+        setDragId(null);
+        setDropOn(null);
+      }}
+      onClick={() => setOpenCard(c)}
+      title="Open to edit, change its column or hand it to an agent · drag to move"
+    >
+      <span className="gcard-title">{c.title}</span>
+      <span className="gcard-meta">
+        <span className="project-tag" style={{ ['--tag' as string]: colorOf.get(c.projectId) }}>
+          {c.projectName || 'All projects'}
+        </span>
+        <span className="mono faint">{c.key}</span>
+        <span className="faint" title={c.updatedAt}>
+          {formatRelative(c.updatedAt)}
+        </span>
+      </span>
+    </button>
+  );
 
   return (
     <main className="page board-page">
@@ -197,7 +266,57 @@ export function BoardPage() {
           </div>
         </div>
 
-        <BoardViewTabs view={view} onChange={setView} />
+        <div className="board-tools">
+          <BoardViewTabs view={view} onChange={setView} />
+          <input
+            ref={filterRef}
+            type="search"
+            className="input board-filter"
+            placeholder="Filter cards  /"
+            aria-label="Filter cards by title, key or project (press / to focus)"
+            aria-keyshortcuts="/"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && filter) {
+                e.stopPropagation();
+                setFilter('');
+              }
+            }}
+          />
+          {view === 'board' && (
+            <div className="board-options">
+              <Dropdown
+                label="Density"
+                value={density}
+                options={[
+                  { value: 'comfortable', label: 'Comfortable' },
+                  { value: 'compact', label: 'Compact', title: 'One line per card' },
+                ]}
+                onChange={setDensity}
+              />
+              <Dropdown
+                label="Group"
+                value={grouping}
+                options={[
+                  { value: 'none', label: 'No grouping' },
+                  { value: 'project', label: 'Group by project' },
+                ]}
+                onChange={setGrouping}
+              />
+              <Dropdown
+                label="Work-in-progress limit"
+                value={wip}
+                options={WIP_LIMITS.map((v) => ({
+                  value: v,
+                  label: v === '0' ? 'No WIP limit' : `WIP limit ${v}`,
+                  title: 'In progress turns amber past this many cards',
+                }))}
+                onChange={setWip}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -238,7 +357,7 @@ export function BoardPage() {
       ) : (
         <div
           ref={stuckTop}
-          className="gboard"
+          className={`gboard${density === 'compact' ? ' is-compact' : ''}`}
           style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
         >
           {columns.map((status) => {
@@ -272,7 +391,21 @@ export function BoardPage() {
                         {CARD_STATUS_LABELS[status]}
                       </span>
                     </h2>
-                    <span className="faint num">{items.length}</span>
+                    {status === 'in_progress' && wipLimit > 0 ? (
+                      <span
+                        className={`num gcolumn-wip${items.length > wipLimit ? ' is-over' : ''}`}
+                        title={
+                          items.length > wipLimit
+                            ? `Over the work-in-progress limit of ${wipLimit}`
+                            : `Work-in-progress limit: ${wipLimit}`
+                        }
+                      >
+                        {items.length}/{wipLimit}
+                        {items.length > wipLimit && ' over'}
+                      </span>
+                    ) : (
+                      <span className="faint num">{items.length}</span>
+                    )}
                     <button
                       type="button"
                       className="icon-btn gcolumn-add"
@@ -285,39 +418,17 @@ export function BoardPage() {
                   </header>
                 </div>
                 <div className="gcolumn-cards">
-                  {shown.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className="gcard"
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('text/plain', c.key);
-                        setDragId(c.id);
-                      }}
-                      onDragEnd={() => {
-                        setDragId(null);
-                        setDropOn(null);
-                      }}
-                      onClick={() => setOpenCard(c)}
-                      title="Open to edit, change its column or hand it to an agent · drag to move"
-                    >
-                      <span className="gcard-title">{c.title}</span>
-                      <span className="gcard-meta">
-                        <span
-                          className="project-tag"
-                          style={{ ['--tag' as string]: colorOf.get(c.projectId) }}
-                        >
-                          {c.projectName || 'All projects'}
-                        </span>
-                        <span className="mono faint">{c.key}</span>
-                        <span className="faint" title={c.updatedAt}>
-                          {formatRelative(c.updatedAt)}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
+                  {grouping === 'project'
+                    ? groupByProject(shown).map(([name, group]) => (
+                        <div key={name} className="gcolumn-group">
+                          <h3 className="gcolumn-group-head">
+                            <span className="truncate">{name}</span>
+                            <span className="faint num">{group.length}</span>
+                          </h3>
+                          {group.map(renderCard)}
+                        </div>
+                      ))
+                    : shown.map(renderCard)}
                   {items.length > shown.length && (
                     <button
                       type="button"
@@ -379,4 +490,14 @@ export function BoardPage() {
       />
     </main>
   );
+}
+
+/** A column's cards under one heading per project, projects A–Z, newest first within each. */
+function groupByProject(cards: CardWithProject[]): [string, CardWithProject[]][] {
+  const groups = new Map<string, CardWithProject[]>();
+  for (const c of cards) {
+    const name = c.projectName || 'All projects';
+    groups.set(name, [...(groups.get(name) ?? []), c]);
+  }
+  return [...groups].sort(([a], [b]) => a.localeCompare(b));
 }
