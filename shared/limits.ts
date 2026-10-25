@@ -14,6 +14,10 @@ export interface UsageWindow {
 }
 
 export interface ProviderLimits {
+  /** Current account metadata for usage tooltips; never credential material. */
+  accountEmail?: string | null;
+  accountName?: string | null;
+  accountPlan?: string | null;
   providerId: string;
   windows: UsageWindow[];
   /** When the CLI last reported these numbers (they only change while the CLI is used). */

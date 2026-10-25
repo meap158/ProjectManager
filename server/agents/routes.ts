@@ -23,7 +23,6 @@ import {
   type WorkspaceLayout,
 } from '../../shared/types.js';
 import type { Db } from '../db.js';
-import { claudeLimits } from './limits.js';
 import { sessionUsage } from './usage.js';
 import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
@@ -460,8 +459,21 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
 
   // Plan usage limits (5-hour / weekly) the CLIs record locally; no tokens spent (PM-17).
   app.get('/agent-limits', (c) => {
-    const claude = claudeLimits(supervisor.dataDir);
-    const codex = supervisor.codexAccountsState(true).defaultAccount?.limits ?? null;
+    const current = (state: ReturnType<AgentSupervisor['codexAccountsState']>) =>
+      state.accounts.find((a) => a.id === state.activeProfileId) ?? state.defaultAccount;
+    const codexAccount = current(supervisor.codexAccountsState(true));
+    const claudeAccount = current(supervisor.claudeAccountsState());
+    const decorate = (account: typeof codexAccount) =>
+      account?.limits
+        ? {
+            ...account.limits,
+            accountEmail: account.email,
+            accountName: 'name' in account ? account.name : null,
+            accountPlan: account.plan,
+          }
+        : null;
+    const claude = decorate(claudeAccount);
+    const codex = decorate(codexAccount);
     return c.json([claude, codex].filter((value) => value !== null));
   });
 

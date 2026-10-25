@@ -1,5 +1,6 @@
 import { useAgentLimits } from '../agentLimits';
-import { formatRelative, formatReset } from '../format';
+import { formatReset } from '../format';
+import { usageTooltip } from '../usageTooltip';
 import { PROVIDER_LABELS, ProviderIcon } from './icons';
 
 /**
@@ -22,11 +23,7 @@ export function LimitsStrip({
     <section className={`limits-strip${inline ? ' is-inline' : ''}`} aria-label="Plan usage limits">
       <span className="limits-title">Plan usage</span>
       {shown.map((l) => (
-        <span
-          key={l.providerId}
-          className="limits-chip"
-          title={`From the ${l.source}, reported ${formatRelative(l.asOf)}`}
-        >
+        <span key={l.providerId} className="limits-chip" title={usageTooltip(l)}>
           <span className="limits-name">
             <ProviderIcon id={l.providerId} size={13} />
             {PROVIDER_LABELS[l.providerId] ?? l.providerId}
@@ -39,7 +36,11 @@ export function LimitsStrip({
                 ? `resets ${formatReset(w.resetsAt, now)}`
                 : '';
             return (
-              <span key={w.label} className="limits-window" title={reset || undefined}>
+              <span
+                key={w.label}
+                className="limits-window"
+                title={[usageTooltip(l), reset].filter(Boolean).join('\n')}
+              >
                 <span className="faint">{w.label}</span>
                 <span
                   className={`usage-meter is-${level}`}

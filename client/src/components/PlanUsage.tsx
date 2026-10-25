@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAgentLimits } from '../agentLimits';
-import { formatRelative, formatReset } from '../format';
+import { formatReset } from '../format';
+import { usageTooltip } from '../usageTooltip';
 import { PROVIDER_LABELS, ProviderIcon } from './icons';
 
 const OPEN_KEY = 'pm.sidebar.usage';
@@ -51,11 +52,7 @@ export function PlanUsage() {
       </button>
       {open &&
         list.map((l) => (
-          <div
-            key={l.providerId}
-            className="plan-usage-cli"
-            title={`From the ${l.source}, reported ${formatRelative(l.asOf)}`}
-          >
+          <div key={l.providerId} className="plan-usage-cli" title={usageTooltip(l)}>
             <div className="plan-usage-name">
               <ProviderIcon id={l.providerId} size={12} />
               {name(l.providerId)}
@@ -75,7 +72,11 @@ export function PlanUsage() {
                     })}`
                   : undefined;
               return (
-                <div key={w.label} className="plan-usage-row" title={resetTooltip}>
+                <div
+                  key={w.label}
+                  className="plan-usage-row"
+                  title={[usageTooltip(l), resetTooltip].filter(Boolean).join('\n')}
+                >
                   <div className="plan-usage-line">
                     <span>{w.label}</span>
                     <span className="faint">
