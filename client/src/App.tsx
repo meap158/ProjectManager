@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
+import { InboxButton } from './components/InboxButton';
 import { MobileTabBar } from './components/MobileTabBar';
 import { sectionHref, useSectionMemory } from './sectionMemory';
 import { ProjectSidebar } from './components/ProjectSidebar';
@@ -92,6 +93,7 @@ export function App() {
           </NavLink>
         </nav>
         <div className="topbar-right">
+          <InboxButton />
           <ThemeSwitch />
           <NavLink
             to={sectionHref('/settings')}

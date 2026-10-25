@@ -6423,3 +6423,125 @@ span.path-link:hover .path-icon {
     min-height: 44px;
   }
 }
+
+/* Inbox (PM-261): a top-bar tray with a count, and a panel of what is waiting for you. */
+.inbox {
+  position: relative;
+}
+.inbox-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.inbox-button:hover,
+.inbox-button[aria-expanded='true'] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.inbox-button.has-items {
+  color: var(--text);
+}
+.inbox-count {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.inbox-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.25);
+}
+.inbox-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inbox-head {
+  padding: 6px 8px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.inbox-empty {
+  margin: 0;
+  padding: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.inbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+.inbox-row:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+.inbox-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-review);
+}
+.inbox-dot[data-reason='restart-failed'] {
+  background: var(--danger);
+}
+.inbox-main {
+  display: grid;
+  min-width: 0;
+}
+.inbox-title,
+.inbox-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.inbox-sub {
+  color: var(--text-2);
+  font-size: 12px;
+}
+@media (pointer: coarse) {
+  .inbox-button {
+    width: 40px;
+    height: 40px;
+  }
+  .inbox-row {
+    min-height: 44px;
+  }
+}

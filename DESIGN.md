@@ -303,6 +303,11 @@ adjacent-pair CVD separation in both modes).
   ("Filter files…"). The address input is 16px text so iPhone doesn't zoom on focus; on touch the
   shared rules raise both to 40px together. A `type="search"` input keeps the `.input` box (native
   search styling is turned off).
+- **Inbox (top bar, left of the theme switch):** a tray icon with a count badge (`--accent`) of what waits
+  on you from any page: sessions asking you to choose or approve something (the same `tailState` as the
+  Needs input badge, dot in `--status-review`) and failed restarts (`--danger`). It polls every 5 s
+  while the tab is visible. The panel (Escape or an outside click closes it) lists one row per item
+  and a row opens that session in Agents (`/workspace?open=<id>`). 32px button, 40px on touch.
 - **Preview page (`/preview`):** full width (`.page-wide`, no centred 1280px column) and without a
   visible page header. A list panel (190-230px, sticky) beside a small browser, modelled on the one
   built into Claude's desktop app. **Tabs** (36px strip, up to 12): each shows the page's own icon

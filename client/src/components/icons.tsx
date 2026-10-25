@@ -292,3 +292,13 @@ export function InfoIcon(props: IconProps) {
     </Base>
   );
 }
+
+/** Inbox tray. */
+export function InboxIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M2 9.5l1.7-5.2a1 1 0 0 1 .95-.7h6.7a1 1 0 0 1 .95.7L14 9.5V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />
+      <path d="M2 9.5h3.5a2.5 2.5 0 0 0 5 0H14" />
+    </Base>
+  );
+}
