@@ -88,6 +88,25 @@ it('auto-detects default email without creating a saved profile', async () => {
   expect(state.defaultAccount).toMatchObject({ email: 'default@example.com', active: true });
   expect(state.accounts).toEqual([]);
 });
+it('reads id_token_email and repairs previously saved blank metadata without changing identity or nicknames', async () => {
+  const { service, setLive } = setup();
+  const doc = JSON.parse(credential('default@example.com'));
+  delete doc.id_token;
+  setLive(JSON.stringify(doc));
+  const before = await service.saveCurrent();
+  const id = before.defaultAccount!.id;
+  doc.id_token_email = 'default@example.com';
+  setLive(JSON.stringify(doc));
+  const after = await service.state();
+  expect(after.defaultAccount).toMatchObject({ id, email: 'default@example.com', active: true });
+  expect(after.accounts[0]).toMatchObject({
+    id,
+    email: 'default@example.com',
+    name: 'default@example.com',
+  });
+  await service.rename(id, 'Work');
+  expect((await service.state()).defaultAccount?.name).toBe('Work');
+});
 it('uses current credential email when the saved matching row has missing metadata', async () => {
   const { service, setLive, root } = setup();
   const raw = credential('current@example.com');

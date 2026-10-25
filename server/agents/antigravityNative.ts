@@ -27,6 +27,7 @@ const credentialSchema = z
       })
       .passthrough(),
     id_token: z.string().optional(),
+    id_token_email: z.string().max(320).optional(),
   })
   .passthrough()
   .refine((c) => c.token.access_token || c.token.refresh_token);
@@ -46,7 +47,11 @@ function identity(raw: string) {
     typeof claims.sub === 'string' ? claims.sub : c.token.refresh_token || c.token.access_token!;
   return {
     id: 'acct_' + createHash('sha256').update(key).digest('hex').slice(0, 24),
-    email: typeof claims.email === 'string' ? claims.email : '',
+    email: z.string().email().safeParse(c.id_token_email).success
+      ? c.id_token_email!
+      : typeof claims.email === 'string'
+        ? claims.email
+        : '',
   };
 }
 export interface AgyStore {
@@ -196,6 +201,12 @@ export class NativeAntigravityAccounts {
     const accounts = this.registry().map((a) => ({
       ...a,
       email: a.id === active && meta?.email ? meta.email : a.email,
+      name:
+        a.id === active &&
+        meta?.email &&
+        (a.name === 'Antigravity account' || a.name === 'Default Antigravity account')
+          ? meta.email
+          : a.name,
       active: a.id === active,
     }));
     const defaultAccount = meta
@@ -213,7 +224,10 @@ export class NativeAntigravityAccounts {
     return {
       available: true,
       accounts,
-      defaultAccount,
+      defaultAccount: defaultAccount && {
+        ...defaultAccount,
+        email: meta?.email || defaultAccount.email,
+      },
     };
   }
   private async exclusive(fn: () => Promise<AntigravityAccountsState>) {

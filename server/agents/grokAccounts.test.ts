@@ -69,6 +69,22 @@ it('detects default email without saving and encrypts imported profiles without 
   expect(bytes.includes(Buffer.from('access-'))).toBe(false);
   expect(JSON.stringify(state)).not.toContain('refresh-');
 });
+it('accepts account-namespaced issuer keys without weakening trusted issuer checks', () => {
+  const canonical = parseGrokAuth(auth('a@example.com'));
+  const namespaced = parseGrokAuth(
+    auth('a@example.com', 'access-a@example.com', 'team-a', 'https://auth.x.ai::account-123'),
+  );
+  expect(namespaced.id).toBe(canonical.id);
+  expect(namespaced.email).toBe(canonical.email);
+  for (const issuer of [
+    'https://auth.x.ai.evil.test::account-123',
+    'https://auth.x.ai::',
+    'https://auth.x.ai::account::extra',
+  ])
+    expect(() => parseGrokAuth(auth('a@example.com', 'token', 'team', issuer))).toThrow(
+      'supported',
+    );
+});
 it('recaptures refreshed leaving tokens before switch, preserves history/config and restores on switch back', async () => {
   const { service, file, home } = setup();
   const first = auth('a@example.com', 'old');

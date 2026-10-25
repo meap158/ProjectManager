@@ -47,7 +47,11 @@ export function parseGrokAuth(raw: string) {
     for (const [issuer, value] of Object.entries(input)) {
       let parsed: URL;
       try {
-        parsed = new URL(issuer);
+        // Grok 1.0.62 namespaces its issuer key by account: <issuer>::<account-id>.
+        const parts = issuer.split('::');
+        if (parts.length > 2 || (parts.length === 2 && !/^[A-Za-z0-9_-]+$/.test(parts[1]!)))
+          continue;
+        parsed = new URL(parts[0]!);
       } catch {
         continue;
       }

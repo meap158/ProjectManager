@@ -2,7 +2,7 @@
 
 Settings → Agents → Grok → Accounts uses the same account layout and actions as the other native switchers. It detects the default login, displays its email, saves/imports profiles, supports nicknames and drag reordering, and refreshes all or individual usage reports. Switching requires confirmation. Already running Grok processes retain their login until deliberately restarted; ProjectManager does not restart them automatically.
 
-The credential location follows Grok: `GROK_HOME`, then `GROK_CONFIG_DIR`, then `~/.grok`, with `auth.json` inside. Supported OIDC entries use the exact HTTPS origins `auth.x.ai` or `accounts.x.ai`. The original document is preserved so refresh and provider metadata survive a switch. API-key-only logins have no verified account/billing contract and are not offered as saved accounts.
+The credential location follows Grok: `GROK_HOME`, then `GROK_CONFIG_DIR`, then `~/.grok`, with `auth.json` inside. Supported OIDC entries include account-namespaced `<issuer>::<account-id>` keys and use the exact HTTPS origins `auth.x.ai` or `accounts.x.ai`. The original document is preserved so refresh and provider metadata survive a switch. API-key-only logins have no verified account/billing contract and are not offered as saved accounts.
 
 Saved credentials and the previous-login backup are encrypted with AES-256-GCM in `data/grok-accounts/*.enc`. The separate `encryption.key` must be backed up with these files. Registry metadata contains no tokens or cached quota. Encryption protects stored copies; anyone with access to both the key and ciphertext can decrypt them. The live Grok auth file remains in Grok's own format. Removing a saved profile does not sign out the active CLI.
 

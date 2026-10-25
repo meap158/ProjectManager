@@ -349,7 +349,9 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
           active:{' '}
           {state?.defaultAccount?.email ||
             state?.accounts.find((a) => a.active)?.email ||
-            'not signed in'}
+            (state?.defaultAccount || state?.accounts.some((a) => a.active)
+              ? 'signed in (email unavailable)'
+              : 'not signed in')}
         </span>
       </div>
       {error && (
