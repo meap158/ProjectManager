@@ -20,6 +20,7 @@ const terms = vi.hoisted(
       rows: number;
       geometryHandler: ((data: string) => boolean) | null;
       bottomScrolls: number;
+      refreshes: number;
       pendingWrites: (() => void)[];
     }[],
 );
@@ -37,11 +38,14 @@ vi.mock('@xterm/xterm', () => ({
     scrolled: number[] = [];
     geometryHandler: ((data: string) => boolean) | null = null;
     bottomScrolls = 0;
+    refreshes = 0;
     pendingWrites: (() => void)[] = [];
     scrollToBottom() {
       this.bottomScrolls++;
     }
-    refresh() {}
+    refresh() {
+      this.refreshes++;
+    }
     parser = {
       registerOscHandler: (_id: number, handler: (data: string) => boolean) => {
         this.geometryHandler = handler;
@@ -207,6 +211,20 @@ describe('TerminalView', () => {
     FakeEventSource.last!.onerror!();
     const reconnecting = await screen.findByText('Reconnecting…');
     expect(reconnecting.closest('.terminal-notice')?.classList.contains('is-centered')).toBe(false);
+  });
+
+  it('repaints when the page becomes visible again, so blank rows or a missing scrollbar come back', async () => {
+    render(<TerminalView fetchOutput={noFetch} streamUrl={() => '/stream'} historyBytes={0} />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    FakeEventSource.last!.emit('output', { data: 'cli', nextOffset: 3 });
+    terms.at(-1)!.pendingWrites.shift()!();
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    const before = terms.at(-1)!.refreshes;
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(terms.at(-1)!.refreshes).toBeGreaterThan(before));
+    const afterVisible = terms.at(-1)!.refreshes;
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => expect(terms.at(-1)!.refreshes).toBeGreaterThan(afterVisible));
   });
 
   it('recovers streaming failures with a successful output fetch', async () => {

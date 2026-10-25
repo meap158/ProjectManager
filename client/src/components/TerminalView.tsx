@@ -387,6 +387,28 @@ export function TerminalView({
         callbacks.current.onResize?.(term.cols, term.rows);
       }
     };
+    // Repaints after the renderer or the scroll area lost its state: a GPU context reset, a tab
+    // that was hidden for a while, or a swap from WebGL back to the DOM renderer can leave rows
+    // blank or the scrollbar missing until something resizes the terminal. Cheap and idempotent.
+    const repaint = () => {
+      if (cancelled || !opened || restoring) return;
+      try {
+        term.clearTextureAtlas?.();
+        term.refresh(0, term.rows - 1);
+        const element = viewport();
+        const scrollable = term.buffer.active.length > term.rows;
+        if (element && scrollable && element.scrollHeight <= element.clientHeight + 1) {
+          // The scroll area collapsed: re-measure, then ask the viewport to sync from the buffer.
+          refit();
+          term.scrollToLine(term.buffer.active.viewportY);
+        }
+      } catch {
+        // Disposed or collapsed mid-way: the next trigger tries again.
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') requestAnimationFrame(repaint);
+    };
     // Mobile keyboard animation emits many transient sizes. Fit after it settles so the PTY
     // receives one geometry update instead of repeatedly clearing and redrawing its screen.
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -811,6 +833,8 @@ export function TerminalView({
           webgl.onContextLoss(() => {
             releaseWebgl?.();
             webgl.dispose();
+            // The DOM renderer takes over with an empty canvas of rows: paint them again.
+            requestAnimationFrame(repaint);
           });
           term.loadAddon(webgl);
         } catch {
@@ -824,6 +848,8 @@ export function TerminalView({
       refit();
       resize.observe(host);
       window.addEventListener('resize', scheduleRefit);
+      document.addEventListener('visibilitychange', onVisible);
+      window.addEventListener('focus', onVisible);
       if (interactive && !restoring && !callbacks.current.paused) term.focus();
       start();
     });
@@ -859,6 +885,8 @@ export function TerminalView({
       host.removeEventListener('touchcancel', onTouchEnd);
       if (pasteTarget) pasteTarget.current = null;
       window.removeEventListener('resize', scheduleRefit);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
       clearTimeout(resizeTimer);
       resize.disconnect();
       term.dispose();
