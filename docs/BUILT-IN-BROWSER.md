@@ -25,6 +25,12 @@ is not owned by one project. There are two ways to show an app:
    root-absolute URLs in JavaScript (Vite, Next) miss the proxy, and there is no WebSocket, so no
    live reload. It cannot be fixed without a host name per app. Simple and static pages work.
 
+The browser has real tabs (`previewTabs.ts` holds the state transitions, `PreviewTabStrip.tsx` the strip
+and context menu): new, close, close others or to the right, duplicate, pin, reorder, reload, per-tab
+back and forward, and reopen closed tab. Each open page keeps its own frame, so switching tabs keeps
+the page as it was. Several tabs on one app are fine in own-origin mode (they share its cookies and
+storage, like real tabs on one site).
+
 The proxied path address must never be opened as a top-level tab (it would run as this origin).
 
 ## The security problem comes first

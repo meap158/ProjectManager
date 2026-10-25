@@ -1,15 +1,35 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+} from 'react';
 import { useSearchParams } from 'react-router';
 import type { LocalApp, PreviewLaunch, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
 import { ArrowLeftIcon, ArrowRightIcon, BookmarkIcon, GlobeIcon, RefreshIcon } from './icons';
 import { LoadingMark } from './LoadingMark';
+import { PreviewTabStrip, type StripTab, type TabCommand } from './PreviewTabStrip';
+import {
+  MAX_TABS,
+  createTabsReducer,
+  initialTabs,
+  parseTabs,
+  serializeTabs,
+  targetOf,
+  type PreviewTarget,
+  type TabsState,
+} from './previewTabs';
 import './project-preview.css';
 
 // Preview (PM-253, docs/BUILT-IN-BROWSER.md): a dev server on this computer's localhost, shown
 // through the server's read-only /api/preview proxy so it also works from a phone or the remote
-// listener. A list of apps beside a small browser: a tab strip, back / forward / reload, one
+// listener. A list of apps beside a small browser: tabs, back / forward / reload, one
 // address field and a bookmark, like the built-in browser in Claude's desktop app. On phones it is
 // the list or the browser, with an "Apps" button back. It is a global page (top bar Preview), not
 // a project tab: a dev server is not owned by one project. The page runs in a sandbox WITHOUT
@@ -20,11 +40,7 @@ import './project-preview.css';
 // and the refresh button reads the machine right now. Sections fold and the sort is remembered
 // per browser (localStorage; the page works without it).
 
-export interface PreviewTarget {
-  port: number;
-  /** Always starts with "/". */
-  path: string;
-}
+export type { PreviewTarget };
 
 /** Reads "3000", ":3000/docs", "localhost:3000/a?b=1" or "http://127.0.0.1:3000/"; null if not one. */
 export function parsePreviewTarget(input: string): PreviewTarget | null {
@@ -72,8 +88,6 @@ export function previewFrame(
 /** How an address reads in the address field. */
 export const targetText = (t: PreviewTarget) =>
   `localhost:${t.port}${t.path === '/' ? '' : t.path}`;
-const sameTarget = (a: PreviewTarget | null, b: PreviewTarget | null) =>
-  !!a && !!b && a.port === b.port && a.path === b.path;
 const POLL_MS = 5000;
 
 export type PreviewSort = 'port' | 'name' | 'name-desc' | 'project';
@@ -253,24 +267,33 @@ function GroupHead({
   );
 }
 
-/** Pages opened in the viewer, with where you are in them (back and forward). */
-interface Trail {
-  stack: PreviewTarget[];
-  index: number;
+const TABS_KEY = 'pm-preview-tabs';
+const makeId = () => `t${Math.random().toString(36).slice(2, 9)}`;
+const tabsReducer = createTabsReducer(makeId);
+
+function startTabs(link: PreviewTarget | null): TabsState {
+  let saved: TabsState | null = null;
+  try {
+    saved = parseTabs(localStorage.getItem(TABS_KEY), makeId);
+  } catch {
+    // Storage unavailable: start with one blank tab.
+  }
+  const base = saved ?? initialTabs(null, makeId());
+  return link ? tabsReducer(base, { type: 'link', target: link }) : base;
 }
-const EMPTY_TRAIL: Trail = { stack: [], index: -1 };
+
+const addressOf = (t: PreviewTarget) => `http://localhost:${t.port}${t.path}`;
 
 export function PreviewWorkspace() {
   const [params, setParams] = useSearchParams();
-  const initial = parsePreviewTarget(params.get('preview') ?? '');
-  const [trail, setTrail] = useState<Trail>(() =>
-    initial ? { stack: [initial], index: 0 } : EMPTY_TRAIL,
+  const [state, dispatch] = useReducer(tabsReducer, undefined, () =>
+    startTabs(parsePreviewTarget(params.get('preview') ?? '')),
   );
-  const target: PreviewTarget | null = trail.stack[trail.index] ?? null;
-  const [draft, setDraft] = useState<string | null>(null);
-  const text = draft ?? (target ? targetText(target) : '');
-  const [reloads, setReloads] = useState(0);
-  const [frameLoading, setFrameLoading] = useState(initial !== null);
+  const active = state.tabs.find((t) => t.id === state.activeId) ?? state.tabs[0]!;
+  const target = targetOf(active);
+  // What is typed in the address field. Switching tabs drops it (the id no longer matches).
+  const [draft, setDraft] = useState<{ id: string; text: string } | null>(null);
+  const text = draft?.id === active.id ? draft.text : target ? targetText(target) : '';
   const [error, setError] = useState<string | null>(null);
   const [apps, setApps] = useState<LocalApp[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -279,6 +302,8 @@ export function PreviewWorkspace() {
   const [projects, setProjects] = useState<Map<number, string>>(new Map());
   const [sort, setSortState] = useState<PreviewSort>(readSort);
   const [chosenOpen, setChosenOpen] = useState(readOpen);
+  const addressRef = useRef<HTMLInputElement>(null);
+  const focusAddress = useRef(false);
 
   const load = useCallback((fresh = false) => {
     setRefreshing(true);
@@ -317,7 +342,12 @@ export function PreviewWorkspace() {
       .catch(() => undefined);
   }, []);
 
-  // The address bar and the link always show where the viewer is.
+  // The open tabs survive a reload of the page (per browser).
+  useEffect(() => {
+    remember(TABS_KEY, serializeTabs(state));
+  }, [state]);
+
+  // The link always shows the page in the active tab, and a new blank tab starts in the address field.
   const targetKey = target ? `${target.port}${target.path}` : '';
   useEffect(() => {
     setParams(
@@ -331,41 +361,31 @@ export function PreviewWorkspace() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetKey]);
+  useEffect(() => {
+    if (focusAddress.current && !targetOf(active)) addressRef.current?.focus();
+    focusAddress.current = false;
+  }, [active]);
 
   const setSort = (next: PreviewSort) => {
     setSortState(next);
     remember(SORT_KEY, next);
   };
 
-  const open = useCallback((next: PreviewTarget) => {
+  /** Opens an address: in the active tab, or in a tab of its own (Ctrl, ⌘ or middle click). */
+  const open = (next: PreviewTarget, inNewTab = false) => {
     setDraft(null);
     setError(null);
-    setFrameLoading(true);
-    setReloads((n) => n + 1);
-    setTrail((t) => {
-      if (sameTarget(t.stack[t.index] ?? null, next)) return t;
-      const stack = [...t.stack.slice(0, t.index + 1), next];
-      return { stack, index: stack.length - 1 };
-    });
-  }, []);
+    if (inNewTab) dispatch({ type: 'new', target: next });
+    else dispatch({ type: 'navigate', id: active.id, target: next });
+  };
+  const newTab = (afterId?: string) => {
+    focusAddress.current = true;
+    dispatch({ type: 'new', target: null, afterId });
+  };
   const step = (delta: -1 | 1) => {
-    const index = trail.index + delta;
-    if (index < 0 || index >= trail.stack.length) return;
     setDraft(null);
     setError(null);
-    setFrameLoading(true);
-    setReloads((n) => n + 1);
-    setTrail({ ...trail, index });
-  };
-  const reload = () => {
-    setFrameLoading(true);
-    setReloads((n) => n + 1);
-  };
-  /** Closes the page: back to the empty browser (and, on a phone, the list). */
-  const close = () => {
-    setTrail(EMPTY_TRAIL);
-    setDraft(null);
-    setFrameLoading(false);
+    dispatch({ type: 'step', id: active.id, delta });
   };
 
   const go = (event: FormEvent) => {
@@ -424,8 +444,60 @@ export function PreviewWorkspace() {
     );
   }, [launches, sort]);
 
+  // What each tab shows in the strip: the app's own title and icon, else its address.
+  const stripTabs: StripTab[] = state.tabs.map((tab) => {
+    const t = targetOf(tab);
+    const app = t ? apps.find((a) => a.port === t.port) : undefined;
+    return {
+      id: tab.id,
+      title: !t ? 'New tab' : app ? appName(app, projects) : `localhost:${t.port}`,
+      pinned: tab.pinned,
+      loading: tab.loading,
+      blank: !t,
+      address: t ? addressOf(t) : null,
+    };
+  });
+  const appOfTab = new Map(
+    state.tabs.flatMap((tab) => {
+      const t = targetOf(tab);
+      const app = t ? apps.find((a) => a.port === t.port) : undefined;
+      return app ? [[tab.id, app] as const] : [];
+    }),
+  );
+
+  const runCommand = (command: TabCommand, id: string) => {
+    const index = state.tabs.findIndex((t) => t.id === id);
+    const tab = state.tabs[index];
+    if (!tab) return;
+    if (command === 'new-right') newTab(id);
+    else if (command === 'reload') dispatch({ type: 'reload', id });
+    else if (command === 'duplicate') dispatch({ type: 'duplicate', id });
+    else if (command === 'pin') dispatch({ type: 'pin', id });
+    else if (command === 'reopen') dispatch({ type: 'reopen' });
+    else if (command === 'close') dispatch({ type: 'close', id });
+    else if (command === 'close-others') dispatch({ type: 'closeOthers', id });
+    else if (command === 'close-right') dispatch({ type: 'closeRight', id });
+    else if (command === 'move-left') dispatch({ type: 'move', id, to: index - 1 });
+    else if (command === 'move-right') dispatch({ type: 'move', id, to: index + 1 });
+    else if (command === 'copy') {
+      const t = targetOf(tab);
+      // Clipboard access can be refused (it needs a secure page and a gesture): then nothing happens.
+      if (t) void navigator.clipboard?.writeText(addressOf(t)).catch(() => undefined);
+    }
+  };
+
   const frame = target ? previewFrame(target) : null;
-  const tabTitle = target ? (running?.title ?? `localhost:${target.port}`) : 'New tab';
+
+  /** A click opens in the active tab; Ctrl, ⌘ or a middle click opens a new tab, like a link. */
+  const rowOpen = (next: PreviewTarget) => ({
+    onClick: (event: MouseEvent) => open(next, event.ctrlKey || event.metaKey),
+    onAuxClick: (event: MouseEvent) => {
+      if (event.button === 1) {
+        event.preventDefault();
+        open(next, true);
+      }
+    },
+  });
 
   return (
     <div className={`project-preview${target ? ' has-target' : ''}`}>
@@ -466,8 +538,10 @@ export function PreviewWorkspace() {
                       <button
                         type="button"
                         className={`preview-row${target?.port === app.port ? ' is-active' : ''}`}
-                        onClick={() => open({ port: app.port, path: '/' })}
-                        title={[project, app.command || app.name].filter(Boolean).join(' · ')}
+                        {...rowOpen({ port: app.port, path: '/' })}
+                        title={[project, app.command || app.name, 'Ctrl-click: new tab']
+                          .filter(Boolean)
+                          .join(' · ')}
                       >
                         <AppIcon app={app} label={name} />
                         <span className="preview-row-text">
@@ -507,7 +581,8 @@ export function PreviewWorkspace() {
                       className={`preview-row${
                         target?.port === l.port && target.path === l.path ? ' is-active' : ''
                       }`}
-                      onClick={() => open({ port: l.port, path: l.path })}
+                      {...rowOpen({ port: l.port, path: l.path })}
+                      title="Ctrl-click: new tab"
                     >
                       <span className="preview-icon preview-icon-wrap" aria-hidden="true">
                         <span className="preview-icon-fallback">
@@ -539,28 +614,30 @@ export function PreviewWorkspace() {
       </section>
 
       <section className="preview-browser" aria-label="Preview">
-        <div className="preview-tabstrip">
-          <span className="preview-tab" title={tabTitle}>
-            {running ? (
-              <AppIcon app={running} label={tabTitle} />
+        <PreviewTabStrip
+          tabs={stripTabs}
+          activeId={active.id}
+          canReopen={state.closed.length > 0}
+          atCap={state.tabs.length >= MAX_TABS}
+          icon={(tab) => {
+            const app = appOfTab.get(tab.id);
+            return app ? (
+              <AppIcon app={app} label={tab.title} />
             ) : (
               <GlobeIcon size={14} className="preview-tab-globe" />
-            )}
-            <span className="preview-tab-title">{tabTitle}</span>
-            {target && (
-              <button
-                type="button"
-                className="preview-tab-close"
-                aria-label="Close this page"
-                onClick={close}
-              >
-                ×
-              </button>
-            )}
-          </span>
-        </div>
+            );
+          }}
+          onActivate={(id) => dispatch({ type: 'activate', id })}
+          onNew={() => newTab()}
+          onMove={(id, to) => dispatch({ type: 'move', id, to })}
+          onCommand={runCommand}
+        />
         <form className="preview-toolbar" onSubmit={go}>
-          <button type="button" className="btn btn-sm preview-back" onClick={close}>
+          <button
+            type="button"
+            className="btn btn-sm preview-back"
+            onClick={() => dispatch({ type: 'clear', id: active.id })}
+          >
             Apps
           </button>
           <button
@@ -568,7 +645,7 @@ export function PreviewWorkspace() {
             className="preview-tool"
             aria-label="Back"
             title="Back"
-            disabled={trail.index <= 0}
+            disabled={active.trail.index <= 0}
             onClick={() => step(-1)}
           >
             <ArrowLeftIcon size={15} />
@@ -578,7 +655,7 @@ export function PreviewWorkspace() {
             className="preview-tool"
             aria-label="Forward"
             title="Forward"
-            disabled={trail.index >= trail.stack.length - 1}
+            disabled={active.trail.index >= active.trail.stack.length - 1}
             onClick={() => step(1)}
           >
             <ArrowRightIcon size={15} />
@@ -589,14 +666,15 @@ export function PreviewWorkspace() {
             aria-label="Reload"
             title="Reload"
             disabled={!target}
-            onClick={reload}
+            onClick={() => dispatch({ type: 'reload', id: active.id })}
           >
             <RefreshIcon size={15} />
           </button>
           <input
+            ref={addressRef}
             className="input preview-address"
             value={text}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => setDraft({ id: active.id, text: e.target.value })}
             placeholder="Type a localhost port or address"
             aria-label="Local address to preview"
             inputMode="url"
@@ -623,25 +701,34 @@ export function PreviewWorkspace() {
           </div>
         )}
         <div className="preview-stage">
-          {target && frame ? (
-            <>
+          {/* Every open page keeps its own frame, hidden when it is not the shown tab, so switching
+              tabs keeps each page as you left it (scroll, forms, a running app). */}
+          {state.tabs.map((tab) => {
+            const t = targetOf(tab);
+            if (!t) return null;
+            const f = previewFrame(t);
+            return (
               <iframe
-                key={`${target.port}${target.path}:${reloads}`}
-                className="preview-frame"
-                title={`Preview of localhost:${target.port}`}
-                src={frame.src}
-                sandbox={frame.sandbox}
+                key={`${tab.id}:${tab.reloads}`}
+                id={`preview-panel-${tab.id}`}
+                role="tabpanel"
+                aria-labelledby={`preview-tab-${tab.id}`}
+                className={`preview-frame${tab.id === active.id ? '' : ' is-hidden'}`}
+                title={`Preview of localhost:${t.port}`}
+                src={f.src}
+                sandbox={f.sandbox}
                 referrerPolicy="no-referrer"
-                onLoad={() => setFrameLoading(false)}
+                onLoad={() => dispatch({ type: 'loaded', id: tab.id })}
               />
-              {frameLoading && (
-                <div className="preview-loading" role="status">
-                  <LoadingMark />
-                  <span>Opening localhost:{target.port}…</span>
-                </div>
-              )}
-            </>
-          ) : (
+            );
+          })}
+          {target && frame && active.loading && (
+            <div className="preview-loading" role="status">
+              <LoadingMark />
+              <span>Opening localhost:{target.port}…</span>
+            </div>
+          )}
+          {!target && (
             <div className="preview-empty-state">
               <GlobeIcon size={26} />
               <strong>Browse localhost</strong>

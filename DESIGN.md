@@ -305,12 +305,24 @@ adjacent-pair CVD separation in both modes).
   search styling is turned off).
 - **Preview page (`/preview`):** full width (`.page-wide`, no centred 1280px column) and without a
   visible page header. A list panel (190-230px, sticky) beside a small browser, modelled on the one
-  built into Claude's desktop app: a 34px tab strip (the open page's own icon and title, a close ×;
-  'New tab' when empty; desktop only), then a toolbar of Back, Forward, Reload (28px ghost icon
-  buttons), one address field (28px, tinted, 13px; 16px and 40px on touch) and a bookmark that
-  saves or removes a Quick launch. Back and forward walk the pages you opened here. The empty
-  browser shows a globe, "Browse localhost" and a line of help. Theme tokens only, so it follows
-  the selected theme.
+  built into Claude's desktop app. **Tabs** (36px strip, up to 12): each shows the page's own icon
+  and title, a close ×, and a busy ring while it loads; "+" opens a new blank tab next to the current
+  one with the address field focused. The tab pattern: one tablist with a single tab stop, Left and
+  Right (also Home and End) move between tabs and show them, Delete closes, Alt+Left and Alt+Right
+  reorder (the keyboard way to do what dragging does), a middle click closes, drag reorders, and
+  Shift+F10 or the Menu key opens the **context menu**, as does a right click: New tab to the right,
+  Reload, Duplicate, Pin or Unpin (pinned tabs are icon-only, always first, kept by "close other
+  tabs", and have no ×), Copy address, Move left and right, Close, Close other tabs, Close tabs to
+  the right, Reopen closed tab (last 10). The menu is a real `role="menu"` with arrow keys, Home and
+  End, Escape returning focus to the tab, and it stays on screen. Every open page keeps its own
+  frame, hidden when not shown, so switching tabs keeps scroll, forms and running apps. A click on a
+  list row opens in the current tab; Ctrl, ⌘ or a middle click opens a new tab. The tabs are
+  remembered per browser across reloads. On a phone the strip shows only once there is more than
+  one tab. Below the tabs, a toolbar of Back, Forward, Reload (28px ghost icon buttons; Back and
+  Forward are per tab), one address field (28px, tinted, 13px; 16px and 40px on touch) and a
+  bookmark that saves or removes a Quick launch. Back and forward walk the pages you opened in the
+  tab. The empty browser shows a globe, "Browse localhost" and a line of help. Theme tokens only,
+  so it follows the selected theme.
   The list: the shared compact `Dropdown` for sort (Port, Name A-Z / Z-A, Project) and a 26px
   refresh icon button (40px on touch) that reads the machine now and spins while it works; the list
   also refreshes every 5 s while the page is visible and stops in a background tab. Your projects'

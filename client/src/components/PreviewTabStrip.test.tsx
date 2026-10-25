@@ -1,0 +1,226 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PreviewTabStrip, tabMenuItems, type StripTab, type TabCommand } from './PreviewTabStrip';
+
+afterEach(cleanup);
+
+// The Preview browser's tab strip (PM-253): the tabs pattern, a context menu, middle-click close.
+
+const tab = (id: string, extra: Partial<StripTab> = {}): StripTab => ({
+  id,
+  title: `Tab ${id}`,
+  pinned: false,
+  loading: false,
+  blank: false,
+  address: `http://localhost:3000/${id}`,
+  ...extra,
+});
+
+describe('tabMenuItems', () => {
+  const find = (items: ReturnType<typeof tabMenuItems>, command: TabCommand) =>
+    items.find((i) => i.command === command)!;
+
+  it('disables what cannot apply and explains nothing else', () => {
+    const all = [tab('a'), tab('b'), tab('c')];
+    const first = tabMenuItems(all[0]!, 0, all, false, false);
+    expect(find(first, 'move-left').disabled).toBe(true);
+    expect(find(first, 'move-right').disabled).toBe(false);
+    expect(find(first, 'reopen').disabled).toBe(true);
+    const last = tabMenuItems(all[2]!, 2, all, true, false);
+    expect(find(last, 'move-right').disabled).toBe(true);
+    expect(find(last, 'close-right').disabled).toBe(true);
+    expect(find(last, 'reopen').disabled).toBe(false);
+  });
+
+  it('blocks opening more tabs at the cap, and treats a blank tab as having nothing to reload or copy', () => {
+    const all = [tab('a', { blank: true, address: null })];
+    const items = tabMenuItems(all[0]!, 0, all, true, true);
+    expect(find(items, 'new-right').disabled).toBe(true);
+    expect(find(items, 'duplicate').disabled).toBe(true);
+    expect(find(items, 'reload').disabled).toBe(true);
+    expect(find(items, 'copy').disabled).toBe(true);
+    expect(find(items, 'reopen').disabled).toBe(true);
+    expect(find(items, 'close-others').disabled).toBe(true);
+  });
+
+  it('keeps pinned tabs in their own group and labels the pin toggle', () => {
+    const all = [tab('p', { pinned: true }), tab('q', { pinned: true }), tab('r')];
+    expect(find(tabMenuItems(all[0]!, 0, all, false, false), 'pin').label).toBe('Unpin tab');
+    expect(find(tabMenuItems(all[2]!, 2, all, false, false), 'pin').label).toBe('Pin tab');
+    expect(find(tabMenuItems(all[1]!, 1, all, false, false), 'move-right').disabled).toBe(true);
+    expect(find(tabMenuItems(all[2]!, 2, all, false, false), 'move-left').disabled).toBe(true);
+    // Close others keeps pinned tabs, so with only pinned ones around there is nothing to close.
+    expect(find(tabMenuItems(all[2]!, 2, all, false, false), 'close-others').disabled).toBe(true);
+  });
+});
+
+describe('PreviewTabStrip', () => {
+  function setup(tabs = [tab('a'), tab('b'), tab('c')], activeId = 'b') {
+    const handlers = {
+      onActivate: vi.fn(),
+      onNew: vi.fn(),
+      onMove: vi.fn(),
+      onCommand: vi.fn(),
+    };
+    render(
+      <PreviewTabStrip
+        tabs={tabs}
+        activeId={activeId}
+        canReopen
+        atCap={false}
+        icon={() => <span>icon</span>}
+        {...handlers}
+      />,
+    );
+    return handlers;
+  }
+
+  it('is a tablist with the active tab selected and the only tab stop', () => {
+    setup();
+    const tabs = screen.getAllByRole('tab');
+    expect(screen.getByRole('tablist', { name: 'Browser tabs' })).toBeTruthy();
+    expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false']);
+    expect(tabs.map((t) => t.getAttribute('tabindex'))).toEqual(['-1', '0', '-1']);
+  });
+
+  it('opens a new tab and activates one by click', () => {
+    const h = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'New tab' }));
+    expect(h.onNew).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getAllByRole('tab')[2]!);
+    expect(h.onActivate).toHaveBeenCalledWith('c');
+  });
+
+  it('closes with the × button and with a middle click', () => {
+    const h = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Close Tab a' }));
+    expect(h.onCommand).toHaveBeenCalledWith('close', 'a');
+    fireEvent(
+      screen.getAllByRole('tab')[2]!.parentElement!,
+      new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }),
+    );
+    expect(h.onCommand).toHaveBeenCalledWith('close', 'c');
+  });
+
+  it('moves with the arrow keys (and shows the tab), jumps with Home and End, closes with Delete', () => {
+    const h = setup();
+    const middle = screen.getAllByRole('tab')[1]!;
+    fireEvent.keyDown(middle, { key: 'ArrowRight' });
+    expect(h.onActivate).toHaveBeenLastCalledWith('c');
+    fireEvent.keyDown(middle, { key: 'ArrowLeft' });
+    expect(h.onActivate).toHaveBeenLastCalledWith('a');
+    fireEvent.keyDown(middle, { key: 'End' });
+    expect(h.onActivate).toHaveBeenLastCalledWith('c');
+    fireEvent.keyDown(middle, { key: 'Home' });
+    expect(h.onActivate).toHaveBeenLastCalledWith('a');
+    fireEvent.keyDown(middle, { key: 'Delete' });
+    expect(h.onCommand).toHaveBeenCalledWith('close', 'b');
+  });
+
+  it('reorders from the keyboard with Alt+Arrow, the way dragging does', () => {
+    const h = setup();
+    const middle = screen.getAllByRole('tab')[1]!;
+    fireEvent.keyDown(middle, { key: 'ArrowLeft', altKey: true });
+    expect(h.onMove).toHaveBeenLastCalledWith('b', 0);
+    fireEvent.keyDown(middle, { key: 'ArrowRight', altKey: true });
+    expect(h.onMove).toHaveBeenLastCalledWith('b', 2);
+    expect(h.onActivate).not.toHaveBeenCalled();
+  });
+
+  it('reorders by dragging one tab onto another', () => {
+    const h = setup();
+    const [a, , c] = screen.getAllByRole('tab').map((t) => t.parentElement!);
+    const data = { setData: vi.fn(), effectAllowed: '' };
+    fireEvent.dragStart(a!, { dataTransfer: data });
+    fireEvent.dragOver(c!, { dataTransfer: data });
+    fireEvent.drop(c!, { dataTransfer: data });
+    expect(h.onMove).toHaveBeenCalledWith('a', 2);
+  });
+
+  it('opens a context menu on right click, runs a command and closes', () => {
+    const h = setup();
+    fireEvent.contextMenu(screen.getAllByRole('tab')[0]!.parentElement!, {
+      clientX: 40,
+      clientY: 50,
+    });
+    const menu = screen.getByRole('menu', { name: 'Tab actions' });
+    const names = within(menu)
+      .getAllByRole('menuitem')
+      .map((i) => i.textContent);
+    expect(names).toEqual([
+      'New tab to the right',
+      'Reload',
+      'Duplicate',
+      'Pin tab',
+      'Copy address',
+      'Move left',
+      'Move right',
+      'Close',
+      'Close other tabs',
+      'Close tabs to the right',
+      'Reopen closed tab',
+    ]);
+    // The first enabled item has focus, so the menu is keyboard-ready at once.
+    expect(document.activeElement?.textContent).toBe('New tab to the right');
+    expect(
+      (within(menu).getByRole('menuitem', { name: 'Move left' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Close other tabs' }));
+    expect(h.onCommand).toHaveBeenCalledWith('close-others', 'a');
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('opens the menu from the keyboard and drives it with the arrow keys and Escape', () => {
+    setup();
+    const second = screen.getAllByRole('tab')[1]!;
+    second.focus();
+    fireEvent.keyDown(second, { key: 'F10', shiftKey: true });
+    const menu = screen.getByRole('menu');
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(document.activeElement?.textContent).toBe('Reload');
+    fireEvent.keyDown(menu, { key: 'ArrowUp' });
+    fireEvent.keyDown(menu, { key: 'ArrowUp' });
+    expect(document.activeElement?.textContent).toBe('Reopen closed tab');
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(second);
+  });
+
+  it('closes the menu on a click elsewhere', () => {
+    setup();
+    fireEvent.contextMenu(screen.getAllByRole('tab')[0]!.parentElement!, {
+      clientX: 10,
+      clientY: 10,
+    });
+    expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('shows a pinned tab as its icon only, with no close button', () => {
+    setup([tab('p', { pinned: true }), tab('q')], 'q');
+    expect(screen.queryByRole('button', { name: 'Close Tab p' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Close Tab q' })).toBeTruthy();
+    expect(screen.getAllByRole('tab')[0]!.textContent).not.toContain('Tab p');
+  });
+
+  it('stops the new-tab button at the cap', () => {
+    render(
+      <PreviewTabStrip
+        tabs={[tab('a')]}
+        activeId="a"
+        canReopen={false}
+        atCap
+        icon={() => null}
+        onActivate={() => {}}
+        onNew={() => {}}
+        onMove={() => {}}
+        onCommand={() => {}}
+      />,
+    );
+    expect((screen.getByRole('button', { name: 'New tab' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+});
