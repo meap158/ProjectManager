@@ -992,7 +992,8 @@ function RenderedFrame({
         ? `<style>html{scrollbar-color:${color('--border-strong', '#3d3d39')} ${color('--surface', '#1a1a19')}}</style>`
         : '';
     const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${location.origin} https: data:; style-src 'unsafe-inline' ${location.origin}; font-src ${location.origin} data:"><base target="_blank">${scrollbar}`;
-    if (!markdown) return withBase(source, head, rawBase, dir);
+    const pageBase = `${location.origin}/projects/${projectId}`;
+    if (!markdown) return withBase(source, head, rawBase, dir, pageBase);
     const body = marked.parse(source, { async: false, gfm: true }) as string;
     // Rendered Markdown wears the app's colours throughout, so its form controls match too.
     const style = `<style>
@@ -1005,7 +1006,7 @@ function RenderedFrame({
       blockquote{margin:0;padding-left:12px;border-left:3px solid ${color('--border', '#ddd')};color:${color('--text-2', '#555')}}
       h1,h2{border-bottom:1px solid ${color('--border', '#ddd')};padding-bottom:4px}
     </style>`;
-    return `<!doctype html><html><head>${head}${style}</head><body>${rewriteRelative(body, rawBase, dir)}</body></html>`;
+    return `<!doctype html><html><head>${head}${style}</head><body>${rewriteRelative(body, rawBase, dir, pageBase)}</body></html>`;
   }, [projectId, path, source, markdown, theme]);
   return (
     <iframe
@@ -1032,7 +1033,35 @@ export function joinPath(dir: string, rel: string): string | null {
 }
 
 /** Relative images and stylesheets load the project's own files (other links stay as written). */
-function rewriteRelative(html: string, rawBase: string, dir: string): string {
+/**
+ * Where a link inside a previewed page should go. A relative link (or one starting with "/", which
+ * like GitHub means the project's root) names another file of this project, so it becomes this app's
+ * own address for that file: left as written, the browser resolved it against the app's page and
+ * landed on /projects/<name>. Web addresses, mail links and in-page "#" links are left alone
+ * (null); a path that would leave the project becomes an inert "#"; a folder opens the Files tab.
+ */
+export function projectLinkHref(url: string, dir: string, pageBase: string): string | null {
+  const value = url.trim();
+  if (
+    !value ||
+    value.startsWith('#') ||
+    value.startsWith('//') ||
+    /^[a-z][a-z0-9+.-]*:/i.test(value)
+  )
+    return null;
+  const path = value.split(/[?#]/)[0]!;
+  const target = path.startsWith('/') ? joinPath('', path.slice(1)) : joinPath(dir, path);
+  if (target === null) return '#';
+  if (target === '' || path.endsWith('/')) return `${pageBase}?tab=files`;
+  return `${pageBase}?tab=files&file=${encodeURIComponent(target)}`;
+}
+
+export function rewriteRelative(
+  html: string,
+  rawBase: string,
+  dir: string,
+  pageBase?: string,
+): string {
   const asset = (url: string) => {
     if (/^(?:[a-z][a-z0-9+.-]*:|#|\/)/i.test(url)) return url;
     const target = joinPath(dir, url);
@@ -1046,7 +1075,15 @@ function rewriteRelative(html: string, rawBase: string, dir: string): string {
     });
     return `srcset="${candidates.join(', ')}"`;
   });
-  return withSrcset.replace(
+  // Links to other files of the project open that file in the Files tab (in a new tab: the frame
+  // may not navigate this app away).
+  const withLinks = pageBase
+    ? withSrcset.replace(/(<a\b[^>]*?\shref=)"([^"]*)"/gi, (match, before: string, url: string) => {
+        const href = projectLinkHref(url, dir, pageBase);
+        return href === null ? match : `${before}"${href}"`;
+      })
+    : withSrcset;
+  return withLinks.replace(
     /\b(src|href)="(?![a-z][a-z0-9+.-]*:|#|\/\/|\/)([^"]+)"/gi,
     (match, attr: string, url: string) => {
       const isAsset = attr.toLowerCase() === 'src' || /\.css$/i.test(url.split(/[?#]/)[0]!);
@@ -1057,8 +1094,14 @@ function rewriteRelative(html: string, rawBase: string, dir: string): string {
 }
 
 /** An HTML file with the CSP and base injected into its head, and relative assets rewritten. */
-function withBase(html: string, head: string, rawBase: string, dir: string): string {
-  const rewritten = rewriteRelative(html, rawBase, dir);
+function withBase(
+  html: string,
+  head: string,
+  rawBase: string,
+  dir: string,
+  pageBase: string,
+): string {
+  const rewritten = rewriteRelative(html, rawBase, dir, pageBase);
   return /<head[^>]*>/i.test(rewritten)
     ? rewritten.replace(/<head[^>]*>/i, (m) => `${m}${head}`)
     : `<!doctype html><html><head>${head}</head><body>${rewritten}</body></html>`;

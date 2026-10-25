@@ -48,8 +48,16 @@ vi.mock('../api', () => ({
 }));
 
 const { api } = await import('../api');
-const { ProjectFiles, joinPath, foldersTo, absolutePath, remapPath, fileMenuItems } =
-  await import('./ProjectFiles');
+const {
+  ProjectFiles,
+  joinPath,
+  foldersTo,
+  absolutePath,
+  remapPath,
+  fileMenuItems,
+  projectLinkHref,
+  rewriteRelative,
+} = await import('./ProjectFiles');
 
 // Files tab (PM-252): the tree loads folders as they open, works from the keyboard, and opens
 // previews; rendered previews can't run scripts.
@@ -343,6 +351,54 @@ describe('pinned items', () => {
     await waitFor(() => expect(api.pinFile).toHaveBeenCalledWith(1, 'docs', 'project'));
     fireEvent.keyDown(tree, { key: 'P', altKey: true, shiftKey: true });
     await waitFor(() => expect(api.pinFile).toHaveBeenCalledWith(1, 'docs', 'all'));
+  });
+});
+
+describe('links inside a previewed page', () => {
+  const base = 'http://localhost:5180/projects/17';
+  it("turns a relative link into this app's address for that file", () => {
+    expect(projectLinkHref('owner-desk.html', 'References/owner-pages', base)).toBe(
+      `${base}?tab=files&file=${encodeURIComponent('References/owner-pages/owner-desk.html')}`,
+    );
+    expect(projectLinkHref('../notes/a b.md?x=1#top', 'docs/deep', base)).toBe(
+      `${base}?tab=files&file=${encodeURIComponent('docs/notes/a b.md')}`,
+    );
+  });
+
+  it('reads a leading slash as the project root, like GitHub does', () => {
+    expect(projectLinkHref('/docs/guide.md', 'a/b', base)).toBe(
+      `${base}?tab=files&file=${encodeURIComponent('docs/guide.md')}`,
+    );
+  });
+
+  it('opens the Files tab for a folder, and neutralises a path that leaves the project', () => {
+    expect(projectLinkHref('src/', '', base)).toBe(`${base}?tab=files`);
+    expect(projectLinkHref('/', 'x', base)).toBe(`${base}?tab=files`);
+    expect(projectLinkHref('../../outside.md', 'docs', base)).toBe('#');
+  });
+
+  it('leaves web addresses, mail links, in-page anchors and empty links alone', () => {
+    for (const url of [
+      'https://example.com/a',
+      'mailto:x@y.z',
+      '#section',
+      '//cdn.example/x',
+      '',
+      'javascript:alert(1)',
+    ])
+      expect(projectLinkHref(url, 'docs', base)).toBeNull();
+  });
+
+  it('rewrites only anchors, and still maps assets to the raw route', () => {
+    const html =
+      '<a href="owner-desk.html">desk</a> <a href="https://x.test/">web</a> <img src="a.png"> <link href="s.css">';
+    const out = rewriteRelative(html, '/raw?path=', 'References/owner-pages', base);
+    expect(out).toContain(
+      `href="${base}?tab=files&file=${encodeURIComponent('References/owner-pages/owner-desk.html')}"`,
+    );
+    expect(out).toContain('href="https://x.test/"');
+    expect(out).toContain(`src="/raw?path=${encodeURIComponent('References/owner-pages/a.png')}"`);
+    expect(out).toContain(`href="/raw?path=${encodeURIComponent('References/owner-pages/s.css')}"`);
   });
 });
 
