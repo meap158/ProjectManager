@@ -80,14 +80,21 @@ describe('inboxItems', () => {
         lastInputAt: '2026-01-01T00:00:00Z',
         lastOutputAt: '2026-01-01T00:05:00Z',
       }),
+      // Idle, and its reply asks you something (PM-298).
+      s(9, {
+        question: 'Do you want me to build that next?',
+        lastInputAt: '2026-01-01T00:00:00Z',
+        lastOutputAt: '2026-01-01T00:05:00Z',
+      }),
     ]);
     expect(items.map((i) => [i.session.id, i.reason])).toEqual([
       [2, 'input'],
+      [9, 'asked'],
       [1, 'restart-failed'],
       [7, 'limit'],
       [6, 'finished'],
     ]);
-    expect(items[3]!.key).toBe('6:finished:2026-01-01T00:00:00Z');
+    expect(items[4]!.key).toBe('6:finished:2026-01-01T00:00:00Z');
   });
 });
 
@@ -139,6 +146,25 @@ describe('InboxButton', () => {
     cleanup();
     show();
     expect(await screen.findByRole('button', { name: 'Inbox, nothing new' })).toBeTruthy();
+  });
+
+  it('shows the question a reply asks, and answers it with a reply', async () => {
+    state.list = [
+      s(4, {
+        name: 'Jobs',
+        question: 'Do you want me to build that next?',
+        lastInputAt: '2026-01-01T00:00:00Z',
+        lastOutputAt: '2026-01-01T00:05:00Z',
+      }),
+    ];
+    state.screens = ['❯ '];
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'Inbox, 1 waiting for you' }));
+    expect(await screen.findByText(/· Asks you something/)).toBeTruthy();
+    expect(screen.getByText('Do you want me to build that next?')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Reply to Jobs'), { target: { value: 'yes' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledWith(4, '[200~yes[201~'));
   });
 
   it('filters by chip, and a chip with nothing left falls back to All', async () => {

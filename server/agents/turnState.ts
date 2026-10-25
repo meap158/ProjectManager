@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from 'node:fs';
 // What a Claude session said it is doing, from its own hooks (scripts/claude-session-hook.mjs).
 // This is exact where screen-scraping guesses: Claude redraws with cursor moves, so its log never
 // holds clean, parseable lines. Events (https://code.claude.com/docs/en/hooks):
@@ -8,8 +9,11 @@
 //   SubagentStart / SubagentStop        subagents still going keep the session running (PM-14),
 //                                       even after the main turn ended (background agents)
 // Stop doesn't fire on Esc, so "running" with a silent screen for SILENT_MS counts as idle.
-// Kept in memory: events arrive many times a minute, and after a server restart the next event
-// refreshes it (until then the screen-based detector applies).
+// Kept in memory (events arrive many times a minute). Idle turns are also saved to disk when a turn
+// changes (`persistTurns`), because Claude's screen can't tell idle from unknown (it draws with
+// cursor moves) and every server restart used to leave each idle Claude session unknown until
+// its next turn. Only idle is restored: a turn that started meanwhile shows on screen (spinner,
+// ticking timer), which is checked before the hooks; a stale "asking you" would be a false alarm.
 
 export type TurnState = 'running' | 'idle' | 'input';
 
@@ -28,6 +32,37 @@ interface Entry {
 }
 
 const states = new Map<number, Entry>();
+let saveFile: string | null = null;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Restores the saved idle turns from `file`, then saves to it whenever a turn changes. */
+export function persistTurns(file: string): void {
+  saveFile = file;
+  try {
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as Record<string, number>;
+    for (const [id, at] of Object.entries(saved)) {
+      if (!states.has(Number(id)) && Number.isFinite(at))
+        states.set(Number(id), { turn: 'idle', subagents: 0, at });
+    }
+  } catch {
+    // Nothing saved yet, or unreadable: the next events rebuild it.
+  }
+}
+
+function scheduleSave(): void {
+  if (!saveFile || saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const idle: Record<string, number> = {};
+    for (const [id, e] of states) if (e.turn === 'idle' && e.subagents === 0) idle[id] = e.at;
+    try {
+      writeFileSync(saveFile!, JSON.stringify(idle));
+    } catch {
+      // Best effort: losing it only means "unknown" until the next turn.
+    }
+  }, 2000);
+  saveTimer.unref?.();
+}
 
 /** Applies one hook event to a session's state. */
 export function recordEvent(
@@ -36,6 +71,7 @@ export function recordEvent(
   notificationType?: string | null,
   at = Date.now(),
 ): void {
+  const known = states.has(sessionId);
   const entry = states.get(sessionId) ?? { turn: 'idle' as TurnState, subagents: 0, at };
   const next = { ...entry, at };
   if (event === 'UserPromptSubmit') next.turn = 'running';
@@ -49,10 +85,11 @@ export function recordEvent(
   else return;
   if (event === 'SessionStart') next.subagents = 0;
   states.set(sessionId, next);
+  if (!known || next.turn !== entry.turn || next.subagents !== entry.subagents) scheduleSave();
 }
 
 export function forgetTurn(sessionId: number): void {
-  states.delete(sessionId);
+  if (states.delete(sessionId)) scheduleSave();
 }
 
 /**

@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { SILENT_MS, forgetTurn, recordEvent, turnState } from './turnState.js';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import { SILENT_MS, forgetTurn, persistTurns, recordEvent, turnState } from './turnState.js';
 
 // Claude's own hooks say exactly when a turn starts and ends; the screen is only a sanity check.
 
@@ -43,5 +46,27 @@ describe('turnState', () => {
     recordEvent(4, 'UserPromptSubmit', null, 0);
     expect(turnState(4, iso(1000), 1000 + SILENT_MS + 1)).toBe('idle');
     expect(turnState(4, iso(1000), 1000 + SILENT_MS - 1)).toBe('running');
+  });
+});
+
+describe('persistTurns', () => {
+  it('restores saved idle turns after a restart, and saves only idle ones', () => {
+    vi.useFakeTimers();
+    try {
+      const file = path.join(mkdtempSync(path.join(os.tmpdir(), 'pm-turns-')), 'turns.json');
+      writeFileSync(file, JSON.stringify({ 9001: 5 }));
+      persistTurns(file);
+      expect(turnState(9001, null, 10)).toBe('idle'); // Restored, not unknown.
+      recordEvent(9002, 'UserPromptSubmit', null, 20); // Running: not saved.
+      recordEvent(9003, 'SessionStart', null, 30); // A new idle session: saved.
+      vi.advanceTimersByTime(2500);
+      const saved = JSON.parse(readFileSync(file, 'utf8')) as Record<string, number>;
+      expect(saved['9001']).toBe(5);
+      expect(saved['9003']).toBe(30);
+      expect(saved['9002']).toBeUndefined();
+    } finally {
+      for (const id of [9001, 9002, 9003]) forgetTurn(id);
+      vi.useRealTimers();
+    }
   });
 });

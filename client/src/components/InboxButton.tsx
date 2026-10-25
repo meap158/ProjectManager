@@ -21,7 +21,7 @@ import { BellIcon, ProviderIcon } from './icons';
 // usage limit, the error of a failed restart, or the start of the reply you haven't read yet.
 // Only while the panel is open are screens and transcripts read, and only for the rows it shows.
 
-export type InboxReason = 'input' | 'restart-failed' | 'limit' | 'finished';
+export type InboxReason = 'input' | 'asked' | 'restart-failed' | 'limit' | 'finished';
 
 export interface InboxItem {
   session: AgentSession;
@@ -35,7 +35,13 @@ export interface InboxItem {
   since: string | null;
 }
 
-const RANK: Record<InboxReason, number> = { input: 0, 'restart-failed': 1, limit: 2, finished: 3 };
+const RANK: Record<InboxReason, number> = {
+  input: 0,
+  asked: 1,
+  'restart-failed': 2,
+  limit: 3,
+  finished: 4,
+};
 
 /**
  * What needs a person, most urgent first: a question or approval, a failed restart, a usage
@@ -52,6 +58,8 @@ export function inboxItems(sessions: AgentSession[], now = Date.now()): InboxIte
     if (session.restartProgress === 'failed') item('restart-failed', session.lastRestartAt);
     else if (session.tailState === 'input') item('input', null);
     else if (session.usageLimit) item('limit', null);
+    // Idle, and its reply ends by asking you something in words (PM-298, from its transcript).
+    else if (session.question) item('asked', session.lastInputAt);
     else if (
       sessionActivity(session, now) === 'idle' &&
       session.lastInputAt &&
@@ -71,6 +79,7 @@ export function inboxItems(sessions: AgentSession[], now = Date.now()): InboxIte
 
 const REASON: Record<InboxReason, string> = {
   input: 'Needs your decision',
+  asked: 'Asks you something',
   'restart-failed': 'Restart failed',
   limit: 'Paused at its usage limit',
   finished: 'Replied · your turn',
@@ -78,6 +87,7 @@ const REASON: Record<InboxReason, string> = {
 
 const SECTION: Record<InboxReason, string> = {
   input: 'Needs a decision',
+  asked: 'Asking you',
   'restart-failed': 'Problems',
   limit: 'Usage limits',
   finished: 'Finished · your turn',
@@ -87,6 +97,7 @@ const SECTION: Record<InboxReason, string> = {
 export type InboxFilter = 'all' | 'new' | InboxReason;
 const TONE: Record<InboxReason, string> = {
   input: 'review',
+  asked: 'review',
   'restart-failed': 'danger',
   limit: 'progress',
   finished: 'accent',
@@ -104,6 +115,7 @@ function loadFilter(): InboxFilter {
 
 const CHIP: Record<InboxReason, string> = {
   input: 'Decisions',
+  asked: 'Questions',
   'restart-failed': 'Problems',
   limit: 'Limits',
   finished: 'Your turn',
@@ -485,25 +497,28 @@ export function InboxButton() {
                             </button>
                           </div>
                         )}
-                        {item.reason === 'finished' && !detail?.overlay && (
-                          <form className="inbox-reply" onSubmit={(e) => reply(item, e)}>
-                            <input
-                              className="input"
-                              value={replies[key] ?? ''}
-                              onChange={(e) => setReplies((r) => ({ ...r, [key]: e.target.value }))}
-                              placeholder="Reply…"
-                              aria-label={`Reply to ${session.name}`}
-                              disabled={busy !== null}
-                            />
-                            <button
-                              type="submit"
-                              className="btn btn-sm btn-primary"
-                              disabled={busy !== null || !(replies[key] ?? '').trim()}
-                            >
-                              Send
-                            </button>
-                          </form>
-                        )}
+                        {(item.reason === 'finished' || item.reason === 'asked') &&
+                          !detail?.overlay && (
+                            <form className="inbox-reply" onSubmit={(e) => reply(item, e)}>
+                              <input
+                                className="input"
+                                value={replies[key] ?? ''}
+                                onChange={(e) =>
+                                  setReplies((r) => ({ ...r, [key]: e.target.value }))
+                                }
+                                placeholder="Reply…"
+                                aria-label={`Reply to ${session.name}`}
+                                disabled={busy !== null}
+                              />
+                              <button
+                                type="submit"
+                                className="btn btn-sm btn-primary"
+                                disabled={busy !== null || !(replies[key] ?? '').trim()}
+                              >
+                                Send
+                              </button>
+                            </form>
+                          )}
                         <footer className="inbox-foot">
                           {note ? (
                             <span className="inbox-note" role="status">
@@ -564,6 +579,9 @@ function InboxContext({
     return session.restartError ? (
       <p className="inbox-context is-error">{session.restartError}</p>
     ) : null;
+  // The question is in the session itself: nothing to read first.
+  if (item.reason === 'asked' && session.question)
+    return <p className="inbox-context is-question">{session.question}</p>;
   if (item.reason === 'limit') {
     const at = session.usageLimit?.resetsAt;
     return (

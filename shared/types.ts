@@ -574,6 +574,9 @@ export interface AgentSession {
       'input' (asking you to choose or approve something), 'idle' (at its prompt), or null
       (unknown: fall back to output recency). */
   tailState: 'running' | 'idle' | 'input' | null;
+  /** Idle at its prompt with a reply that ends by asking you something (in words, not a menu):
+      that question, from the CLI's transcript (PM-298). Null or absent otherwise. */
+  question?: string | null;
 }
 
 export type AgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'killed';

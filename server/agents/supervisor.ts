@@ -107,7 +107,8 @@ import {
   getPermissions,
   withPermissions,
 } from './permissions.js';
-import { forgetTurn, turnState } from './turnState.js';
+import { forgetTurn, persistTurns, turnState } from './turnState.js';
+import { QuestionCache } from './questions.js';
 import { HostClient } from './host/client.js';
 import type { HostSessionInfo } from './host/protocol.js';
 import { fetchScript, recipeFor } from './install.js';
@@ -414,6 +415,18 @@ export class AgentSupervisor {
   private codexRotationTried = new Map<string, number>();
   private switchingCodexSession = new Set<number>();
   private tailCache = new Map<string, { version: string; tail: string | null }>();
+  /** What idle sessions' last replies ask you (PM-298), read in the background. */
+  private questions = new QuestionCache((id) => {
+    const row = this.getSessionRow(id);
+    return row
+      ? {
+          providerId: row.provider_id,
+          resumeJson: row.resume_json,
+          codexHome: this.sessionCodexProfile(row)?.home,
+          cwd: row.cwd,
+        }
+      : null;
+  });
   private limitScreens = new Map<
     number,
     { version: string; lastSeen: string; at: number; screen: string }
@@ -461,6 +474,8 @@ export class AgentSupervisor {
   ) {
     mkdirSync(logDir, { recursive: true });
     this.dataDir = options.dataDir ?? null;
+    // Claude's idle turns survive a restart (turnState.ts).
+    if (this.dataDir) persistTurns(path.join(this.dataDir, 'claude-turns.json'));
     this.codexAccounts = this.dataDir ? new CodexAccounts(this.dataDir, db) : null;
     this.claudeAccounts = this.dataDir ? new ClaudeAccounts(this.dataDir, db) : null;
     this.managedRuns = options.managedRuns ?? false;
@@ -3404,6 +3419,19 @@ export class AgentSupervisor {
       // The session process is alive and running; clear stale restart failure.
       this.restarting.delete(row.id);
     }
+    const tailState =
+      row.status === 'running' || live
+        ? this.sessionActivity(row, lastOutputAt, diskLogBytes)
+        : null;
+    // Unknown counts once quiet for 20s (as readyForCommand): after a restart, a Claude session is
+    // unknown until its next hook event.
+    const quiet =
+      tailState === 'idle' ||
+      (tailState === null && !!lastOutputAt && Date.now() - Date.parse(lastOutputAt) > 20_000);
+    const question =
+      quiet && !row.orchestrator_id
+        ? this.questions.get(row.id, `${diskLogBytes}|${lastOutputAt}|${row.last_input_at}`)
+        : null;
     return {
       restartProgress: this.restarting.get(row.id)?.phase ?? null,
       restartError: this.restarting.get(row.id)?.error ?? null,
@@ -3442,10 +3470,8 @@ export class AgentSupervisor {
       endedAt: row.ended_at,
       logBytes: live ? live.log.totalBytes : diskLogBytes,
       lastOutputAt,
-      tailState:
-        row.status === 'running' || live
-          ? this.sessionActivity(row, lastOutputAt, diskLogBytes)
-          : null,
+      tailState,
+      question,
     };
   }
 
