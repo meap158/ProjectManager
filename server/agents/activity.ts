@@ -72,11 +72,14 @@ const PROMPT_TAIL_CHARS = 480;
 /** Strips ANSI escapes (CSI, OSC, charset selects) and carriage returns. */
 /* eslint-disable no-control-regex -- matching terminal escape sequences requires control chars */
 export function stripTerminal(text: string): string {
-  return text
-    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
-    .replace(/\x1b\][^\x07]*(?:\x07|$)/g, '')
-    .replace(/\x1b[()][0-9A-B]/g, '')
-    .replace(/\r(?!\n)/g, '\n');
+  return (
+    text
+      // Private prefixes too: a leftover "<u" (kitty keyboard "ESC [ < u") hid Claude's ❯ prompt.
+      .replace(/\x1b\[[?<>=!]?[0-9;:]*[a-zA-Z~]/g, '')
+      .replace(/\x1b\][^\x07]*(?:\x07|$)/g, '')
+      .replace(/\x1b[()][0-9A-B]/g, '')
+      .replace(/\r(?!\n)/g, '\n')
+  );
 }
 /* eslint-enable no-control-regex */
 

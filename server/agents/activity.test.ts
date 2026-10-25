@@ -18,6 +18,10 @@ describe('stripTerminal', () => {
     expect(stripTerminal(`${ESC}]0;title\x07kept`)).toBe('kept');
     expect(stripTerminal('a\r\nb')).toBe('a\r\nb');
   });
+
+  it('removes CSI sequences with a private prefix, like the kitty keyboard pop "ESC [ < u"', () => {
+    expect(stripTerminal(`a${ESC}[<u${ESC}[>1u${ESC}[=0c${ESC}[200~b`)).toBe('ab');
+  });
 });
 
 /** One Codex frame: status line (if any), then its always-visible input box. */
@@ -31,6 +35,11 @@ const codexFrame = (status: string) =>
   ].join('\r\n');
 
 describe('tailState', () => {
+  it("Claude's ❯ prompt still counts when a kitty keyboard escape follows it", () => {
+    // As logged by Claude Code at its idle prompt: the escape used to survive as "<u".
+    expect(tailState(`✻ Crunched for 3m 15s\r\n❯ ${ESC}[<u${ESC}[<u`)).toBe('idle');
+  });
+
   it('Codex mid-task is running even though its input box is drawn (PM-14)', () => {
     const tail = codexFrame(
       '└─ Working (12m 04s · esc to interrupt) · 2 background terminals running',

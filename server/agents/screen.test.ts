@@ -14,6 +14,10 @@ describe('renderScreen (PM-129)', () => {
     expect(lines.join('\n')).not.toMatch(/Roosting.*Roosting/);
   });
 
+  it('consumes CSI sequences with a private prefix ("ESC [ < u") instead of drawing them', () => {
+    expect(renderScreen('❯ \x1b[<u\x1b[<u', 10, 1)).toEqual(['❯']);
+  });
+
   it('erases, wraps and scrolls like a terminal', () => {
     expect(renderScreen('abcdef\r\x1b[2Cxy\x1b[K', 10, 2)).toEqual(['abxy', '']);
     expect(renderScreen('abcdefgh', 4, 2)).toEqual(['abcd', 'efgh']);

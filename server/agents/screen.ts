@@ -5,7 +5,8 @@
 // replays the output on a grid instead, honouring the cursor moves and erases CLIs use, so
 // each cell holds what was drawn there last. Colours and other attributes are dropped.
 
-const CSI = /\x1b\[([?>=!]?)([0-9;:]*)([ -/]*)([@-~])/y;
+// `<` too: Claude Code sends the kitty keyboard protocol's "ESC [ < u" (pop flags).
+const CSI = /\x1b\[([?<>=!]?)([0-9;:]*)([ -/]*)([@-~])/y;
 /** Up to the end of an OSC/DCS string, scanning only as far as its terminator. */
 const STRING_END = /[^\x07\x1b]*(?:\x1b(?!\\)[^\x07\x1b]*)*(?:\x07|\x1b\\)/y;
 /** Combining marks and zero-width joiners/selectors, which join the previous cell. */
