@@ -1,6 +1,12 @@
 import { lstat, open, opendir, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { FilePreview, FolderListing, TreeEntry } from '../shared/types.js';
+import type {
+  FilePreview,
+  FolderInfo,
+  FolderItem,
+  FolderListing,
+  TreeEntry,
+} from '../shared/types.js';
 import { isAvailable, run } from './analysis/exec.js';
 
 // The project page's Files tab (PM-252): a VS Code style tree read one folder at a time, and
@@ -108,6 +114,90 @@ export async function listFolder(root: string, rel: string): Promise<FolderListi
     a.kind === b.kind ? collator.compare(a.name, b.name) : a.kind === 'dir' ? -1 : 1,
   );
   return { path: toRel(realRoot, dir), entries, truncated };
+}
+
+/** Folders a recursive listing never enters: huge, generated, and not what asset tracking is for. */
+const SKIPPED_WHEN_RECURSIVE = new Set(['node_modules', '.git']);
+/** Entries looked at in one recursive walk, however many are returned. */
+const MAX_WALK = 20_000;
+export const DEFAULT_FOLDER_LIMIT = 2_000;
+export const MAX_FOLDER_LIMIT = 5_000;
+
+/**
+ * A folder's contents with sizes and times, for the previewer. One level, or the whole tree below
+ * it. Read only and bounded: `limit` items are returned (and the walk looks at no more than
+ * MAX_WALK entries), `truncated` says more exist. Links are listed as what they are and never
+ * followed, so a link cannot lead the walk outside the project; node_modules and .git are not
+ * entered.
+ */
+export async function folderInfo(
+  root: string,
+  rel: string,
+  options: { recursive?: boolean; limit?: number } = {},
+): Promise<FolderInfo> {
+  const recursive = options.recursive === true;
+  const limit = Math.max(1, Math.min(MAX_FOLDER_LIMIT, options.limit ?? DEFAULT_FOLDER_LIMIT));
+  const dir = await resolveInside(root, rel);
+  if (!(await stat(dir)).isDirectory()) throw new FileAccessError(400, 'Not a folder');
+  const realRoot = await realpath(root);
+  const items: FolderItem[] = [];
+  let truncated = false;
+  let walked = 0;
+  const queue = [dir];
+  while (queue.length > 0 && !truncated) {
+    const current = queue.shift()!;
+    let handle;
+    try {
+      handle = await opendir(current);
+    } catch {
+      continue; // Unreadable folder: skipped, not fatal.
+    }
+    for await (const dirent of handle) {
+      if (HIDDEN.has(dirent.name)) continue;
+      if (++walked > MAX_WALK || items.length >= limit) {
+        truncated = true;
+        break;
+      }
+      const abs = path.join(current, dirent.name);
+      const info = await lstat(abs).catch(() => null);
+      if (!info) continue;
+      const symlink = info.isSymbolicLink();
+      const isDir = !symlink && info.isDirectory();
+      items.push({
+        name: dirent.name,
+        path: toRel(realRoot, abs),
+        kind: isDir ? 'dir' : 'file',
+        size: isDir ? null : info.size,
+        mtime: info.mtime.toISOString(),
+        ctime: (info.birthtimeMs > 0 ? info.birthtime : info.ctime).toISOString(),
+        ignored: false,
+        symlink,
+      });
+      if (isDir && recursive && !SKIPPED_WHEN_RECURSIVE.has(dirent.name)) queue.push(abs);
+    }
+  }
+  if (!recursive) {
+    const asked = items.map((e) => (e.kind === 'dir' ? `${e.path}/` : e.path));
+    for (const ignored of await gitIgnored(realRoot, asked)) {
+      const item = items.find((e) => e.path === ignored);
+      if (item) item.ignored = true;
+    }
+  }
+  const files = items.filter((i) => i.kind === 'file');
+  const newest = files.reduce<string | null>(
+    (latest, f) => (f.mtime && (!latest || f.mtime > latest) ? f.mtime : latest),
+    null,
+  );
+  return {
+    path: toRel(realRoot, dir),
+    items,
+    recursive,
+    folders: items.length - files.length,
+    files: files.length,
+    totalSize: files.reduce((sum, f) => sum + (f.size ?? 0), 0),
+    newest,
+    truncated,
+  };
 }
 
 /** Which of these project-relative paths git ignores (none when it isn't a git repo). */

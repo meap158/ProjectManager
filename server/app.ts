@@ -21,7 +21,14 @@ import type {
 } from '../shared/types.js';
 import { LAN_HEADER } from './lan.js';
 import { openEntry, renameEntry } from './projectFileActions.js';
-import { FileAccessError, listFolder, previewFile, readRaw } from './projectFiles.js';
+import {
+  DEFAULT_FOLDER_LIMIT,
+  FileAccessError,
+  folderInfo,
+  listFolder,
+  previewFile,
+  readRaw,
+} from './projectFiles.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
 import { config } from './config.js';
 import { detectLocalApps, stopLocalApp } from './localPorts.js';
@@ -420,6 +427,20 @@ export function createApp(
   app.get('/projects/:id/tree', async (c) => {
     const root = projectRoot(c);
     return c.json(await fileErrors(() => listFolder(root, c.req.query('path') ?? '')));
+  });
+
+  // The folder previewer (PM-286): entries with sizes and times, one level or the whole tree below.
+  app.get('/projects/:id/folder-info', async (c) => {
+    const root = projectRoot(c);
+    const limit = Number.parseInt(c.req.query('limit') ?? '', 10);
+    return c.json(
+      await fileErrors(() =>
+        folderInfo(root, c.req.query('path') ?? '', {
+          recursive: c.req.query('recursive') === '1',
+          limit: Number.isFinite(limit) ? limit : DEFAULT_FOLDER_LIMIT,
+        }),
+      ),
+    );
   });
 
   app.get('/projects/:id/file', async (c) => {

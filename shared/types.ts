@@ -879,3 +879,33 @@ export interface FilePin {
   /** What is there now; null when this project has no such path (the pin shows as missing). */
   kind: 'file' | 'dir' | null;
 }
+
+/** The Files tab's folder previewer (PM-286): one entry with the times asset tracking needs. */
+export interface FolderItem {
+  name: string;
+  /** Relative to the project, forward slashes. */
+  path: string;
+  kind: 'dir' | 'file';
+  size: number | null;
+  /** Last modified, ISO. */
+  mtime: string | null;
+  /** Created where the system records it (birth time), else the last status change. */
+  ctime: string | null;
+  /** Ignored by git (only known for a single folder, not for a recursive listing). */
+  ignored: boolean;
+  symlink: boolean;
+}
+
+export interface FolderInfo {
+  path: string;
+  items: FolderItem[];
+  recursive: boolean;
+  /** Totals over the items returned. */
+  folders: number;
+  files: number;
+  totalSize: number;
+  /** The newest modified time among the files returned. */
+  newest: string | null;
+  /** More entries exist than were returned (the cap, or the walk limit). */
+  truncated: boolean;
+}
