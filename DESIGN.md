@@ -310,7 +310,8 @@ adjacent-pair CVD separation in both modes).
   and opens below/right of the pointer, flipping above/left when there is no room (`placeMenu`), and
   scrolls if taller than the window (PM-268). 30px items (40px on touch), divider rules between groups. Use it for any new right-click menu; do
   not write another. **Files tree menu (PM-259):** right click, Shift+F10 or the Menu key; touch
-  screens get a 40px "..." button on every row. Open in preview (Expand or Collapse for folders), Open
+  screens get a 40px "..." button on every row, and the tree itself is sized for touch there: 44px
+  rows, 15px names, 18px icons and a 20px indent step (13px / 14px with a mouse). Open in preview (Expand or Collapse for folders), Open
   in system app, Reveal in file manager, Copy path (absolute, in the project's own slash style), Copy
   relative path, Rename. **Rename is in place** (F2 too): the name without its extension is selected,
   Enter renames, Escape or leaving the field cancels, so it only happens on purpose; a refusal shows in

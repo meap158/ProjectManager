@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
 } from 'react';
@@ -413,7 +414,8 @@ export function ProjectFiles({
                   aria-selected={isCurrent}
                   tabIndex={tabStop ? 0 : -1}
                   className={`files-row${entry.ignored ? ' is-ignored' : ''}${isCurrent ? ' is-current' : ''}`}
-                  style={{ paddingLeft: 6 + (level - 1) * 14 }}
+                  // The indent step is CSS (--depth), so touch screens can widen it.
+                  style={{ '--depth': level - 1 } as CSSProperties}
                   onClick={() => select(entry)}
                   onFocus={() => setFocused(entry.path)}
                   onContextMenu={(e: MouseEvent) => {
