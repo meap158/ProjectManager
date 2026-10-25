@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import type { FolderInfo, FolderItem } from '../../../shared/types';
 import { api } from '../api';
 import { formatBytes, formatRelative } from '../format';
+import { Dropdown, type DropdownOption } from './Dropdown';
 import {
   FILE_GROUPS,
   hasViewParams,
@@ -35,17 +36,17 @@ import './folder-view.css';
 const PAGE = 120;
 /** Pictures bigger than this show an icon in the grid instead of loading the whole file as a thumbnail. */
 const THUMB_MAX_BYTES = 2 * 1024 * 1024;
-const RANGES: { id: ModifiedRange; label: string }[] = [
-  { id: 'any', label: 'Any time' },
-  { id: 'today', label: 'Today' },
-  { id: '7d', label: 'Last 7 days' },
-  { id: '30d', label: 'Last 30 days' },
+const RANGES: DropdownOption<ModifiedRange>[] = [
+  { value: 'any', label: 'Any time' },
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
 ];
-const SORTS: { id: SortKey; label: string }[] = [
-  { id: 'modified', label: 'Modified' },
-  { id: 'name', label: 'Name' },
-  { id: 'size', label: 'Size' },
-  { id: 'type', label: 'Type' },
+const SORTS: DropdownOption<SortKey>[] = [
+  { value: 'modified', label: 'Modified' },
+  { value: 'name', label: 'Name' },
+  { value: 'size', label: 'Size' },
+  { value: 'type', label: 'Type' },
 ];
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
@@ -151,6 +152,8 @@ export function FolderView({
   }
 
   const [sheet, setSheet] = useState(false);
+  const modifiedId = useId();
+  const sortId = useId();
   const rawUrl = useCallback((path: string) => api.projectRawUrl(projectId, path), [projectId]);
 
   const open = (item: FolderItem) => {
@@ -342,40 +345,34 @@ export function FolderView({
           </div>
         </div>
         <div className="fv-line fv-line-b">
-          <label className="fv-field">
-            <span>Modified</span>
-            <select
-              className="input"
+          <div className="fv-field">
+            <label htmlFor={modifiedId}>Modified</label>
+            <Dropdown
+              id={modifiedId}
+              label="Modified"
               value={view.modified}
-              onChange={(e) => change({ modified: e.target.value as ModifiedRange })}
-            >
-              {RANGES.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="fv-field">
-            <span>Sort by</span>
-            <select
-              className="input"
+              options={RANGES}
+              onChange={(modified) => change({ modified })}
+            />
+          </div>
+          <div className="fv-field">
+            <label htmlFor={sortId}>Sort by</label>
+            <Dropdown
+              id={sortId}
+              label="Sort by"
               value={view.sort}
-              onChange={(e) => {
-                const sort = e.target.value as SortKey;
-                change({ sort, descending: defaultDescending(sort) });
-              }}
-            >
-              {SORTS.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={SORTS}
+              onChange={(sort) => change({ sort, descending: defaultDescending(sort) })}
+            />
+          </div>
           <button
             type="button"
-            className="btn btn-sm"
+            className="btn btn-icon fv-order"
+            title={
+              view.descending
+                ? 'Sorted high to low · switch to low to high'
+                : 'Sorted low to high · switch to high to low'
+            }
             aria-label={
               view.descending
                 ? 'Sorted high to low; switch to low to high'
@@ -385,17 +382,29 @@ export function FolderView({
           >
             {view.descending ? '↓' : '↑'}
           </button>
-          <label className="fv-check">
+          <label className={`fv-check${view.recursive ? ' is-checked' : ''}`}>
             <input
               type="checkbox"
               checked={view.recursive}
               onChange={(e) => change({ recursive: e.target.checked })}
             />
-            Include subfolders
+            <span className="fv-check-box" aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 12 12">
+                <path
+                  d="M2.5 6.2l2.4 2.3 4.6-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <span>Include subfolders</span>
           </label>
           <button
             type="button"
-            className="btn btn-sm fv-reset"
+            className="btn fv-reset"
             disabled={!active}
             onClick={() => change({ text: '', types: [], modified: 'any', recursive: false })}
           >

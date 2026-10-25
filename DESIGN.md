@@ -319,8 +319,10 @@ adjacent-pair CVD separation in both modes).
   this app's database (never in the project) and can only be changed on this computer; they are read everywhere.
 - **Folder previewer (`FolderView`, PM-286):** selecting a folder (in the tree, from a pin, a breadcrumb or a
   subfolder) shows its contents in the right pane instead of the last file: every entry with size and times as a
-  Grid of thumbnails or a List; filters (name, type chips, modified range, include subfolders) and sort, kept in the
-  address and remembered per project and folder, so Images chosen in a folder is still on when you return; a
+  Grid of thumbnails or a List; filters (name, type chips, modified range via `Dropdown`, bordered Include subfolders
+  checkbox pill with SVG checkmark) and sort (`Dropdown` + icon direction toggle + Clear filters), kept in the
+  address and remembered across folders and items (`pm.folderView`), so Images chosen in a folder stays on as you
+  move around; a
   "New" or "Changed" badge on what changed since you last looked (with Mark all seen). Pictures bigger than 2 MB
   show an icon instead of loading the whole file as a thumbnail; only a page (120) of entries is in the page at a
   time. A picture opens in a **lightbox** (`ImageViewer`): dimmed backdrop, the picture centred on it, chevrons,

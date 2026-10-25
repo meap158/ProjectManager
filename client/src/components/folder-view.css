@@ -49,7 +49,7 @@
 }
 
 /* Filters: inline on a wide screen, in two aligned lines. Every control is 34px tall and the
-   second line sits on one baseline (labels above the selects, the rest bottom-aligned with them),
+   second line sits on one baseline (labels above the dropdowns, the rest bottom-aligned with them),
    so nothing steps up or down when the window narrows. */
 .fv-controls {
   display: flex;
@@ -70,14 +70,26 @@
   align-items: flex-end;
 }
 .fv-controls .input,
+.fv-controls .dropdown-trigger,
 .fv-controls .btn,
 .fv-controls .fv-check {
   box-sizing: border-box;
   height: 34px;
+  min-height: 34px;
   margin: 0;
+}
+.fv-controls .dropdown-trigger {
+  min-width: 132px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 550;
 }
 .fv-controls .btn {
   padding-block: 0;
+}
+.fv-controls .fv-order {
+  width: 34px;
+  padding: 0;
 }
 .fv-search {
   flex: 1 1 200px;
@@ -100,34 +112,95 @@
   font-size: 12.5px;
   line-height: 1;
   cursor: pointer;
+  transition:
+    background 120ms,
+    border-color 120ms,
+    color 120ms;
 }
 .fv-chip:hover {
   background: var(--surface-hover);
+  color: var(--text);
 }
 .fv-chip[aria-pressed='true'] {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
+  font-weight: 600;
 }
 .fv-field {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   font-size: 11.5px;
   line-height: 1.2;
   color: var(--text-3);
 }
-.fv-field .input {
-  min-width: 128px;
+.fv-field label {
+  font-weight: 550;
+  color: var(--text-2);
 }
 .fv-check {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
   font-size: 13px;
+  font-weight: 550;
   white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 120ms,
+    border-color 120ms,
+    color 120ms;
+}
+.fv-check:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.fv-check.is-checked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .fv-check input {
-  margin: 0;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+}
+.fv-check:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.fv-check-box {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: transparent;
+  transition:
+    background 120ms,
+    border-color 120ms,
+    color 120ms;
+}
+.fv-check.is-checked .fv-check-box {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
 }
 /* The clear button keeps its place at the end of the line. */
 .fv-reset {
@@ -362,12 +435,17 @@ button.fv-row:hover {
     font-size: 14px;
   }
   .fv-controls .input,
+  .fv-controls .dropdown-trigger,
   .fv-controls .btn,
   .fv-controls .fv-check {
     height: 44px;
+    min-height: 44px;
     font-size: 16px;
   }
-  .fv-field .input {
+  .fv-controls .fv-order {
+    width: 100%;
+  }
+  .fv-field .dropdown-trigger {
     width: 100%;
   }
   .fv-reset {

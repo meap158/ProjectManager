@@ -157,6 +157,30 @@ describe('FolderView', () => {
     expect(url()).toContain('rec=1');
   });
 
+  it('uses shared custom Dropdowns for Modified and Sort by instead of native selects', async () => {
+    show();
+    await screen.findByText(/4 files/);
+    expect(document.querySelector('select')).toBeNull();
+    // Sort by Name via the shared Dropdown.
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by' }));
+    fireEvent.click(within(screen.getByRole('listbox', { name: 'Sort by' })).getByText('Name'));
+    await waitFor(() =>
+      expect(names()).toEqual(['icons', 'hero.jpg', 'logo.png', 'notes.md', 'run.sh']),
+    );
+    expect(url()).toContain('sort=name');
+    // Flip sort order.
+    fireEvent.click(screen.getByRole('button', { name: /Sorted low to high/ }));
+    await waitFor(() =>
+      expect(names()).toEqual(['icons', 'run.sh', 'notes.md', 'logo.png', 'hero.jpg']),
+    );
+    // Modified range via the shared Dropdown.
+    fireEvent.click(screen.getByRole('button', { name: 'Modified' }));
+    fireEvent.click(
+      within(screen.getByRole('listbox', { name: 'Modified' })).getByText('Last 7 days'),
+    );
+    expect(url()).toContain('mod=7d');
+  });
+
   it('marks what is new or changed since the last visit, and clears the marks on request', async () => {
     localStorage.setItem('pm.folderSeen.1:assets', String(Date.parse('2026-10-22T00:00:00Z')));
     show();
