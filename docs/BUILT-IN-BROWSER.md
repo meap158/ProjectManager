@@ -5,9 +5,12 @@ is running on this computer's `localhost` ports, next to the sessions.
 
 Status: built (PM-253). `server/localPorts.ts` detects listening apps (netstat on Windows, lsof
 elsewhere), attributes them to a project by command line, and reads each app's page title and
-icon. "Has an icon" means its `<link rel="icon">` (or `/favicon.ico`) was fetched and really is an
-image, because a single-page dev server answers every path with its HTML; it is the cue that splits
-front ends (**Apps**) from back ends (**Services**). The **Preview** page (top bar; on phones the
+icon. The cue that splits front ends (**Apps**) from back ends (**Services**) is `web`: "/" answered
+2xx with an HTML content type and a body that is a page (an empty HTML reply from a back end is not
+one). The icon is separate: a small inline `data:image/...` icon is used as declared (parsed
+quote-aware), otherwise the declared path, then `/favicon.ico`, `/favicon.svg`, `/favicon.png`, each
+fetched and kept only if it really is an image (a single-page dev server answers every path with its
+HTML). The **Preview** page (top bar; on phones the
 Agents tools menu) lists them beside a small browser. It is a global page on purpose: a dev server
 is not owned by one project. There are two ways to show an app:
 

@@ -126,6 +126,12 @@ export function sortApps(
 
 export type PreviewGroupId = 'apps' | 'services' | 'other';
 
+/** A front end: it answers "/" with a web page. Having an icon also counts, which keeps this right
+ * against a server that predates the `web` field. */
+function isWebApp(a: LocalApp): boolean {
+  return a.web || !!a.icon;
+}
+
 /**
  * Your projects' running apps in two groups, the way a dev stack falls out: a server that serves a
  * page with an icon is the front end you open in a browser ("Apps", first); one without is usually
@@ -143,14 +149,14 @@ export function groupApps(
     {
       id: 'apps' as const,
       heading: 'Apps',
-      hint: 'From your projects, with an icon: usually the front end',
-      apps: mine.filter((a) => a.icon),
+      hint: 'From your projects, serving a web page: the front end',
+      apps: mine.filter(isWebApp),
     },
     {
       id: 'services' as const,
       heading: 'Services',
-      hint: 'From your projects, no icon: usually an API or back end',
-      apps: mine.filter((a) => !a.icon),
+      hint: 'From your projects, no web page: usually an API or back end',
+      apps: mine.filter((a) => !isWebApp(a)),
     },
     {
       id: 'other' as const,
@@ -224,7 +230,7 @@ function AppIcon({ app, label }: { app: LocalApp; label: string }) {
       {showImage && (
         <img
           className={`preview-icon-img${state === 'loaded' ? ' is-loaded' : ''}`}
-          src={`/api/preview/${app.port}${app.icon}`}
+          src={app.icon!.startsWith('data:') ? app.icon! : `/api/preview/${app.port}${app.icon}`}
           alt=""
           onLoad={() => setState('loaded')}
           onError={() => setState('failed')}

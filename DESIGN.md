@@ -326,8 +326,8 @@ adjacent-pair CVD separation in both modes).
   The list: the shared compact `Dropdown` for sort (Port, Name A-Z / Z-A, Project) and a 26px
   refresh icon button (40px on touch) that reads the machine now and spins while it works; the list
   also refreshes every 5 s while the page is visible and stops in a background tab. Your projects'
-  apps split by what a dev stack looks like: **Apps** first (the server answered with a page and a
-  real icon, so usually the front end), then **Services** (no icon, usually an API or back end),
+  apps split by what a dev stack looks like: **Apps** first (its "/" answered with a real web page, so
+  the front end; the icon is only its picture), then **Services** (no page, usually an API or back end),
   then **Other on this computer** (not started from one of your projects; mostly system services,
   so it starts closed unless it is all there is), then **Quick launches**. Headings are real
   buttons (`aria-expanded`, a row count, a tooltip saying what the group means); the folds and the

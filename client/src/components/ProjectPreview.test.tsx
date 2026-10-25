@@ -49,6 +49,7 @@ describe('sorting and grouping', () => {
     projectId,
     title,
     icon,
+    web: !!(title || icon),
   });
   const names = new Map([
     [1, 'Alpha'],
@@ -62,6 +63,16 @@ describe('sorting and grouping', () => {
     expect(ports('name')).toEqual([3000, 3001, 3004, 3002]);
     expect(ports('name-desc')).toEqual([3002, 3004, 3001, 3000]);
     expect(ports('project')).toEqual([3000, 3004, 3001, 3002]);
+  });
+
+  it('counts a project app that serves a web page as an app even without a fetched icon', () => {
+    const page = { ...app(4400, 1, 'FrameMotion Console'), icon: null, web: true };
+    const api = { ...app(4401, 1), web: false };
+    const groups = groupApps([api, page], 'port', names);
+    expect(groups.map((g) => [g.id, g.apps.map((a) => a.port)])).toEqual([
+      ['apps', [4400]],
+      ['services', [4401]],
+    ]);
   });
 
   it("puts your projects' apps with an icon first, back ends next, the rest last", () => {

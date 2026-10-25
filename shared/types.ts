@@ -853,8 +853,11 @@ export interface LocalApp {
   projectId: number | null;
   /** The page's <title>, when the app answers with HTML on "/". */
   title: string | null;
-  /** Where its icon is, as a path on that app ("/favicon.ico"); null when it has none. */
+  /** Its icon: a path on that app ("/favicon.ico") that answered with an image, or a small inline
+   * `data:image/...` URL it declares; null when it has none. */
   icon: string | null;
+  /** "/" answered with an HTML page: it has a front end you can open (icon or not). */
+  web: boolean;
 }
 
 /** A saved Preview address: a dev server the owner opens often. */

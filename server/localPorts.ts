@@ -145,15 +145,37 @@ export function readPageMeta(
   const title =
     /<title[^>]*>([\s\S]*?)<\/title>/i.exec(head)?.[1]?.replace(/\s+/g, ' ').trim() ?? '';
   let icon: string | null = null;
-  for (const tag of head.match(/<link\b[^>]*>/gi) ?? []) {
+  // Quote-aware: an inline icon holds `>` and the other kind of quote inside its attribute.
+  for (const tag of head.match(/<link\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi) ?? []) {
     if (!/\brel\s*=\s*["'][^"']*\bicon\b/i.test(tag)) continue;
-    const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1];
+    const found = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
+    const href = found?.[1] ?? found?.[2];
     if (!href) continue;
-    icon = localPath(href, port);
+    icon = inlineIcon(href) ?? localPath(href, port);
     if (icon) break;
   }
   return { title: title ? title.slice(0, 80) : null, icon: icon ?? '/favicon.ico' };
 }
+
+/** Whether a body is a real web page: it has markup a browser would render or run. */
+export function looksLikePage(html: string): boolean {
+  return /<(title|html|body|head|script|div|main|h[1-6]|p|a|form|img|link)\b/i.test(
+    html.slice(0, 64 * 1024),
+  );
+}
+
+/** Small apps embed their icon in the page (`href="data:image/svg+xml,..."`). That is the icon, as
+ * long as it is a plain image and small; it needs no request, so it cannot point anywhere else. */
+const INLINE_ICON =
+  /^data:image\/(svg\+xml|png|gif|jpeg|webp|avif|x-icon|vnd\.microsoft\.icon)[;,]/i;
+const INLINE_ICON_MAX = 32 * 1024;
+export function inlineIcon(href: string): string | null {
+  const value = href.trim().replace(/&amp;/gi, '&');
+  return INLINE_ICON.test(value) && value.length <= INLINE_ICON_MAX ? value : null;
+}
+
+/** Where a page's icon may also live when it does not (or wrongly) declare one. */
+const ICON_FALLBACKS = ['/favicon.ico', '/favicon.svg', '/favicon.png'];
 
 /** A path on the app itself: an absolute URL only counts when it points back at the same port. */
 function localPath(href: string, port: number): string | null {
@@ -181,8 +203,11 @@ export function isImageResponse(status: number, contentType: string | null): boo
 
 interface PageMeta {
   title: string | null;
-  /** A path on the app, only when it answered with an image: the signal for "has a front end". */
+  /** A path on the app that answered with an image, or a small inline image. */
   icon: string | null;
+  /** "/" answered with a successful HTML page: the signal for "has a front end". An icon is not
+   * needed for that (many dev pages have none, and some use an inline one). */
+  web: boolean;
 }
 const metaCache = new Map<number, PageMeta & { at: number }>();
 const META_MS = 30_000;
@@ -192,16 +217,24 @@ const META_MS = 30_000;
 async function pageMeta(port: number): Promise<PageMeta> {
   const hit = metaCache.get(port);
   if (hit && Date.now() - hit.at < META_MS) return hit;
-  let meta: PageMeta = { title: null, icon: null };
+  let meta: PageMeta = { title: null, icon: null, web: false };
   try {
     const res = await fetch(`http://127.0.0.1:${port}/`, {
       redirect: 'manual',
       headers: { accept: 'text/html' },
       signal: AbortSignal.timeout(1_500),
     });
-    if (/^text\/html\b/i.test(res.headers.get('content-type') ?? '')) {
-      const found = readPageMeta(await res.text(), port);
-      meta = { title: found.title, icon: await confirmIcon(port, found.icon) };
+    if (
+      res.status >= 200 &&
+      res.status < 300 &&
+      /^text\/html\b/i.test(res.headers.get('content-type') ?? '')
+    ) {
+      const html = await res.text();
+      const found = readPageMeta(html, port);
+      // A back end can answer "/" with an HTML content type and an empty body; that is no page.
+      if (looksLikePage(html)) {
+        meta = { title: found.title, icon: await confirmIcon(port, found.icon), web: true };
+      }
     }
   } catch {
     // Not an HTTP app, or too slow: the list still shows the port.
@@ -210,19 +243,23 @@ async function pageMeta(port: number): Promise<PageMeta> {
   return meta;
 }
 
+/** The declared icon if it really is an image, else the conventional places, in order. */
 async function confirmIcon(port: number, icon: string | null): Promise<string | null> {
-  if (!icon) return null;
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}${icon}`, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(1_500),
-    });
-    const ok = isImageResponse(res.status, res.headers.get('content-type'));
-    await res.body?.cancel();
-    return ok ? icon : null;
-  } catch {
-    return null;
+  if (icon?.startsWith('data:')) return icon;
+  for (const path of new Set([...(icon ? [icon] : []), ...ICON_FALLBACKS])) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(1_500),
+      });
+      const ok = isImageResponse(res.status, res.headers.get('content-type'));
+      await res.body?.cancel();
+      if (ok) return path;
+    } catch {
+      // Try the next place.
+    }
   }
+  return null;
 }
 
 /** Cached for a few seconds: the Preview page polls, and the probes are not free. */
@@ -258,6 +295,7 @@ export async function detectLocalApps(
       projectId: projectForCommand(command, projects),
       title: metas[i]?.title ?? null,
       icon: metas[i]?.icon ?? null,
+      web: metas[i]?.web ?? false,
     };
   });
   cache = { at: Date.now(), key, apps };

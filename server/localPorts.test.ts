@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   candidates,
+  inlineIcon,
   isImageResponse,
+  looksLikePage,
   parseLsof,
   parseNetstat,
   projectForCommand,
@@ -93,6 +95,31 @@ describe('readPageMeta', () => {
     expect(readPageMeta('<link rel="icon" href="//evil.example/i.png">', 3000).icon).toBe(
       '/favicon.ico',
     );
+  });
+});
+
+describe('looksLikePage', () => {
+  it('tells a page from the empty or plain-text HTML a back end answers with', () => {
+    expect(looksLikePage('<!doctype html><div id="root"></div>')).toBe(true);
+    expect(looksLikePage('<title>x</title>')).toBe(true);
+    expect(looksLikePage('')).toBe(false);
+    expect(looksLikePage('OK')).toBe(false);
+  });
+});
+
+describe('inline icons', () => {
+  // FrameMotion's real head: a multi-line <link> whose data: URL has `>` and single quotes in it.
+  const svg =
+    "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230B0F1A'/></svg>";
+  const html = `<head><title>FrameMotion Console</title>\n<link\n  rel="icon"\n  href="${svg}"\n/>\n<script src="/a.js"></script></head>`;
+  it('uses a small embedded image as the icon', () => {
+    expect(readPageMeta(html, 4400)).toEqual({ title: 'FrameMotion Console', icon: svg });
+  });
+  it('only accepts plain, small images', () => {
+    expect(inlineIcon('data:text/html,<script>1</script>')).toBeNull();
+    expect(inlineIcon('data:image/svg+xml,' + 'x'.repeat(40_000))).toBeNull();
+    expect(inlineIcon('/favicon.ico')).toBeNull();
+    expect(inlineIcon('data:image/png;base64,AAAA')).toBe('data:image/png;base64,AAAA');
   });
 });
 
