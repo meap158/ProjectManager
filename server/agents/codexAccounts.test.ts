@@ -425,6 +425,20 @@ describe('CodexAccounts (PM-164)', () => {
         ).run(id);
         return supervisor.getSession(id)!;
       });
+      const thread = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12';
+      const folder = path.join(defaultCodexHome, 'sessions', '2026', '10', '18');
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(
+        path.join(folder, `rollout-${thread}.jsonl`),
+        JSON.stringify({
+          type: 'session_meta',
+          payload: { id: thread, cwd: tmpDir, timestamp: new Date().toISOString() },
+        }) + '\n',
+      );
+      db.prepare('UPDATE agent_sessions SET resume_json = ? WHERE id = ?').run(
+        JSON.stringify(['codex', 'resume', thread]),
+        id,
+      );
       const pending = supervisor.switchSessionCodexAccount(id, accountId, { continuePrompt: true });
       expect(supervisor.getSession(id)).toMatchObject({
         status: 'killed',
@@ -528,7 +542,7 @@ describe('CodexAccounts (PM-164)', () => {
     }
   });
 
-  it('starts a new conversation when switching Codex accounts with nothing to carry over', async () => {
+  it('refuses an account switch when its pinned conversation is missing', async () => {
     const supervisor = new AgentSupervisor(db, path.join(tmpDir, 'logs'), { dataDir: tmpDir });
     try {
       await supervisor.ready;
@@ -566,7 +580,9 @@ describe('CodexAccounts (PM-164)', () => {
           ).lastInsertRowid,
       );
 
-      await supervisor.switchSessionCodexAccount(sessionId, accountId);
+      await expect(supervisor.switchSessionCodexAccount(sessionId, accountId)).rejects.toThrow(
+        'exact Codex conversation',
+      );
 
       const row = db
         .prepare('SELECT command_json, resume_json FROM agent_sessions WHERE id = ?')
@@ -576,9 +592,9 @@ describe('CodexAccounts (PM-164)', () => {
         codexFreshStart?: boolean;
         env?: { CODEX_HOME?: string };
       };
-      expect(row.resume_json).toBeNull();
-      expect(command.codexFreshStart).toBe(true);
-      expect(command.codexAccountId).toBe(accountId);
+      expect(JSON.parse(row.resume_json!)).toEqual(['codex', 'resume', resumeId]);
+      expect(command.codexFreshStart).toBeUndefined();
+      expect(command.codexAccountId).toBe('default');
       expect(command.env?.CODEX_HOME).toBe(defaultCodexHome);
       expect(existsSync(path.join(tmpDir, 'codex-accounts', accountId, 'sessions'))).toBe(false);
     } finally {
@@ -614,16 +630,37 @@ describe('CodexAccounts (PM-164)', () => {
                 env: { CODEX_HOME: home },
                 codexAccountId: account,
               }),
-              JSON.stringify(['codex', 'resume', '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12']),
+              JSON.stringify([
+                'codex',
+                'resume',
+                name === 'one'
+                  ? '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12'
+                  : '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b13',
+              ]),
               path.join(tmpDir, 'proj-all'),
               '2026-10-18T00:00:00.000Z',
               '2026-10-18T00:00:00.000Z',
               path.join(tmpDir, 'logs', `${name}.log`),
             ).lastInsertRowid,
         );
+      const folder = path.join(defaultCodexHome, 'sessions', '2026', '10', '18');
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(
+        path.join(folder, 'rollout-019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12.jsonl'),
+        '{}\n',
+      );
+      writeFileSync(
+        path.join(folder, 'rollout-019ef8dc-a4c1-7ae2-841a-e0f17c1e9b13.jsonl'),
+        '{}\n',
+      );
       const first = insert('one', 'default', defaultCodexHome);
       const second = insert('two', 'default', defaultCodexHome);
 
+      await supervisor.switchSessionCodexAccount(first, accountId);
+      const otherId = supervisor
+        .importCodexAccount('Other', '{"OPENAI_API_KEY":"other"}')
+        .accounts.find((a) => a.name === 'Other')!.id;
+      await supervisor.switchSessionCodexAccount(second, otherId);
       await supervisor.switchSessionCodexAccount(first, accountId);
 
       const homes = [first, second].map((id) => {
@@ -638,9 +675,15 @@ describe('CodexAccounts (PM-164)', () => {
           },
         };
       });
-      for (const session of homes) {
-        // Its conversation was never written: a new one starts, on the new login.
-        expect(session.resume).toBeNull();
+      for (const [index, session] of homes.entries()) {
+        // Account changes preserve the exact pinned conversation.
+        expect(JSON.parse(session.resume!)).toEqual([
+          'codex',
+          'resume',
+          index === 0
+            ? '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12'
+            : '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b13',
+        ]);
         expect(session.command.codexAccountId).toBe(accountId);
         expect(session.command.env?.CODEX_HOME).toBe(defaultCodexHome);
       }

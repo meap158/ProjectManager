@@ -85,7 +85,7 @@ import {
 import { applyCpuBudget, getCpuBudget } from './cpuBudget.js';
 import { CpuGovernor, type GovernorStats } from './cpuGovernor.js';
 import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
-import { claudeSessionId, codexSessionFor, staleClaudeResume } from './usage.js';
+import { claudeSessionId, codexResumeId, codexSessionFor, staleClaudeResume } from './usage.js';
 import {
   antigravityConversationFor,
   claudeCustomTitle,
@@ -510,6 +510,10 @@ export class AgentSupervisor {
     id: string | null,
     options: { keepRotation?: boolean; activeOnly?: boolean } = {},
   ): CodexAccountsState {
+    const running = this.db
+      .prepare("SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'")
+      .all() as unknown as SessionRow[];
+    for (const row of running) this.pinCodexForRestart(row);
     const state = this.withCodexAccounts((accounts) => accounts.setActive(id));
     // A choice in Settings starts a fresh rotation. Auto-switch keeps the accounts it already tried.
     if (!options.keepRotation) this.codexRotationTried = [];
@@ -626,14 +630,6 @@ export class AgentSupervisor {
     const runHome = this.withCodexAccounts((a) => a.runHome());
     const willRestart =
       this.live.has(`session:${id}`) || row.desired_state === 'running' || row.status === 'running';
-    if (willRestart) this.switchingCodexSession.add(id);
-    if (options.setGlobal !== false) {
-      this.withCodexAccounts((accounts) =>
-        accounts.setActive(target.id === 'default' ? null : target.id),
-      );
-      if (!options.keepRotation) this.codexRotationTried = [];
-      this.applyCodexAccountToSessions(target.id, { exceptId: id, activeOnly: options.automatic });
-    }
     const parsed = JSON.parse(row.command_json) as {
       command: string[];
       env?: Record<string, string>;
@@ -646,20 +642,37 @@ export class AgentSupervisor {
     const switchedAccount = (previous?.id ?? 'default') !== target.id || movedHome;
     const nextEnv = { ...(parsed.env ?? {}), CODEX_HOME: runHome };
     // The conversation stays with the session: same folder, resumed by id after the login
-    // changes (as after a manual `codex login`); copied over first when the folder changes
-    // (PM-188). Only when there is none, a new one starts.
-    const carriedId = switchedAccount ? this.carryCodexConversation(row, fromHome, runHome) : null;
-    const nextResume = switchedAccount
-      ? carriedId
-        ? JSON.stringify([parsed.command[0] ?? 'codex', 'resume', carriedId])
-        : null
+    // changes (as after a manual `codex login`); copied over first when the folder changes.
+    // Missing targets cancel the switch rather than silently replacing the conversation.
+    const carriedId =
+      switchedAccount || willRestart ? this.carryCodexConversation(row, fromHome, runHome) : null;
+    if ((switchedAccount || willRestart) && !carriedId) {
+      this.switchingCodexSession.delete(id);
+      throw new AgentError(
+        409,
+        'Cannot identify or carry the exact Codex conversation. Account switch cancelled; no fresh conversation was started.',
+      );
+    }
+    if (options.setGlobal !== false) {
+      const running = this.db
+        .prepare("SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'")
+        .all() as unknown as SessionRow[];
+      for (const session of running) this.pinCodexForRestart(session);
+      this.withCodexAccounts((accounts) =>
+        accounts.setActive(target.id === 'default' ? null : target.id),
+      );
+      if (!options.keepRotation) this.codexRotationTried = [];
+      this.applyCodexAccountToSessions(target.id, { exceptId: id, activeOnly: options.automatic });
+    }
+
+    const nextResume = carriedId
+      ? JSON.stringify([parsed.command[0] ?? 'codex', 'resume', carriedId])
       : row.resume_json;
     this.db.prepare(`UPDATE agent_sessions SET command_json = ?, resume_json = ? WHERE id = ?`).run(
       JSON.stringify({
         ...parsed,
         env: nextEnv,
         codexAccountId: target.id,
-        ...(switchedAccount && !carriedId ? { codexFreshStart: true } : {}),
       }),
       nextResume,
       id,
@@ -671,6 +684,7 @@ export class AgentSupervisor {
       return this.getSession(id)!;
     }
 
+    if (willRestart) this.switchingCodexSession.add(id);
     try {
       this.outputFor(`session:${id}`, row.log_path).append(
         switchedAccount
@@ -692,18 +706,37 @@ export class AgentSupervisor {
   private carryCodexConversation(row: SessionRow, fromHome: string, toHome: string): string | null {
     if (!this.codexAccounts) return null;
     const resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
+    const command = (JSON.parse(row.command_json) as { command: string[] }).command;
     const id =
-      resume?.[1] === 'resume' && resume[2] && resume[2] !== '--last'
-        ? resume[2]
-        : codexSessionFor(
-            row.cwd,
-            row.created_at,
-            this.claimedConversations(row),
-            os.homedir(),
-            fromHome,
-          );
+      codexResumeId(resume) ??
+      codexResumeId(command) ??
+      codexSessionFor(
+        row.cwd,
+        row.started_at,
+        this.claimedConversations(row),
+        os.homedir(),
+        fromHome,
+      );
     if (!id) return null;
     return this.codexAccounts.carryConversation(fromHome, toHome, id) ? id : null;
+  }
+
+  /** Resolve before stopping the original process. Missing/ambiguous targets fail closed. */
+  private pinCodexForRestart(row: SessionRow): void {
+    if (row.provider_id !== 'codex') return;
+    const parsed = JSON.parse(row.command_json) as {
+      command: string[];
+      env?: Record<string, string>;
+    };
+    if (parsed.command[0] !== 'codex') return;
+    const home = parsed.env?.CODEX_HOME ?? this.codexAccounts?.runHome();
+    const id = home ? this.carryCodexConversation(row, home, home) : null;
+    if (!id)
+      throw new AgentError(
+        409,
+        'Cannot identify the exact saved Codex conversation. Restart cancelled to preserve the current session.',
+      );
+    this.saveResume(row.id, ['codex', 'resume', id]);
   }
 
   /** The login recorded on this session. Does not fall back to Settings. */
@@ -1349,7 +1382,9 @@ export class AgentSupervisor {
     id: number,
     options: { continuePrompt?: boolean } = {},
   ): Promise<AgentSession> {
-    if (!this.getSessionRow(id)) throw new AgentError(404, 'Session not found');
+    const row = this.getSessionRow(id);
+    if (!row) throw new AgentError(404, 'Session not found');
+    this.pinCodexForRestart(row);
     const pending = this.restarting.get(id);
     if (pending && pending.phase !== 'failed')
       throw new AgentError(409, 'Restart already in progress');
@@ -2209,33 +2244,8 @@ export class AgentSupervisor {
         ? { ...parsedCmd.env, CODEX_HOME: codexProfile.home }
         : { ...parsedCmd.env };
       const env = { ...gitEnv, ...storedEnv };
-      const storedCodexKey =
-        parsedCmd.codexAccountId ??
-        this.codexAccounts?.keyForHome(parsedCmd.env?.CODEX_HOME) ??
-        null;
-      const codexAccountChanged = !!(
-        codexProfile &&
-        storedCodexKey &&
-        storedCodexKey !== codexProfile.id
-      );
-      // Relaunching prefers the stored resume argv (e.g. `claude --continue`),
-      // so an AI conversation picks up instead of starting cold. Shells and
-      // custom commands simply respawn. Crossing Codex accounts is the exception:
-      // the previous thread's id belongs to the other login.
+      // An account change never changes the conversation target.
       let resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
-      const freshStart = parsedCmd.codexFreshStart === true || codexAccountChanged;
-      if (freshStart) {
-        resume = null;
-        const rest = {
-          ...parsedCmd,
-          env: storedEnv,
-          ...(codexProfile ? { codexAccountId: codexProfile.id } : {}),
-        };
-        delete rest.codexFreshStart;
-        this.db
-          .prepare('UPDATE agent_sessions SET command_json = ?, resume_json = NULL WHERE id = ?')
-          .run(JSON.stringify(rest), row.id);
-      }
       const launch = command;
       const note = (text: string) =>
         this.outputFor(key, row.log_path).append(`
@@ -2259,22 +2269,23 @@ export class AgentSupervisor {
           resume = null;
         }
       }
-      if (
-        !freshStart &&
-        isRelaunch &&
-        !resume &&
-        row.provider_id === 'codex' &&
-        command[0] === 'codex'
-      ) {
-        const id = codexSessionFor(
-          row.cwd,
-          row.created_at,
-          this.claimedConversations(row),
-          os.homedir(),
-          env.CODEX_HOME,
-        );
+      if (isRelaunch && !resume && row.provider_id === 'codex' && command[0] === 'codex') {
+        const id =
+          codexResumeId(command) ??
+          codexSessionFor(
+            row.cwd,
+            row.started_at,
+            this.claimedConversations(row),
+            os.homedir(),
+            env.CODEX_HOME,
+          );
         if (id) resume = this.saveResume(row.id, [command[0], 'resume', id]);
       }
+      if (isRelaunch && row.provider_id === 'codex' && !resume)
+        throw new AgentError(
+          409,
+          'Cannot identify the exact Codex conversation. Restart cancelled instead of starting a different conversation.',
+        );
       // Grok saves a pinned conversation only once it has one; until then start fresh.
       if (isRelaunch && resume && row.provider_id === 'grok') {
         const id = claudeSessionId(resume);
@@ -2304,21 +2315,19 @@ export class AgentSupervisor {
       }
       // The last resume attempt died within seconds (e.g. "No conversation found"): start
       // fresh instead of burning the restart budget on the same failure.
-      const resumeFailed = !byUser && this.resumeFailed.delete(key);
-      if (byUser && this.resumeFailed.has(key)) {
+      const resumeFailed = !byUser && row.provider_id !== 'codex' && this.resumeFailed.delete(key);
+      if ((byUser || row.provider_id === 'codex') && this.resumeFailed.has(key)) {
         throw new AgentError(
           409,
           'The saved conversation failed to resume. Restart cancelled rather than starting a fresh conversation. Inspect the terminal log.',
         );
       }
       if (isRelaunch && resumeFailed) note('the last resume failed right away — starting fresh');
-      const baseArgv = freshStart
-        ? launch
-        : isRelaunch
-          ? resumeFailed
-            ? launch
-            : (resume ?? this.resumeLatestArgv(row) ?? launch)
-          : launch;
+      const baseArgv = isRelaunch
+        ? resumeFailed
+          ? launch
+          : (resume ?? this.resumeLatestArgv(row) ?? launch)
+        : launch;
       this.lastSpawn.set(key, { at: Date.now(), resumed: baseArgv !== launch, byUser });
       forgetTurn(row.id); // A new process: its hooks report afresh.
       const connection = this.dataDir
@@ -2629,12 +2638,13 @@ export class AgentSupervisor {
     const resume = row.resume_json ? (JSON.parse(row.resume_json) as string[]) : null;
     const { command } = JSON.parse(row.command_json) as { command: string[] };
     if (row.provider_id !== 'codex') return claudeSessionId(resume, command);
-    if (resume?.[1] === 'resume' && resume[2] && resume[2] !== '--last') return resume[2];
+    const pinned = codexResumeId(resume) ?? codexResumeId(command);
+    if (pinned) return pinned;
     if (command[0] !== 'codex') return null;
     const codexHome = this.sessionCodexProfile(row)?.home;
     const id = codexSessionFor(
       row.cwd,
-      row.created_at,
+      row.started_at,
       this.claimedConversations(row),
       os.homedir(),
       codexHome,
@@ -2903,10 +2913,17 @@ export class AgentSupervisor {
               : null;
           if (next && next.id !== codexProfile.id) {
             this.codexRotationTried = [...new Set([...this.codexRotationTried, codexProfile.id])];
-            this.setActiveCodexAccount(next.id === 'default' ? null : next.id, {
-              keepRotation: true,
-              activeOnly: true,
-            });
+            try {
+              this.setActiveCodexAccount(next.id === 'default' ? null : next.id, {
+                keepRotation: true,
+                activeOnly: true,
+              });
+            } catch (error) {
+              const message = `Account rotation cancelled: ${(error as Error).message}`;
+              log.append(`\n[supervisor] ${message}\n`);
+              this.finishRun(row, 'failed', code, message);
+              return;
+            }
             const nextCmdJson = JSON.stringify({
               ...storedCmd,
               codexAccountId: next.id,

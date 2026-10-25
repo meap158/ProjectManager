@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   claudeSessionId,
+  codexResumeId,
   codexSessionFor,
   findCodexRolloutFile,
   readCodexRolloutUsage,
@@ -110,9 +111,23 @@ describe('Claude session usage', () => {
 
     const started = '2026-10-06T02:00:00Z';
     expect(codexSessionFor(cwd, started, new Set(), home)).toBe('mine');
-    // Another session already resumes "mine": take the next one.
-    expect(codexSessionFor(cwd, started, new Set(['mine']), home)).toBe('later');
+    // Another session owns "mine": never take an unrelated conversation an hour later.
+    expect(codexSessionFor(cwd, started, new Set(['mine']), home)).toBeNull();
+    writeFileSync(
+      path.join(day, 'rollout-f.jsonl'),
+      meta('ambiguous', cwd, '2026-10-06T02:00:04Z'),
+    );
+    expect(codexSessionFor(cwd, started, new Set(), home)).toBeNull();
     expect(codexSessionFor('S:\\Nowhere', started, new Set(), home)).toBeNull();
+  });
+});
+
+describe('explicit Codex resume identity', () => {
+  it('respects explicit IDs and refuses latest or picker arguments', () => {
+    const id = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b12';
+    expect(codexResumeId(['codex', '--sandbox', 'workspace-write', 'resume', id])).toBe(id);
+    expect(codexResumeId(['codex', 'resume', '--last'])).toBeNull();
+    expect(codexResumeId(['codex', 'resume'])).toBeNull();
   });
 });
 

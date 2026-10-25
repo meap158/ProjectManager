@@ -19,6 +19,12 @@ import type { AgentTokenUsage } from '../../shared/types.js';
 // Other CLIs don't expose per-session usage in a stable place, so they report null.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** An explicit conversation is stronger evidence than timestamp-based discovery. */
+export function codexResumeId(argv: readonly string[] | null): string | null {
+  const at = argv?.indexOf('resume') ?? -1;
+  const id = at >= 0 ? argv?.[at + 1] : null;
+  return id && UUID.test(id) ? id : null;
+}
 
 interface CacheEntry {
   offset: number;
@@ -476,8 +482,11 @@ export function codexSessionFor(
         if (p.source && typeof p.source === 'object') continue;
         if (path.resolve(p.cwd).toLowerCase() !== want || claimed.has(p.id)) continue;
         const at = Date.parse(p.timestamp);
-        if (!(at >= start - 5_000)) continue;
-        if (!best || at < best.at) best = { id: p.id, at };
+        // Only the launch window belongs to this process. Never take an unrelated thread
+        // created hours later simply because its real conversation was already claimed.
+        if (!(at >= start - 5_000 && at <= start + 120_000)) continue;
+        if (best && best.id !== p.id) return null; // Ambiguous siblings: never guess.
+        best = { id: p.id, at };
       } catch {
         // Partial or foreign file: skip.
       }
