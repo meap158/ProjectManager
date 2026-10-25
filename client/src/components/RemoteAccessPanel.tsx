@@ -254,8 +254,11 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
             </div>
             {status.running && (
               <p className="faint remote-note">
-                Point your tunnel at <code>http://127.0.0.1:{status.port}</code> and open{' '}
-                <code>https://{status.config.hostname}</code>.
+                Point your tunnel at{' '}
+                <code>http://127.0.0.1:{window.location.port || status.port}</code> (this app&apos;s
+                own port) or at <code>http://127.0.0.1:{status.port}</code>, and open{' '}
+                <code>https://{status.config.hostname}</code>. Either way the public address only
+                opens after Cloudflare Access and your authenticator code.
               </p>
             )}
           </section>

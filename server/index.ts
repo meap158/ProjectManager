@@ -12,7 +12,7 @@ import { ALREADY_RUNNING_MARKER, claimInstance, isAlive, releaseInstance } from 
 import { LAN_HEADER, LanAccess } from './lan.js';
 import { LanBundle, viteBuilder } from './lanBundle.js';
 import { handlePreviewUpgrade, previewHostPort, proxyPreviewHost } from './previewHost.js';
-import { RemoteAccess } from './remote.js';
+import { RemoteAccess, viaCloudflare } from './remote.js';
 import { appendFileSync, mkdirSync } from 'node:fs';
 
 /** scripts/launch.mjs watches for this line to retry on the next port. Keep in sync with it. */
@@ -92,6 +92,14 @@ async function main() {
     return own;
   };
   const route = (req: IncomingMessage, res: ServerResponse) => {
+    // The tunnel may point at this port: the public hostname goes through the remote gate (Access
+    // token, email allowlist, authenticator code) and only then reaches the app. Anything else that
+    // carries Cloudflare's headers had its Host rewritten and is refused rather than trusted as local.
+    if (remote.owns(req.headers.host)) return remote.serve(req, res);
+    if (viaCloudflare(req.headers)) {
+      res.writeHead(403, { 'content-type': 'text/plain' }).end('Forbidden host');
+      return;
+    }
     const port = previewHostPort(req.headers.host);
     if (port === null) handle(req, res);
     else proxyPreviewHost(req, res, port, blockedPorts());
@@ -108,6 +116,8 @@ async function main() {
 
   const server = createServer();
   server.prependListener('upgrade', (req, socket, head) => {
+    // WebSockets never come through the tunnel on this port (no live reload for remote visitors).
+    if (viaCloudflare(req.headers) || remote.owns(req.headers.host)) return void socket.destroy();
     handlePreviewUpgrade(req, socket, head, blockedPorts());
   });
 

@@ -57,7 +57,10 @@ anything.
   `docs/REMOTE-ACCESS.md`): loopback only, reached through the owner's own Cloudflare Tunnel, and
   every request needs the exact public Host, a valid Cloudflare Access token (`server/cfAccess.ts`),
   an allowlisted email and an authenticator-code session (`server/totp.ts`). Remote settings and
-  secrets are answered on this computer only. Never weaken any of the four checks or let that
+  secrets are answered on this computer only. The main loopback listener also hands the exact public
+  hostname to the same gate (`remote.owns` / `remote.serve` in `index.ts`) and refuses any other
+  request carrying Cloudflare headers (`viaCloudflare`), so a tunnel may point at the app's own
+  port; keep both, and never route that hostname to the local handler. Never weaken any of the four checks or let that
   listener bind anything but 127.0.0.1.
 - **Preview proxies (`server/preview.ts`, `server/previewHost.ts`):** `127.0.0.1` targets only, never this
   app's own ports, no redirects off the app. Path mode (`/api/preview/<port>/`, used over LAN and

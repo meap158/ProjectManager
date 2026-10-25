@@ -1,12 +1,13 @@
 import { generateKeyPairSync, sign, type JsonWebKey } from 'node:crypto';
-import { request } from 'node:http';
+import { createServer, request } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { getRequestListener } from '@hono/node-server';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { AccessVerifier, teamUrl } from './cfAccess.js';
 import { openDb } from './db.js';
 import { LAN_HEADER } from './lan.js';
-import { REMOTE_HEADER, RemoteAccess } from './remote.js';
+import { REMOTE_HEADER, RemoteAccess, viaCloudflare } from './remote.js';
 import { base32Decode, totpAt, totpStep } from './totp.js';
 
 // The remote gate: Host, Cloudflare Access token, email allowlist, then the authenticator code and
@@ -260,5 +261,50 @@ describe('remote access gate', () => {
       '{}',
     );
     expect(secrets.status).toBe(403);
+  });
+
+  it('claims only the exact public hostname, and only while switched on', async () => {
+    const t = await setup();
+    expect(t.remote.owns(hostname)).toBe(true);
+    expect(t.remote.owns(`${hostname}:5180`)).toBe(true);
+    expect(t.remote.owns(hostname.toUpperCase())).toBe(true);
+    for (const other of [
+      'localhost',
+      '127.0.0.1:5180',
+      `x.${hostname}`,
+      `${hostname}.evil.test`,
+      '',
+    ]) {
+      expect(t.remote.owns(other)).toBe(false);
+    }
+    expect(t.remote.owns(undefined)).toBe(false);
+    await t.remote.setEnabled(false);
+    expect(t.remote.owns(hostname)).toBe(false);
+  });
+
+  it('serves a request handed over by the main port through the same gate', async () => {
+    const t = await setup();
+    // Reached over the main port: no cookie, so the code page; with Access missing, a refusal.
+    const server = createServer((req, res) => t.remote.serve(req, res));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const mainPort = (server.address() as AddressInfo).port;
+    try {
+      const noAccess = await send(mainPort, 'GET', '/', { host: hostname });
+      expect(noAccess.status).toBe(403);
+      const noCode = await send(mainPort, 'GET', '/', t.headers());
+      expect(noCode.status).toBe(401);
+      const api = await send(mainPort, 'GET', '/api/projects', t.headers());
+      expect(api.status).toBe(401);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it('recognises requests that came through Cloudflare', () => {
+    expect(viaCloudflare({ 'cf-ray': 'abc-AMS' })).toBe(true);
+    expect(viaCloudflare({ 'cf-connecting-ip': '203.0.113.9' })).toBe(true);
+    expect(viaCloudflare({ 'cf-access-jwt-assertion': 'x' })).toBe(true);
+    expect(viaCloudflare({ host: 'localhost:5180', accept: '*/*' })).toBe(false);
   });
 });

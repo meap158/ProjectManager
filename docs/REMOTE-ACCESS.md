@@ -46,10 +46,19 @@ App side:
 2. **Set up authenticator**: scan the QR (drawn locally) or type the secret, then confirm with a code.
 3. **Turn on remote access.** The panel shows the loopback port, for example `127.0.0.1:5380`.
 4. Point the tunnel at it: in the tunnel's config, ingress `hostname: pm.example.com`,
-   `service: http://127.0.0.1:5380`. Run `cloudflared tunnel run projectmanager`.
+   `service: http://127.0.0.1:5180` (the app's own port) or the remote listener's port from the
+   panel (for example `5380`). Run `cloudflared tunnel run projectmanager`. Do not set an
+   `httpHostHeader` override: the public hostname must reach the app as sent.
 5. Open `https://pm.example.com`, pass the Access login, then type the authenticator code.
 
 The port is remembered across restarts (it starts from the app port + 200).
+
+**One port or two.** The main port answers the public hostname only through the same gate (Access
+token, email allowlist, authenticator code), so pointing the tunnel there is as strict as the
+separate listener, and it never moves. The main port also refuses any request carrying Cloudflare's
+headers under another Host (a rewritten Host would otherwise look like this computer), and takes no
+WebSocket from the tunnel. In development, Vite never sees the public hostname: the gate swaps it
+for `localhost` after the checks, so there is no `allowedHosts` entry to add.
 
 ## Not built
 

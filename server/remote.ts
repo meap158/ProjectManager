@@ -51,6 +51,16 @@ interface RemoteSettings {
 const EMPTY_CONFIG: RemoteConfig = { team: '', aud: '', hostname: '', emails: [] };
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
+/**
+ * Cloudflare adds these to every request it forwards. A request carrying one that reaches the main
+ * (local) listener has had its Host rewritten, so it must not be treated as this computer.
+ */
+export function viaCloudflare(headers: IncomingMessage['headers']): boolean {
+  return ['cf-ray', 'cf-connecting-ip', 'cf-access-jwt-assertion', 'cf-visitor'].some(
+    (name) => headers[name] !== undefined,
+  );
+}
+
 const HARDENING = {
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
@@ -169,6 +179,27 @@ export class RemoteAccess {
       missing: this.missing(s),
       error: this.error,
     };
+  }
+
+  /**
+   * Whether a request for this Host belongs to the remote gate. The main listener asks, so the tunnel
+   * can point at the app's own port: the public hostname is then answered ONLY through the gate
+   * (Access token, email allowlist, authenticator code), never as a local request.
+   */
+  owns(hostHeader: string | undefined): boolean {
+    const s = this.settings();
+    if (!s.enabled || this.missing(s).length > 0) return false;
+    return (hostHeader ?? '').replace(/:\d+$/, '').toLowerCase() === s.config.hostname;
+  }
+
+  /** Runs one request through the gate; client-sent markers never survive. */
+  serve(req: IncomingMessage, res: ServerResponse): void {
+    setHeader(req, LAN_HEADER, null);
+    setHeader(req, REMOTE_HEADER, null);
+    this.gate(req, res).catch((e: Error) => {
+      console.error('[remote]', e.message);
+      if (!res.headersSent) res.writeHead(500).end();
+    });
   }
 
   /** Saves the Cloudflare details. Any running listener restarts so it never serves stale ones. */
@@ -418,15 +449,7 @@ export class RemoteAccess {
   }
 
   private async listen(port: number): Promise<Server | null> {
-    const server = createServer((req, res) => {
-      // Never trust a client-sent marker.
-      setHeader(req, LAN_HEADER, null);
-      setHeader(req, REMOTE_HEADER, null);
-      this.gate(req, res).catch((e: Error) => {
-        console.error('[remote]', e.message);
-        if (!res.headersSent) res.writeHead(500).end();
-      });
-    });
+    const server = createServer((req, res) => this.serve(req, res));
     server.headersTimeout = 10_000;
     server.requestTimeout = 60_000;
     server.keepAliveTimeout = 65_000;
