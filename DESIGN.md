@@ -326,7 +326,8 @@ adjacent-pair CVD separation in both modes).
   with a coloured left edge per section, and it says what the session is ON: the question with its
   choices as buttons (the screen is re-read before sending, so a changed prompt is never answered),
   or the start of the unread reply with a Reply box. The title opens the session
-  (`/workspace?open=<id>`). Seen state is per browser (localStorage, keyed by session + your last
+  (`/workspace?open=<id>`) in the view last used: a pane in Panes, or its selected row with the
+  docked terminal in List, clearing list filters that would hide it. Seen state is per browser (localStorage, keyed by session + your last
   message, so the next turn comes back); seen rows dim. Times are shown only when they mean
   something (the reply's own time, the failed restart). 36px button; 44px buttons on touch. Phones
   (≤640px): the panel is a sheet under the top bar, the full width minus 8px gutters, choices fill

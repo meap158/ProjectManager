@@ -311,20 +311,26 @@ export function WorkspacePage() {
     }
   };
 
-  // `?open=<sessionId>` (from a Kanban card or the Agents tab) puts that session in a pane.
-  // Applied while rendering (React's "adjust state on prop change" pattern), then the param is
-  // cleared so a reload doesn't re-apply it.
+  // `?open=<sessionId>` (from a Kanban card, the Agents tab or the Inbox) shows that session in the
+  // view you last used: a pane in Panes, or its selected row with the terminal docked in List
+  // (filters that hide it are cleared). Applied while rendering (React's "adjust state on prop
+  // change" pattern), then the param is cleared so a reload doesn't re-apply it.
   const openParam = Number(params.get('open')) || null;
   const [handledOpen, setHandledOpen] = useState<number | null>(null);
+  const [revealSession, setRevealSession] = useState<number | null>(null);
   if (layout && openParam && openParam !== handledOpen) {
     setHandledOpen(openParam);
-    setLayout(placeSession(layout, openParam));
+    if (view === 'list') {
+      setSelectedWorkState(`session:${openParam}`);
+      setRevealSession(openParam);
+    } else setLayout(placeSession(layout, openParam));
   }
   useEffect(() => {
     if (!openParam || openParam !== handledOpen) return;
+    if (view === 'list') saveSelectedWork(`session:${openParam}`);
     setParams({}, { replace: true });
     loadSessions(); // The opened session may be newer than our last poll.
-  }, [openParam, handledOpen, setParams, loadSessions]);
+  }, [openParam, handledOpen, view, setParams, loadSessions]);
 
   const byId = useMemo(() => new Map((sessions ?? []).map((s) => [s.id, s])), [sessions]);
   const projectName = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
@@ -579,6 +585,8 @@ export function WorkspacePage() {
           projectName={projectName}
           selected={selectedWork}
           onSelect={setSelectedWork}
+          reveal={revealSession}
+          onRevealed={() => setRevealSession(null)}
           renderSession={(session, close, maximized, toggleMaximize, showContinue) => (
             // The same pane as the grid, docked under the list like VS Code's panel.
             <Pane
@@ -1355,7 +1363,12 @@ function WorkList({
   onRunDeleted,
   onOpenSession,
   onError,
+  reveal,
+  onRevealed,
 }: {
+  /** A session to bring into the list (opened from elsewhere): filters hiding it are cleared. */
+  reveal: number | null;
+  onRevealed: () => void;
   sessions: AgentSession[] | null;
   runs: AgentRun[] | null;
   now: number;
@@ -1452,6 +1465,17 @@ function WorkList({
   };
   const currentDock = () =>
     dockHeight ?? Math.round(dockPanel.current?.getBoundingClientRect().height ?? 400);
+  // A session opened from elsewhere must be visible: if the filters hide it, show everything.
+  useEffect(() => {
+    if (reveal === null || !sessions || !runs) return;
+    if (!sessions.some((s) => s.id === reveal)) return; // Not loaded yet; the next poll has it.
+    const shown = applyWorkFilters(mergeWork(sessions, runs), filters, now).some(
+      (w) => w.kind === 'session' && w.item.id === reveal,
+    );
+    if (!shown) setFilters(NO_FILTERS);
+    onRevealed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal, sessions, runs]);
   if (!sessions || !runs) return <div className="skeleton" style={{ flex: 1 }} />;
   const allItems = mergeWork(sessions, runs);
   const items = sortWork(applyWorkFilters(allItems, filters, now), sort, projectName);

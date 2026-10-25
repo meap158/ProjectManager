@@ -241,11 +241,16 @@ export function AgentWorkList({
 }) {
   const selectedRowRef = useRef<HTMLLIElement | null>(null);
 
+  // Scrolled to once per selection, as soon as its row exists: a row revealed later (filters cleared
+  // after the Inbox opened it) still comes into view, and polling never yanks the list back.
+  const scrolledTo = useRef<WorkKey | null>(null);
   useEffect(() => {
-    if (selected && selectedRowRef.current) {
+    if (!selected) scrolledTo.current = null;
+    else if (selected !== scrolledTo.current && selectedRowRef.current) {
+      scrolledTo.current = selected;
       selectedRowRef.current.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
     }
-  }, [selected]);
+  });
 
   // Next / previous session (Settings > Keyboard shortcuts; Ctrl+↓/↑ by default), also from the
   // open terminal.

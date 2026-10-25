@@ -167,6 +167,23 @@ describe('Agents workspace interactions', () => {
     );
   });
 
+  it('?open= in List selects that session and clears filters that hide it (Inbox)', async () => {
+    localStorage.setItem('pm.workspace.view', 'list');
+    localStorage.setItem('pm.workspace.listFilters', JSON.stringify({ query: 'Alpha' }));
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    vi.mocked(api.getWorkspace).mockResolvedValue({ preset: '1', panes: [null], maximized: null });
+    vi.mocked(api.listAllSessions).mockResolvedValue([session(1, 'Alpha'), session(2, 'Beta')]);
+    render(
+      <MemoryRouter initialEntries={['/workspace?open=2']}>
+        <WorkspacePage />
+      </MemoryRouter>,
+    );
+    const beta = await screen.findByRole('button', { name: 'Show Beta' });
+    await waitFor(() => expect(beta.getAttribute('aria-current')).toBe('true'));
+    expect(await screen.findByRole('textbox', { name: 'terminal input' })).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem('pm.workspace.listFilters')!).query).toBe('');
+  });
+
   it('brings a selected mobile list terminal into view and lets it maximise and close', async () => {
     localStorage.setItem('pm.workspace.view', 'list');
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
