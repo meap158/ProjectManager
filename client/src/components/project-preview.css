@@ -1,0 +1,337 @@
+/* Preview page (PM-253): a list of apps beside the viewer, like the Files tab. Compact on
+   purpose: rows are one line, text is the app toolbar size, and the page is full width. */
+.project-preview {
+  display: grid;
+  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.preview-list-panel,
+.preview-view-panel {
+  min-width: 0;
+}
+.preview-list-panel {
+  position: sticky;
+  top: 8px;
+  max-height: calc(100dvh - 76px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px;
+}
+.preview-view-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.preview-group + .preview-group {
+  margin-top: 8px;
+}
+/* Sort and refresh sit on one row above the groups. */
+.preview-list-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.preview-list-tools > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.preview-refresh {
+  flex: none;
+  width: 26px;
+}
+.preview-refresh.is-spinning svg {
+  animation: preview-spin 0.8s linear infinite;
+}
+@keyframes preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .preview-refresh.is-spinning svg {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+/* Section headings fold their rows (a real button, so keyboard and screen readers work). */
+.preview-group-title {
+  margin: 0;
+}
+.preview-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+}
+.preview-group-head:hover {
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+.preview-chevron {
+  flex: none;
+  width: 10px;
+  transition: transform 120ms;
+}
+.preview-group-head[aria-expanded='true'] .preview-chevron {
+  transform: rotate(90deg);
+}
+.preview-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-group-count {
+  flex: none;
+  font-weight: 500;
+}
+@media (pointer: coarse) {
+  .preview-group-head {
+    min-height: 36px;
+    font-size: 11.5px;
+  }
+  .preview-refresh {
+    width: 40px;
+    height: 40px;
+  }
+}
+.preview-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.preview-rows li {
+  min-width: 0;
+}
+.preview-saved {
+  display: flex;
+  align-items: center;
+}
+.preview-row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.preview-row:hover {
+  background: var(--surface-hover);
+}
+.preview-row.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.preview-icon {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.preview-icon-fallback,
+.preview-icon-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+}
+.preview-icon-fallback {
+  display: grid;
+  place-items: center;
+  background: var(--surface-hover);
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 650;
+}
+.preview-icon-img {
+  object-fit: contain;
+  opacity: 0;
+}
+.preview-icon-img.is-loaded {
+  opacity: 1;
+}
+/* Name on the left, port on the right, on one line. */
+.preview-row-text {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.preview-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+.preview-row-sub {
+  flex: none;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.preview-saved .btn-icon {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+.preview-empty,
+.preview-hint {
+  margin: 0;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+/* Same 32px height and 13px text as the other toolbars (DESIGN.md). */
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.preview-bar .btn {
+  flex: none;
+  font-size: 13px;
+}
+.preview-back {
+  display: none;
+}
+.preview-address {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  font-size: 13px;
+}
+/* The stage is the themed surface the page sits on, so the viewer follows the selected theme
+   while a page loads and wherever the page leaves its background unpainted. */
+.preview-stage {
+  position: relative;
+  height: calc(100dvh - 124px);
+  min-height: 320px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.preview-stage:has(.preview-hint) {
+  height: auto;
+  min-height: 0;
+  border-style: dashed;
+}
+.preview-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+/* The loader sits in the exact centre of the viewer, over the frame until it has loaded. */
+.preview-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center; /* the mark itself is dead centre */
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
+}
+/* The caption hangs under the mark (56px tall, so 28px to its edge) without moving it. */
+.preview-loading > span:last-child {
+  position: absolute;
+  top: calc(50% + 28px + 12px);
+  left: 0;
+  right: 0;
+  padding: 0 12px;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .project-preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .preview-list-panel {
+    position: static;
+    max-height: none;
+  }
+  /* Address row first, then the list, so a long list never pushes it off screen. */
+  .preview-view-panel {
+    order: -1;
+  }
+  .project-preview {
+    display: flex;
+    flex-direction: column;
+  }
+  /* The list or the viewer, one at a time; the back button returns to the list. */
+  .project-preview.has-target .preview-list-panel,
+  .project-preview:not(.has-target) .preview-hint {
+    display: none;
+  }
+  .preview-back {
+    display: inline-flex;
+  }
+  .project-preview:not(.has-target) .preview-back {
+    display: none;
+  }
+  /* Top bar + address row + tab bar (and the home-bar inset) are the only chrome left. */
+  .preview-stage {
+    height: calc(100dvh - 52px - 44px - var(--tabbar-h) - var(--safe-bottom, 0px) - 24px);
+    min-height: 280px;
+  }
+  /* Room for the buttons: icons and the address share one row. */
+  .preview-bar {
+    gap: 4px;
+  }
+  .preview-bar .btn {
+    padding: 0 8px;
+  }
+}
+@media (pointer: coarse) {
+  .preview-row {
+    min-height: 44px;
+    padding: 6px 8px;
+    font-size: 14px;
+  }
+  .preview-icon {
+    width: 22px;
+    height: 22px;
+  }
+  .preview-saved .btn-icon {
+    width: 40px;
+    height: 40px;
+  }
+  /* 16px in a field stops iPhone zooming in on focus; the shared touch rules size the height. */
+  .preview-address {
+    font-size: 16px;
+  }
+}

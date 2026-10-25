@@ -319,6 +319,10 @@ code,
   flex-direction: column;
   gap: 14px;
 }
+/* Pages that want the whole width (Preview): no centred 1280px column. */
+.page.page-wide {
+  max-width: none;
+}
 
 /* ---- App shell + sidebar ------------------------------------------------------------------ */
 /* Shell fills the viewport below the topbar; .sidebar and .app-main scroll
@@ -1080,6 +1084,14 @@ a.t:hover {
 .input {
   height: 32px;
   padding: 0 10px;
+}
+/* A type=search box keeps the same 32px box and border as every other .input. */
+.input[type='search'] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
 }
 .input::placeholder,
 .textarea::placeholder {

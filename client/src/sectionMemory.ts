@@ -11,7 +11,7 @@ const SCROLL_KEY = 'pm-section-scroll';
 /** The nav section an address belongs to; null for addresses outside the nav (project pages). */
 export function sectionOf(pathname: string): string | null {
   if (pathname === '/') return '/';
-  for (const section of ['/board', '/workspace', '/orchestrators', '/settings']) {
+  for (const section of ['/board', '/workspace', '/preview', '/orchestrators', '/settings']) {
     if (pathname === section || pathname.startsWith(`${section}/`)) return section;
   }
   return null;

@@ -418,6 +418,10 @@ export function WorkspacePage() {
         <Link className="btn btn-sm workspace-orchestrator-link" to="/orchestrators">
           Orchestrators
         </Link>
+        {/* Same slot and rules: the phone tab bar has no Preview entry either. */}
+        <Link className="btn btn-sm workspace-orchestrator-link" to="/preview">
+          Preview
+        </Link>
         <div className="bar-group">
           <span className="bar-label" id="ws-view-label">
             View

@@ -3,7 +3,15 @@
 Goal: from any screen, including a phone on the LAN or the remote listener, open the apps an agent
 is running on this computer's `localhost` ports, next to the sessions.
 
-Status: design only. Nothing here is built yet.
+Status: phase 1 is built (PM-253). `server/preview.ts` is a GET and HEAD only proxy to loopback ports
+at `/api/preview/<port>/...`. `server/localPorts.ts` detects listening apps (netstat on Windows,
+lsof elsewhere), attributes them to a project by command line, and reads each app's page title and
+icon. The **Preview** page (top bar; on phones the Agents tools menu) lists them beside a sandboxed iframe,
+with saved quick launches. It is a global page on purpose: a dev server is not owned by one project,
+and phones and the remote listener reach it the same way. Not built yet: WebSocket proxying (HMR will
+not live-reload), the separate-origin phase 2. A page that builds root-absolute URLs in JavaScript
+still misses the proxy. The proxied address must never be opened as a top-level tab (it would run as
+this app's origin).
 
 ## The security problem comes first
 
@@ -45,6 +53,13 @@ port>/` is a different origin from `localhost`. Add those names to the Host allo
    the loopback listener. Not available through LAN or remote (single Host), where phase 1 applies.
 5. **Audit**: log each preview port opened (`[preview]` prefix), and show the active target in the
    address bar so it is obvious what is being displayed.
+
+## Theme
+
+The viewer's surface, border and loading mark follow the selected theme. The previewed page is the
+app's own: it can only go dark if it reads `prefers-color-scheme` (which follows the browser or
+operating system, not ProjectManager's theme switch) or has its own switch. Forcing a theme onto an
+arbitrary page would mean rewriting its CSS, which the proxy deliberately does not do.
 
 ## Out of scope for the first cut
 

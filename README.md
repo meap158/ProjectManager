@@ -355,7 +355,7 @@ email allowlist and an authenticator code in front of it: see
 **Next**
 
 - [ ] Project file tree with a VS Code-style explorer and Markdown/HTML preview (PM-252)
-- [ ] Built-in browser to reach `localhost` apps, also when working remotely (PM-253)
+- [ ] Built-in browser: the read-only **Preview** page now lists running `localhost` apps with their icons and quick launches, also remotely; live reload is next (PM-253)
 - [ ] More agent options, such as OpenCode with other models and Cline (PM-212)
 - [ ] Ideas from terminal agent managers: agent state, inbox, hooks (PM-211)
 

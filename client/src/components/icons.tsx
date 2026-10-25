@@ -236,6 +236,16 @@ export function MonitorIcon(props: IconProps) {
   );
 }
 
+/** Two arrows chasing round: refresh / reload. */
+export function RefreshIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
+      <path d="M13.5 2.5v3h-3" />
+    </Base>
+  );
+}
+
 /** Info badge: circle with "i". */
 export function InfoIcon(props: IconProps) {
   return (

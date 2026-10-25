@@ -1,0 +1,79 @@
+/* The animated logo (LoadingMark). Pure CSS, theme tokens only, no script. */
+.loading-mark {
+  display: inline-block;
+  flex: none;
+}
+.loading-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.loading-mark-tile {
+  fill: var(--accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: loading-mark-breathe 1.8s ease-in-out infinite;
+}
+.loading-mark-bar {
+  fill: var(--accent-text);
+  /* Grow from the baseline, like columns filling up. */
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: loading-mark-rise 1.8s ease-in-out infinite;
+}
+/* Staggered with negative delays, so every bar is already mid-animation on the first paint
+   instead of flashing in from its resting style. */
+.loading-mark-bar:nth-of-type(2) {
+  animation-delay: -1.5s;
+}
+.loading-mark-bar:nth-of-type(3) {
+  animation-delay: -1.2s;
+}
+.loading-mark-bar:nth-of-type(4) {
+  animation-delay: -0.9s;
+}
+@keyframes loading-mark-rise {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+    opacity: 0.55;
+  }
+  45% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  70% {
+    transform: scaleY(0.85);
+    opacity: 0.9;
+  }
+}
+@keyframes loading-mark-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+/* Reduced motion, not no motion: nothing changes size or position, the light just breathes slowly.
+   A frozen loading mark looks like a hung request. */
+@media (prefers-reduced-motion: reduce) {
+  .loading-mark-tile {
+    animation: none;
+  }
+  .loading-mark-bar {
+    transform: none;
+    animation: loading-mark-glow 3.2s ease-in-out infinite;
+  }
+}
+@keyframes loading-mark-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}

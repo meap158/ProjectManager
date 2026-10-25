@@ -15,25 +15,26 @@ anything.
 
 ## Architecture map
 
-| Path                      | What lives there                                                                  |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| `scripts/launch.mjs`      | One-command launcher: prerequisite checks, free-port search, process-tree cleanup |
-| `server/index.ts`         | HTTP bootstrap. Dev: Vite middleware on the same port. Prod: serves `dist/client` |
-| `server/app.ts`           | Hono API (`/api/*`), validation (zod), security middleware                        |
-| `server/store.ts`         | All project/card SQL. Routes never touch the DB directly                          |
-| `server/db.ts`            | `node:sqlite` connection + **append-only** migrations (`PRAGMA user_version`)     |
-| `server/boardMcp.ts`      | Scoped agent board tools, process config injection and audit records              |
-| `scripts/board-mcp.mjs`   | MCP stdio bridge to the live local server                                         |
-| `server/pullRequests.ts`  | gh-backed pull requests for a project: list, mergeability, and PR actions         |
-| `server/ghAccount.ts`     | Which gh account a project acts as (repo owner's login, via per-call GH_TOKEN)    |
-| `server/gitIdentity.ts`   | Per-project commit author + gh account injected into agent env only (PM-186)      |
-| `server/scanner.ts`       | Background scans; cards auto-move from commits, branches and PRs (no agent)       |
-| `server/analysis/*`       | Pure-ish analysis: line counter, languages, file listing, disk walk, git, scc     |
-| `server/agents/*`         | AI agent providers, run/session supervisor, agent API routes                      |
-| `shared/types.ts`         | Types shared by API and client. Change both sides together                        |
-| `client/src/pages/*`      | Route-level views                                                                 |
-| `client/src/components/*` | App components. `components/ui/` holds Rare UI (shadcn registry) copies           |
-| `client/src/styles.css`   | Design tokens + component CSS (see DESIGN.md)                                     |
+| Path                      | What lives there                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| `scripts/launch.mjs`      | One-command launcher: prerequisite checks, free-port search, process-tree cleanup   |
+| `server/index.ts`         | HTTP bootstrap. Dev: Vite middleware on the same port. Prod: serves `dist/client`   |
+| `server/app.ts`           | Hono API (`/api/*`), validation (zod), security middleware                          |
+| `server/store.ts`         | All project/card SQL. Routes never touch the DB directly                            |
+| `server/db.ts`            | `node:sqlite` connection + **append-only** migrations (`PRAGMA user_version`)       |
+| `server/boardMcp.ts`      | Scoped agent board tools, process config injection and audit records                |
+| `scripts/board-mcp.mjs`   | MCP stdio bridge to the live local server                                           |
+| `server/pullRequests.ts`  | gh-backed pull requests for a project: list, mergeability, and PR actions           |
+| `server/ghAccount.ts`     | Which gh account a project acts as (repo owner's login, via per-call GH_TOKEN)      |
+| `server/gitIdentity.ts`   | Per-project commit author + gh account injected into agent env only (PM-186)        |
+| `server/preview.ts`       | Built-in browser proxy: read-only, loopback ports only (`docs/BUILT-IN-BROWSER.md`) |
+| `server/scanner.ts`       | Background scans; cards auto-move from commits, branches and PRs (no agent)         |
+| `server/analysis/*`       | Pure-ish analysis: line counter, languages, file listing, disk walk, git, scc       |
+| `server/agents/*`         | AI agent providers, run/session supervisor, agent API routes                        |
+| `shared/types.ts`         | Types shared by API and client. Change both sides together                          |
+| `client/src/pages/*`      | Route-level views                                                                   |
+| `client/src/components/*` | App components. `components/ui/` holds Rare UI (shadcn registry) copies             |
+| `client/src/styles.css`   | Design tokens + component CSS (see DESIGN.md)                                       |
 
 ## Conventions
 
@@ -56,6 +57,9 @@ anything.
   an allowlisted email and an authenticator-code session (`server/totp.ts`). Remote settings and
   secrets are answered on this computer only. Never weaken any of the four checks or let that
   listener bind anything but 127.0.0.1.
+- **Preview proxy (`server/preview.ts`):** GET/HEAD only, `127.0.0.1` targets only, never this app's
+  own ports, no cookies either way, and the client shows it in a sandboxed iframe **without**
+  `allow-same-origin`. Never open `/api/preview/*` as a top-level page: it would run as this origin.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
   the user explicitly starts may change project files. The one other exception is a pull request
   action the user confirms in the Pull requests tab: it may delete the PR's _local_ branch, and only

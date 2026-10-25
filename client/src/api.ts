@@ -10,6 +10,8 @@ import type {
 } from '../../shared/orchestrator';
 import type {
   AgentAutonomy,
+  LocalApp,
+  PreviewLaunch,
   ChatItem,
   AgentInstall,
   AgentOutput,
@@ -313,6 +315,12 @@ export const api = {
   projectRawUrl: (id: number, path: string) =>
     `/api/projects/${id}/raw?path=${encodeURIComponent(path)}`,
   /** Keyboard shortcuts changed from their defaults (PM-244). */
+  /** Preview (PM-253): apps listening on this computer, and the saved quick launches. */
+  localApps: (fresh = false) =>
+    request<{ apps: LocalApp[] }>('GET', fresh ? '/local-apps?fresh=1' : '/local-apps'),
+  previewLaunches: () => request<{ launches: PreviewLaunch[] }>('GET', '/preview-launches'),
+  savePreviewLaunches: (launches: PreviewLaunch[]) =>
+    request<{ launches: PreviewLaunch[] }>('PUT', '/preview-launches', { launches }),
   getShortcuts: () => request<{ overrides: ShortcutOverrides }>('GET', '/preferences/shortcuts'),
   saveShortcuts: (overrides: ShortcutOverrides) =>
     request<{ overrides: ShortcutOverrides }>('PUT', '/preferences/shortcuts', { overrides }),

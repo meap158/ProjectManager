@@ -296,6 +296,34 @@ adjacent-pair CVD separation in both modes).
   `.btn-danger`, plus `.btn-sm` and `.btn-icon` sizes. Height is 32px (26px for small).
 - **Inputs:** `.input` (32px, same height as `.btn`) and `.textarea`, each wrapped in `.field` with a
   visible `<label>`. They share the dropdown trigger's border, hover and accent focus ring.
+- **Input + button rows (Files filter, Preview address bar, any toolbar with a text box):** the
+  buttons beside a `.input` are full `.btn` (32px), never `.btn-sm` (26px), so the row is one
+  height and the text lines up; `align-items: center`, input `flex: 1; width: auto; min-width: 0`
+  and buttons `flex: none`. Placeholders are short enough not to clip in a 240px panel
+  ("Filter files…"). The address input is 16px text so iPhone doesn't zoom on focus; on touch the
+  shared rules raise both to 40px together. A `type="search"` input keeps the `.input` box (native
+  search styling is turned off).
+- **Preview page (`/preview`):** the Files tab pattern, full width (`.page-wide`, no centred 1280px
+  column) and without a visible page header. A list panel (190-230px, sticky) beside the viewer.
+  Its first row is the shared compact `Dropdown` for sort (Port, Name A-Z / Z-A, Project) and a
+  26px refresh icon button (40px on touch) that reads the machine now and spins while it works;
+  the list also refreshes every 5 s while the page is visible and stops in a background tab.
+  Sections ("Your projects", "Other apps on this computer", "Quick launches") fold from a real
+  heading button with `aria-expanded` and a row count. "Other apps" starts closed (mostly system
+  services) unless nothing belongs to a project; what the person folds or sorts is remembered per
+  browser. Rows are one line: the app's own 18px icon (a lettered tile until it loads or when it
+  has none), its page title, and `:port` on the right; the project and command are in the tooltip.
+  Text is 13px, the address input and its Go, Reload and Save buttons are 13px and 32px tall (16px
+  in the field only on touch, to stop iPhone zoom). Under 769px the address row comes first, then
+  the list or the viewer, with an "Apps" back button like Files. Phones reach Preview from the
+  Agents tools menu beside Orchestrators, not the bottom bar.
+- **Loading mark (`LoadingMark`, after TrendRelay):** the ProjectManager logo animated as a wait
+  indicator: the three board columns rise in turn on the accent tile. Pure CSS on an inline SVG,
+  theme tokens only, no script or timer. It is decorative (`aria-hidden`); the caption beside it
+  sits in a `role="status"` region. Reduced motion slows it to a gentle glow instead of freezing
+  it. The Preview viewer shows it dead centre over the themed stage (the mark itself is centred,
+  the caption hangs below it) until the frame reports it has loaded. The stage uses `--surface`
+  and `--border`, so the viewer follows the selected theme; the page inside brings its own colours.
 - **Dropdowns:** always the shared `Dropdown` atom (`components/Dropdown.tsx`), never a native
   `<select>`: its OS rendering breaks the design language. In forms (`.field`, `.dispatch-row`,
   `.session-form-row`) the trigger grows to 32px at normal weight to match the text boxes beside it;

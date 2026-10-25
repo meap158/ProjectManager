@@ -17,7 +17,8 @@ export function MobileTabBar({
 }) {
   const { pathname } = useLocation();
   const onProject = pathname.startsWith('/projects/');
-  const onOrchestrators = pathname.startsWith('/orchestrators');
+  // Orchestrators and Preview live under Agents on phones, reached from its tools menu.
+  const onAgentsTools = pathname.startsWith('/orchestrators') || pathname.startsWith('/preview');
   // While the project panel covers the page, it is the active tab, not the route underneath.
   const routeClass = ({ isActive }: { isActive: boolean }) =>
     isActive && !projectsOpen ? 'is-active' : '';
@@ -44,7 +45,7 @@ export function MobileTabBar({
       <NavLink
         to={sectionHref('/workspace')}
         // Orchestrators live under Agents on phones (reached from its tools menu, PM-71).
-        className={({ isActive }) => routeClass({ isActive: isActive || onOrchestrators })}
+        className={({ isActive }) => routeClass({ isActive: isActive || onAgentsTools })}
       >
         <TerminalIcon size={20} />
         <span>Agents</span>

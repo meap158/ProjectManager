@@ -4,7 +4,7 @@ import { MobileTabBar } from './components/MobileTabBar';
 import { sectionHref, useSectionMemory } from './sectionMemory';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ThemeSwitch } from './components/ThemeSwitch';
-import { BoardIcon, GridIcon, SettingsIcon, TerminalIcon } from './components/icons';
+import { BoardIcon, GridIcon, MonitorIcon, SettingsIcon, TerminalIcon } from './components/icons';
 import { RememberLastPage } from './lastPage';
 import { useProjectPanel } from './projectPanel';
 import { installShortcuts, loadShortcuts } from './shortcuts';
@@ -21,6 +21,9 @@ const WorkspacePage = lazy(() =>
 );
 const OrchestratorPage = lazy(() =>
   import('./pages/OrchestratorPage').then((m) => ({ default: m.OrchestratorPage })),
+);
+const PreviewPage = lazy(() =>
+  import('./pages/PreviewPage').then((m) => ({ default: m.PreviewPage })),
 );
 const SettingsPage = lazy(() =>
   import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })),
@@ -79,6 +82,14 @@ export function App() {
             <BoardIcon />
             <span>Orchestrators</span>
           </NavLink>
+          <NavLink
+            to={sectionHref('/preview')}
+            aria-label="Preview"
+            className={({ isActive }) => (isActive ? 'is-active' : '')}
+          >
+            <MonitorIcon />
+            <span>Preview</span>
+          </NavLink>
         </nav>
         <div className="topbar-right">
           <ThemeSwitch />
@@ -109,6 +120,7 @@ export function App() {
               <Route path="/board" element={<BoardPage />} />
               <Route path="/projects/:id" element={<ProjectPage />} />
               <Route path="/workspace" element={<WorkspacePage />} />
+              <Route path="/preview" element={<PreviewPage />} />
               <Route path="/orchestrators" element={<OrchestratorPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route
