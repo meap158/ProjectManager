@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { PR_MERGE_METHODS } from '../../../shared/types';
 import type {
   PullRequest,
@@ -67,10 +67,26 @@ function reviewText(decision: string | null): string {
   return decision ? decision.toLowerCase().replaceAll('_', ' ') : 'Awaiting review';
 }
 
+/**
+ * The last list fetched per project and Open/Closed, for this page session. GitHub takes about a
+ * second to answer, so a revisit shows the last list at once ("Fetched … ago", the Refresh button
+ * reading "Loading…") while a fresh one loads; actions always reload. Failed loads aren't kept.
+ */
+const lastLists = new Map<string, PullRequestsResult>();
+const listKey = (projectId: number, state: PullRequestListState) => `${projectId}:${state}`;
+
 export function PullRequestsPanel({ projectId, visible }: { projectId: number; visible: boolean }) {
   const [listState, setListState] = useState<PullRequestListState>('open');
-  const [result, setResult] = useState<PullRequestsResult | null>(null);
-  const [busy, setBusy] = useState(false);
+  // The list loaded in this visit, tagged with what it is a list of. Until the current project and
+  // state have one, the remembered list stands in (and the panel says it is updating).
+  const [loaded, setLoaded] = useState<{ key: string; value: PullRequestsResult | null } | null>(
+    null,
+  );
+  const key = listKey(projectId, listState);
+  const fresh = loaded?.key === key;
+  const result = fresh ? loaded.value : (lastLists.get(key) ?? null);
+  const [busyState, setBusy] = useState(false);
+  const busy = busyState || (visible && !fresh && result !== null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -80,17 +96,27 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
         .pullRequests(projectId, state)
         .then(
           (next) => {
-            setResult(next);
+            const k = listKey(projectId, state);
+            if (!next.error) lastLists.set(k, next);
+            setLoaded({ key: k, value: next });
             setError(null);
           },
-          (e: Error) => setError(e.message),
+          (e: Error) => {
+            const k = listKey(projectId, state);
+            setLoaded({ key: k, value: lastLists.get(k) ?? null });
+            setError(e.message);
+          },
         )
         .finally(() => setBusy(false)),
     [projectId],
   );
+  // Each list is fetched once per visit, even when a remembered one is already showing.
+  const fetched = useRef<string | null>(null);
   useEffect(() => {
-    if (visible && !result) void load(listState);
-  }, [visible, result, load, listState]);
+    if (!visible || fetched.current === key) return;
+    fetched.current = key;
+    void load(listState);
+  }, [visible, key, listState, load]);
 
   // Every action refreshes the list, so rows show GitHub's state rather than a guess. Errors
   // propagate to the row's action box, which shows gh's message inline.
@@ -126,7 +152,6 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
                 onClick={() => {
                   if (state === listState) return;
                   setListState(state);
-                  setResult(null);
                   setError(null);
                   setExpanded(null);
                   setMessage(null);
@@ -215,6 +240,7 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
         {result && (
           <p className="faint">
             Up to 100 {plural} · Fetched {formatRelative(result.fetchedAt)}
+            {busy && ' · updating…'}
           </p>
         )}
       </div>

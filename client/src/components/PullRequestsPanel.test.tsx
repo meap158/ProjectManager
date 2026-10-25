@@ -195,3 +195,21 @@ it('sets the commit author agents use in this project (PM-186)', async () => {
   await waitFor(() => expect(api.setGitIdentity).toHaveBeenCalledWith(4, 'Ada', 'ada@example.com'));
   expect(await screen.findByText('Ada <ada@example.com>')).toBeDefined();
 });
+
+it('shows the last list at once on a revisit, marked as updating, until GitHub answers', async () => {
+  vi.mocked(api.pullRequests).mockResolvedValueOnce(result([pr({ title: 'First answer' })]));
+  render(<PullRequestsPanel projectId={777} visible />);
+  await screen.findByText(/First answer/);
+  cleanup();
+
+  let answer: (value: PullRequestsResult) => void = () => undefined;
+  vi.mocked(api.pullRequests).mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  render(<PullRequestsPanel projectId={777} visible />);
+  // Before GitHub answers: the remembered list, said to be updating.
+  expect(screen.getByText(/First answer/)).toBeTruthy();
+  expect(screen.getByText(/updating…/)).toBeTruthy();
+  answer(result([pr({ title: 'Second answer' })]));
+  await screen.findByText(/Second answer/);
+  expect(screen.queryByText(/First answer/)).toBeNull();
+  expect(screen.queryByText(/updating…/)).toBeNull();
+});

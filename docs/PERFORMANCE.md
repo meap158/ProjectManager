@@ -138,14 +138,18 @@ in a focused browser window (automated tabs throttle animation frames).
     (6.7 ms), and recovered-quota checks read the logins once per tick (`4cf95a2`).
 12. **Board Done column** draws its newest 40 cards until "Show older" (41 -> 17 ms to draw the
     board, half the page elements).
+13. **Pull requests: stale-while-revalidate.** GitHub answers in about a second (`gh pr list` and
+    repo settings, in parallel), and that can't be made faster here. A revisit in the same page
+    session shows the last list at once, with "updating…" beside "Fetched … ago" and the Refresh
+    button reading "Loading…", and the fresh list replaces it when it arrives; actions always
+    reload and failed loads aren't remembered. Leaving the project and coming back: 1,027 ms ->
+    12 ms to a list on screen.
 
 ### Checked and left as is
 
 - Visual effects: no `transition: all`; hover effects and transitions are unchanged. The other
   endless animations (loading mark, chat pulse, idle blink, spinners) already animate `opacity` or
   `transform`; the only blur is the image lightbox backdrop.
-- Pull requests are network-bound (`gh pr list` + repo settings, in parallel, token cached).
-  Caching them would show stale state after merges made elsewhere.
 
 - Compression: JSON responses were already gzipped (`hono/compress`), LAN/remote visitors already
   get a production bundle, and hashed assets are cached for a year.
