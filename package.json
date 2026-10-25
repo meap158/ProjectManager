@@ -12,6 +12,7 @@
   },
   "scripts": {
     "launch": "node scripts/launch.mjs",
+    "owner:pages": "node scripts/owner-pages.mjs",
     "dev": "node scripts/launch.mjs",
     "build": "node scripts/build.mjs",
     "start": "node scripts/launch.mjs --prod",

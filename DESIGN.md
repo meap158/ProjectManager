@@ -303,6 +303,7 @@ adjacent-pair CVD separation in both modes).
   ("Filter files…"). The address input is 16px text so iPhone doesn't zoom on focus; on touch the
   shared rules raise both to 40px together. A `type="search"` input keeps the `.input` box (native
   search styling is turned off).
+- **Owner Pages (`scripts/owner-pages.mjs`, PM-258):** the pages the owner reads, built from the same tokens as the app (`--bg`, `--surface`, `--accent`, `--danger`, `--good`, radii and the system font stack, copied from `client/src/styles.css`, so keep the two in step) in both themes through one shell: a sticky top bar with the page links and a Theme button (the choice is kept in this browser and set before first paint), one centred column of at most 920px, cards on `--surface` with a 1px `--border`. The Owner desk shows four summary tiles (Pending, Blocked, Completed, Blocking the agent, the last in `--danger` when above zero), filters for status, priority, category and text, and one card per task: blocking ones get a `--danger` border, Completed ones a green status chip and an evidence block. Owners tick tasks on the page; ticks are saved in this browser only and the page says so. Pages work from the filesystem with no server and no external requests.
 - **Context menu (`ContextMenu`, shared by the Preview tabs and the Files tree):** a real
   `role="menu"` (arrow keys, Home and End, Escape or Tab close, focus on the first enabled item and back
   on the trigger), closed by an outside click, a window blur or a resize. It is measured before paint
