@@ -222,27 +222,35 @@ interface PageMeta {
    * needed for that (many dev pages have none, and some use an inline one). */
   web: boolean;
 }
-const metaCache = new Map<number, PageMeta & { at: number }>();
+const metaCache = new Map<number, PageMeta & { at: number; failed?: boolean }>();
 const META_MS = 30_000;
+/** A slow or failed answer is asked again after this, not after META_MS. */
+const META_RETRY_MS = 5_000;
+/** Headers may take a while on a dev server's first request; the body is only read at its start. */
+const PAGE_MS = 5_000;
+const PAGE_BYTES = 64 * 1024;
 
 /** Asks the app for "/" briefly, then checks that its icon exists. Apps that do not speak HTML
  * (APIs, databases) just have no title or icon, which is what marks them as back ends. */
 async function pageMeta(port: number): Promise<PageMeta> {
   const hit = metaCache.get(port);
-  if (hit && Date.now() - hit.at < META_MS) return hit;
+  if (hit && Date.now() - hit.at < (hit.failed ? META_RETRY_MS : META_MS)) return hit;
   let meta: PageMeta = { title: null, icon: null, web: false };
+  let failed = false;
   try {
+    // A dev server compiles on its first request, so headers get a generous wait; only the start
+    // of the page is read (never a whole multi-hundred-KB document), and then the rest is dropped.
     const res = await fetch(`http://127.0.0.1:${port}/`, {
       redirect: 'manual',
       headers: { accept: 'text/html' },
-      signal: AbortSignal.timeout(1_500),
+      signal: AbortSignal.timeout(PAGE_MS),
     });
     if (
       res.status >= 200 &&
       res.status < 300 &&
       /^text\/html\b/i.test(res.headers.get('content-type') ?? '')
     ) {
-      const html = await res.text();
+      const html = await readStart(res, PAGE_BYTES);
       const found = readPageMeta(html, port);
       // A back end can answer "/" with an HTML content type and an empty body; that is no page.
       if (looksLikePage(html)) {
@@ -250,10 +258,33 @@ async function pageMeta(port: number): Promise<PageMeta> {
       }
     }
   } catch {
-    // Not an HTTP app, or too slow: the list still shows the port.
+    // Not an HTTP app, or too slow. Slow is not the same as "not a web app": remember what was
+    // known before instead of demoting an app to a service for one slow answer, and ask again soon.
+    failed = true;
+    if (hit && !hit.failed) meta = { title: hit.title, icon: hit.icon, web: hit.web };
   }
-  metaCache.set(port, { at: Date.now(), ...meta });
+  metaCache.set(port, { at: Date.now(), failed, ...meta });
   return meta;
+}
+
+/** The first `max` bytes of a response as text, then the stream is cancelled. */
+async function readStart(res: Response, max: number): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) return '';
+  const decoder = new TextDecoder();
+  let text = '';
+  let bytes = 0;
+  try {
+    while (bytes < max) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return text;
 }
 
 /** The declared icon if it really is an image, else the conventional places, in order. */
