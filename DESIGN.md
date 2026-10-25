@@ -162,6 +162,11 @@ a populated pane.
   count sits in the All projects link's subtitle ("Portfolio · 23 projects", "11 of 23 shown"
   while filtering), not in a footer row of its own (PM-43). Polls every 2s while any scan runs, otherwise every 10s,
   and never replaces populated rows with skeletons (KDP populated-pane rule).
+  A project whose web app is running (Preview's detection: a port answering with HTML, started
+  from that project's folder) gets a 13px globe in `--good` beside its name, labelled "App
+  running: localhost:3000". Icon only and only when something runs, so idle rows and the 150px
+  tablet chips lose no width; the row stays one link (the globe is not a nested control). Polled
+  every 15s, paused while the tab is hidden.
 - **Sorter (KDP Library sorter):** modes Name / Recent commit / Lines of code, each with a
   natural direction (A–Z, newest first, most code first). Re-selecting the active mode flips
   its direction; switching modes restarts from the new mode's natural direction. The trigger

@@ -659,6 +659,14 @@ code,
   gap: 8px;
   min-width: 0;
 }
+/* A web app from this project is running (Preview's detection): a small globe beside the name,
+   in the "live" colour, with the address in its label. Icon only, so it fits the tablet chips. */
+.sidebar-live {
+  flex: none;
+  display: inline-flex;
+  color: var(--good, #0ca30c);
+  margin-left: -4px;
+}
 /* Session count: always the last slot, right-aligned, same width on every row. */
 .sidebar-session-slot {
   flex: none;

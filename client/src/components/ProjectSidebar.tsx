@@ -1,18 +1,20 @@
 import { Fragment, Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router';
-import type { AgentSession, ProjectSummary } from '../../../shared/types';
+import type { AgentSession, LocalApp, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { formatCompact, formatRelative } from '../format';
 import { useProjectHref } from '../projectTabs';
 import { sessionActivity } from '../sessionActivity';
 import { applyCustomOrder, mergeVisibleOrder, moveBefore, moveBy } from '../projectOrder';
 import { PlanUsage } from './PlanUsage';
+import { navigateProjectPane } from '../projectPaneNavigation';
+import { serialPoll } from '../lib/serialPoll';
+import { GlobeIcon } from './icons';
 
 // Opened from the + button only: loaded on first use, not with every page.
 const AddProjectDialog = lazy(() =>
   import('./AddProjectDialog').then((m) => ({ default: m.AddProjectDialog })),
 );
-import { navigateProjectPane } from '../projectPaneNavigation';
 
 // Sorter modelled on the KDP Publishing Pipeline Library sorter: each mode has
 // a natural direction, re-selecting the active mode flips it, switching modes
@@ -125,6 +127,8 @@ export function ProjectSidebar({
   const projectHref = useProjectHref();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
+  // Web apps running on this computer, by the project they were started from (Preview's detection).
+  const [webApps, setWebApps] = useState<Map<number, LocalApp[]>>(new Map());
   // Clock for running/idle badges, refreshed on every load (never read during render).
   const [now, setNow] = useState(0);
   const [query, setQuery] = useState('');
@@ -239,6 +243,31 @@ export function ProjectSidebar({
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const stop = serialPoll(
+      () =>
+        api.localApps().then(
+          ({ apps }) => {
+            if (!active) return;
+            const byProject = new Map<number, LocalApp[]>();
+            for (const app of apps) {
+              if (!app.web || app.projectId == null) continue;
+              byProject.set(app.projectId, [...(byProject.get(app.projectId) ?? []), app]);
+            }
+            setWebApps((prev) => (sameApps(prev, byProject) ? prev : byProject));
+          },
+          () => undefined, // A convenience: the list works without it.
+        ),
+      15_000,
+      { pauseWhenHidden: true },
+    );
+    return () => {
+      active = false;
+      stop();
     };
   }, []);
 
@@ -457,6 +486,7 @@ export function ProjectSidebar({
               project={p}
               href={projectHref(p.id)}
               activity={activity.get(p.id) ?? { running: 0, idle: p.runningSessions, input: 0 }}
+              apps={webApps.get(p.id)}
             />
           );
           if (!reorderable) return <Fragment key={p.id}>{item}</Fragment>;
@@ -602,28 +632,53 @@ export function ProjectSidebar({
   );
 }
 
+/** Same projects with the same ports: keeps the previous map so the list doesn't re-render. */
+function sameApps(a: Map<number, LocalApp[]>, b: Map<number, LocalApp[]>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, apps] of b) {
+    const old = a.get(id);
+    if (!old || old.map((x) => x.port).join() !== apps.map((x) => x.port).join()) return false;
+  }
+  return true;
+}
+
+/** "App running: localhost:3000" — what the globe on a sidebar row says. */
+export function runningAppsLabel(apps: LocalApp[]): string {
+  const where = apps.map((a) => `localhost:${a.port}`).join(', ');
+  return apps.length === 1 ? `App running: ${where}` : `${apps.length} apps running: ${where}`;
+}
+
 function SidebarItem({
   project: p,
   href,
   activity,
+  apps,
 }: {
   project: ProjectSummary;
   href: string;
   activity: Activity;
+  apps?: LocalApp[];
 }) {
   const flight = p.cardCounts.in_progress + p.cardCounts.review;
   const planned = p.cardCounts.backlog + p.cardCounts.todo;
   const topLang = p.code?.languages[0]?.name;
+  const live = apps?.length ? runningAppsLabel(apps) : null;
   return (
     <NavLink
       to={href}
       className={({ isActive }) => `sidebar-item${isActive ? ' is-active' : ''}`}
       title={p.path}
-      aria-label={`${p.name} — ${p.path}`}
+      aria-label={`${p.name} — ${p.path}${live ? ` — ${live}` : ''}`}
     >
       <span className="sidebar-name-row">
         <StatusDot project={p} />
         <span className="sidebar-name truncate">{p.name}</span>
+        {/* Icon only, and only when something runs: costs no width on the other rows. */}
+        {live && (
+          <span className="sidebar-live" role="img" aria-label={live} title={live}>
+            <GlobeIcon size={13} />
+          </span>
+        )}
         {p.missing ? (
           <span className="badge badge-danger">missing</span>
         ) : p.scan.status === 'scanning' ? (
