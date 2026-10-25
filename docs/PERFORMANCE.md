@@ -78,6 +78,19 @@ account during the audit); with none at a limit the tick is a few milliseconds.
 | `/api/projects/14/tree?path=`     | 40 ms  | root listing with git status                                            |
 | `/api/projects/14/pull-requests`  | 894 ms | GitHub's round trip through `gh`; loaded once per tab visit, not polled |
 
+### Pages in the browser (dev server, warm reload)
+
+| Page                         | First paint | Data in | Notes                                                   |
+| ---------------------------- | ----------- | ------- | ------------------------------------------------------- |
+| Board (292 cards)            | 104 ms      | 411 ms  | no long tasks (>50 ms) while rendering; 2,430 DOM nodes |
+| Project, Files tab           | 128 ms      | ~200 ms | root tree in 59 ms (35 rows)                            |
+| Orchestrators                | 164 ms      | ~550 ms | overview 80 ms in the browser (61 KB)                   |
+| Server restart (`tsx watch`) | –           | 1.3 s   | API answering again, Vite included; first list in 31 ms |
+
+The Board renders every card; it is not slow today, but Done alone holds 225 cards and grows.
+Virtualizing long columns, capping Done and a compact density are tracked in PM-296; measure
+scroll smoothness there in a focused browser window (automated tabs throttle animation frames).
+
 ### What changed
 
 1. **Session list: one credential read per list, not per row.** Each Codex session row asked for
@@ -107,6 +120,12 @@ account during the audit); with none at a limit the tick is a few milliseconds.
    and `opacity` on a pseudo-element instead of `box-shadow`. Same look (8 px dot, 5 px ring at
    45% green fading out, the dot's own colour drawn on top), but composited instead of repainting
    every running dot on every frame. Reduced motion still shows no ring.
+10. **Running-app detection** (Preview, and the sidebar globe from PM-297) caches each process's
+    name and command line per pid and shares concurrent scans: a scan after the 3 s cache costs
+    one `netstat` (~40 ms) instead of netstat plus a PowerShell query (0.72 s). Fresh scans
+    (Refresh, Stop's safety re-check) skip the cache.
+11. **Codex auto-switch setting** is read on its own instead of through the full account state
+    (6.7 ms), and recovered-quota checks read the logins once per tick (`4cf95a2`).
 
 ### Checked and left as is
 
