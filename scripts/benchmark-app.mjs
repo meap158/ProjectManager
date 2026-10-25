@@ -6,6 +6,7 @@
 //   node scripts/benchmark-app.mjs --api --url http://127.0.0.1:5181 --runs 30
 //   node scripts/benchmark-app.mjs --bundle --out docs/perf/after.json
 //   node scripts/benchmark-app.mjs --api --only agent-sessions,cards   endpoints containing these
+//   node scripts/benchmark-app.mjs --stalls 60      event-loop stalls: a trivial read every 50 ms
 import { writeFileSync } from 'node:fs';
 import { brotliCompressSync, gzipSync } from 'node:zlib';
 
@@ -15,7 +16,7 @@ const option = (name, fallback) => {
   const at = args.indexOf(`--${name}`);
   return at >= 0 && args[at + 1] ? args[at + 1] : fallback;
 };
-const both = !flag('api') && !flag('bundle');
+const both = !flag('api') && !flag('bundle') && !flag('stalls');
 const base = option('url', 'http://127.0.0.1:5180').replace(/\/$/, '');
 const runs = Number(option('runs', '20'));
 const result = { at: new Date().toISOString(), node: process.version };
@@ -35,6 +36,17 @@ const ENDPOINTS = [
   '/api/agents/codex-accounts',
   '/api/workspace',
   '/api/preview-launches',
+  // One project's page (this repository's own entry, id 14 here; --project to change it).
+  ...[
+    '',
+    '/cards',
+    '/agent-sessions',
+    '/agent-runs/summary',
+    '/file-pins',
+    '/git-identity',
+    '/tree?path=',
+    '/pull-requests?state=open',
+  ].map((tail) => `/api/projects/${option('project', '14')}${tail}`),
 ];
 
 const percentile = (sorted, p) =>
@@ -130,7 +142,36 @@ async function benchBundle() {
   };
 }
 
+/**
+ * Background work (timers) blocks every request and terminal stream while it runs. A trivial
+ * read every 50 ms shows it: its latency jumps whenever a tick holds the event loop.
+ */
+async function benchStalls(seconds) {
+  const lat = [];
+  const spikes = [];
+  const end = Date.now() + seconds * 1000;
+  while (Date.now() < end) {
+    const started = performance.now();
+    await fetch(base + '/api/agent-runs').then((r) => r.arrayBuffer());
+    const ms = performance.now() - started;
+    lat.push(ms);
+    if (ms > 50) spikes.push({ at: new Date().toISOString().slice(11, 19), ms: Math.round(ms) });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  lat.sort((a, b) => a - b);
+  return {
+    seconds,
+    samples: lat.length,
+    p50Ms: round(percentile(lat, 0.5)),
+    p99Ms: round(percentile(lat, 0.99)),
+    maxMs: Math.round(lat.at(-1)),
+    over50ms: spikes.length,
+    spikes,
+  };
+}
+
 if (both || flag('bundle')) result.bundle = await benchBundle();
+if (flag('stalls')) result.stalls = await benchStalls(Number(option('stalls', '60')) || 60);
 if (both || flag('api')) result.api = await benchApi();
 const json = JSON.stringify(result, null, 2);
 const out = option('out', null);
