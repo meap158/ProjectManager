@@ -31,6 +31,7 @@ anything.
 | `server/gitIdentity.ts`        | Per-project commit author + gh account injected into agent env only (PM-186)               |
 | `server/projectFileActions.ts` | Files tab context menu: rename in place, open/reveal on the host (PM-259)                  |
 | `scripts/owner-pages.mjs`      | Owner Pages generator: Owner desk and index from `owner-desk.json` (PM-258)                |
+- **Owner pages and roadmap audit (PM-289):** the Owner Pages index links `ROADMAP.md`, and the generator fails (build and `--check`) when the project has no `ROADMAP.md`. Whenever you change the project's state (a phase starts or ends, scope changes, a task only the owner can do appears or is completed), update `ROADMAP.md` and `owner-desk.json` in the same unit of work so both match reality, rebuild the pages, and match the project's own design (tokens and DESIGN.md where it has one). Do not leave a draft roadmap unmarked: say "Draft" until the owner has confirmed it.
 | `server/preview.ts`            | Built-in browser proxy: read-only, loopback ports only (`docs/BUILT-IN-BROWSER.md`)        |
 | `server/jsonEtag.ts`           | ETag + 304 for JSON GETs, so polls of unchanged lists cost no body (`docs/PERFORMANCE.md`) |
 | `scripts/benchmark-app.mjs`    | `npm run bench`: bundle size and API latency, read-only (`docs/PERFORMANCE.md`)            |

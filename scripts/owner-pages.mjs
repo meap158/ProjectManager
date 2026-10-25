@@ -304,6 +304,10 @@ export function run(argv = process.argv.slice(2), rootDir = root, log = console.
     log(`owner-desk.json is not valid JSON: ${error.message}`);
     return 1;
   }
+  if (!existsSync(join(rootDir, 'ROADMAP.md'))) {
+    log('ROADMAP.md is missing from the project root. The roadmap is part of the owner pages (standard, PM-289).');
+    return 1;
+  }
   const problems = validateDesk(data);
   if (problems.length) {
     log(`owner-desk.json has ${problems.length} problem(s):\n- ${problems.join('\n- ')}`);
