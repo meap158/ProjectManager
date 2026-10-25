@@ -6491,10 +6491,13 @@ span.path-link:hover .path-icon {
   padding: 0;
   list-style: none;
 }
-.inbox-head {
+.inbox-sticky {
   position: sticky;
   top: 0;
   z-index: 1;
+  background: var(--surface);
+}
+.inbox-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -6511,6 +6514,10 @@ span.path-link:hover .path-icon {
   margin: 0;
   color: var(--text-2);
   font-size: 12px;
+}
+.inbox-filters {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
 }
 .inbox-empty {
   margin: 0;
@@ -6662,6 +6669,23 @@ span.path-link:hover .path-icon {
 .inbox-dismiss:hover {
   text-decoration: underline;
 }
+/* Phones: the panel becomes a sheet under the top bar, the full width of the screen. */
+@media (max-width: 640px) {
+  .inbox-panel {
+    position: fixed;
+    top: 52px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-height: calc(100dvh - 64px);
+    overscroll-behavior: contain;
+  }
+  .inbox-choices .btn {
+    flex: 1 1 auto;
+    white-space: normal;
+    text-align: left;
+  }
+}
 @media (pointer: coarse) {
   .inbox-button {
     width: 44px;
@@ -6671,5 +6695,9 @@ span.path-link:hover .path-icon {
   .inbox-reply .btn,
   .inbox-dismiss {
     min-height: 44px;
+  }
+  /* 16px keeps iOS from zooming into the field. */
+  .inbox-reply .input {
+    font-size: 16px;
   }
 }

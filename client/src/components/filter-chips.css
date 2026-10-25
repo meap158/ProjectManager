@@ -1,0 +1,114 @@
+/* Filter chips (FilterChips.tsx): a scrollbar-free strip that drags or pans, with edge fades. */
+.filter-chips {
+  position: relative;
+  min-width: 0;
+}
+.filter-chips::before,
+.filter-chips::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.filter-chips::before {
+  left: 0;
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+.filter-chips::after {
+  right: 0;
+  background: linear-gradient(to left, var(--surface), transparent);
+}
+.filter-chips[data-can-start]::before,
+.filter-chips[data-can-end]::after {
+  opacity: 1;
+}
+.filter-chips-strip {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  user-select: none;
+}
+.filter-chips-strip::-webkit-scrollbar {
+  display: none;
+}
+.filter-chips-strip.is-dragging {
+  cursor: grabbing;
+}
+.filter-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.filter-chip:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.filter-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.filter-chip-count {
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.filter-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+/* Tones: the chip wears the colour of the rows it stands for. */
+.filter-chip[data-tone='review'][aria-pressed='true'] {
+  border-color: var(--status-review);
+}
+.filter-chip[data-tone='danger'][aria-pressed='true'] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.filter-chip[data-tone='progress'][aria-pressed='true'] {
+  border-color: var(--status-in);
+}
+.filter-chip[data-tone] .filter-chip-count::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--accent);
+}
+.filter-chip[data-tone='review'] .filter-chip-count::before {
+  background: var(--status-review);
+}
+.filter-chip[data-tone='danger'] .filter-chip-count::before {
+  background: var(--danger);
+}
+.filter-chip[data-tone='progress'] .filter-chip-count::before {
+  background: var(--status-in);
+}
+@media (pointer: coarse) {
+  .filter-chip {
+    height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+}

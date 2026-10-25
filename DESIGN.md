@@ -318,7 +318,9 @@ adjacent-pair CVD separation in both modes).
 - **Inbox (top bar, left of the theme switch):** a bell with a count badge of what is new: red
   (`--danger`) when something needs a decision or failed, `--accent` when only finished replies wait.
   It polls every 5 s while the tab is visible. The panel (420px; Escape or an outside click closes it)
-  has a sticky header (counts, Mark all seen) and sections in urgency order: Needs a decision
+  has a sticky header (counts, Mark all seen) with **filter chips** under it (All, New, then one per
+  kind with rows: Decisions, Problems, Limits, Your turn; remembered per browser; a chip whose rows
+  are gone falls back to All), then sections in urgency order: Needs a decision
   (`tailState` input), Problems (failed restart, with its error and a Restart button), Usage limits
   (reset time), Finished · your turn (idle after answering your last message). Each row is a card
   with a coloured left edge per section, and it says what the session is ON: the question with its
@@ -326,7 +328,14 @@ adjacent-pair CVD separation in both modes).
   or the start of the unread reply with a Reply box. The title opens the session
   (`/workspace?open=<id>`). Seen state is per browser (localStorage, keyed by session + your last
   message, so the next turn comes back); seen rows dim. Times are shown only when they mean
-  something (the reply's own time, the failed restart). 36px button; 44px buttons on touch.
+  something (the reply's own time, the failed restart). 36px button; 44px buttons on touch. Phones
+  (≤640px): the panel is a sheet under the top bar, the full width minus 8px gutters, choices fill
+  the row, and the reply field is 16px so iOS doesn't zoom.
+- **Filter chips (`FilterChips`):** a scrollbar-free strip of pill chips with counts (after
+  TrendRelay's FilterChipStrip). It drags with the mouse and pans on touch, with fades at whichever
+  end still has chips, and arrow keys/Home/End move between chips. The chosen chip uses
+  `--accent-soft`; `data-tone` (review, danger, progress, accent) colours its dot to match the rows.
+  26px chips, 36px on touch. Use it for any new chip filter.
 - **Preview page (`/preview`):** full width (`.page-wide`, no centred 1280px column) and without a
   visible page header. A list panel (190-230px, sticky) beside a small browser, modelled on the one
   built into Claude's desktop app. **Tabs** (36px strip, up to 12; each prefers 14% of the browser pane, kept between 128px and 184px, so a lone tab never fills a wide pane; they shrink equally to 88px, then the strip scrolls with + staying beside the last tab): each shows the page's own icon

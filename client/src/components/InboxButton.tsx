@@ -12,6 +12,7 @@ import {
   type AttentionCommand,
   type DetectedAttentionOverlay,
 } from './BatchAttentionActions';
+import { FilterChips, type FilterChip } from './FilterChips';
 import { BellIcon, ProviderIcon } from './icons';
 
 // One place for everything waiting on you, from any page (PM-261), answerable where it is listed.
@@ -82,6 +83,32 @@ const SECTION: Record<InboxReason, string> = {
   finished: 'Finished · your turn',
 };
 
+/** The chips over the list: everything, only what is new, or one kind. */
+export type InboxFilter = 'all' | 'new' | InboxReason;
+const TONE: Record<InboxReason, string> = {
+  input: 'review',
+  'restart-failed': 'danger',
+  limit: 'progress',
+  finished: 'accent',
+};
+const FILTER_KEY = 'pm.inbox.filter';
+
+function loadFilter(): InboxFilter {
+  try {
+    const v = localStorage.getItem(FILTER_KEY);
+    return v === 'new' || (v !== null && v in SECTION) ? (v as InboxFilter) : 'all';
+  } catch {
+    return 'all';
+  }
+}
+
+const CHIP: Record<InboxReason, string> = {
+  input: 'Decisions',
+  'restart-failed': 'Problems',
+  limit: 'Limits',
+  finished: 'Your turn',
+};
+
 const POLL_MS = 5_000;
 /** Rows whose screen or reply is read when the panel opens. */
 const DETAIL_ROWS = 12;
@@ -141,6 +168,7 @@ export function InboxButton() {
   const [busy, setBusy] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [replies, setReplies] = useState<Record<string, string>>({});
+  const [filter, setFilterState] = useState<InboxFilter>(loadFilter);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
 
@@ -173,9 +201,16 @@ export function InboxButton() {
     };
   }, [open]);
 
+  const isNew = (i: InboxItem) => !seen.has(i.key);
+  const matches = (i: InboxItem, f: InboxFilter) =>
+    f === 'all' || (f === 'new' ? isNew(i) : i.reason === f);
+  // A chip whose rows are all gone falls back to everything, so the list is never empty by filter.
+  const active: InboxFilter = items.some((i) => matches(i, filter)) ? filter : 'all';
+  const shown = items.filter((i) => matches(i, active));
+
   // Read each shown row's screen (its question, if any) and, for a finished turn, its reply.
   // Keyed by occurrence, so a row is read again only when it changes.
-  const detailKeys = items
+  const detailKeys = shown
     .slice(0, DETAIL_ROWS)
     .filter((i) => i.reason !== 'restart-failed')
     .map((i) => i.key);
@@ -269,8 +304,30 @@ export function InboxButton() {
   }
 
   const sections = (Object.keys(SECTION) as InboxReason[])
-    .map((reason) => ({ reason, rows: items.filter((i) => i.reason === reason) }))
+    .map((reason) => ({ reason, rows: shown.filter((i) => i.reason === reason) }))
     .filter((s) => s.rows.length > 0);
+  const reading = new Set(detailKeys);
+
+  const setFilter = (f: InboxFilter) => {
+    setFilterState(f);
+    try {
+      localStorage.setItem(FILTER_KEY, f);
+    } catch {
+      // Remembered for this visit only.
+    }
+  };
+  const chips: FilterChip<InboxFilter>[] = [
+    { key: 'all', label: 'All', count: items.length },
+    { key: 'new', label: 'New', count: count },
+    ...(Object.keys(SECTION) as InboxReason[])
+      .map((reason) => ({
+        key: reason,
+        label: CHIP[reason],
+        count: items.filter((i) => i.reason === reason).length,
+        tone: TONE[reason],
+      }))
+      .filter((c) => c.count > 0),
+  ];
 
   return (
     <div className="inbox" ref={root}>
@@ -293,29 +350,41 @@ export function InboxButton() {
       </button>
       {open && (
         <div className="inbox-panel" role="dialog" aria-label="Inbox">
-          <header className="inbox-head">
-            <div>
-              <h2>Inbox</h2>
-              <p>
-                {items.length === 0
-                  ? 'You are all caught up'
-                  : [
-                      needs ? `${needs} need${needs === 1 ? 's' : ''} you` : '',
-                      count ? `${count} new` : 'nothing new',
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              disabled={count === 0}
-              onClick={() => markSeen(items.map((i) => i.key))}
-            >
-              Mark all seen
-            </button>
-          </header>
+          <div className="inbox-sticky">
+            <header className="inbox-head">
+              <div>
+                <h2>Inbox</h2>
+                <p>
+                  {items.length === 0
+                    ? 'You are all caught up'
+                    : [
+                        needs ? `${needs} need${needs === 1 ? 's' : ''} you` : '',
+                        count ? `${count} new` : 'nothing new',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={count === 0}
+                onClick={() => markSeen(items.map((i) => i.key))}
+              >
+                Mark all seen
+              </button>
+            </header>
+            {items.length > 0 && (
+              <div className="inbox-filters">
+                <FilterChips
+                  chips={chips}
+                  selected={active}
+                  onSelect={setFilter}
+                  label="Show in the inbox"
+                />
+              </div>
+            )}
+          </div>
           {items.length === 0 ? (
             <p className="inbox-empty">
               <strong>Nothing is waiting.</strong> Questions, approvals, usage limits, failed
@@ -370,7 +439,12 @@ export function InboxButton() {
                           {name.get(session.projectId) ?? `Project ${session.projectId}`} ·{' '}
                           {REASON[item.reason]}
                         </div>
-                        <InboxContext item={item} detail={detail} now={now} />
+                        <InboxContext
+                          item={item}
+                          detail={detail}
+                          now={now}
+                          reading={reading.has(key)}
+                        />
                         {detail?.overlay && (
                           <div
                             className="inbox-choices"
@@ -477,10 +551,13 @@ function InboxContext({
   item,
   detail,
   now,
+  reading,
 }: {
   item: InboxItem;
   detail: Detail | undefined;
   now: number;
+  /** Its screen is being read (only the first rows of the list are). */
+  reading: boolean;
 }) {
   const { session } = item;
   if (item.reason === 'restart-failed')
@@ -496,7 +573,8 @@ function InboxContext({
       </p>
     );
   }
-  if (!detail) return <p className="inbox-context is-loading">Reading its screen…</p>;
+  if (!detail)
+    return reading ? <p className="inbox-context is-loading">Reading its screen…</p> : null;
   if (detail.overlay) return <p className="inbox-context is-question">{detail.overlay.title}</p>;
   if (detail.reply) return <p className="inbox-context is-reply">{detail.reply}</p>;
   return item.reason === 'input' ? (

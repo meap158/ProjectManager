@@ -141,6 +141,35 @@ describe('InboxButton', () => {
     expect(await screen.findByRole('button', { name: 'Inbox, nothing new' })).toBeTruthy();
   });
 
+  it('filters by chip, and a chip with nothing left falls back to All', async () => {
+    state.list = [
+      s(2, { tailState: 'input', name: 'Ask' }),
+      s(3, {
+        name: 'Done',
+        lastInputAt: '2026-01-01T00:00:00Z',
+        lastOutputAt: '2026-01-01T00:05:00Z',
+      }),
+    ];
+    state.screens = [MENU];
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: /Inbox, 2 waiting/ }));
+    const group = await screen.findByRole('group', { name: 'Show in the inbox' });
+    expect([...group.querySelectorAll('button')].map((b) => b.textContent)).toEqual([
+      'All2',
+      'New2',
+      'Decisions1',
+      'Your turn1',
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Your turn (1)' }));
+    expect(screen.queryByRole('link', { name: 'Ask' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Done' })).toBeTruthy();
+    expect(localStorage.getItem('pm.inbox.filter')).toBe('finished');
+    // Everything seen: the New chip has nothing, so choosing it shows All.
+    fireEvent.click(screen.getByRole('button', { name: 'Mark all seen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New (0)' }));
+    expect(screen.getByRole('link', { name: 'Ask' })).toBeTruthy();
+  });
+
   it('says nothing is waiting when nothing is', async () => {
     state.list = [s(1, {})];
     show();
