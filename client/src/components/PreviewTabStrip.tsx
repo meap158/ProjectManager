@@ -266,6 +266,10 @@ export function PreviewTabStrip({
                 event.preventDefault();
                 openMenu(tab.id, event.clientX, event.clientY);
               }}
+              onMouseDown={(event: MouseEvent) => {
+                // Suppress Windows autoscroll/focus changes before the auxiliary click.
+                if (event.button === 1) event.preventDefault();
+              }}
               onAuxClick={(event: MouseEvent) => {
                 // Middle click closes, as in a browser.
                 if (event.button === 1) {

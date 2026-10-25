@@ -103,6 +103,17 @@ describe('PreviewTabStrip', () => {
     expect(h.onCommand).toHaveBeenCalledWith('close', 'c');
   });
 
+  it('suppresses middle-button autoscroll and closes from the title without activating the tab', () => {
+    const h = setup();
+    const title = screen.getAllByRole('tab')[0]!.querySelector('.preview-tab-title')!;
+    expect(fireEvent.mouseDown(title, { button: 1 })).toBe(false);
+    fireEvent(title, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }));
+    expect(h.onCommand).toHaveBeenCalledExactlyOnceWith('close', 'a');
+    expect(h.onActivate).not.toHaveBeenCalled();
+    fireEvent(title, new MouseEvent('auxclick', { bubbles: true, button: 2 }));
+    expect(h.onCommand).toHaveBeenCalledTimes(1);
+  });
+
   it('moves with the arrow keys (and shows the tab), jumps with Home and End, closes with Delete', () => {
     const h = setup();
     const middle = screen.getAllByRole('tab')[1]!;
