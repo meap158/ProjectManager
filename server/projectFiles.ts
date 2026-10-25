@@ -13,7 +13,7 @@ import { isAvailable, run } from './analysis/exec.js';
 
 export class FileAccessError extends Error {
   constructor(
-    public status: 404 | 400 | 413,
+    public status: 404 | 400 | 409 | 413,
     message: string,
   ) {
     super(message);

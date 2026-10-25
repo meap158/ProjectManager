@@ -250,7 +250,7 @@ export function ProjectPage() {
         />
       </div>
       <div className="tab-panel" hidden={tab !== 'files'}>
-        {tab === 'files' && <ProjectFiles key={id} projectId={id} />}
+        {tab === 'files' && <ProjectFiles key={id} projectId={id} projectPath={project?.path} />}
       </div>
       <div className="tab-panel" hidden={tab !== 'pull-requests'}>
         <PullRequestsPanel key={id} projectId={id} visible={tab === 'pull-requests'} />

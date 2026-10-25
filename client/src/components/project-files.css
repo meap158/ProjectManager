@@ -182,3 +182,44 @@
     min-height: 60dvh;
   }
 }
+
+/* Context menu trigger (PM-259): always there on touch screens, where there is no right click. */
+.files-more {
+  display: none;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.files-more:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+@media (pointer: coarse) {
+  .files-more {
+    display: grid;
+    width: 40px;
+    height: 40px;
+  }
+  .files-row {
+    min-height: 44px;
+  }
+}
+.files-rename {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 13px;
+}
+.files-notice {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+}

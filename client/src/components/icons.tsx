@@ -305,3 +305,14 @@ export function BellIcon({ filled = false, ...props }: IconProps & { filled?: bo
     </Base>
   );
 }
+
+/** Three dots: "more actions". */
+export function MoreIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <circle cx="3.5" cy="8" r="1" fill="currentColor" />
+      <circle cx="8" cy="8" r="1" fill="currentColor" />
+      <circle cx="12.5" cy="8" r="1" fill="currentColor" />
+    </Base>
+  );
+}

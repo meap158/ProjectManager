@@ -19,6 +19,7 @@ import type {
   ShortcutOverrides,
 } from '../shared/types.js';
 import { LAN_HEADER } from './lan.js';
+import { openEntry, renameEntry } from './projectFileActions.js';
 import { FileAccessError, listFolder, previewFile, readRaw } from './projectFiles.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
 import { config } from './config.js';
@@ -404,6 +405,36 @@ export function createApp(
   app.get('/projects/:id/file', async (c) => {
     const root = projectRoot(c);
     return c.json(await fileErrors(() => previewFile(root, c.req.query('path') ?? '')));
+  });
+
+  // The Files context menu (PM-259): rename, open in the system app, reveal in the file manager.
+  // These change files or start programs on the host, so only this computer may ask: requests
+  // through the LAN or remote listener are refused, like open-folder.
+  const hostOnly = (c: Context) => {
+    if (c.req.header(LAN_HEADER) || c.req.header(REMOTE_HEADER))
+      throw new HttpError(
+        403,
+        'Files can only be renamed or opened on the computer running ProjectManager',
+      );
+  };
+  app.post('/projects/:id/files/rename', async (c) => {
+    hostOnly(c);
+    const root = projectRoot(c);
+    const { path: rel, name } = await parseBody(
+      c,
+      z.object({ path: z.string().min(1).max(4096), name: z.string().max(300) }),
+    );
+    return c.json({ path: await fileErrors(() => renameEntry(root, rel, name)) });
+  });
+  app.post('/projects/:id/files/open', async (c) => {
+    hostOnly(c);
+    const root = projectRoot(c);
+    const { path: rel, mode } = await parseBody(
+      c,
+      z.object({ path: z.string().max(4096), mode: z.enum(['open', 'reveal']) }),
+    );
+    await fileErrors(() => openEntry(root, rel, mode));
+    return c.body(null, 204);
   });
 
   // Bytes for image previews and a previewed page's own styles and images. Never runnable on

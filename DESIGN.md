@@ -303,6 +303,17 @@ adjacent-pair CVD separation in both modes).
   ("Filter files…"). The address input is 16px text so iPhone doesn't zoom on focus; on touch the
   shared rules raise both to 40px together. A `type="search"` input keeps the `.input` box (native
   search styling is turned off).
+- **Context menu (`ContextMenu`, shared by the Preview tabs and the Files tree):** a real
+  `role="menu"` (arrow keys, Home and End, Escape or Tab close, focus on the first enabled item and back
+  on the trigger), closed by an outside click, a window blur or a resize, clamped inside the window,
+  30px items (40px on touch), divider rules between groups. Use it for any new right-click menu; do
+  not write another. **Files tree menu (PM-259):** right click, Shift+F10 or the Menu key; touch
+  screens get a 40px "..." button on every row. Open in preview (Expand or Collapse for folders), Open
+  in system app, Reveal in file manager, Copy path (absolute, in the project's own slash style), Copy
+  relative path, Rename. **Rename is in place** (F2 too): the name without its extension is selected,
+  Enter renames, Escape or leaving the field cancels, so it only happens on purpose; a refusal shows in
+  the error banner and the old name stays. After a rename the tree, the focus and the open file's
+  address follow the new name.
 - **Inbox (top bar, left of the theme switch):** a tray icon with a count badge (`--accent`) of what waits
   on you from any page: sessions asking you to choose or approve something (the same `tailState` as the
   Needs input badge, dot in `--status-review`) and failed restarts (`--danger`). It polls every 5 s

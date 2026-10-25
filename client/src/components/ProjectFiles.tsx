@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
 import { useSearchParams } from 'react-router';
 import { marked } from 'marked';
 import type { FilePreview, FolderListing, TreeEntry } from '../../../shared/types';
 import { api } from '../api';
 import { formatBytes, formatRelative } from '../format';
-import { FoldersIcon, PageIcon } from './icons';
+import { ContextMenu, type ContextMenuItem } from './ContextMenu';
+import { FoldersIcon, MoreIcon, PageIcon } from './icons';
 import './project-files.css';
 
 // The project page's Files tab (PM-252): a VS Code style explorer. The tree loads one folder at
@@ -19,6 +28,59 @@ const RENDERED = new Set(['md', 'markdown', 'mdx', 'html', 'htm']);
 const extOf = (p: string) => /\.([^./]+)$/.exec(p)?.[1]?.toLowerCase() ?? '';
 const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 
+/** What the Files context menu can do with one entry. */
+export type FileCommand =
+  'open' | 'open-system' | 'reveal' | 'copy-path' | 'copy-relative' | 'rename';
+
+/** The menu for one entry (pure, so the labels and order are testable). */
+export function fileMenuItems(entry: TreeEntry, isOpen: boolean): ContextMenuItem<FileCommand>[] {
+  return [
+    {
+      command: 'open',
+      label:
+        entry.kind === 'dir' ? (isOpen ? 'Collapse folder' : 'Expand folder') : 'Open in preview',
+    },
+    { command: 'open-system', label: 'Open in system app' },
+    { command: 'reveal', label: 'Reveal in file manager' },
+    { command: 'copy-path', label: 'Copy path', divider: true },
+    { command: 'copy-relative', label: 'Copy relative path' },
+    { command: 'rename', label: 'Rename…', divider: true },
+  ];
+}
+
+/** An absolute path in the project's own style (a Windows path gets backslashes, else slashes). */
+export function absolutePath(projectPath: string, rel: string): string {
+  const BACKSLASH = String.fromCharCode(92);
+  const sep = projectPath.includes(BACKSLASH) && !projectPath.includes('/') ? BACKSLASH : '/';
+  const root = projectPath.replace(/[/\\]+$/, '');
+  return rel ? `${root}${sep}${rel.split('/').join(sep)}` : root;
+}
+
+/** "a/b" after "a" became "z" → "z/b"; other paths come back unchanged. */
+export function remapPath(path: string, from: string, to: string): string {
+  if (path === from) return to;
+  return path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : path;
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Not a secure page (the LAN address over http): fall back to a hidden field.
+    const field = document.createElement('textarea');
+    field.value = text;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    const ok = document.execCommand('copy');
+    field.remove();
+    return ok;
+  }
+}
+
 /** The root and every folder above a file ("a/b/c.ts" → "", "a", "a/b"). */
 export function foldersTo(file: string | null): string[] {
   const parts = file ? file.split('/').slice(0, -1) : [];
@@ -30,7 +92,14 @@ interface Row {
   level: number;
 }
 
-export function ProjectFiles({ projectId }: { projectId: number }) {
+export function ProjectFiles({
+  projectId,
+  projectPath,
+}: {
+  projectId: number;
+  /** The project's folder on disk, for "Copy path". */
+  projectPath?: string;
+}) {
   const [params, setParams] = useSearchParams();
   const openFile = params.get('file');
   const [folders, setFolders] = useState<Map<string, FolderListing>>(new Map());
@@ -39,7 +108,21 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
   const [focused, setFocused] = useState<string | null>(openFile);
   const [filter, setFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const treeRef = useRef<HTMLUListElement>(null);
+  const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+
+  const say = (text: string) => {
+    setNotice(text);
+    setTimeout(() => setNotice((now) => (now === text ? null : now)), 2000);
+  };
+  /** Puts focus back on a row (after the menu or a rename closes). */
+  const focusRow = (path: string) =>
+    setTimeout(() => {
+      const rows = treeRef.current?.querySelectorAll<HTMLElement>('[data-path]') ?? [];
+      [...rows].find((row) => row.dataset.path === path)?.focus();
+    }, 0);
 
   const load = useCallback(
     async (path: string) => {
@@ -99,6 +182,82 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
     else setParams((p) => ({ ...Object.fromEntries(p), tab: 'files', file: entry.path }));
   };
 
+  const entryAt = (path: string) => rows.find((r) => r.entry.path === path)?.entry;
+
+  const run = async (command: FileCommand, entry: TreeEntry) => {
+    setError(null);
+    try {
+      switch (command) {
+        case 'open':
+          select(entry);
+          break;
+        case 'open-system':
+        case 'reveal':
+          await api.openProjectFile(
+            projectId,
+            entry.path,
+            command === 'reveal' ? 'reveal' : 'open',
+          );
+          break;
+        case 'copy-path':
+        case 'copy-relative': {
+          const text =
+            command === 'copy-relative' || !projectPath
+              ? entry.path
+              : absolutePath(projectPath, entry.path);
+          say((await copyText(text)) ? 'Copied to the clipboard' : 'Could not copy');
+          break;
+        }
+        case 'rename':
+          setRenaming(entry.path);
+          return;
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    focusRow(entry.path);
+  };
+
+  /** Renames in place; the tree, the open file and the address follow the new name. */
+  const submitRename = async (entry: TreeEntry, name: string) => {
+    setRenaming(null);
+    if (name === entry.name) return focusRow(entry.path);
+    setError(null);
+    try {
+      const { path: next } = await api.renameProjectFile(projectId, entry.path, name);
+      const old = entry.path;
+      setFolders((prev) => {
+        const kept = new Map<string, FolderListing>();
+        for (const [key, listing] of prev) {
+          // The renamed folder's cached listings are stale; its parent is read again below.
+          if (key !== old && !key.startsWith(`${old}/`) && key !== parentOf(old))
+            kept.set(key, listing);
+        }
+        return kept;
+      });
+      setExpanded((prev) => new Set([...prev].map((p) => remapPath(p, old, next))));
+      setFocused(next);
+      if (openFile && remapPath(openFile, old, next) !== openFile)
+        setParams((q) => ({ ...Object.fromEntries(q), file: remapPath(openFile, old, next) }), {
+          replace: true,
+        });
+      await load(parentOf(old));
+      for (const p of expanded) {
+        if (p === old || p.startsWith(`${old}/`)) void load(remapPath(p, old, next));
+      }
+      say(`Renamed to ${name}`);
+      focusRow(next);
+    } catch (e) {
+      setError((e as Error).message);
+      focusRow(entry.path);
+    }
+  };
+
+  const openMenuFor = (path: string, x: number, y: number) => {
+    setFocused(path);
+    setMenu({ path, x, y });
+  };
+
   // Roving focus: the focused row is the one tab stop; arrow keys move it (WAI-ARIA tree).
   useEffect(() => {
     if (!focused) return;
@@ -145,6 +304,19 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
       case ' ':
         if (row) select(row.entry);
         break;
+      case 'F2':
+        if (row) setRenaming(row.entry.path);
+        break;
+      case 'ContextMenu':
+      case 'F10': {
+        if (e.key === 'F10' && !e.shiftKey) return;
+        const el = [...e.currentTarget.querySelectorAll<HTMLElement>('[data-path]')].find(
+          (item) => item.dataset.path === row?.entry.path,
+        );
+        const box = el?.getBoundingClientRect();
+        if (row && box) openMenuFor(row.entry.path, box.left + 24, box.bottom);
+        break;
+      }
       default:
         return;
     }
@@ -187,6 +359,11 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
           </button>
         </div>
         {error && <div className="error-banner">{error}</div>}
+        {notice && (
+          <p className="faint files-notice" role="status">
+            {notice}
+          </p>
+        )}
         {!root ? (
           <div className="skeleton" style={{ height: 160 }} />
         ) : rows.length === 0 ? (
@@ -218,6 +395,10 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
                   style={{ paddingLeft: 6 + (level - 1) * 14 }}
                   onClick={() => select(entry)}
                   onFocus={() => setFocused(entry.path)}
+                  onContextMenu={(e: MouseEvent) => {
+                    e.preventDefault();
+                    openMenuFor(entry.path, e.clientX, e.clientY);
+                  }}
                   title={entry.ignored ? `${entry.path} (ignored by git)` : entry.path}
                 >
                   <span className="files-chevron" aria-hidden="true">
@@ -226,11 +407,36 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
                   <span className="files-icon" aria-hidden="true">
                     {entry.kind === 'dir' ? <FoldersIcon size={13} /> : <PageIcon size={13} />}
                   </span>
-                  <span className="files-name">{entry.name}</span>
+                  {renaming === entry.path ? (
+                    <RenameField
+                      name={entry.name}
+                      onSubmit={(name) => void submitRename(entry, name)}
+                      onCancel={() => {
+                        setRenaming(null);
+                        focusRow(entry.path);
+                      }}
+                    />
+                  ) : (
+                    <span className="files-name">{entry.name}</span>
+                  )}
                   {entry.symlink && <span className="faint files-meta">link</span>}
                   {entry.kind === 'file' && entry.size !== null && (
                     <span className="faint files-meta num">{formatBytes(entry.size)}</span>
                   )}
+                  <button
+                    type="button"
+                    className="files-more"
+                    tabIndex={-1}
+                    aria-label={`Actions for ${entry.name}`}
+                    aria-haspopup="menu"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const box = e.currentTarget.getBoundingClientRect();
+                      openMenuFor(entry.path, box.right - 8, box.bottom);
+                    }}
+                  >
+                    <MoreIcon size={14} />
+                  </button>
                 </li>
               );
             })}
@@ -242,6 +448,23 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
           </p>
         )}
       </section>
+      {menu && entryAt(menu.path) && (
+        <ContextMenu
+          label={`Actions for ${entryAt(menu.path)!.name}`}
+          x={menu.x}
+          y={menu.y}
+          items={fileMenuItems(entryAt(menu.path)!, expanded.has(menu.path))}
+          onClose={() => {
+            setMenu(null);
+            focusRow(menu.path);
+          }}
+          onPick={(command) => {
+            const entry = entryAt(menu.path)!;
+            setMenu(null);
+            void run(command, entry);
+          }}
+        />
+      )}
       <section className="panel files-preview-panel" aria-label="Preview">
         {openFile ? (
           <FileView
@@ -261,6 +484,59 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * The name field of a row being renamed (VS Code style): the name without its extension is
+ * selected, Enter renames, Escape cancels, and leaving the field cancels too, so a rename only
+ * happens on purpose. Keys stay in the field instead of moving through the tree.
+ */
+function RenameField({
+  name,
+  onSubmit,
+  onCancel,
+}: {
+  name: string;
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+  useEffect(() => {
+    const input = ref.current;
+    if (!input) return;
+    input.focus();
+    const dot = name.lastIndexOf('.');
+    input.setSelectionRange(0, dot > 0 ? dot : name.length);
+  }, [name]);
+  const finish = (submit: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    if (submit) onSubmit(ref.current?.value ?? name);
+    else onCancel();
+  };
+  return (
+    <input
+      ref={ref}
+      className="input files-rename"
+      defaultValue={name}
+      aria-label={`New name for ${name}`}
+      spellCheck={false}
+      autoComplete="off"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finish(true);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          finish(false);
+        }
+      }}
+      onBlur={() => finish(false)}
+    />
   );
 }
 

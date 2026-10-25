@@ -73,7 +73,8 @@ through **Backlog → To do → In progress → Review → Done**. Code stats, l
 commit heatmaps sit beside the work. The **Pull requests** tab shows checks, reviews and
 mergeability, and merges, updates or closes PRs as the repo owner's `gh` account. The **Files**
 tab browses the project like VS Code's explorer and previews Markdown, HTML, images and code
-(read only; previews can't run scripts).
+(previews can't run scripts). Right-click a file for open, reveal in the file manager, copy path and
+rename (on the computer running ProjectManager only).
 
 </td>
 <td width="50%" valign="top">
@@ -355,6 +356,7 @@ email allowlist and an authenticator code in front of it: see
 **Next**
 
 - [ ] Project file tree with a VS Code-style explorer and Markdown/HTML preview (PM-252)
+- [x] Files context menu: open, open in the system app, reveal, copy path, rename in place (PM-259)
 - [x] Inbox: a top-bar tray shows every agent session waiting for your decision, from any page, and opens it (PM-261)
 - [x] Built-in browser: a **Preview** page lists running `localhost` apps (front ends first) beside a small browser; apps run on their own origin with live reload, and over the LAN or remotely it is a read-only view (PM-253)
 - [ ] More agent options, such as OpenCode with other models and Cline (PM-212)

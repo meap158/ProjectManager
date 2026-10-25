@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FolderListing, TreeEntry } from '../../../shared/types';
@@ -31,10 +31,20 @@ vi.mock('../api', () => ({
       content: path.endsWith('.md') ? '# Title\n\nSome *text*.' : 'line one\nline two',
     })),
     projectRawUrl: (id: number, path: string) => `/api/projects/${id}/raw?path=${path}`,
+    renameProjectFile: vi.fn(async (_id: number, path: string, name: string) => {
+      const next = [...path.split('/').slice(0, -1), name].join('/');
+      const list = FOLDERS['']!.entries;
+      const at = list.findIndex((e) => e.path === path);
+      if (at >= 0) list[at] = entry(next, list[at]!.kind);
+      return { path: next };
+    }),
+    openProjectFile: vi.fn(async () => undefined),
   },
 }));
 
-const { ProjectFiles, joinPath, foldersTo } = await import('./ProjectFiles');
+const { api } = await import('../api');
+const { ProjectFiles, joinPath, foldersTo, absolutePath, remapPath, fileMenuItems } =
+  await import('./ProjectFiles');
 
 // Files tab (PM-252): the tree loads folders as they open, works from the keyboard, and opens
 // previews; rendered previews can't run scripts.
@@ -44,7 +54,7 @@ afterEach(cleanup);
 const show = (search = '?tab=files') =>
   render(
     <MemoryRouter initialEntries={[`/projects/1${search}`]}>
-      <ProjectFiles projectId={1} />
+      <ProjectFiles projectId={1} projectPath={'S:\\Vibe Coding\\Demo'} />
     </MemoryRouter>,
   );
 
@@ -93,6 +103,149 @@ describe('ProjectFiles', () => {
         'true',
       ),
     );
+  });
+});
+
+describe('context menu', () => {
+  const rowOf = (tree: HTMLElement, path: string) =>
+    tree.querySelector<HTMLElement>(`[data-path="${path}"]`)!;
+
+  it('opens on right click with the actions for that entry, and Escape closes it', async () => {
+    show();
+    const tree = await screen.findByRole('tree');
+    fireEvent.contextMenu(rowOf(tree, 'README.md'), { clientX: 30, clientY: 40 });
+    const menu = screen.getByRole('menu', { name: 'Actions for README.md' });
+    expect([...menu.querySelectorAll('[role=menuitem]')].map((i) => i.textContent)).toEqual([
+      'Open in preview',
+      'Open in system app',
+      'Reveal in file manager',
+      'Copy path',
+      'Copy relative path',
+      'Rename…',
+    ]);
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('opens from the keyboard with Shift+F10 and the Menu key', async () => {
+    show();
+    const tree = await screen.findByRole('tree');
+    const first = rowOf(tree, 'docs');
+    first.focus();
+    fireEvent.focusIn(first);
+    fireEvent.keyDown(tree, { key: 'F10', shiftKey: true });
+    expect(screen.getByRole('menu', { name: 'Actions for docs' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Expand folder' })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    fireEvent.keyDown(tree, { key: 'ContextMenu' });
+    expect(screen.getByRole('menu')).toBeTruthy();
+  });
+
+  it('has a touch-friendly actions button on each row', async () => {
+    show();
+    const tree = await screen.findByRole('tree');
+    fireEvent.click(
+      within(rowOf(tree, 'README.md')).getByRole('button', { name: 'Actions for README.md' }),
+    );
+    expect(screen.getByRole('menu', { name: 'Actions for README.md' })).toBeTruthy();
+    // The button did not also open the file.
+    expect(screen.queryByLabelText('File contents')).toBeNull();
+  });
+
+  it('asks the host to open or reveal, and shows its refusal', async () => {
+    show();
+    const tree = await screen.findByRole('tree');
+    fireEvent.contextMenu(rowOf(tree, 'README.md'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reveal in file manager' }));
+    await waitFor(() => expect(api.openProjectFile).toHaveBeenCalledWith(1, 'README.md', 'reveal'));
+    vi.mocked(api.openProjectFile).mockRejectedValueOnce(new Error('Only on the host computer'));
+    fireEvent.contextMenu(rowOf(tree, 'README.md'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open in system app' }));
+    expect(await screen.findByText('Only on the host computer')).toBeTruthy();
+  });
+
+  it('copies the absolute path in the project style, and the relative path', async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    show();
+    const tree = await screen.findByRole('tree');
+    fireEvent.contextMenu(rowOf(tree, 'README.md'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy path' }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenLastCalledWith('S:\\Vibe Coding\\Demo\\README.md'),
+    );
+    fireEvent.contextMenu(rowOf(tree, 'README.md'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy relative path' }));
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith('README.md'));
+    expect(await screen.findByRole('status')).toBeTruthy();
+  });
+
+  it('renames in place only on Enter, and the tree follows', async () => {
+    show();
+    const tree = await screen.findByRole('tree');
+    fireEvent.contextMenu(rowOf(tree, 'README.md'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename…' }));
+    const field = (await screen.findByLabelText('New name for README.md')) as HTMLInputElement;
+    expect(field.value).toBe('README.md');
+    // Typing and arrow keys stay in the field.
+    fireEvent.change(field, { target: { value: 'GUIDE.md' } });
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(api.renameProjectFile).not.toHaveBeenCalled();
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() =>
+      expect(api.renameProjectFile).toHaveBeenCalledWith(1, 'README.md', 'GUIDE.md'),
+    );
+    await waitFor(() => expect(tree.querySelector('[data-path="GUIDE.md"]')).toBeTruthy());
+    expect(tree.querySelector('[data-path="README.md"]')).toBeNull();
+  });
+
+  it('cancels on Escape and when the field loses focus, without renaming', async () => {
+    vi.mocked(api.renameProjectFile).mockClear();
+    show();
+    const tree = await screen.findByRole('tree');
+    const start = async () => {
+      fireEvent.keyDown(tree, { key: 'F2' });
+      return (await screen.findByLabelText(/New name for/)) as HTMLInputElement;
+    };
+    const first = tree.querySelector<HTMLElement>('[data-path]')!;
+    first.focus();
+    fireEvent.focusIn(first);
+    let field = await start();
+    fireEvent.change(field, { target: { value: 'other' } });
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(screen.queryByLabelText(/New name for/)).toBeNull();
+    field = await start();
+    fireEvent.change(field, { target: { value: 'other' } });
+    fireEvent.blur(field);
+    expect(screen.queryByLabelText(/New name for/)).toBeNull();
+    expect(api.renameProjectFile).not.toHaveBeenCalled();
+  });
+
+  it('shows the server refusal and keeps the old name', async () => {
+    vi.mocked(api.renameProjectFile).mockRejectedValueOnce(
+      new Error('"x" already exists in this folder'),
+    );
+    show();
+    const tree = await screen.findByRole('tree');
+    fireEvent.contextMenu(rowOf(tree, 'dist'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename…' }));
+    const field = await screen.findByLabelText('New name for dist');
+    fireEvent.change(field, { target: { value: 'x' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(await screen.findByText('"x" already exists in this folder')).toBeTruthy();
+    expect(tree.querySelector('[data-path="dist"]')).toBeTruthy();
+  });
+});
+
+describe('path helpers', () => {
+  it('builds absolute paths in the project style and remaps renamed prefixes', () => {
+    expect(absolutePath('S:\\a\\b', 'src/x.ts')).toBe('S:\\a\\b\\src\\x.ts');
+    expect(absolutePath('S:\\a\\b\\', '')).toBe('S:\\a\\b');
+    expect(absolutePath('/home/me/p', 'src/x.ts')).toBe('/home/me/p/src/x.ts');
+    expect(remapPath('src/a/b.ts', 'src', 'lib')).toBe('lib/a/b.ts');
+    expect(remapPath('src', 'src', 'lib')).toBe('lib');
+    expect(remapPath('srcx/a', 'src', 'lib')).toBe('srcx/a');
+    expect(fileMenuItems(entry('d', 'dir'), true)[0]!.label).toBe('Collapse folder');
   });
 });
 

@@ -312,6 +312,11 @@ export const api = {
     request<FolderListing>('GET', `/projects/${id}/tree?path=${encodeURIComponent(path)}`),
   projectFile: (id: number, path: string) =>
     request<FilePreview>('GET', `/projects/${id}/file?path=${encodeURIComponent(path)}`),
+  /** Files context menu (PM-259): rename in place (returns the new path); open or reveal on the host. */
+  renameProjectFile: (id: number, path: string, name: string) =>
+    request<{ path: string }>('POST', `/projects/${id}/files/rename`, { path, name }),
+  openProjectFile: (id: number, path: string, mode: 'open' | 'reveal') =>
+    request<void>('POST', `/projects/${id}/files/open`, { path, mode }),
   /** A file's bytes (images, a previewed page's styles), as a URL for the page to load. */
   projectRawUrl: (id: number, path: string) =>
     `/api/projects/${id}/raw?path=${encodeURIComponent(path)}`,
