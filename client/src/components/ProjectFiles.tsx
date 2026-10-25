@@ -12,6 +12,7 @@ import { useSearchParams } from 'react-router';
 import { marked } from 'marked';
 import type { FilePreview, FolderListing, TreeEntry } from '../../../shared/types';
 import { api } from '../api';
+import { THEME_EVENT } from '../theme';
 import { formatBytes, formatRelative } from '../format';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -703,6 +704,18 @@ function SourceView({ content }: { content: string }) {
   );
 }
 
+/** The app's resolved theme ("light" / "dark"), following switches so a frame can redraw. */
+function useDocumentTheme(): string {
+  const read = () => document.documentElement.dataset.theme ?? 'light';
+  const [theme, setTheme] = useState(read);
+  useEffect(() => {
+    const update = () => setTheme(read());
+    window.addEventListener(THEME_EVENT, update);
+    return () => window.removeEventListener(THEME_EVENT, update);
+  }, []);
+  return theme;
+}
+
 /**
  * Markdown (rendered) or an HTML file, in a frame that can't run scripts or reach this app
  * (sandbox without scripts or same-origin, plus a CSP). Relative images and styles load from
@@ -719,15 +732,25 @@ function RenderedFrame({
   source: string;
   markdown: boolean;
 }) {
+  const theme = useDocumentTheme();
   const doc = useMemo(() => {
     const dir = parentOf(path);
     const rawBase = `${location.origin}/api/projects/${projectId}/raw?path=`;
     const css = getComputedStyle(document.documentElement);
     const color = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-    const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${location.origin} https: data:; style-src 'unsafe-inline' ${location.origin}; font-src ${location.origin} data:"><base target="_blank">`;
+    // A frame's scrollbar is the page's own, so it stayed light inside the dark app. In dark,
+    // only the scrollbar follows the app (an HTML file keeps its own colours otherwise), like
+    // the Preview browser's framed pages.
+    const scrollbar =
+      theme === 'dark'
+        ? `<style>html{scrollbar-color:${color('--border-strong', '#3d3d39')} ${color('--surface', '#1a1a19')}}</style>`
+        : '';
+    const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${location.origin} https: data:; style-src 'unsafe-inline' ${location.origin}; font-src ${location.origin} data:"><base target="_blank">${scrollbar}`;
     if (!markdown) return withBase(source, head, rawBase, dir);
     const body = marked.parse(source, { async: false, gfm: true }) as string;
+    // Rendered Markdown wears the app's colours throughout, so its form controls match too.
     const style = `<style>
+      html{color-scheme:${theme === 'dark' ? 'dark' : 'light'}}
       body{font:14px/1.6 system-ui,sans-serif;max-width:860px;margin:0 auto;padding:16px 20px;color:${color('--text', '#222')};background:${color('--surface', '#fff')}}
       a{color:${color('--accent', '#3b5bdb')}} img{max-width:100%}
       pre,code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:${color('--surface-2', '#f4f4f4')};border-radius:4px}
@@ -737,7 +760,7 @@ function RenderedFrame({
       h1,h2{border-bottom:1px solid ${color('--border', '#ddd')};padding-bottom:4px}
     </style>`;
     return `<!doctype html><html><head>${head}${style}</head><body>${rewriteRelative(body, rawBase, dir)}</body></html>`;
-  }, [projectId, path, source, markdown]);
+  }, [projectId, path, source, markdown, theme]);
   return (
     <iframe
       className="files-frame"

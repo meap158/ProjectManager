@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FolderListing, TreeEntry } from '../../../shared/types';
@@ -93,6 +93,22 @@ describe('ProjectFiles', () => {
     expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'");
     fireEvent.click(screen.getByRole('button', { name: 'Source' }));
     expect(await screen.findByText('# Title')).toBeTruthy();
+  });
+
+  it('gives a framed page dark scrollbars in the dark theme, and follows a switch', async () => {
+    document.documentElement.dataset.theme = 'light';
+    show('?tab=files&file=README.md');
+    const frame = (await screen.findByTitle('Preview of README.md')) as HTMLIFrameElement;
+    expect(frame.getAttribute('srcdoc')).not.toContain('scrollbar-color');
+    expect(frame.getAttribute('srcdoc')).toContain('color-scheme:light');
+    act(() => {
+      document.documentElement.dataset.theme = 'dark';
+      window.dispatchEvent(new Event('pm-theme')); // What applyTheme does after switching.
+    });
+    const doc = () => screen.getByTitle('Preview of README.md').getAttribute('srcdoc');
+    await waitFor(() => expect(doc()).toContain('scrollbar-color'));
+    expect(doc()).toContain('color-scheme:dark');
+    delete document.documentElement.dataset.theme;
   });
 
   it('opens the folders above a linked file', async () => {

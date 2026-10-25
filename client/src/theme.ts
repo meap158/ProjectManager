@@ -3,6 +3,9 @@
 // resolves the viewer's choice, including "system", which follows the OS setting live.
 
 export type ThemePreference = 'system' | 'light' | 'dark';
+/** Dispatched on window after the resolved theme is applied, for content that can't follow CSS
+ * (a framed page's colours and scrollbars). */
+export const THEME_EVENT = 'pm-theme';
 
 const KEY = 'pm-theme';
 const media = () => window.matchMedia('(prefers-color-scheme: dark)');
@@ -21,6 +24,7 @@ export function applyTheme(preference: ThemePreference): void {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   syncThemeColor();
   rememberPreviewTheme(dark);
+  window.dispatchEvent(new Event(THEME_EVENT));
 }
 
 /**
