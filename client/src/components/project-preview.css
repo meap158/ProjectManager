@@ -257,13 +257,11 @@
   padding: 4px 8px 0;
   background: var(--surface-hover);
   border-bottom: 1px solid var(--border);
-  /* The tabs size from this pane, not the screen: the browser sits beside a list and a sidebar. */
-  container-type: inline-size;
 }
-/* Browser-style widths from the pane (PM-260): a tab prefers 14% of the pane, kept between 128px
-   and 184px, so a lone tab never fills a wide pane and a narrow pane is not left with slivers.
-   Tabs shrink equally as they multiply, down to 88px, then the strip scrolls. The strip's
-   preferred width keeps + beside the final tab when there is room. */
+/* Chrome's tab widths (PM-260): every tab is the standard 240px while they fit, never wider, so a
+   lone tab never fills a wide pane. When they no longer fit, all tabs shrink equally to share the
+   strip (width = strip / tabs), down to 72px, and only then does the strip scroll. The strip is
+   as wide as its tabs, so + always sits right after the last one, like Chrome's new-tab button. */
 .preview-tabs {
   display: flex;
   align-items: flex-end;
@@ -280,9 +278,11 @@
   position: relative;
   display: flex;
   align-items: center;
-  flex: 1 1 clamp(128px, 14cqw, 184px);
-  max-width: 184px;
-  min-width: 88px;
+  flex: 0 1 240px;
+  /* Also as width: the strip sizes from its tabs, and a flex-basis alone doesn't count there. */
+  width: 240px;
+  max-width: 240px;
+  min-width: 72px;
   height: 32px;
   margin-bottom: -1px; /* the active tab and the toolbar read as one surface */
   border: 1px solid transparent;
