@@ -612,6 +612,9 @@ export class AgentSupervisor {
     if (!row) throw new AgentError(404, 'Session not found');
     if (row.provider_id !== 'codex')
       throw new AgentError(400, 'Account switching is only supported for Codex sessions');
+    const pendingRestart = this.restarting.get(id);
+    if (pendingRestart && pendingRestart.phase !== 'failed')
+      throw new AgentError(409, 'Restart already in progress');
     if (options.automatic && (row.status !== 'running' || row.desired_state !== 'running'))
       throw new AgentError(409, 'Session ended before automatic account switching.');
     const targetKey = profileId === null || profileId === 'default' ? 'default' : profileId;
@@ -676,13 +679,7 @@ export class AgentSupervisor {
             : `\r\n[supervisor] switching Codex account to ${target.name} — starting a new conversation (no saved conversation to carry over)\r\n`
           : `\r\n[supervisor] switching Codex account to ${target.name}\r\n`,
       );
-      await this.stopSession(id);
-      if (options.continuePrompt) {
-        this.db
-          .prepare(`INSERT INTO agent_input_queue (session_id, data, created_at) VALUES (?, ?, ?)`)
-          .run(id, CONTINUE_PROMPT, now());
-      }
-      return await this.startSession(id);
+      return await this.restartSession(id, { continuePrompt: options.continuePrompt });
     } finally {
       this.switchingCodexSession.delete(id);
     }
@@ -1348,7 +1345,10 @@ export class AgentSupervisor {
   }
 
   /** (Re)start a stopped/dead/exited session. Resets the restart counter. */
-  async restartSession(id: number): Promise<AgentSession> {
+  async restartSession(
+    id: number,
+    options: { continuePrompt?: boolean } = {},
+  ): Promise<AgentSession> {
     if (!this.getSessionRow(id)) throw new AgentError(404, 'Session not found');
     const pending = this.restarting.get(id);
     if (pending && pending.phase !== 'failed')
@@ -1362,6 +1362,11 @@ export class AgentSupervisor {
     try {
       await this.stopSession(id);
       state.phase = 'starting';
+      if (options.continuePrompt) {
+        this.db
+          .prepare(`INSERT INTO agent_input_queue (session_id, data, created_at) VALUES (?, ?, ?)`)
+          .run(id, CONTINUE_PROMPT, now());
+      }
       const session = await this.startSession(id);
       if (session.status !== 'running')
         throw new AgentError(400, 'CLI failed to start. Inspect the terminal log.');

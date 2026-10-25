@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentRun, AgentSession } from '../../../shared/types';
-import { mergeWork, runFacts, sessionFacts, stateLabel, workKey } from './AgentWorkList';
+import {
+  mergeWork,
+  runFacts,
+  sessionFacts,
+  stateLabel,
+  workKey,
+  workStatus,
+} from './AgentWorkList';
 
 const NOW = Date.parse('2026-10-06T12:00:00Z');
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
@@ -75,6 +82,25 @@ describe('facts', () => {
 });
 
 describe('stateLabel', () => {
+  it.each(['stopping', 'starting', 'restoring'] as const)(
+    'keeps a %s session in Running during the stop/start gap',
+    (phase) => {
+      const item = {
+        kind: 'session' as const,
+        item: session(1, { status: 'killed', restartProgress: phase }),
+      };
+      expect(workStatus(item, NOW)).toBe('running');
+      expect(stateLabel(item, NOW).tone).toBe('attention');
+    },
+  );
+  it('keeps a failed restart in Ended when no process is running', () => {
+    expect(
+      workStatus(
+        { kind: 'session', item: session(1, { status: 'killed', restartProgress: 'failed' }) },
+        NOW,
+      ),
+    ).toBe('ended');
+  });
   it('does not display Restart failed when a session is actively running', () => {
     const s = session(1, {
       status: 'running',

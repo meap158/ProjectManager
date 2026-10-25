@@ -383,6 +383,68 @@ describe('CodexAccounts (PM-164)', () => {
     expect(readFileSync(path.join(defaultCodexHome, 'config.toml'), 'utf8')).toBe(config);
   });
 
+  it('reports account-switch restart progress throughout the stopped-process gap', async () => {
+    const supervisor = new AgentSupervisor(db, path.join(tmpDir, 'logs'), { dataDir: tmpDir });
+    try {
+      await supervisor.ready;
+      writeFileSync(path.join(defaultCodexHome, 'auth.json'), '{"OPENAI_API_KEY":"default"}');
+      const accountId = supervisor.importCodexAccount('Next', '{"OPENAI_API_KEY":"next"}')
+        .accounts[0]!.id;
+      const projectId = insertProject(db, 'switch-progress', tmpDir);
+      const id = Number(
+        db
+          .prepare(
+            `INSERT INTO agent_sessions
+        (project_id, name, provider_id, command_json, cwd, status, desired_state, supervise, created_at, started_at, log_path)
+        VALUES (?, 'Codex', 'codex', ?, ?, 'running', 'running', 0, ?, ?, ?)`,
+          )
+          .run(
+            projectId,
+            JSON.stringify({ command: ['codex'], codexAccountId: 'default' }),
+            tmpDir,
+            new Date().toISOString(),
+            new Date().toISOString(),
+            path.join(tmpDir, 'logs', 'switch.log'),
+          ).lastInsertRowid,
+      );
+      let release!: () => void;
+      const stopped = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      vi.spyOn(supervisor, 'stopSession').mockImplementation(async () => {
+        db.prepare(
+          "UPDATE agent_sessions SET status = 'killed', desired_state = 'stopped' WHERE id = ?",
+        ).run(id);
+        await stopped;
+        return supervisor.getSession(id);
+      });
+      vi.spyOn(supervisor, 'startSession').mockImplementation(async () => {
+        expect(supervisor.getSession(id)?.restartProgress).toBe('starting');
+        db.prepare(
+          "UPDATE agent_sessions SET status = 'running', desired_state = 'running' WHERE id = ?",
+        ).run(id);
+        return supervisor.getSession(id)!;
+      });
+      const pending = supervisor.switchSessionCodexAccount(id, accountId, { continuePrompt: true });
+      expect(supervisor.getSession(id)).toMatchObject({
+        status: 'killed',
+        restartProgress: 'stopping',
+      });
+      release();
+      expect(await pending).toMatchObject({ status: 'running', restartProgress: 'restoring' });
+      expect(
+        (
+          db
+            .prepare('SELECT count(*) AS n FROM agent_input_queue WHERE session_id = ?')
+            .get(id) as { n: number }
+        ).n,
+      ).toBe(1);
+    } finally {
+      vi.restoreAllMocks();
+      await supervisor.shutdown();
+    }
+  });
+
   it('carries the conversation to the new login so the restarted CLI resumes it (PM-188)', async () => {
     const supervisor = new AgentSupervisor(db, path.join(tmpDir, 'logs'), { dataDir: tmpDir });
     try {

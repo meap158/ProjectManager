@@ -15,6 +15,7 @@ export type SessionActivity = 'running' | 'input' | 'idle' | 'stopped';
 export const RUNNING_WINDOW_MS = 8_000;
 
 export function sessionActivity(s: AgentSession, now = Date.now()): SessionActivity {
+  if (s.restartProgress && s.restartProgress !== 'failed') return 'running';
   if (s.status !== 'running') return 'stopped';
   if (s.tailState) return s.tailState;
   const last = s.lastOutputAt ? Date.parse(s.lastOutputAt) : 0;
