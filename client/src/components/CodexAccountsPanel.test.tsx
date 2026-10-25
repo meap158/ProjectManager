@@ -37,6 +37,7 @@ vi.mock('../api', () => ({
     saveCurrentCodexAccount: vi.fn(),
     setActiveCodexAccount: vi.fn(),
     setCodexAutoSwitch: vi.fn(),
+    setCodexAccountOrder: vi.fn(),
     setCodexAccountAutoSwitchEligible: vi.fn(),
     renameCodexAccount: vi.fn(),
     removeCodexAccount: vi.fn(),
@@ -102,6 +103,8 @@ describe('CodexAccountsPanel (PM-164)', () => {
     };
     vi.mocked(api.getCodexAccounts).mockResolvedValue(state);
     vi.mocked(api.refreshCodexAccountUsage).mockResolvedValue(state);
+    const reordered = { ...state, accounts: [state.accounts[1]!, state.accounts[0]!] };
+    vi.mocked(api.setCodexAccountOrder).mockResolvedValue(reordered);
     const first = render(<CodexAccountsPanel onError={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Refresh usage for Work Pro' }));
     await waitFor(() =>
@@ -120,10 +123,23 @@ describe('CodexAccountsPanel (PM-164)', () => {
         (el) => el.textContent,
       );
     expect(names()).toEqual(['Default Codex account', 'Personal', 'Work Pro']);
+    // Auto-switch breaks ties by this order, so the server gets it too.
+    await waitFor(() =>
+      expect(api.setCodexAccountOrder).toHaveBeenCalledWith(reordered.accounts.map((a) => a.id)),
+    );
     first.unmount();
     render(<CodexAccountsPanel onError={vi.fn()} />);
     await screen.findByText('Personal');
     expect(names()).toEqual(['Default Codex account', 'Personal', 'Work Pro']);
+  });
+  it('explains how auto-switch picks an account', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    vi.mocked(api.getCodexAccounts).mockResolvedValue(baseState);
+    render(<CodexAccountsPanel onError={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'How auto-switch works' }));
+    expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalled();
+    expect(screen.getByText(/most usable quota/)).toBeDefined();
+    expect(screen.getByText(/stays on the current one/)).toBeDefined();
   });
   it('renders default and saved Codex accounts and switches active account', async () => {
     vi.mocked(api.getCodexAccounts).mockResolvedValue(baseState);

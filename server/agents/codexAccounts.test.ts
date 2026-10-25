@@ -918,6 +918,58 @@ describe('CodexAccounts (PM-164)', () => {
     expect(accounts.nextUnused('default', ['default'], now + 3600001)).toBeNull();
   });
 
+  it('breaks quota ties by weekly, then the saved order, and lets a reset account back in', async () => {
+    writeFileSync(
+      path.join(defaultCodexHome, 'auth.json'),
+      JSON.stringify({ OPENAI_API_KEY: 'current' }),
+    );
+    const accounts = new CodexAccounts(tmpDir, db);
+    for (const name of ['A', 'B', 'C'])
+      accounts.importAccount(name, JSON.stringify({ OPENAI_API_KEY: name }));
+    const [a, b, c] = accounts.state().accounts;
+    const now = Date.now();
+    // Remaining [5-hour, weekly] per account; the default login is exhausted.
+    const read = (left: Record<string, [number, number]>) =>
+      accounts.refreshUsage(async (home) => {
+        const id = [a!, b!, c!].find((x) => accounts.profile(x.id).home === home)?.id;
+        const [fiveHour, weekly] = id ? left[id]! : [0, 50];
+        return {
+          status: 'fresh' as const,
+          checkedAt: new Date(now).toISOString(),
+          limits: {
+            providerId: 'codex',
+            source: 'test',
+            asOf: new Date(now).toISOString(),
+            windows: [
+              {
+                label: '5-hour',
+                windowMinutes: 300,
+                usedPercent: 100 - fiveHour,
+                resetsAt: new Date(now + 3600000).toISOString(),
+              },
+              {
+                label: 'Weekly',
+                windowMinutes: 10080,
+                usedPercent: 100 - weekly,
+                resetsAt: new Date(now + 86400000).toISOString(),
+              },
+            ],
+          },
+        };
+      });
+    await read({ [a!.id]: [40, 60], [b!.id]: [40, 90], [c!.id]: [100, 5] });
+    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(b!.id);
+    await read({ [a!.id]: [40, 60], [b!.id]: [40.3, 59.8], [c!.id]: [0, 100] });
+    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(a!.id);
+    accounts.setOrder([c!.id, b!.id, a!.id]);
+    expect(accounts.state().accounts.map((x) => x.id)).toEqual([c!.id, b!.id, a!.id]);
+    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(b!.id);
+    // A tried account is back only once a reading taken after it was left shows quota.
+    expect(accounts.quotaRecovered(c!.id, now - 1, now)).toBe(false);
+    expect(accounts.quotaRecovered(a!.id, now, now)).toBe(false);
+    expect(accounts.quotaRecovered(a!.id, now - 1, now)).toBe(true);
+  });
+
   it('keeps usage for every profile across restarts and re-reads only stale ones (PM-173)', async () => {
     const accounts = new CodexAccounts(tmpDir, db);
     for (const name of ['One', 'Two'])

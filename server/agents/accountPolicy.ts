@@ -34,3 +34,27 @@ export function verifiedRemainingQuota(
     return null;
   return Math.min(...reading.limits.windows.map((w) => 100 - w.usedPercent));
 }
+
+/**
+ * How auto-switch orders accounts that still have quota: most usable quota first (the lowest
+ * remaining window, since an account stops at whichever window runs out), then most weekly
+ * quota left, then the saved list order (the caller's order; the sort is stable). Compared in
+ * whole percents, as Settings shows them, so readings that look equal tie. Null = unverified.
+ */
+export function switchQuota(
+  reading: Parameters<typeof verifiedRemainingQuota>[0],
+  now = Date.now(),
+): { usable: number; weekly: number } | null {
+  const usable = verifiedRemainingQuota(reading, now);
+  if (usable === null || usable <= 0) return null;
+  const windows = reading!.limits!.windows;
+  const longest = windows.reduce((a, b) => (b.windowMinutes > a.windowMinutes ? b : a));
+  return { usable: Math.round(usable), weekly: Math.round(100 - longest.usedPercent) };
+}
+
+export function bySwitchQuota(
+  a: { usable: number; weekly: number },
+  b: { usable: number; weekly: number },
+): number {
+  return b.usable - a.usable || b.weekly - a.weekly;
+}

@@ -23,7 +23,13 @@ import { getSetting, setSetting } from '../store.js';
 import type { CodexAccount, CodexAccountsState } from '../../shared/types.js';
 import { claudeLimits } from './limits.js';
 import { readCodexAccountUsage, type AccountUsageResult } from './accountUsage.js';
-import { ACCOUNT_USAGE_MAX_AGE_MS, usageIsFresh, verifiedRemainingQuota } from './accountPolicy.js';
+import {
+  ACCOUNT_USAGE_MAX_AGE_MS,
+  bySwitchQuota,
+  switchQuota,
+  usageIsFresh,
+  verifiedRemainingQuota,
+} from './accountPolicy.js';
 
 const REGISTRY = 'codex-accounts.json';
 const ACTIVE_KEY = 'codex-accounts-active';
@@ -412,6 +418,20 @@ export class CodexAccounts {
     return this.state();
   }
 
+  /**
+   * Save the order Settings shows (Reorder accounts), which auto-switch uses to break a tie.
+   * Unknown ids are ignored and accounts left out keep their place after the listed ones.
+   */
+  setOrder(ids: readonly string[]): CodexAccountsState {
+    const registry = this.readRegistry();
+    const rank = (id: string) => (ids.includes(id) ? ids.indexOf(id) : ids.length);
+    this.writeRegistry({
+      ...registry,
+      accounts: [...registry.accounts].sort((a, b) => rank(a.id) - rank(b.id)),
+    });
+    return this.state();
+  }
+
   setAutoSwitch(enabled: boolean): CodexAccountsState {
     setSetting(this.db, AUTO_SWITCH_KEY, enabled);
     return this.state();
@@ -566,8 +586,9 @@ export class CodexAccounts {
   }
 
   /**
-   * Requires verified current-account exhaustion, then ranks untried accounts by their
-   * lowest remaining quota window. Unknown, stale or reset-due readings never authorize a switch.
+   * Requires verified current-account exhaustion, then picks the untried account with the most
+   * quota (`bySwitchQuota`: usable, then weekly, then list order). Unknown, stale or reset-due
+   * readings never authorize a switch, and with no candidate left it stays put.
    */
   nextUnused(
     currentKey: string | null,
@@ -590,25 +611,39 @@ export class CodexAccounts {
         })),
     ];
     const sources = this.usageSources();
-    const remaining = (home: string): number | null => {
-      const reading = this.knownUsage(sources.get(home) ?? home);
-      return verifiedRemainingQuota(reading, now);
-    };
+    const reading = (home: string) => this.knownUsage(sources.get(home) ?? home);
     const currentHome =
       currentKey && currentKey !== 'default' ? this.home(currentKey) : this.defaultHome();
-    if (remaining(currentHome) !== 0) return null;
+    if (verifiedRemainingQuota(reading(currentHome), now) !== 0) return null;
     const ranked = accounts
       .filter((a) => a.id !== currentKey && !tried.includes(a.id))
-      .map((account) => ({ account, remaining: remaining(account.home) }))
+      .map((account) => ({ account, quota: switchQuota(reading(account.home), now) }))
       .filter(
-        (candidate): candidate is { account: (typeof accounts)[number]; remaining: number } =>
-          candidate.remaining !== null && candidate.remaining > 0,
+        (
+          candidate,
+        ): candidate is {
+          account: (typeof accounts)[number];
+          quota: { usable: number; weekly: number };
+        } => candidate.quota !== null,
       )
-      .sort((a, b) => b.remaining - a.remaining);
+      .sort((a, b) => bySwitchQuota(a.quota, b.quota));
     const chosen = ranked[0]?.account;
     if (!chosen) return null;
     if (chosen.id !== 'default') this.syncConfigToml(chosen.home);
     return chosen;
+  }
+
+  /**
+   * Whether an account auto-switch already left has quota again: a verified reading taken after
+   * `since` shows some left (its window reset). Lets the rotation come back to it instead of
+   * stopping for good once every account has been tried.
+   */
+  quotaRecovered(id: string, since: number, now = Date.now()): boolean {
+    const home = id === 'default' ? this.defaultHome() : this.account(id) ? this.home(id) : null;
+    if (!home) return false;
+    const reading = this.knownUsage(this.usageSources().get(home) ?? home);
+    const checked = Date.parse(reading?.checkedAt ?? '');
+    return checked > since && (verifiedRemainingQuota(reading, now) ?? 0) > 0;
   }
 
   /** Keep the native resume picker independent of the selected credential. */

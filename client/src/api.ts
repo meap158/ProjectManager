@@ -552,6 +552,8 @@ export const api = {
       `/agents/codex-accounts/${encodeURIComponent(accountId)}/auto-switch`,
       { eligible },
     ),
+  setCodexAccountOrder: (ids: string[]) =>
+    request<CodexAccountsState>('PUT', '/agents/codex-accounts/order', { ids }),
   setCodexAutoSwitch: (autoSwitch: boolean) =>
     request<CodexAccountsState>('PUT', '/agents/codex-accounts/auto-switch', { autoSwitch }),
   renameCodexAccount: (accountId: string, name: string) =>

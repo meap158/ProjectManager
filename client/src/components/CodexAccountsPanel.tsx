@@ -56,6 +56,7 @@ export function CodexAccountsPanel({
   onError: (message: string) => void;
 }) {
   const helpRef = useRef<HTMLDialogElement>(null);
+  const switchHelpRef = useRef<HTMLDialogElement>(null);
   const isClaude = providerId === 'claude';
   const cliTitle = isClaude ? 'Claude' : 'Codex';
   const credFile = isClaude ? '~/.claude/.credentials.json' : '~/.codex/auth.json';
@@ -147,6 +148,22 @@ export function CodexAccountsPanel({
     };
   }, [backgroundRefresh, isClaude]);
   const loadingUsage = refreshingUsage || backgroundRefresh;
+
+  // Auto-switch breaks a tie by this order, so the server keeps it too (Codex only: Claude
+  // accounts never switch automatically). Also carries an order saved in this browser earlier.
+  const shownOrder = JSON.stringify(orderedAccounts.map((a) => a.id));
+  const savedOrder = JSON.stringify((state?.accounts ?? []).map((a) => a.id));
+  useEffect(() => {
+    if (isClaude || !order.length || shownOrder === savedOrder) return;
+    invalidateReads();
+    api.setCodexAccountOrder(JSON.parse(shownOrder) as string[]).then(
+      (next) => {
+        invalidateReads();
+        setState(next);
+      },
+      (e: Error) => onError(e.message),
+    );
+  }, [isClaude, order.length, shownOrder, savedOrder, invalidateReads, onError]);
 
   const act = useCallback(
     async (fn: () => Promise<CodexAccountsState>) => {
@@ -302,6 +319,41 @@ export function CodexAccountsPanel({
         </div>
       </dialog>
 
+      <dialog
+        ref={switchHelpRef}
+        className="confirm-dialog sessions-info-dialog"
+        aria-label="How auto-switch works"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) event.currentTarget.close();
+        }}
+      >
+        <div className="dialog-body">
+          <h2>How auto-switch works</h2>
+          <ul style={{ paddingLeft: 18, margin: '0 0 8px' }}>
+            <li>
+              It switches only once {cliTitle} itself says the usage limit is hit and the session is
+              idle, so a turn still finishing after 100% is never cut off.
+            </li>
+            <li>
+              It picks the account with the most usable quota: the lower of its 5-hour and weekly
+              left, since either one stops it. A tie goes to more weekly left, then to the account
+              higher in the list (Reorder accounts).
+            </li>
+            <li>
+              It skips accounts with Auto-switch off, any limit at 100%, or usage it couldn&apos;t
+              check in the last minute. An account it left comes back once its limit resets.
+            </li>
+            <li>If no account qualifies, it stays on the current one and waits for the reset.</li>
+            <li>Running sessions move with it and continue; runs retry on the new account.</li>
+          </ul>
+        </div>
+        <div className="dialog-footer">
+          <button type="button" className="btn" onClick={() => switchHelpRef.current?.close()}>
+            Close
+          </button>
+        </div>
+      </dialog>
+
       {state === null ? (
         <div className="skeleton" style={{ height: 100 }} />
       ) : (
@@ -325,6 +377,18 @@ export function CodexAccountsPanel({
                 />
                 <span>Automatically switch accounts when hitting usage limits</span>
               </label>
+            )}
+            {!isClaude && (
+              <button
+                type="button"
+                className="icon-btn info-btn"
+                title="How auto-switch works"
+                aria-label="How auto-switch works"
+                aria-haspopup="dialog"
+                onClick={() => switchHelpRef.current?.showModal()}
+              >
+                <InfoIcon size={14} />
+              </button>
             )}
             <span className="actions codex-accounts-toolbar-actions">
               <button

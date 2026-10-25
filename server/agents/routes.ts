@@ -375,6 +375,14 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     return c.json(supervisor.setCodexAutoSwitch(body.autoSwitch));
   });
 
+  app.put('/agents/codex-accounts/order', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({ ids: z.array(z.string().trim().min(1).max(64)).max(200) }),
+    );
+    return c.json(supervisor.setCodexAccountOrder(body.ids));
+  });
+
   app.put('/agents/codex-accounts/:accountId/auto-switch', async (c) => {
     const body = await parseBody(c, z.object({ eligible: z.boolean() }));
     return c.json(

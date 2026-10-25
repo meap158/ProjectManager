@@ -397,8 +397,11 @@ export class AgentSupervisor {
   private readonly installRecipes: Partial<Record<string, InstallRecipe>>;
   private readonly codexAccounts: CodexAccounts | null;
   private readonly claudeAccounts: ClaudeAccounts | null;
-  /** Accounts already tried in the current Codex usage-limit rotation. One list for every Codex CLI. */
-  private codexRotationTried: string[] = [];
+  /**
+   * Accounts already tried in the current Codex usage-limit rotation, with when each was left.
+   * One list for every Codex CLI. An account drops out once its quota is back (`codexTried`).
+   */
+  private codexRotationTried = new Map<string, number>();
   private switchingCodexSession = new Set<number>();
   /**
    * Sessions this process (re)started that have not been sent a message since. A usage limit
@@ -517,7 +520,7 @@ export class AgentSupervisor {
     for (const row of running) this.pinCodexForRestart(row);
     const state = this.withCodexAccounts((accounts) => accounts.setActive(id));
     // A choice in Settings starts a fresh rotation. Auto-switch keeps the accounts it already tried.
-    if (!options.keepRotation) this.codexRotationTried = [];
+    if (!options.keepRotation) this.codexRotationTried.clear();
     this.applyCodexAccountToSessions(id === null || id === 'default' ? 'default' : id, {
       activeOnly: options.activeOnly,
     });
@@ -558,6 +561,10 @@ export class AgentSupervisor {
         console.error('[agents] codex account switch:', error);
       });
     }
+  }
+
+  setCodexAccountOrder(ids: string[]): CodexAccountsState {
+    return this.codexAccounts!.setOrder(ids);
   }
 
   setCodexAccountAutoSwitchEligible(id: string, eligible: boolean) {
@@ -662,7 +669,7 @@ export class AgentSupervisor {
       this.withCodexAccounts((accounts) =>
         accounts.setActive(target.id === 'default' ? null : target.id),
       );
-      if (!options.keepRotation) this.codexRotationTried = [];
+      if (!options.keepRotation) this.codexRotationTried.clear();
       this.applyCodexAccountToSessions(target.id, { exceptId: id, activeOnly: options.automatic });
     }
 
@@ -1491,6 +1498,13 @@ export class AgentSupervisor {
     setSetting(this.db, key, { ...state, resumesAt, message: 'Waiting for allowance reset' });
   }
 
+  /** The rotation's tried accounts plus the current one, minus any whose quota is back. */
+  private codexTried(currentKey: string): string[] {
+    for (const [id, since] of this.codexRotationTried)
+      if (this.codexAccounts?.quotaRecovered(id, since)) this.codexRotationTried.delete(id);
+    return [...new Set([...this.codexRotationTried.keys(), currentKey])];
+  }
+
   private tickContinuation(): void {
     const rows = this.db
       .prepare(`SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'`)
@@ -1514,11 +1528,11 @@ export class AgentSupervisor {
           if (this.switchingCodexSession.size > 0) continue;
           const currentKey = this.sessionCodexProfile(row)?.id ?? 'default';
           this.codexAccounts.refreshUsageIfStale();
-          const tried = [...new Set([...this.codexRotationTried, currentKey])];
+          const tried = this.codexTried(currentKey);
           const next = this.codexAccounts.nextUnused(currentKey, tried, Date.now());
           const tail = this.logTail(row.log_path) ?? '';
           if (next && next.id !== currentKey && emptyCodexPrompt(tail)) {
-            this.codexRotationTried = tried;
+            this.codexRotationTried.set(currentKey, Date.now());
             void this.switchSessionCodexAccount(row.id, next.id, {
               continuePrompt: true,
               setGlobal: true,
@@ -2932,7 +2946,7 @@ export class AgentSupervisor {
               ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now())
               : null;
           if (next && next.id !== codexProfile.id) {
-            this.codexRotationTried = [...new Set([...this.codexRotationTried, codexProfile.id])];
+            this.codexRotationTried.set(codexProfile.id, Date.now());
             try {
               this.setActiveCodexAccount(next.id === 'default' ? null : next.id, {
                 keepRotation: true,
