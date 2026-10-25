@@ -20,6 +20,21 @@ export function applyTheme(preference: ThemePreference): void {
   const dark = preference === 'dark' || (preference === 'system' && media().matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   syncThemeColor();
+  rememberPreviewTheme(dark);
+}
+
+/**
+ * Lets the preview proxy dark-theme a framed page's scrollbars: a framed page's scrollbar is the
+ * page's own, and only the server can reach it. A same-site cookie scoped to the proxy's path; the
+ * proxy never forwards cookies to the previewed app.
+ */
+function rememberPreviewTheme(dark: boolean): void {
+  try {
+    const secure = location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `pm-preview-theme=${dark ? 'dark' : 'light'}; Path=/api/preview; SameSite=Strict; Max-Age=31536000${secure}`;
+  } catch {
+    // Cookies blocked: the scrollbars simply stay the page's own.
+  }
 }
 
 /**

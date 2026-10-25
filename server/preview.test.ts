@@ -7,6 +7,7 @@ import {
   PreviewError,
   parsePreviewPort,
   proxyPreview,
+  previewWantsDark,
   rewriteHtml,
   rewriteLocation,
 } from './preview.js';
@@ -37,6 +38,27 @@ describe('rewriteLocation', () => {
     expect(rewriteLocation('//evil.example/', 3000)).toBeNull();
     expect(rewriteLocation('http://localhost:4000/', 3000)).toBeNull();
     expect(rewriteLocation('javascript:alert(1)', 3000)).toBeNull();
+  });
+});
+
+describe('dark scrollbars in the framed page', () => {
+  it('reads the viewer theme from the cookie', () => {
+    expect(previewWantsDark('a=1; pm-preview-theme=dark')).toBe(true);
+    expect(previewWantsDark('pm-preview-theme=dark; b=2')).toBe(true);
+    expect(previewWantsDark('pm-preview-theme=light')).toBe(false);
+    expect(previewWantsDark('xpm-preview-theme=dark')).toBe(false);
+    expect(previewWantsDark(null)).toBe(false);
+  });
+
+  it('adds only a scrollbar rule, first in the head, and only when dark', () => {
+    const html = '<!doctype html><html><head lang="x"><title>t</title></head><body></body></html>';
+    expect(rewriteHtml(html, 3000)).toBe(html);
+    const dark = rewriteHtml(html, 3000, true);
+    expect(dark).toContain(
+      '<head lang="x"><style data-pm-preview>html{scrollbar-color:#3d3d39 #1a1a19}</style><title>',
+    );
+    expect(dark).not.toMatch(/color-scheme|background/);
+    expect(rewriteHtml('<p>no head</p>', 3000, true)).toMatch(/^<style data-pm-preview>/);
   });
 });
 

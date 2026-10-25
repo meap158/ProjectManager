@@ -50,12 +50,29 @@ export function rewriteLocation(location: string, port: number): string | null {
 }
 
 /** Root-absolute URLs in markup point at this app, not the page; send them through the proxy. */
-export function rewriteHtml(html: string, port: number): string {
+export function rewriteHtml(html: string, port: number, dark = false): string {
   const prefix = `/api/preview/${port}`;
-  return html.replace(
+  const out = html.replace(
     /(\s(?:src|href|action|poster)\s*=\s*)(["'])\/(?!\/)/gi,
     (_all, attr: string, quote: string) => `${attr}${quote}${prefix}/`,
   );
+  if (!dark) return out;
+  // Only the page's scrollbars follow this app's dark theme (never its colours): a framed page's
+  // scrollbar belongs to the page, so it stays light unless the page asks otherwise. Placed first so
+  // a page that sets its own scrollbar-color still wins.
+  const style = `<style data-pm-preview>html{scrollbar-color:${SCROLLBAR_DARK}}</style>`;
+  const head = /<head(\s[^>]*)?>/i.exec(out);
+  return head
+    ? out.slice(0, head.index + head[0].length) + style + out.slice(head.index + head[0].length)
+    : style + out;
+}
+
+/** This app's dark thumb and track (--border-strong, --surface). */
+const SCROLLBAR_DARK = '#3d3d39 #1a1a19';
+
+/** The viewer's theme, sent by the app in a same-site cookie (see client/src/theme.ts). */
+export function previewWantsDark(cookieHeader: string | null): boolean {
+  return /(?:^|;\s*)pm-preview-theme=dark(?:;|$)/.test(cookieHeader ?? '');
 }
 
 const DROP_REQUEST = new Set([
@@ -139,7 +156,11 @@ export async function proxyPreview(
   const bytes = new Uint8Array(await upstream.arrayBuffer());
   if (bytes.byteLength > MAX_BODY_BYTES) throw new PreviewError(502, 'The page is too large');
   if (/^text\/html\b/i.test(type)) {
-    const html = rewriteHtml(new TextDecoder().decode(bytes), port);
+    const html = rewriteHtml(
+      new TextDecoder().decode(bytes),
+      port,
+      previewWantsDark(request.headers.get('cookie')),
+    );
     return new Response(html, { status: upstream.status, headers: out });
   }
   return new Response(bytes, { status: upstream.status, headers: out });
