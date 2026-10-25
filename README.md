@@ -185,7 +185,8 @@ Copy `.env.example` to `.env` and change what you need:
 </details>
 
 The launcher restarts the server after an unexpected exit (at most five times in five minutes).
-Ctrl+C still stops it. Crash output goes to `data/server-output.log` and `data/server-crashes.log`.
+Ctrl+C still stops it. Its window is titled `ProjectManager - Server` and, once running, shows the port it
+chose (for example `ProjectManager - Server :5181`), so several windows are easy to tell apart. Crash output goes to `data/server-output.log` and `data/server-crashes.log`.
 
 ---
 
@@ -355,7 +356,7 @@ email allowlist and an authenticator code in front of it: see
 
 **Next**
 
-- [ ] Project file tree with a VS Code-style explorer and Markdown/HTML preview (PM-252)
+- [x] Project file tree with a VS Code-style explorer and Markdown/HTML preview (PM-252)
 - [x] Files context menu: open, open in the system app, reveal, copy path, rename in place (PM-259)
 - [x] Inbox: a top-bar bell lists every session that needs a decision, failed, hit a usage limit or finished its reply, with the question or reply on each row, answerable in place (PM-261)
 - [x] Built-in browser: a **Preview** page lists running `localhost` apps (front ends first) beside a small browser; apps run on their own origin with live reload, and over the LAN or remotely it is a read-only view (PM-253)
@@ -369,6 +370,8 @@ email allowlist and an authenticator code in front of it: see
 - [x] Remote access through Cloudflare Tunnel
 - [x] Pull requests tab with merge, update and branch actions
 - [x] Mobile chat view and phone-friendly Agents workspace
+
+The fuller plan, with scope, phases and risks, is in [ROADMAP.md](ROADMAP.md).
 
 Have an idea? [Open an issue](https://github.com/meap158/ProjectManager/issues).
 
