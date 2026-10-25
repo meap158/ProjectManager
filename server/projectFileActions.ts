@@ -107,7 +107,7 @@ const RUNNABLE = new Set([
   'rpm',
 ]);
 
-export type OpenMode = 'open' | 'reveal';
+export type OpenMode = 'open' | 'reveal' | 'run';
 
 /** The command for an action, as an argument array (never a shell string). Pure, for tests. */
 export function openCommand(
@@ -143,10 +143,13 @@ export async function openEntry(
   rel: string,
   mode: OpenMode,
   platform: NodeJS.Platform = process.platform,
+  launch = spawn,
 ): Promise<void> {
   const target = await resolveInside(root, rel); // '' is the project folder itself
   const info = await stat(target);
   const isDir = info.isDirectory();
+  if (mode === 'run' && (platform !== 'win32' || isDir || !/\.(bat|cmd)$/i.test(target)))
+    throw new FileAccessError(400, 'Run in terminal supports Windows .bat and .cmd launchers.');
   if (mode === 'open' && !isDir) {
     const ext = path.extname(target).slice(1).toLowerCase();
     // Extensionless files (LICENSE, Makefile) open as text, unless the file is marked executable.
@@ -158,7 +161,8 @@ export async function openEntry(
       );
   }
   const { command, args, verbatim } = openCommand(platform, target, mode, isDir);
-  const child = spawn(command, args, {
+  const child = launch(command, args, {
+    cwd: path.dirname(target),
     detached: true,
     stdio: 'ignore',
     windowsHide: false,

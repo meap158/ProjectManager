@@ -315,7 +315,7 @@ export const api = {
   /** Files context menu (PM-259): rename in place (returns the new path); open or reveal on the host. */
   renameProjectFile: (id: number, path: string, name: string) =>
     request<{ path: string }>('POST', `/projects/${id}/files/rename`, { path, name }),
-  openProjectFile: (id: number, path: string, mode: 'open' | 'reveal') =>
+  openProjectFile: (id: number, path: string, mode: 'open' | 'reveal' | 'run') =>
     request<void>('POST', `/projects/${id}/files/open`, { path, mode }),
   /** A file's bytes (images, a previewed page's styles), as a URL for the page to load. */
   projectRawUrl: (id: number, path: string) =>

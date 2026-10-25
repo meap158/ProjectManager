@@ -13,6 +13,7 @@ import type { FilePreview, FolderListing, TreeEntry } from '../../../shared/type
 import { api } from '../api';
 import { formatBytes, formatRelative } from '../format';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
+import { ConfirmDelete } from './ConfirmDelete';
 import { FoldersIcon, MoreIcon, PageIcon } from './icons';
 import './project-files.css';
 
@@ -40,7 +41,13 @@ export function fileMenuItems(entry: TreeEntry, isOpen: boolean): ContextMenuIte
       label:
         entry.kind === 'dir' ? (isOpen ? 'Collapse folder' : 'Expand folder') : 'Open in preview',
     },
-    { command: 'open-system', label: 'Open in system app' },
+    {
+      command: 'open-system',
+      label:
+        entry.kind === 'file' && /\.(bat|cmd)$/i.test(entry.name)
+          ? 'Run in terminal…'
+          : 'Open in system app',
+    },
     { command: 'reveal', label: 'Reveal in file manager' },
     { command: 'copy-path', label: 'Copy path', divider: true },
     { command: 'copy-relative', label: 'Copy relative path' },
@@ -121,6 +128,7 @@ export function ProjectFiles({
   const treeRef = useRef<HTMLUListElement>(null);
   const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [launcher, setLauncher] = useState<TreeEntry | null>(null);
 
   const say = (text: string) => {
     setNotice(text);
@@ -202,12 +210,14 @@ export function ProjectFiles({
           select(entry);
           break;
         case 'open-system':
+          if (entry.kind === 'file' && /\.(bat|cmd)$/i.test(entry.name)) {
+            setLauncher(entry);
+            return;
+          }
+          await api.openProjectFile(projectId, entry.path, 'open');
+          break;
         case 'reveal':
-          await api.openProjectFile(
-            projectId,
-            entry.path,
-            command === 'reveal' ? 'reveal' : 'open',
-          );
+          await api.openProjectFile(projectId, entry.path, 'reveal');
           break;
         case 'copy-path':
         case 'copy-relative': {
@@ -459,6 +469,30 @@ export function ProjectFiles({
           </p>
         )}
       </section>
+      {launcher && (
+        <ConfirmDelete
+          hideTrigger
+          open
+          tone="primary"
+          icon={null}
+          label={`Run ${launcher.name}`}
+          heading={`Run ${launcher.name} in terminal?`}
+          message={`Runs ${launcher.path} on this computer, with its containing folder as the working directory.`}
+          confirmLabel="Run in terminal"
+          onDismiss={() => {
+            focusRow(launcher.path);
+            setLauncher(null);
+          }}
+          onConfirm={async () => {
+            try {
+              await api.openProjectFile(projectId, launcher.path, 'run');
+              say(`Launched ${launcher.name}`);
+            } catch (error) {
+              setError((error as Error).message);
+            }
+          }}
+        />
+      )}
       {menu && entryAt(menu.path) && (
         <ContextMenu
           label={`Actions for ${entryAt(menu.path)!.name}`}

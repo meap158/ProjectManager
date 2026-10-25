@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from './app.js';
 import { openDb } from './db.js';
 import { invalidName, openCommand, openEntry, renameEntry } from './projectFileActions.js';
@@ -136,6 +136,23 @@ describe('openCommand', () => {
 });
 
 describe('openEntry', () => {
+  it('launches an explicitly requested batch file with its own working directory and no shell interpolation', async () => {
+    const launch = vi.fn(() => ({ on: vi.fn(), unref: vi.fn() }));
+    await openEntry(
+      root,
+      'run.bat',
+      'run',
+      'win32',
+      launch as unknown as typeof import('node:child_process').spawn,
+    );
+    expect(launch).toHaveBeenCalledWith(
+      'rundll32.exe',
+      ['url.dll,FileProtocolHandler', path.join(root, 'run.bat')],
+      expect.objectContaining({ cwd: root, windowsHide: false, windowsVerbatimArguments: false }),
+    );
+    expect(await status(openEntry(root, 'run.bat', 'run', 'linux'))).toBe(400);
+    expect(await status(openEntry(root, '.git/HEAD', 'run', 'win32'))).toBe(404);
+  });
   it('never starts a file the system would run, and keeps inside the project', async () => {
     expect(await status(openEntry(root, 'run.bat', 'open'))).toBe(400);
     expect(await status(openEntry(root, '../x', 'open'))).toBe(400);

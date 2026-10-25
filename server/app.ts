@@ -450,7 +450,7 @@ export function createApp(
     const root = projectRoot(c);
     const { path: rel, mode } = await parseBody(
       c,
-      z.object({ path: z.string().max(4096), mode: z.enum(['open', 'reveal']) }),
+      z.object({ path: z.string().max(4096), mode: z.enum(['open', 'reveal', 'run']) }),
     );
     await fileErrors(() => openEntry(root, rel, mode));
     return c.body(null, 204);

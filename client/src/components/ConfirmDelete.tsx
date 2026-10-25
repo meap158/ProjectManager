@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useShortcutProps, useShortcutTitle, type ShortcutId } from '../shortcuts';
 
 function TrashIcon() {
@@ -37,6 +37,7 @@ export function ConfirmDelete({
   shortcut,
   hideTrigger = false,
   onDismiss,
+  open = false,
 }: {
   /** The keyboard shortcut that opens this confirmation (PM-244): shown in the tooltip only. */
   shortcut?: ShortcutId;
@@ -55,6 +56,7 @@ export function ConfirmDelete({
   /** For a confirmation opened from an action menu rather than its own visible button. */
   hideTrigger?: boolean;
   onDismiss?: () => void;
+  open?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -62,6 +64,12 @@ export function ConfirmDelete({
   const headingId = useId();
   const keys = useShortcutProps(shortcut);
   const title = useShortcutTitle(shortcut, label);
+  useEffect(() => {
+    if (open && !dialogRef.current?.open) {
+      dialogRef.current?.showModal();
+      cancelRef.current?.focus();
+    }
+  }, [open]);
 
   async function confirm() {
     setBusy(true);
