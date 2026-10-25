@@ -203,6 +203,41 @@ it('never replaces the live refreshed credential when selecting its already-acti
   await service.switch(saved.accounts[0]!.id);
   expect(store.write).not.toHaveBeenCalled();
 });
+it('keeps an external login authoritative during an in-flight quota read and rejects concurrent mutations', async () => {
+  const { root, store, setLive } = setup();
+  setLive(credential('a@example.com'));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const request = vi.fn(async (url: string | URL | Request) => {
+    await gate;
+    return new Response(
+      JSON.stringify(
+        String(url).endsWith(':loadCodeAssist')
+          ? { paidTier: { name: 'Pro' } }
+          : { groups: [{ buckets: [{ window: '5h', remainingFraction: 0 }] }] },
+      ),
+    );
+  });
+  const service = new NativeAntigravityAccounts(
+    path.join(root, 'data'),
+    path.join(root, 'home'),
+    store,
+    request as typeof fetch,
+  );
+  const saved = await service.saveCurrent();
+  const pending = service.refresh();
+  await vi.waitFor(() => expect(request).toHaveBeenCalled());
+  await expect(service.remove(saved.accounts[0]!.id)).rejects.toThrow('already running');
+  setLive(credential('b@example.com'));
+  release();
+  const state = await pending;
+  expect(state.defaultAccount?.email).toBe('b@example.com');
+  expect(state.defaultAccount?.usage.fiveHour).toBeNull();
+  expect(state.accounts[0]?.active).toBe(false);
+  expect(store.write).not.toHaveBeenCalled();
+});
 it('invalidates cached quota on credential changes and does not resurrect disk usage after restart', async () => {
   const { root, store, setLive } = setup();
   const raw = credential('a@example.com');
