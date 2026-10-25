@@ -29,6 +29,9 @@ const item = (
   ctime: '2026-10-01T10:00:00.000Z',
   ignored: false,
   symlink: false,
+  width: null,
+  height: null,
+  git: null,
   ...patch,
 });
 const state = (patch: Partial<FolderViewState> = {}): FolderViewState => ({

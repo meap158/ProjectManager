@@ -13,6 +13,9 @@ const item = (path: string, patch: Partial<FolderItem> = {}): FolderItem => ({
   ctime: '2026-10-01T10:00:00.000Z',
   ignored: false,
   symlink: false,
+  width: null,
+  height: null,
+  git: null,
   ...patch,
 });
 const INFO: FolderInfo = {
@@ -24,8 +27,13 @@ const INFO: FolderInfo = {
   newest: '2026-10-25T10:00:00.000Z',
   truncated: false,
   items: [
-    item('assets/icons', { kind: 'dir', size: null }),
-    item('assets/logo.png', { mtime: '2026-10-25T10:00:00.000Z' }),
+    item('assets/icons', { kind: 'dir', size: null, git: 'untracked' }),
+    item('assets/logo.png', {
+      mtime: '2026-10-25T10:00:00.000Z',
+      width: 640,
+      height: 480,
+      git: 'modified',
+    }),
     item('assets/hero.jpg', { mtime: '2026-10-10T10:00:00.000Z' }),
     item('assets/notes.md', { mtime: '2026-10-24T10:00:00.000Z' }),
     item('assets/run.sh'),
@@ -120,6 +128,15 @@ describe('FolderView', () => {
     localStorage.setItem('pm.folderView.1:assets', 'types=image');
     show('&types=document');
     await waitFor(() => expect(names()).toEqual(['notes.md']));
+  });
+
+  it('shows the pixel size of a picture and its git state', async () => {
+    show();
+    await screen.findByText(/4 files/);
+    expect(screen.getByText('640 × 480')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Modified since the last commit' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Not tracked by git' })).toBeTruthy();
+    expect(screen.queryByRole('img', { name: 'Merge conflict' })).toBeNull();
   });
 
   it('reads the subfolders too when asked', async () => {

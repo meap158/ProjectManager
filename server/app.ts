@@ -27,6 +27,8 @@ import {
   folderInfo,
   listFolder,
   previewFile,
+  rawEtag,
+  rawMeta,
   readRaw,
 } from './projectFiles.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
@@ -542,13 +544,21 @@ export function createApp(
   // this origin: a sandbox CSP and nosniff, so an .html or .svg can't script the app.
   app.get('/projects/:id/raw', async (c) => {
     const root = projectRoot(c);
-    const { bytes, type } = await fileErrors(() => readRaw(root, c.req.query('path') ?? ''));
-    return c.body(new Uint8Array(bytes), 200, {
-      'content-type': type,
+    const requested = c.req.query('path') ?? '';
+    // A validator, so a browser that has the file asks "changed?" and gets an empty 304 (thumbnails
+    // are shown again and again, over the LAN and the tunnel too).
+    const meta = await fileErrors(() => rawMeta(root, requested));
+    const etag = rawEtag(meta);
+    const headers = {
       'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'",
       'x-content-type-options': 'nosniff',
       'cache-control': 'private, no-cache',
-    });
+      etag,
+      'last-modified': new Date(meta.mtimeMs).toUTCString(),
+    };
+    if (c.req.header('if-none-match') === etag) return c.body(null, 304, headers);
+    const { bytes, type } = await fileErrors(() => readRaw(root, requested));
+    return c.body(new Uint8Array(bytes), 200, { ...headers, 'content-type': type });
   });
 
   app.get('/projects/:id/pull-requests', async (c) => {

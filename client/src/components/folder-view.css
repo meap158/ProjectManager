@@ -208,6 +208,36 @@
   color: var(--accent);
   border: 1px solid var(--accent);
 }
+.fv-git {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.fv-git-modified,
+.fv-git-added {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.fv-git-conflict {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.fv-row-name .fv-git {
+  position: static;
+  flex: none;
+}
 .fv-row-name .fv-badge {
   position: static;
   flex: none;

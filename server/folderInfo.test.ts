@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { FolderInfo } from '../shared/types.js';
 import { createApp } from './app.js';
 import { openDb } from './db.js';
-import { FileAccessError, folderInfo } from './projectFiles.js';
+import { FileAccessError, folderInfo, gitMarkOf } from './projectFiles.js';
 
 // The folder previewer's data (PM-286): entries with sizes and times for one level or the whole
 // tree below, bounded, read only, never leaving the project.
@@ -123,5 +124,120 @@ describe('GET /projects/:id/folder-info', () => {
     expect((await get('?path=nope')).status).toBe(404);
     // A junk limit falls back to the default instead of failing.
     expect((await get('?path=assets&limit=abc')).status).toBe(200);
+  });
+});
+
+describe('folderInfo extras', () => {
+  const png = (w: number, h: number) =>
+    Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]),
+      Buffer.from('IHDR'),
+      Buffer.from([w >>> 24, (w >>> 16) & 255, (w >>> 8) & 255, w & 255]),
+      Buffer.from([h >>> 24, (h >>> 16) & 255, (h >>> 8) & 255, h & 255]),
+      Buffer.alloc(9),
+    ]);
+
+  it('reads the pixel size of pictures from their headers, and nothing for other files', async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'pm-folder-dim-'));
+    writeFileSync(path.join(root, 'a.png'), png(640, 480));
+    writeFileSync(path.join(root, 'b.svg'), '<svg width="32" height="16"></svg>');
+    writeFileSync(path.join(root, 'broken.png'), 'not really a png');
+    writeFileSync(path.join(root, 'notes.md'), '# hi');
+    const info = await folderInfo(root, '');
+    const by = (name: string) => info.items.find((i) => i.name === name)!;
+    expect([by('a.png').width, by('a.png').height]).toEqual([640, 480]);
+    expect([by('b.svg').width, by('b.svg').height]).toEqual([32, 16]);
+    expect([by('broken.png').width, by('broken.png').height]).toEqual([null, null]);
+    expect(by('notes.md').width).toBeNull();
+  });
+
+  it('classifies git status codes', () => {
+    expect(gitMarkOf('??')).toBe('untracked');
+    expect(gitMarkOf(' M')).toBe('modified');
+    expect(gitMarkOf('MM')).toBe('modified');
+    expect(gitMarkOf('A ')).toBe('added');
+    expect(gitMarkOf('UU')).toBe('conflict');
+    expect(gitMarkOf('AA')).toBe('conflict');
+    expect(gitMarkOf(' D')).toBe('modified');
+  });
+
+  it('marks what differs from the last commit, folders included, with one status for the listing', async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'pm-folder-git-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+        cwd: root,
+        stdio: 'ignore',
+      });
+    const put = (rel: string, text: string) => {
+      const full = path.join(root, ...rel.split('/'));
+      mkdirSync(path.dirname(full), { recursive: true });
+      writeFileSync(full, text);
+    };
+    git('init', '-q');
+    put('kept.md', 'one');
+    put('changed.md', 'one');
+    put('assets/inside.md', 'one');
+    put('quiet/fine.md', 'one');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'first');
+    put('changed.md', 'two');
+    put('assets/inside.md', 'two');
+    put('fresh.md', 'new');
+    put('newdir/a.md', 'new');
+    put('staged.md', 'staged');
+    git('add', 'staged.md');
+
+    const info = await folderInfo(root, '');
+    const mark = (name: string) => info.items.find((i) => i.name === name)?.git;
+    expect(mark('kept.md')).toBeNull();
+    expect(mark('changed.md')).toBe('modified');
+    expect(mark('fresh.md')).toBe('untracked');
+    expect(mark('staged.md')).toBe('added');
+    expect(mark('assets')).toBe('modified'); // Something inside changed.
+    expect(mark('newdir')).toBe('untracked'); // Everything inside is new.
+    expect(mark('quiet')).toBeNull();
+    // A listing of a subfolder is marked relative to it.
+    const inner = await folderInfo(root, 'assets');
+    expect(inner.items.find((i) => i.name === 'inside.md')?.git).toBe('modified');
+  });
+
+  it('gives no marks, and no error, outside a git repository', async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'pm-folder-nogit-'));
+    writeFileSync(path.join(root, 'a.md'), 'x');
+    const info = await folderInfo(root, '');
+    expect(info.items[0]!.git).toBeNull();
+  });
+});
+
+describe('GET /projects/:id/raw validators', () => {
+  it('answers a repeat request for an unchanged file with an empty 304, and sends the bytes again after a change', async () => {
+    const root = tree();
+    const db = openDb(':memory:');
+    const app = createApp(db);
+    const host = { host: 'localhost:5180', 'content-type': 'application/json' };
+    const made = await app.request('/api/projects', {
+      method: 'POST',
+      headers: host,
+      body: JSON.stringify({ path: root }),
+    });
+    const { id } = (await made.json()) as { id: number };
+    const get = (headers: Record<string, string> = {}) =>
+      app.request(`/api/projects/${id}/raw?path=${encodeURIComponent('assets/logo.png')}`, {
+        headers: { host: host.host, ...headers },
+      });
+    const first = await get();
+    expect(first.status).toBe(200);
+    const etag = first.headers.get('etag')!;
+    expect(etag).toMatch(/^W\/"[0-9a-f]+-[0-9a-f]+"$/);
+    expect(first.headers.get('cache-control')).toBe('private, no-cache'); // Always revalidated.
+    const again = await get({ 'if-none-match': etag });
+    expect(again.status).toBe(304);
+    expect((await again.arrayBuffer()).byteLength).toBe(0);
+    expect(again.headers.get('etag')).toBe(etag);
+    // The file changes: the old validator no longer matches.
+    writeFileSync(path.join(root, 'assets', 'logo.png'), 'changed-bytes-longer');
+    expect((await get({ 'if-none-match': etag })).status).toBe(200);
+    // A different validator, or none, gets the file.
+    expect((await get({ 'if-none-match': 'W/"nope"' })).status).toBe(200);
   });
 });

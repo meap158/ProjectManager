@@ -4,10 +4,12 @@ import type {
   FilePreview,
   FolderInfo,
   FolderItem,
+  GitMark,
   FolderListing,
   TreeEntry,
 } from '../shared/types.js';
 import { isAvailable, run } from './analysis/exec.js';
+import { HEADER_BYTES, hasImageSize, readImageSize } from './imageSize.js';
 
 // The project page's Files tab (PM-252): a VS Code style tree read one folder at a time, and
 // file previews. Read only: nothing here writes inside a tracked project.
@@ -172,6 +174,9 @@ export async function folderInfo(
         ctime: (info.birthtimeMs > 0 ? info.birthtime : info.ctime).toISOString(),
         ignored: false,
         symlink,
+        width: null,
+        height: null,
+        git: null,
       });
       if (isDir && recursive && !SKIPPED_WHEN_RECURSIVE.has(dirent.name)) queue.push(abs);
     }
@@ -183,6 +188,8 @@ export async function folderInfo(
       if (item) item.ignored = true;
     }
   }
+  // Sizes of pictures and git state, read after the listing so a failure of either costs only its badge.
+  await Promise.all([addImageSizes(realRoot, items), addGitMarks(realRoot, dir, items)]);
   const files = items.filter((i) => i.kind === 'file');
   const newest = files.reduce<string | null>(
     (latest, f) => (f.mtime && (!latest || f.mtime > latest) ? f.mtime : latest),
@@ -198,6 +205,92 @@ export async function folderInfo(
     newest,
     truncated,
   };
+}
+
+/** Pictures looked at per listing (the header of each is read: a few KB). */
+const MAX_SIZED = 400;
+
+/** The size of each picture, read from the start of its file, a few at a time. */
+async function addImageSizes(realRoot: string, items: FolderItem[]): Promise<void> {
+  const targets = items
+    .filter((i) => i.kind === 'file' && !i.symlink && hasImageSize(path.extname(i.name).slice(1)))
+    .slice(0, MAX_SIZED);
+  let next = 0;
+  const worker = async () => {
+    while (next < targets.length) {
+      const item = targets[next++]!;
+      let handle;
+      try {
+        handle = await open(path.join(realRoot, item.path), 'r');
+        const buffer = Buffer.alloc(HEADER_BYTES);
+        const { bytesRead } = await handle.read(buffer, 0, HEADER_BYTES, 0);
+        const size = readImageSize(buffer.subarray(0, bytesRead), path.extname(item.name).slice(1));
+        if (size) {
+          item.width = size.width;
+          item.height = size.height;
+        }
+      } catch {
+        // Unreadable: no size shown.
+      } finally {
+        await handle?.close().catch(() => undefined);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(16, targets.length) }, worker));
+}
+
+/** How git reports one status line: two letters, X (staged) and Y (working tree). */
+export function gitMarkOf(code: string): GitMark {
+  const [x, y] = [code[0] ?? ' ', code[1] ?? ' '];
+  if (x === '?' && y === '?') return 'untracked';
+  if (x === 'U' || y === 'U' || (x === 'A' && y === 'A') || (x === 'D' && y === 'D'))
+    return 'conflict';
+  if (x === 'A') return 'added';
+  return 'modified';
+}
+
+/**
+ * Marks entries that differ from the last commit, with one `git status` for the whole listing (never
+ * one per file). A folder is marked when something inside it is. Read only; not a repository, no git,
+ * or a slow answer just means no marks.
+ */
+async function addGitMarks(realRoot: string, dir: string, items: FolderItem[]): Promise<void> {
+  if (items.length === 0 || !(await isAvailable('git'))) return;
+  try {
+    const prefix = (
+      await run('git', ['rev-parse', '--show-prefix'], { cwd: realRoot, timeoutMs: 5_000 })
+    ).stdout.trim();
+    const rel = toRel(realRoot, dir) || '.';
+    const { stdout } = await run(
+      'git',
+      ['status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=normal', '--', rel],
+      { cwd: realRoot, timeoutMs: 8_000 },
+    );
+    const changes: { path: string; mark: GitMark }[] = [];
+    for (const line of stdout.split('\0')) {
+      if (line.length < 4) continue;
+      let changed = line.slice(3).replace(/\/$/, '');
+      if (prefix) {
+        if (!changed.startsWith(prefix)) continue;
+        changed = changed.slice(prefix.length);
+      }
+      changes.push({ path: changed, mark: gitMarkOf(line.slice(0, 2)) });
+    }
+    for (const item of items) {
+      if (item.kind === 'file') {
+        item.git = changes.find((c) => c.path === item.path)?.mark ?? null;
+      } else {
+        const inside = changes.filter(
+          (c) => c.path === item.path || c.path.startsWith(`${item.path}/`),
+        );
+        if (inside.some((c) => c.mark === 'conflict')) item.git = 'conflict';
+        else if (inside.some((c) => c.mark !== 'untracked')) item.git = 'modified';
+        else if (inside.length > 0) item.git = 'untracked';
+      }
+    }
+  } catch {
+    // No marks.
+  }
 }
 
 /** Which of these project-relative paths git ignores (none when it isn't a git repo). */
@@ -242,11 +335,30 @@ export async function previewFile(root: string, rel: string): Promise<FilePrevie
 }
 
 /** A file's bytes for previews that need them (images, a page's styles), size-capped. */
-export async function readRaw(root: string, rel: string): Promise<{ bytes: Buffer; type: string }> {
+/** What a raw read needs to know before sending any bytes: whether it is allowed, and a validator. */
+export async function rawMeta(
+  root: string,
+  rel: string,
+): Promise<{ abs: string; size: number; mtimeMs: number; type: string }> {
   const abs = await resolveInside(root, rel);
   const info = await stat(abs);
   if (!info.isFile()) throw new FileAccessError(400, 'Not a file');
   if (info.size > MAX_RAW_BYTES) throw new FileAccessError(413, 'File is too large to preview');
+  return {
+    abs,
+    size: info.size,
+    mtimeMs: info.mtimeMs,
+    type: RAW_TYPES[path.extname(abs).toLowerCase()] ?? 'application/octet-stream',
+  };
+}
+
+/** A validator that changes when the file does (size and modified time), so a browser can ask
+ * "has it changed?" and get an empty 304 instead of the bytes again (thumbnails over LAN or tunnel). */
+export const rawEtag = (meta: { size: number; mtimeMs: number }): string =>
+  `W/"${meta.size.toString(16)}-${Math.round(meta.mtimeMs).toString(16)}"`;
+
+export async function readRaw(root: string, rel: string): Promise<{ bytes: Buffer; type: string }> {
+  const { abs } = await rawMeta(root, rel);
   const handle = await open(abs, 'r');
   try {
     const bytes = await handle.readFile();

@@ -894,7 +894,14 @@ export interface FolderItem {
   /** Ignored by git (only known for a single folder, not for a recursive listing). */
   ignored: boolean;
   symlink: boolean;
+  /** A picture's pixel size, read from its header; null for anything else or an unreadable header. */
+  width: number | null;
+  height: number | null;
+  /** Its git state when it differs from the last commit (a folder: something inside it does). */
+  git: GitMark | null;
 }
+
+export type GitMark = 'modified' | 'added' | 'untracked' | 'conflict';
 
 export interface FolderInfo {
   path: string;

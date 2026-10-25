@@ -478,6 +478,28 @@ function Badge({ item, seenAt }: { item: FolderItem; seenAt: number | null }) {
   ) : null;
 }
 
+const GIT_LABEL: Record<NonNullable<FolderItem['git']>, [string, string]> = {
+  modified: ['M', 'Modified since the last commit'],
+  added: ['A', 'Staged as new'],
+  untracked: ['U', 'Not tracked by git'],
+  conflict: ['!', 'Merge conflict'],
+};
+
+/** Git's view of an entry, when it differs from the last commit. */
+function GitMarker({ item }: { item: FolderItem }) {
+  if (!item.git) return null;
+  const [letter, text] = GIT_LABEL[item.git];
+  return (
+    <span className={`fv-git fv-git-${item.git}`} title={text} role="img" aria-label={text}>
+      {letter}
+    </span>
+  );
+}
+
+/** "640 × 480" for a picture whose header could be read. */
+const dimensions = (item: FolderItem): string =>
+  item.width && item.height ? `${item.width} × ${item.height}` : '';
+
 function GridCell({
   item,
   seenAt,
@@ -509,12 +531,14 @@ function GridCell({
             <FileTypeIcon spec={spec} size={36} />
           )}
           <Badge item={item} seenAt={seenAt} />
+          <GitMarker item={item} />
         </span>
         <span className="fv-name">{item.name}</span>
         <span className="faint fv-meta num">
           {item.kind === 'dir' ? 'Folder' : item.size === null ? '' : formatBytes(item.size)}
           {item.mtime ? ` · ${formatRelative(item.mtime)}` : ''}
         </span>
+        {dimensions(item) && <span className="faint fv-meta num">{dimensions(item)}</span>}
         {showPath && item.path !== item.name && (
           <span className="faint fv-meta fv-path">{item.path}</span>
         )}
@@ -549,9 +573,11 @@ function ListRow({
         </span>
         <span className="truncate">{showPath ? item.path : item.name}</span>
         <Badge item={item} seenAt={seenAt} />
+        <GitMarker item={item} />
       </span>
       <span className="num" role="cell">
         {item.kind === 'dir' || item.size === null ? '' : formatBytes(item.size)}
+        {dimensions(item) && <span className="faint"> · {dimensions(item)}</span>}
       </span>
       <span className="num" role="cell" title={when(item.mtime)}>
         {formatRelative(item.mtime)}
