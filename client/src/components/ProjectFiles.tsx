@@ -164,14 +164,14 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
           <input
             type="search"
             className="input files-filter"
-            placeholder="Filter open folders…"
+            placeholder="Filter files…"
             aria-label="Filter files in open folders"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
           <button
             type="button"
-            className="btn btn-sm"
+            className="btn"
             onClick={refresh}
             title="Read the open folders again"
           >
@@ -179,7 +179,7 @@ export function ProjectFiles({ projectId }: { projectId: number }) {
           </button>
           <button
             type="button"
-            className="btn btn-sm"
+            className="btn"
             onClick={() => setExpanded(new Set(['']))}
             title="Collapse all folders"
           >
