@@ -236,6 +236,43 @@ export function MonitorIcon(props: IconProps) {
   );
 }
 
+/** Arrow pointing left: back. */
+export function ArrowLeftIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M13 8H3M7 4 3 8l4 4" />
+    </Base>
+  );
+}
+
+/** Arrow pointing right: forward. */
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M3 8h10M9 4l4 4-4 4" />
+    </Base>
+  );
+}
+
+/** A globe: the web, a browser. */
+export function GlobeIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M2 8h12M8 2c2 1.8 3 3.8 3 6s-1 4.2-3 6c-2-1.8-3-3.8-3-6s1-4.2 3-6Z" />
+    </Base>
+  );
+}
+
+/** A bookmark ribbon: keep this address. */
+export function BookmarkIcon({ filled = false, ...props }: IconProps & { filled?: boolean }) {
+  return (
+    <Base {...props} fill={filled ? 'currentColor' : 'none'}>
+      <path d="M4 2.5h8v11L8 10.5l-4 3v-11Z" />
+    </Base>
+  );
+}
+
 /** Two arrows chasing round: refresh / reload. */
 export function RefreshIcon(props: IconProps) {
   return (

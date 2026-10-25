@@ -303,20 +303,27 @@ adjacent-pair CVD separation in both modes).
   ("Filter files…"). The address input is 16px text so iPhone doesn't zoom on focus; on touch the
   shared rules raise both to 40px together. A `type="search"` input keeps the `.input` box (native
   search styling is turned off).
-- **Preview page (`/preview`):** the Files tab pattern, full width (`.page-wide`, no centred 1280px
-  column) and without a visible page header. A list panel (190-230px, sticky) beside the viewer.
-  Its first row is the shared compact `Dropdown` for sort (Port, Name A-Z / Z-A, Project) and a
-  26px refresh icon button (40px on touch) that reads the machine now and spins while it works;
-  the list also refreshes every 5 s while the page is visible and stops in a background tab.
-  Sections ("Your projects", "Other apps on this computer", "Quick launches") fold from a real
-  heading button with `aria-expanded` and a row count. "Other apps" starts closed (mostly system
-  services) unless nothing belongs to a project; what the person folds or sorts is remembered per
-  browser. Rows are one line: the app's own 18px icon (a lettered tile until it loads or when it
-  has none), its page title, and `:port` on the right; the project and command are in the tooltip.
-  Text is 13px, the address input and its Go, Reload and Save buttons are 13px and 32px tall (16px
-  in the field only on touch, to stop iPhone zoom). Under 769px the address row comes first, then
-  the list or the viewer, with an "Apps" back button like Files. Phones reach Preview from the
-  Agents tools menu beside Orchestrators, not the bottom bar.
+- **Preview page (`/preview`):** full width (`.page-wide`, no centred 1280px column) and without a
+  visible page header. A list panel (190-230px, sticky) beside a small browser, modelled on the one
+  built into Claude's desktop app: a 34px tab strip (the open page's own icon and title, a close ×;
+  'New tab' when empty; desktop only), then a toolbar of Back, Forward, Reload (28px ghost icon
+  buttons), one address field (28px, tinted, 13px; 16px and 40px on touch) and a bookmark that
+  saves or removes a Quick launch. Back and forward walk the pages you opened here. The empty
+  browser shows a globe, "Browse localhost" and a line of help. Theme tokens only, so it follows
+  the selected theme.
+  The list: the shared compact `Dropdown` for sort (Port, Name A-Z / Z-A, Project) and a 26px
+  refresh icon button (40px on touch) that reads the machine now and spins while it works; the list
+  also refreshes every 5 s while the page is visible and stops in a background tab. Your projects'
+  apps split by what a dev stack looks like: **Apps** first (the server answered with a page and a
+  real icon, so usually the front end), then **Services** (no icon, usually an API or back end),
+  then **Other on this computer** (not started from one of your projects; mostly system services,
+  so it starts closed unless it is all there is), then **Quick launches**. Headings are real
+  buttons (`aria-expanded`, a row count, a tooltip saying what the group means); the folds and the
+  sort are remembered per browser. Rows are one line: the app's own 18px icon (a lettered tile
+  until it loads), its page title, `:port` on the right; the project and command are in the
+  tooltip. Under 769px the toolbar comes first, then the list or the browser (never both), with an
+  "Apps" button back to the list and no tab strip. Phones reach Preview from the Agents tools menu
+  beside Orchestrators, not the bottom bar.
 - **Loading mark (`LoadingMark`, after TrendRelay):** the ProjectManager logo animated as a wait
   indicator: the three board columns rise in turn on the accent tile. Pure CSS on an inline SVG,
   theme tokens only, no script or timer. It is decorative (`aria-hidden`); the caption beside it

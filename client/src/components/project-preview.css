@@ -7,7 +7,7 @@
   align-items: start;
 }
 .preview-list-panel,
-.preview-view-panel {
+.preview-browser {
   min-width: 0;
 }
 .preview-list-panel {
@@ -17,11 +17,6 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding: 6px;
-}
-.preview-view-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 .preview-group + .preview-group {
   margin-top: 8px;
@@ -207,47 +202,135 @@
   height: 26px;
   flex: none;
 }
-.preview-empty,
-.preview-hint {
+.preview-empty {
   margin: 0;
   padding: 4px 6px;
   font-size: 13px;
 }
 
-/* Same 32px height and 13px text as the other toolbars (DESIGN.md). */
-.preview-bar {
+/* The browser, after the one built into Claude's desktop app: a tab strip, then back / forward /
+   reload, one address field and a bookmark, over the page. Theme tokens only, so it follows the
+   selected theme. */
+.preview-browser {
   display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.preview-bar .btn {
-  flex: none;
-  font-size: 13px;
-}
-.preview-back {
-  display: none;
-}
-.preview-address {
-  flex: 1;
-  min-width: 0;
-  width: auto;
-  font-size: 13px;
-}
-/* The stage is the themed surface the page sits on, so the viewer follows the selected theme
-   while a page loads and wherever the page leaves its background unpainted. */
-.preview-stage {
-  position: relative;
-  height: calc(100dvh - 124px);
+  flex-direction: column;
+  height: calc(100dvh - 76px);
   min-height: 320px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
 }
-.preview-stage:has(.preview-hint) {
-  height: auto;
+.preview-tabstrip {
+  display: flex;
+  align-items: flex-end;
+  flex: none;
+  height: 34px;
+  padding: 4px 8px 0;
+  background: var(--surface-hover);
+  border-bottom: 1px solid var(--border);
+}
+.preview-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 240px;
+  height: 30px;
+  margin-bottom: -1px; /* the tab and the toolbar read as one surface */
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--border);
+  border-bottom-color: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface);
+  font-size: 12.5px;
+}
+.preview-tab-globe {
+  flex: none;
+  color: var(--text-3);
+}
+.preview-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-tab-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.preview-tab-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.preview-tool {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.preview-tool:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.preview-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.preview-tool.is-on {
+  color: var(--accent);
+}
+.preview-address {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: 28px;
+  margin: 0 4px;
+  border-color: transparent;
+  background: var(--surface-hover);
+  font-size: 13px;
+}
+.preview-address:focus {
+  background: var(--surface);
+}
+.preview-back {
+  display: none;
+}
+.preview-error {
+  flex: none;
+  margin: 6px 8px 0;
+}
+/* The stage is the themed surface the page sits on, so the viewer follows the selected theme
+   while a page loads and wherever the page leaves its background unpainted. */
+.preview-stage {
+  position: relative;
+  flex: 1;
   min-height: 0;
-  border-style: dashed;
+  background: var(--surface);
 }
 .preview-frame {
   display: block;
@@ -275,45 +358,62 @@
   padding: 0 12px;
   text-align: center;
 }
+/* The empty browser, like a new tab. */
+.preview-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+.preview-empty-state strong {
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+.preview-empty-state span {
+  max-width: 320px;
+}
 
 @media (max-width: 768px) {
   .project-preview {
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
   }
   .preview-list-panel {
     position: static;
     max-height: none;
   }
-  /* Address row first, then the list, so a long list never pushes it off screen. */
-  .preview-view-panel {
+  /* The address row comes first, then the list, so a long list never pushes it off screen. */
+  .preview-browser {
     order: -1;
+    height: calc(100dvh - 52px - var(--tabbar-h) - var(--safe-bottom, 0px) - 24px);
   }
-  .project-preview {
-    display: flex;
-    flex-direction: column;
-  }
-  /* The list or the viewer, one at a time; the back button returns to the list. */
-  .project-preview.has-target .preview-list-panel,
-  .project-preview:not(.has-target) .preview-hint {
+  /* The tab strip is for desktop: on a phone its space goes to the page. */
+  .preview-tabstrip {
     display: none;
   }
-  .preview-back {
+  /* The list or the browser, one at a time; the Apps button returns to the list. */
+  .project-preview.has-target .preview-list-panel {
+    display: none;
+  }
+  .project-preview:not(.has-target) .preview-browser {
+    height: auto;
+    min-height: 0;
+  }
+  .project-preview:not(.has-target) .preview-stage {
+    display: none;
+  }
+  .project-preview.has-target .preview-back {
     display: inline-flex;
-  }
-  .project-preview:not(.has-target) .preview-back {
-    display: none;
-  }
-  /* Top bar + address row + tab bar (and the home-bar inset) are the only chrome left. */
-  .preview-stage {
-    height: calc(100dvh - 52px - 44px - var(--tabbar-h) - var(--safe-bottom, 0px) - 24px);
-    min-height: 280px;
-  }
-  /* Room for the buttons: icons and the address share one row. */
-  .preview-bar {
-    gap: 4px;
-  }
-  .preview-bar .btn {
-    padding: 0 8px;
+    flex: none;
+    margin-right: 2px;
   }
 }
 @media (pointer: coarse) {
@@ -330,8 +430,13 @@
     width: 40px;
     height: 40px;
   }
-  /* 16px in a field stops iPhone zooming in on focus; the shared touch rules size the height. */
+  .preview-tool {
+    width: 40px;
+    height: 40px;
+  }
+  /* 16px in a field stops iPhone zooming in on focus. */
   .preview-address {
+    height: 40px;
     font-size: 16px;
   }
 }

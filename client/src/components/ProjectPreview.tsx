@@ -3,21 +3,21 @@ import { useSearchParams } from 'react-router';
 import type { LocalApp, PreviewLaunch, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
-import { RefreshIcon } from './icons';
+import { ArrowLeftIcon, ArrowRightIcon, BookmarkIcon, GlobeIcon, RefreshIcon } from './icons';
 import { LoadingMark } from './LoadingMark';
 import './project-preview.css';
 
 // Preview (PM-253, docs/BUILT-IN-BROWSER.md): a dev server on this computer's localhost, shown
 // through the server's read-only /api/preview proxy so it also works from a phone or the remote
-// listener. Laid out like the Files tab: a list of apps beside the viewer (stacked on phones, where
-// opening an app shows the viewer with a back button). It is a global page (top bar Preview), not
-// a project tab: a dev server is not owned by one project. The page
-// runs in a sandbox WITHOUT allow-same-origin, so it gets an opaque origin and cannot reach this
-// app's API or cookies. Never offer "open in a new tab" for the proxied address: a top-level tab
-// would run it as this app's origin.
+// listener. A list of apps beside a small browser: a tab strip, back / forward / reload, one
+// address field and a bookmark, like the built-in browser in Claude's desktop app. On phones it is
+// the list or the browser, with an "Apps" button back. It is a global page (top bar Preview), not
+// a project tab: a dev server is not owned by one project. The page runs in a sandbox WITHOUT
+// allow-same-origin, so it gets an opaque origin and cannot reach this app's API or cookies. Never
+// offer "open in a new tab" for the proxied address: a top-level tab would run it as this origin.
 //
 // The list refreshes every 5 s while the page is open and visible (paused in a background tab),
-// and the refresh button reads the machine right now. Sections collapse and the sort is remembered
+// and the refresh button reads the machine right now. Sections fold and the sort is remembered
 // per browser (localStorage; the page works without it).
 
 export interface PreviewTarget {
@@ -40,7 +40,11 @@ export function parsePreviewTarget(input: string): PreviewTarget | null {
 
 export const previewSrc = (t: PreviewTarget) => `/api/preview/${t.port}${t.path}`;
 
-const targetText = (t: PreviewTarget) => `${t.port}${t.path}`;
+/** How an address reads in the address field. */
+export const targetText = (t: PreviewTarget) =>
+  `localhost:${t.port}${t.path === '/' ? '' : t.path}`;
+const sameTarget = (a: PreviewTarget | null, b: PreviewTarget | null) =>
+  !!a && !!b && a.port === b.port && a.path === b.path;
 const POLL_MS = 5000;
 
 export type PreviewSort = 'port' | 'name' | 'name-desc' | 'project';
@@ -77,29 +81,41 @@ export function sortApps(
   return [...apps].sort(compare[sort]);
 }
 
-export type PreviewGroupId = 'projects' | 'other';
+export type PreviewGroupId = 'apps' | 'services' | 'other';
 
-/** Apps that belong to a tracked project first, then the rest; each group in the chosen order. */
+/**
+ * Your projects' running apps in two groups, the way a dev stack falls out: a server that serves a
+ * page with an icon is the front end you open in a browser ("Apps", first); one without is usually
+ * an API or back end ("Services"). Anything not started from one of your projects, mostly system
+ * services, comes last. Each group is in the chosen order.
+ */
 export function groupApps(
   apps: LocalApp[],
   sort: PreviewSort = 'port',
   projects: ReadonlyMap<number, string> = new Map(),
-): { id: PreviewGroupId; heading: string; apps: LocalApp[] }[] {
+): { id: PreviewGroupId; heading: string; hint: string; apps: LocalApp[] }[] {
   const sorted = sortApps(apps, sort, projects);
-  return (
-    [
-      {
-        id: 'projects' as const,
-        heading: 'Your projects',
-        apps: sorted.filter((a) => a.projectId !== null),
-      },
-      {
-        id: 'other' as const,
-        heading: 'Other apps on this computer',
-        apps: sorted.filter((a) => a.projectId === null),
-      },
-    ] satisfies { id: PreviewGroupId; heading: string; apps: LocalApp[] }[]
-  ).filter((g) => g.apps.length > 0);
+  const mine = sorted.filter((a) => a.projectId !== null);
+  return [
+    {
+      id: 'apps' as const,
+      heading: 'Apps',
+      hint: 'From your projects, with an icon: usually the front end',
+      apps: mine.filter((a) => a.icon),
+    },
+    {
+      id: 'services' as const,
+      heading: 'Services',
+      hint: 'From your projects, no icon: usually an API or back end',
+      apps: mine.filter((a) => !a.icon),
+    },
+    {
+      id: 'other' as const,
+      heading: 'Other on this computer',
+      hint: 'Not started from one of your projects',
+      apps: sorted.filter((a) => a.projectId === null),
+    },
+  ].filter((g) => g.apps.length > 0);
 }
 
 type GroupKey = PreviewGroupId | 'saved';
@@ -135,7 +151,7 @@ function readOpen(): Partial<Record<GroupKey, boolean>> {
       unknown
     > | null;
     const out: Partial<Record<GroupKey, boolean>> = {};
-    for (const key of ['projects', 'other', 'saved'] as const) {
+    for (const key of ['apps', 'services', 'other', 'saved'] as const) {
       if (typeof saved?.[key] === 'boolean') out[key] = saved[key];
     }
     return out;
@@ -178,18 +194,26 @@ function AppIcon({ app, label }: { app: LocalApp; label: string }) {
 /** A section heading that folds its rows, with the row count beside it. */
 function GroupHead({
   title,
+  hint,
   count,
   open,
   onToggle,
 }: {
   title: string;
+  hint?: string;
   count: number;
   open: boolean;
   onToggle: () => void;
 }) {
   return (
     <h3 className="preview-group-title">
-      <button type="button" className="preview-group-head" aria-expanded={open} onClick={onToggle}>
+      <button
+        type="button"
+        className="preview-group-head"
+        aria-expanded={open}
+        title={hint}
+        onClick={onToggle}
+      >
         <span className="preview-chevron" aria-hidden="true">
           ▸
         </span>
@@ -200,13 +224,24 @@ function GroupHead({
   );
 }
 
+/** Pages opened in the viewer, with where you are in them (back and forward). */
+interface Trail {
+  stack: PreviewTarget[];
+  index: number;
+}
+const EMPTY_TRAIL: Trail = { stack: [], index: -1 };
+
 export function PreviewWorkspace() {
   const [params, setParams] = useSearchParams();
-  const initial = params.get('preview') ?? '';
-  const [text, setText] = useState(initial);
-  const [target, setTarget] = useState<PreviewTarget | null>(() => parsePreviewTarget(initial));
+  const initial = parsePreviewTarget(params.get('preview') ?? '');
+  const [trail, setTrail] = useState<Trail>(() =>
+    initial ? { stack: [initial], index: 0 } : EMPTY_TRAIL,
+  );
+  const target: PreviewTarget | null = trail.stack[trail.index] ?? null;
+  const [draft, setDraft] = useState<string | null>(null);
+  const text = draft ?? (target ? targetText(target) : '');
   const [reloads, setReloads] = useState(0);
-  const [frameLoading, setFrameLoading] = useState(target !== null);
+  const [frameLoading, setFrameLoading] = useState(initial !== null);
   const [error, setError] = useState<string | null>(null);
   const [apps, setApps] = useState<LocalApp[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -253,41 +288,55 @@ export function PreviewWorkspace() {
       .catch(() => undefined);
   }, []);
 
+  // The address bar and the link always show where the viewer is.
+  const targetKey = target ? `${target.port}${target.path}` : '';
+  useEffect(() => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (targetKey) next.set('preview', targetKey);
+        else next.delete('preview');
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetKey]);
+
   const setSort = (next: PreviewSort) => {
     setSortState(next);
     remember(SORT_KEY, next);
   };
-  const groups = useMemo(() => groupApps(apps, sort, projects), [apps, sort, projects]);
-  const hasProjectApps = groups.some((g) => g.id === 'projects');
-  const groupOpen = (id: GroupKey) => isGroupOpen(id, chosenOpen, hasProjectApps);
-  const toggleGroup = (id: GroupKey) => {
-    setChosenOpen((prev) => {
-      const next = { ...prev, [id]: !isGroupOpen(id, prev, hasProjectApps) };
-      remember(OPEN_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
-  const open = useCallback(
-    (next: PreviewTarget) => {
-      setError(null);
-      setText(targetText(next));
-      setTarget(next);
-      setReloads((n) => n + 1);
-      setFrameLoading(true);
-      const copy = new URLSearchParams(params);
-      copy.set('preview', targetText(next));
-      setParams(copy, { replace: true });
-    },
-    [params, setParams],
-  );
 
-  /** Back to the list (the way out of the viewer on a phone). */
+  const open = useCallback((next: PreviewTarget) => {
+    setDraft(null);
+    setError(null);
+    setFrameLoading(true);
+    setReloads((n) => n + 1);
+    setTrail((t) => {
+      if (sameTarget(t.stack[t.index] ?? null, next)) return t;
+      const stack = [...t.stack.slice(0, t.index + 1), next];
+      return { stack, index: stack.length - 1 };
+    });
+  }, []);
+  const step = (delta: -1 | 1) => {
+    const index = trail.index + delta;
+    if (index < 0 || index >= trail.stack.length) return;
+    setDraft(null);
+    setError(null);
+    setFrameLoading(true);
+    setReloads((n) => n + 1);
+    setTrail({ ...trail, index });
+  };
+  const reload = () => {
+    setFrameLoading(true);
+    setReloads((n) => n + 1);
+  };
+  /** Closes the page: back to the empty browser (and, on a phone, the list). */
   const close = () => {
-    setTarget(null);
-    setText('');
-    const copy = new URLSearchParams(params);
-    copy.delete('preview');
-    setParams(copy, { replace: true });
+    setTrail(EMPTY_TRAIL);
+    setDraft(null);
+    setFrameLoading(false);
   };
 
   const go = (event: FormEvent) => {
@@ -311,19 +360,30 @@ export function PreviewWorkspace() {
   const saved = target
     ? launches.find((l) => l.port === target.port && l.path === target.path)
     : undefined;
-  const saveCurrent = () => {
-    if (!target || saved) return;
-    const running = apps.find((a) => a.port === target.port);
-    const name =
-      (running ? appName(running, projects) : null) ??
-      (running?.projectId ? projects.get(running.projectId) : null) ??
-      `localhost:${target.port}`;
+  const running = target ? apps.find((a) => a.port === target.port) : undefined;
+  const toggleSaved = () => {
+    if (!target) return;
+    if (saved) {
+      persist(launches.filter((l) => l !== saved));
+      return;
+    }
+    const name = (running ? appName(running, projects) : null) ?? `localhost:${target.port}`;
     persist([
       ...launches,
       { name, port: target.port, path: target.path, projectId: running?.projectId ?? null },
     ]);
   };
 
+  const groups = useMemo(() => groupApps(apps, sort, projects), [apps, sort, projects]);
+  const hasProjectApps = groups.some((g) => g.id !== 'other');
+  const groupOpen = (id: GroupKey) => isGroupOpen(id, chosenOpen, hasProjectApps);
+  const toggleGroup = (id: GroupKey) => {
+    setChosenOpen((prev) => {
+      const next = { ...prev, [id]: !isGroupOpen(id, prev, hasProjectApps) };
+      remember(OPEN_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
   const sortedLaunches = useMemo(() => {
     const text = (v: string) => v.toLocaleLowerCase();
     return [...launches].sort((a, b) =>
@@ -334,6 +394,8 @@ export function PreviewWorkspace() {
           : text(a.name).localeCompare(text(b.name)) || a.port - b.port,
     );
   }, [launches, sort]);
+
+  const tabTitle = target ? (running?.title ?? `localhost:${target.port}`) : 'New tab';
 
   return (
     <div className={`project-preview${target ? ' has-target' : ''}`}>
@@ -359,6 +421,7 @@ export function PreviewWorkspace() {
           <div key={group.id} className="preview-group">
             <GroupHead
               title={group.heading}
+              hint={group.hint}
               count={group.apps.length}
               open={groupOpen(group.id)}
               onToggle={() => toggleGroup(group.id)}
@@ -400,6 +463,7 @@ export function PreviewWorkspace() {
           <div className="preview-group">
             <GroupHead
               title="Quick launches"
+              hint="Addresses you saved"
               count={sortedLaunches.length}
               open={groupOpen('saved')}
               onToggle={() => toggleGroup('saved')}
@@ -444,48 +508,87 @@ export function PreviewWorkspace() {
         )}
       </section>
 
-      <section className="preview-view-panel" aria-label="Preview">
-        <form className="preview-bar" onSubmit={go}>
-          <button type="button" className="btn preview-back" onClick={close}>
+      <section className="preview-browser" aria-label="Preview">
+        <div className="preview-tabstrip">
+          <span className="preview-tab" title={tabTitle}>
+            {running ? (
+              <AppIcon app={running} label={tabTitle} />
+            ) : (
+              <GlobeIcon size={14} className="preview-tab-globe" />
+            )}
+            <span className="preview-tab-title">{tabTitle}</span>
+            {target && (
+              <button
+                type="button"
+                className="preview-tab-close"
+                aria-label="Close this page"
+                onClick={close}
+              >
+                ×
+              </button>
+            )}
+          </span>
+        </div>
+        <form className="preview-toolbar" onSubmit={go}>
+          <button type="button" className="btn btn-sm preview-back" onClick={close}>
             Apps
+          </button>
+          <button
+            type="button"
+            className="preview-tool"
+            aria-label="Back"
+            title="Back"
+            disabled={trail.index <= 0}
+            onClick={() => step(-1)}
+          >
+            <ArrowLeftIcon size={15} />
+          </button>
+          <button
+            type="button"
+            className="preview-tool"
+            aria-label="Forward"
+            title="Forward"
+            disabled={trail.index >= trail.stack.length - 1}
+            onClick={() => step(1)}
+          >
+            <ArrowRightIcon size={15} />
+          </button>
+          <button
+            type="button"
+            className="preview-tool"
+            aria-label="Reload"
+            title="Reload"
+            disabled={!target}
+            onClick={reload}
+          >
+            <RefreshIcon size={15} />
           </button>
           <input
             className="input preview-address"
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="localhost port, like 3000"
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Type a localhost port or address"
             aria-label="Local address to preview"
             inputMode="url"
+            enterKeyHint="go"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
           />
-          <button type="submit" className="btn btn-primary">
-            Go
-          </button>
           <button
             type="button"
-            className="btn"
+            className={`preview-tool${saved ? ' is-on' : ''}`}
+            aria-label={saved ? 'Remove from quick launches' : 'Save to quick launches'}
+            aria-pressed={!!saved}
+            title={saved ? 'Saved in Quick launches (click to remove)' : 'Save to Quick launches'}
             disabled={!target}
-            onClick={() => {
-              setReloads((n) => n + 1);
-              setFrameLoading(true);
-            }}
+            onClick={toggleSaved}
           >
-            Reload
-          </button>
-          <button
-            type="button"
-            className="btn"
-            disabled={!target || !!saved}
-            onClick={saveCurrent}
-            title="Keep this address in Quick launches"
-          >
-            {saved ? 'Saved' : 'Save'}
+            <BookmarkIcon size={15} filled={!!saved} />
           </button>
         </form>
         {error && (
-          <div className="error-banner" role="alert">
+          <div className="error-banner preview-error" role="alert">
             {error}
           </div>
         )}
@@ -509,11 +612,14 @@ export function PreviewWorkspace() {
               )}
             </>
           ) : (
-            <p className="faint preview-hint">
-              Choose an app from the list, or type a port. Shows an app running on this computer,
-              such as a dev server an agent started. It is read-only, runs isolated from
-              ProjectManager, and works from your phone too.
-            </p>
+            <div className="preview-empty-state">
+              <GlobeIcon size={26} />
+              <strong>Browse localhost</strong>
+              <span>
+                Pick an app from the list, or type a port above. Read-only and isolated from
+                ProjectManager, so it works from your phone too.
+              </span>
+            </div>
           )}
         </div>
       </section>

@@ -171,14 +171,28 @@ function localPath(href: string, port: number): string | null {
   return `/${href}`;
 }
 
-const metaCache = new Map<number, { at: number; title: string | null; icon: string | null }>();
+/** A response that is really an image. A dev server often answers any path with its HTML page
+ * (single-page apps do), which must not count as having an icon. */
+export function isImageResponse(status: number, contentType: string | null): boolean {
+  if (status < 200 || status >= 300) return false;
+  const type = (contentType ?? '').toLowerCase().trim();
+  return type.startsWith('image/') || type.startsWith('application/x-icon');
+}
+
+interface PageMeta {
+  title: string | null;
+  /** A path on the app, only when it answered with an image: the signal for "has a front end". */
+  icon: string | null;
+}
+const metaCache = new Map<number, PageMeta & { at: number }>();
 const META_MS = 30_000;
 
-/** Asks the app for "/" briefly. Apps that don't speak HTML just have no title or icon. */
-async function pageMeta(port: number): Promise<{ title: string | null; icon: string | null }> {
+/** Asks the app for "/" briefly, then checks that its icon exists. Apps that do not speak HTML
+ * (APIs, databases) just have no title or icon, which is what marks them as back ends. */
+async function pageMeta(port: number): Promise<PageMeta> {
   const hit = metaCache.get(port);
   if (hit && Date.now() - hit.at < META_MS) return hit;
-  let meta: { title: string | null; icon: string | null } = { title: null, icon: null };
+  let meta: PageMeta = { title: null, icon: null };
   try {
     const res = await fetch(`http://127.0.0.1:${port}/`, {
       redirect: 'manual',
@@ -186,13 +200,29 @@ async function pageMeta(port: number): Promise<{ title: string | null; icon: str
       signal: AbortSignal.timeout(1_500),
     });
     if (/^text\/html\b/i.test(res.headers.get('content-type') ?? '')) {
-      meta = readPageMeta(await res.text(), port);
+      const found = readPageMeta(await res.text(), port);
+      meta = { title: found.title, icon: await confirmIcon(port, found.icon) };
     }
   } catch {
     // Not an HTTP app, or too slow: the list still shows the port.
   }
   metaCache.set(port, { at: Date.now(), ...meta });
   return meta;
+}
+
+async function confirmIcon(port: number, icon: string | null): Promise<string | null> {
+  if (!icon) return null;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}${icon}`, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(1_500),
+    });
+    const ok = isImageResponse(res.status, res.headers.get('content-type'));
+    await res.body?.cancel();
+    return ok ? icon : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Cached for a few seconds: the Preview page polls, and the probes are not free. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   candidates,
+  isImageResponse,
   parseLsof,
   parseNetstat,
   projectForCommand,
@@ -92,5 +93,18 @@ describe('readPageMeta', () => {
     expect(readPageMeta('<link rel="icon" href="//evil.example/i.png">', 3000).icon).toBe(
       '/favicon.ico',
     );
+  });
+});
+
+describe('isImageResponse', () => {
+  it('accepts a real icon', () => {
+    expect(isImageResponse(200, 'image/svg+xml')).toBe(true);
+    expect(isImageResponse(200, 'image/x-icon')).toBe(true);
+    expect(isImageResponse(200, 'image/png; charset=binary')).toBe(true);
+  });
+  it('refuses the HTML page a single-page app answers every path with, and errors', () => {
+    expect(isImageResponse(200, 'text/html; charset=utf-8')).toBe(false);
+    expect(isImageResponse(404, 'image/png')).toBe(false);
+    expect(isImageResponse(200, null)).toBe(false);
   });
 });

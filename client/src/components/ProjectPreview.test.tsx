@@ -35,14 +35,19 @@ describe('parsePreviewTarget', () => {
 });
 
 describe('sorting and grouping', () => {
-  const app = (port: number, projectId: number | null, title: string | null = null): LocalApp => ({
+  const app = (
+    port: number,
+    projectId: number | null,
+    title: string | null = null,
+    icon: string | null = null,
+  ): LocalApp => ({
     port,
     pid: port,
     name: 'node.exe',
     command: '',
     projectId,
     title,
-    icon: null,
+    icon,
   });
   const names = new Map([
     [1, 'Alpha'],
@@ -58,13 +63,30 @@ describe('sorting and grouping', () => {
     expect(ports('project')).toEqual([3000, 3004, 3001, 3002]);
   });
 
-  it('lists apps from tracked projects first, then the rest, in the chosen order', () => {
-    const groups = groupApps(apps, 'name-desc', names);
-    expect(groups.map((g) => g.id)).toEqual(['projects', 'other']);
+  it("puts your projects' apps with an icon first, back ends next, the rest last", () => {
+    const stack = [
+      app(3000, null, 'Syncthing', '/i.png'),
+      app(4000, 1, 'Shop', '/favicon.ico'),
+      app(4001, 1),
+      app(4002, 2, 'Admin', '/logo.svg'),
+      app(4003, 2),
+    ];
+    const groups = groupApps(stack, 'port', names);
+    expect(groups.map((g) => g.id)).toEqual(['apps', 'services', 'other']);
     expect(groups.map((g) => g.apps.map((a) => a.port))).toEqual([
-      [3002, 3001],
-      [3004, 3000],
+      [4000, 4002],
+      [4001, 4003],
+      [3000],
     ]);
+  });
+
+  it('keeps the chosen order inside each group', () => {
+    const groups = groupApps(
+      [app(4000, 1, 'A', '/i'), app(4005, 1, 'B', '/i')],
+      'name-desc',
+      names,
+    );
+    expect(groups[0]?.apps.map((a) => a.port)).toEqual([4005, 4000]);
   });
 
   it('skips empty groups', () => {
@@ -73,7 +95,8 @@ describe('sorting and grouping', () => {
   });
 
   it('starts with your projects open and the system noise closed, unless it is all there is', () => {
-    expect(isGroupOpen('projects', {}, true)).toBe(true);
+    expect(isGroupOpen('apps', {}, true)).toBe(true);
+    expect(isGroupOpen('services', {}, true)).toBe(true);
     expect(isGroupOpen('other', {}, true)).toBe(false);
     expect(isGroupOpen('other', {}, false)).toBe(true);
     expect(isGroupOpen('saved', {}, false)).toBe(true);
@@ -81,7 +104,7 @@ describe('sorting and grouping', () => {
 
   it('keeps whatever the person chose', () => {
     expect(isGroupOpen('other', { other: false }, false)).toBe(false);
-    expect(isGroupOpen('projects', { projects: false }, true)).toBe(false);
+    expect(isGroupOpen('services', { services: false }, true)).toBe(false);
     expect(isGroupOpen('other', { other: true }, true)).toBe(true);
   });
 });

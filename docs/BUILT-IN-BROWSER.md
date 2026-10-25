@@ -7,7 +7,7 @@ Status: phase 1 is built (PM-253). `server/preview.ts` is a GET and HEAD only pr
 at `/api/preview/<port>/...`. `server/localPorts.ts` detects listening apps (netstat on Windows,
 lsof elsewhere), attributes them to a project by command line, and reads each app's page title and
 icon. The **Preview** page (top bar; on phones the Agents tools menu) lists them beside a sandboxed iframe,
-with saved quick launches. It is a global page on purpose: a dev server is not owned by one project,
+with saved quick launches. "Has an icon" means the app's <link rel="icon"> (or /favicon.ico) was fetched and really is an image, because a single-page dev server answers every path with its HTML page; it is the cue that splits front ends (Apps) from back ends (Services) in the list. It is a global page on purpose: a dev server is not owned by one project,
 and phones and the remote listener reach it the same way. Not built yet: WebSocket proxying (HMR will
 not live-reload), the separate-origin phase 2. A page that builds root-absolute URLs in JavaScript
 still misses the proxy. The proxied address must never be opened as a top-level tab (it would run as
