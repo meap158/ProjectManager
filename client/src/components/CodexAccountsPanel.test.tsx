@@ -128,6 +128,8 @@ describe('CodexAccountsPanel (PM-164)', () => {
       expect(api.setCodexAccountOrder).toHaveBeenCalledWith(reordered.accounts.map((a) => a.id)),
     );
     first.unmount();
+    // The server now holds the order, and every device shows it.
+    vi.mocked(api.getCodexAccounts).mockResolvedValue(reordered);
     render(<CodexAccountsPanel onError={vi.fn()} />);
     await screen.findByText('Personal');
     expect(names()).toEqual(['Default Codex account', 'Personal', 'Work Pro']);

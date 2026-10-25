@@ -149,8 +149,9 @@ export function CodexAccountsPanel({
   }, [backgroundRefresh, isClaude]);
   const loadingUsage = refreshingUsage || backgroundRefresh;
 
-  // Auto-switch breaks a tie by this order, so the server keeps it too (Codex only: Claude
-  // accounts never switch automatically). Also carries an order saved in this browser earlier.
+  // Auto-switch breaks a tie by this order, so the server keeps it (Codex only: Claude accounts
+  // never switch automatically). Once saved, the browser's copy is dropped so every device shows
+  // the server's order; this also carries over an order saved in this browser earlier.
   const shownOrder = JSON.stringify(orderedAccounts.map((a) => a.id));
   const savedOrder = JSON.stringify((state?.accounts ?? []).map((a) => a.id));
   useEffect(() => {
@@ -160,10 +161,11 @@ export function CodexAccountsPanel({
       (next) => {
         invalidateReads();
         setState(next);
+        setOrder([]);
       },
       (e: Error) => onError(e.message),
     );
-  }, [isClaude, order.length, shownOrder, savedOrder, invalidateReads, onError]);
+  }, [isClaude, order.length, shownOrder, savedOrder, invalidateReads, onError, setOrder]);
 
   const act = useCallback(
     async (fn: () => Promise<CodexAccountsState>) => {
