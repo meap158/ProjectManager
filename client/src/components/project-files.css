@@ -43,19 +43,38 @@
   overflow: auto;
   list-style: none;
 }
+.files-tree {
+  --files-step: 14px;
+}
 .files-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
   padding-top: 2px;
   padding-bottom: 2px;
   padding-right: 6px;
-  padding-left: calc(6px + var(--depth, 0) * 14px);
+  padding-left: calc(4px + var(--depth, 0) * var(--files-step));
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
   white-space: nowrap;
+}
+/* Indent guides: one hairline per level, under the parent's caret (as in VS Code). */
+.files-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 12px;
+  width: calc(var(--depth, 0) * var(--files-step));
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--border) 0 1px,
+    transparent 1px var(--files-step)
+  );
 }
 .files-row:hover {
   background: var(--surface-hover);
@@ -73,16 +92,56 @@
   opacity: 0.5;
 }
 .files-chevron {
+  display: inline-grid;
   flex: none;
-  width: 12px;
+  place-items: center;
+  width: 16px;
+  height: 20px;
   color: var(--text-3);
-  font-size: 11px;
-  text-align: center;
+}
+.files-chevron svg {
+  transition: transform 0.12s ease;
+}
+.files-chevron.is-open svg {
+  transform: rotate(90deg);
+}
+.files-row:hover .files-chevron {
+  color: var(--text-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .files-chevron svg {
+    transition: none;
+  }
 }
 .files-icon {
   display: inline-flex;
   flex: none;
   color: var(--text-3);
+}
+.files-icon .fi {
+  display: inline-flex;
+}
+/* File-type tones: design tokens only, so both themes stay legible. */
+.fi-code {
+  color: var(--accent);
+}
+.fi-data {
+  color: color-mix(in srgb, var(--accent) 45%, #d29a1e);
+}
+.fi-doc {
+  color: var(--text-2);
+}
+.fi-media {
+  color: color-mix(in srgb, var(--good) 70%, var(--accent));
+}
+.fi-config {
+  color: var(--text-3);
+}
+.fi-shell {
+  color: var(--good);
+}
+.fi-danger {
+  color: color-mix(in srgb, var(--danger) 80%, #d29a1e);
 }
 .files-name {
   flex: 1;
@@ -218,16 +277,27 @@
   }
   /* Touch screens: list rows at mobile reading size (15px text, 18px icons, 44px rows) with a
      wider indent step so nesting stays readable at a glance. */
+  .files-tree {
+    --files-step: 20px;
+  }
   .files-row {
     min-height: 44px;
-    gap: 8px;
-    padding-left: calc(8px + var(--depth, 0) * 20px);
+    gap: 4px;
+    padding-left: calc(4px + var(--depth, 0) * var(--files-step));
     padding-right: 0;
     font-size: 15px;
   }
+  .files-row::before {
+    left: 18px;
+  }
+  /* A caret you can hit with a thumb: the whole 32 x 44 cell toggles the folder. */
   .files-chevron {
-    width: 16px;
-    font-size: 13px;
+    width: 32px;
+    height: 44px;
+  }
+  .files-chevron svg {
+    width: 14px;
+    height: 14px;
   }
   .files-icon svg {
     width: 18px;

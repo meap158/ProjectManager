@@ -16,7 +16,8 @@ import { THEME_EVENT } from '../theme';
 import { formatBytes, formatRelative } from '../format';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { ConfirmDelete } from './ConfirmDelete';
-import { FoldersIcon, MoreIcon, PageIcon } from './icons';
+import { MoreIcon } from './icons';
+import { ChevronIcon, FileTypeIcon, iconFor } from './fileIcons';
 import './project-files.css';
 
 // The project page's Files tab (PM-252): a VS Code style explorer. The tree loads one folder at
@@ -128,6 +129,7 @@ export function ProjectFiles({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const treeRef = useRef<HTMLUListElement>(null);
+  const typeahead = useRef({ text: '', at: 0 });
   const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [launcher, setLauncher] = useState<TreeEntry | null>(null);
@@ -340,8 +342,23 @@ export function ProjectFiles({
         if (row && box) openMenuFor(row.entry.path, box.left + 24, box.bottom);
         break;
       }
-      default:
-        return;
+      default: {
+        // Type-ahead, as in VS Code: letters typed quickly jump to the next visible row whose name
+        // starts with them (a repeated letter cycles). Never inside the rename box.
+        if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+        if ((e.target as HTMLElement).closest('input, textarea')) return;
+        const now = Date.now();
+        const typed = typeahead.current;
+        typed.text = now - typed.at > 700 ? e.key.toLowerCase() : typed.text + e.key.toLowerCase();
+        typed.at = now;
+        const cycling = typed.text.length > 1 && [...typed.text].every((c) => c === typed.text[0]);
+        const needle = cycling ? typed.text[0]! : typed.text;
+        const from = cycling || typed.text.length === 1 ? index + 1 : index;
+        const order = [...rows.slice(from), ...rows.slice(0, from)];
+        const hit = order.find((r) => r.entry.name.toLowerCase().startsWith(needle));
+        if (hit) setFocused(hit.entry.path);
+        break;
+      }
     }
     e.preventDefault();
   };
@@ -425,11 +442,21 @@ export function ProjectFiles({
                   }}
                   title={entry.ignored ? `${entry.path} (ignored by git)` : entry.path}
                 >
-                  <span className="files-chevron" aria-hidden="true">
-                    {entry.kind === 'dir' ? (isOpen ? '▾' : '▸') : ''}
+                  <span
+                    className={`files-chevron${isOpen ? ' is-open' : ''}`}
+                    aria-hidden="true"
+                    // A wide target on its own: on touch the caret toggles, the name opens.
+                    onClick={(e) => {
+                      if (entry.kind !== 'dir') return;
+                      e.stopPropagation();
+                      setFocused(entry.path);
+                      toggle(entry);
+                    }}
+                  >
+                    {entry.kind === 'dir' && <ChevronIcon size={12} />}
                   </span>
                   <span className="files-icon" aria-hidden="true">
-                    {entry.kind === 'dir' ? <FoldersIcon size={13} /> : <PageIcon size={13} />}
+                    <FileTypeIcon spec={iconFor(entry, isOpen)} size={16} />
                   </span>
                   {renaming === entry.path ? (
                     <RenameField

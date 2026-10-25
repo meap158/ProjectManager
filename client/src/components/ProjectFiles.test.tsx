@@ -63,11 +63,35 @@ describe('ProjectFiles', () => {
     show();
     const tree = await screen.findByRole('tree', { name: 'Project files' });
     const items = () => [...tree.querySelectorAll('[role=treeitem]')].map((li) => li.textContent);
-    expect(items()).toEqual(['▸docs', '▸dist', 'README.md12 B']);
+    expect(items()).toEqual(['docs', 'dist', 'README.md12 B']);
+    // Folders carry a caret that turns down when open; files have none. Icons follow the file type.
+    const caret = (path: string) => tree.querySelector(`[data-path="${path}"] .files-chevron`);
+    expect(caret('docs')?.querySelector('svg')).not.toBeNull();
+    expect(caret('docs')?.className).not.toContain('is-open');
+    expect(caret('README.md')?.querySelector('svg')).toBeNull();
+    expect(
+      tree.querySelector('[data-path="README.md"] [data-glyph]')?.getAttribute('data-glyph'),
+    ).toBe('markdown');
     expect(tree.querySelector('[data-path="dist"]')?.className).toContain('is-ignored');
     fireEvent.click(screen.getByText('docs'));
     await waitFor(() => expect(items()).toContain('guide.ts12 B'));
     expect(tree.querySelector('[data-path="docs"]')?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opens a folder from its caret, and jumps to a row by typing its first letters', async () => {
+    show();
+    const tree = await screen.findByRole('tree');
+    const caret = tree.querySelector<HTMLElement>('[data-path="docs"] .files-chevron')!;
+    fireEvent.click(caret);
+    await screen.findByText('guide.ts');
+    expect(tree.querySelector('[data-path="docs"] .files-chevron')?.className).toContain('is-open');
+    const first = tree.querySelector<HTMLElement>('[data-path="docs"]')!;
+    first.focus();
+    fireEvent.focusIn(first);
+    fireEvent.keyDown(tree, { key: 'r' }); // Type-ahead: README.md is the only name starting with r.
+    await waitFor(() =>
+      expect(tree.querySelector('[data-path="README.md"]')?.getAttribute('tabindex')).toBe('0'),
+    );
   });
 
   it('moves and opens with the keyboard, then shows the file with line numbers', async () => {
