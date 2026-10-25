@@ -163,6 +163,16 @@ export function WorkFilters({
       className={`work-filters${expanded ? ' is-expanded' : ''}`}
       role="search"
       aria-label="Filter agent work"
+      onPointerDownCapture={(e) => {
+        e.currentTarget.dataset.inputMethod = 'pointer';
+      }}
+      onKeyDownCapture={(e) => {
+        e.currentTarget.dataset.inputMethod = 'keyboard';
+      }}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+          delete e.currentTarget.dataset.inputMethod;
+      }}
     >
       <div
         className="work-status-picker"

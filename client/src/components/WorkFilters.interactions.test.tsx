@@ -7,6 +7,17 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
 });
+it('distinguishes pointer multiselect from keyboard focus without changing selected styling', () => {
+  render(<Harness />);
+  const running = screen.getByRole('button', { name: 'Running0' });
+  const filters = screen.getByRole('search', { name: 'Filter agent work' });
+  fireEvent.pointerDown(running);
+  fireEvent.click(running, { shiftKey: true });
+  expect(filters.getAttribute('data-input-method')).toBe('pointer');
+  expect(running.getAttribute('aria-pressed')).toBe('true');
+  fireEvent.keyDown(running, { key: 'Tab' });
+  expect(filters.getAttribute('data-input-method')).toBe('keyboard');
+});
 it('remembers expanded filters after navigating away and returning', () => {
   const first = render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Filters' }));

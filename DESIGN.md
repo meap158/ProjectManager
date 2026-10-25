@@ -6,6 +6,9 @@ or chat history.
 
 ## 1. Principles
 
+Agents status filters retain their selected fill during Shift-click and phone long-press selection.
+Pointer interactions do not add a keyboard-focus outline; keyboard navigation retains visible focus.
+
 Session usage-limit account switching uses the shared styled Dropdown, with keyboard navigation,
 viewport-bounded menus and a 44px mobile trigger, matching other app selectors.
 
