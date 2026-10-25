@@ -52,11 +52,22 @@ it('the actual launcher retries a busy port and recovers a crashed production se
       'server stopped',
     );
   } finally {
+    const exited = new Promise<void>((resolve) => {
+      if (launcher.exitCode !== null || launcher.signalCode !== null) resolve();
+      else launcher.once('exit', () => resolve());
+    });
     if (process.platform === 'win32') {
       execFileSync('taskkill', ['/pid', String(launcher.pid), '/T', '/F'], { stdio: 'ignore' });
     } else launcher.kill('SIGTERM');
     await new Promise<void>((resolve) => blocker.close(() => resolve()));
-    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    // The killed tree still holds data/server-output.log for a moment (EBUSY on Windows under
+    // load): wait for the launcher to exit, and leave the temp folder if it is still locked.
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } catch {
+      // Best effort: a leftover temp folder is not a failure of what this test checks.
+    }
   }
 }, 30000);
 

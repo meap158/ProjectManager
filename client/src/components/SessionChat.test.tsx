@@ -641,14 +641,19 @@ describe('images on phones (PM-130)', () => {
 
   it('accepts a photo with no type by its name, and says why when one fails', async () => {
     vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
-    vi.mocked(api.uploadSessionImage).mockRejectedValueOnce(new Error('Image over 8 MB'));
+    // Fails by name, not "the next upload": another test's upload may still be in flight.
+    vi.mocked(api.uploadSessionImage).mockImplementation(async (_id, image) => {
+      if (image.name === 'IMG_0002.jpg') throw new Error('Image over 8 MB');
+      return { path: 'S:/data/attachments/shot.png' };
+    });
     render(<SessionChat session={session()} onError={() => {}} />);
     const input = await screen.findByLabelText('Message to the session');
     const photo = new File([new Uint8Array([255, 216])], 'IMG_0002.jpg', { type: '' });
     expect(isImageFile(photo)).toBe(true);
     expect(isImageFile(new File(['x'], 'notes.txt', { type: '' }))).toBe(false);
     fireEvent.paste(input, { clipboardData: { files: [photo], getData: () => '' } });
-    expect((await screen.findByRole('alert')).textContent).toContain(
+    // Preparing the photo is async: allow for a busy machine running the whole suite.
+    expect((await screen.findByRole('alert', {}, { timeout: 5000 })).textContent).toContain(
       "Couldn't add IMG_0002.jpg: Image over 8 MB",
     );
   });

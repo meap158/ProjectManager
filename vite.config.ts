@@ -19,5 +19,8 @@ export default defineConfig({
   test: {
     root: '.',
     include: ['server/**/*.test.ts', 'shared/**/*.test.ts', 'client/**/*.test.{ts,tsx}'],
+    // File-heavy tests take ~0.3s alone but over 5s (the default) when all 185 files run at once
+    // on the slow S: drive with agents busy; a real hang still fails, at 15s.
+    testTimeout: 15_000,
   },
 });
