@@ -198,10 +198,15 @@ export function planOrchestration(
           block('quota_unknown', 'Quota missing or stale; obtain a fresh usage report')
         );
       const validPercent = (value: number) => Number.isFinite(value) && value >= 0 && value <= 100;
-      // A known exhausted window takes precedence over another malformed window.
+      // A known exhausted window takes precedence over another malformed window. A window whose
+      // reset has passed since the report is not known any more (its old percentage is stale), so
+      // it falls through to the "obtain a fresh usage report" check below.
       if (
         limits.windows.some(
-          (w) => validPercent(w.usedPercent) && w.usedPercent >= 100 - policy.reservePercent,
+          (w) =>
+            !w.resetSinceReport &&
+            validPercent(w.usedPercent) &&
+            w.usedPercent >= 100 - policy.reservePercent,
         )
       )
         return block(

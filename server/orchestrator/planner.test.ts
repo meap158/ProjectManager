@@ -193,7 +193,8 @@ it('requires fresh verification after estimated quota rollover unless unknown qu
   const rolled = rollOver(report, now);
   const state = { ...snapshot(), cards: [card(1)], limits: [rolled] };
   const scoped = { ...policy, providers: ['codex'] };
-  expect(rolled.windows[0]).toMatchObject({ usedPercent: 0, resetSinceReport: true });
+  // The old reading is kept, flagged stale; it is not "exhausted" and not assumed to be 0%.
+  expect(rolled.windows[0]).toMatchObject({ usedPercent: 100, resetSinceReport: true });
   expect(planOrchestration(scoped, state, now)[0]?.waitReason).toBe('quota_unknown');
   expect(planOrchestration({ ...scoped, allowUnknownQuota: true }, state, now)[0]?.action).toBe(
     'dispatch',
