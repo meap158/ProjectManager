@@ -309,6 +309,14 @@ async function confirmIcon(port: number, icon: string | null): Promise<string | 
 /** Cached for a few seconds: the Preview page polls, and the probes are not free. */
 let cache: { at: number; key: string; apps: LocalApp[] } | null = null;
 const CACHE_MS = 3_000;
+/** One scan at a time: callers arriving during a scan share it. */
+let scanning: { key: string; done: Promise<LocalApp[]> } | null = null;
+/**
+ * A process's name and command line don't change while it runs, so they are looked up once per
+ * pid (the PowerShell query is most of a scan's cost; the sidebar polls on every page). Pids that
+ * stop listening are dropped, and `fresh` (the Refresh button, Stop's re-check) skips it.
+ */
+const processCache = new Map<number, ProcessInfo>();
 
 export async function detectLocalApps(
   projects: { id: number; path: string }[],
@@ -319,11 +327,31 @@ export async function detectLocalApps(
   if (fresh) {
     cache = null;
     metaCache.clear();
+    processCache.clear();
   }
   const key = [...blocked].sort().join(',') + projects.map((p) => `${p.id}=${p.path}`).join('|');
   if (cache && cache.key === key && Date.now() - cache.at < CACHE_MS) return cache.apps;
+  if (!fresh && scanning?.key === key) return scanning.done;
+  const done = scan(projects, blocked, key);
+  scanning = { key, done };
+  try {
+    return await done;
+  } finally {
+    if (scanning?.done === done) scanning = null;
+  }
+}
+
+async function scan(
+  projects: { id: number; path: string }[],
+  blocked: ReadonlySet<number>,
+  key: string,
+): Promise<LocalApp[]> {
   const found = candidates(await listeners(), blocked);
-  const info = await processInfo([...new Set(found.map((l) => l.pid))]);
+  const pids = new Set(found.map((l) => l.pid));
+  for (const pid of processCache.keys()) if (!pids.has(pid)) processCache.delete(pid);
+  const missing = [...pids].filter((pid) => !processCache.has(pid));
+  for (const [pid, entry] of await processInfo(missing)) processCache.set(pid, entry);
+  const info = processCache;
   const kept = found.filter(
     (l) => !SYSTEM_PROCESSES.has((info.get(l.pid)?.name ?? '').toLowerCase()),
   );
