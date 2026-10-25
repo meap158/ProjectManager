@@ -244,6 +244,51 @@ describe('statusLine', () => {
 });
 
 describe('SessionChat images (PM-116)', () => {
+  it('shows a picked image at once, before its upload ends, and drops it if removed meanwhile (PM-301)', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    let finish: (value: { path: string }) => void = () => undefined;
+    vi.mocked(api.uploadSessionImage).mockReturnValueOnce(
+      new Promise((resolve) => (finish = resolve)),
+    );
+    render(<SessionChat session={session()} onError={() => {}} />);
+    const input = await screen.findByLabelText('Message to the session');
+    URL.createObjectURL = vi.fn(() => 'blob:slow');
+    URL.revokeObjectURL = vi.fn();
+    const image = new File([new Uint8Array([1])], 'slow.png', { type: 'image/png' });
+    fireEvent.paste(input, { clipboardData: { files: [image], getData: () => '' } });
+    // The preview is there while the upload is still running.
+    expect(await screen.findByRole('img', { name: 'slow.png' })).toBeDefined();
+    expect(screen.getByTitle('slow.png').getAttribute('aria-busy')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove slow.png' }));
+    expect(screen.queryByRole('img', { name: 'slow.png' })).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:slow');
+    finish({ path: 'S:/data/attachments/slow.png' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole('img', { name: 'slow.png' })).toBeNull(); // It doesn't come back.
+  });
+
+  it('keeps a failed image with Retry, and sends it once the retry succeeds', async () => {
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    vi.mocked(api.uploadSessionImage).mockRejectedValueOnce(new Error('Network down'));
+    render(<SessionChat session={session()} onError={() => {}} />);
+    const input = await screen.findByLabelText('Message to the session');
+    URL.createObjectURL = vi.fn(() => 'blob:retry');
+    URL.revokeObjectURL = vi.fn();
+    const image = new File([new Uint8Array([1])], 'retry.png', { type: 'image/png' });
+    fireEvent.paste(input, { clipboardData: { files: [image], getData: () => '' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry retry.png' }));
+    await waitFor(() =>
+      expect(screen.getByTitle('retry.png').getAttribute('aria-busy')).toBe('false'),
+    );
+    expect(screen.queryByRole('button', { name: 'Retry retry.png' })).toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() =>
+      expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toContain(
+        '\x1b[200~S:/data/attachments/shot.png\x1b[201~',
+      ),
+    );
+  });
+
   it('takes a pasted image and sends its path before the text, as the terminal does', async () => {
     vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
     render(<SessionChat session={session()} onError={() => {}} />);
@@ -253,9 +298,14 @@ describe('SessionChat images (PM-116)', () => {
     URL.revokeObjectURL = vi.fn();
     fireEvent.paste(input, { clipboardData: { files: [image], getData: () => '' } });
     expect(await screen.findByRole('img', { name: 'shot.png' })).toBeDefined();
-    expect(api.uploadSessionImage).toHaveBeenCalledWith(
-      7,
-      expect.objectContaining({ type: 'image/png' }),
+    await waitFor(() =>
+      expect(api.uploadSessionImage).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ type: 'image/png' }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTitle('shot.png').getAttribute('aria-busy')).toBe('false'),
     );
     fireEvent.change(input, { target: { value: 'what is wrong here?' } });
     fireEvent.keyDown(input, { key: 'Enter' });

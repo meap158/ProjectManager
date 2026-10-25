@@ -802,13 +802,20 @@ export function droppedFiles(data: DataTransfer | null): File[] {
 export const isImageFile = (f: File) =>
   f.type.startsWith('image/') || (!f.type && /\.(png|jpe?g|gif|webp|heic|heif)$/i.test(f.name));
 
-/** An image waiting in the composer: uploaded, its path pasted into the CLI when sent. */
+/**
+ * An image waiting in the composer, its path pasted into the CLI when sent. It shows the moment
+ * it is picked (PM-301): the preview comes from the file itself while the upload runs.
+ */
 interface Attachment {
-  path: string;
+  /** Local id: the path only exists once the upload is done. */
+  id: number;
+  status: 'uploading' | 'ready' | 'failed';
+  path: string | null;
   name: string;
   /** A local preview (object URL), when the image came from this browser. */
   preview: string | null;
 }
+let attachmentSeq = 0;
 
 export function SessionChat({
   session,
@@ -949,49 +956,92 @@ export function SessionChat({
   // Images (PM-116): pasted, dropped or picked into the composer, uploaded at once, and sent
   // with the message as their paths, which Claude Code and Codex attach as images.
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [uploading, setUploading] = useState(0);
+  const uploading = attachments.filter((a) => a.status === 'uploading').length;
+  /** The files behind attachments still uploading or failed: a failed one can be retried. */
+  const pickedFiles = useRef(new Map<number, File>());
   const picker = useRef<HTMLInputElement>(null);
   /** Why the last image couldn't be added, shown beside the composer (PM-130). */
   const [imageError, setImageError] = useState('');
-  const addImages = async (files: File[]) => {
-    const images = files.filter(isImageFile);
-    if (files.length && !images.length) setImageError('That file is not an image.');
-    if (!images.length) return;
-    setImageError('');
-    setUploading((n) => n + images.length);
-    for (const file of images) {
-      try {
-        const { path } = await api.uploadSessionImage(id, await prepareImage(file));
-        const name = file.name || 'image';
-        setAttachments((prev) => [...prev, { path, name, preview: URL.createObjectURL(file) }]);
-      } catch (e) {
-        // Shown here, by the composer: the page's error banner is off-screen in the dock and
-        // in full screen, so a failure looked like nothing happened.
-        setImageError(`Couldn't add ${file.name || 'the image'}: ${(e as Error).message}`);
-        onError((e as Error).message);
-      } finally {
-        setUploading((n) => n - 1);
-      }
+  const upload = async (key: number, file: File) => {
+    try {
+      const { path } = await api.uploadSessionImage(id, await prepareImage(file));
+      pickedFiles.current.delete(key);
+      // Removed while uploading: it simply doesn't come back.
+      setAttachments((prev) =>
+        prev.map((a) => (a.id === key ? { ...a, status: 'ready', path } : a)),
+      );
+    } catch (e) {
+      // Shown here, by the composer: the page's error banner is off-screen in the dock and
+      // in full screen, so a failure looked like nothing happened.
+      setImageError(`Couldn't add ${file.name || 'the image'}: ${(e as Error).message}`);
+      onError((e as Error).message);
+      setAttachments((prev) => prev.map((a) => (a.id === key ? { ...a, status: 'failed' } : a)));
     }
   };
+  const addImages = (picked: File[]) => {
+    const images = picked.filter(isImageFile);
+    if (picked.length && !images.length) setImageError('That file is not an image.');
+    if (!images.length) return;
+    setImageError('');
+    // Every image shows at once, then all upload side by side.
+    const added = images.map((file) => {
+      const key = ++attachmentSeq;
+      pickedFiles.current.set(key, file);
+      return {
+        id: key,
+        status: 'uploading' as const,
+        path: null,
+        name: file.name || 'image',
+        preview: URL.createObjectURL(file),
+      };
+    });
+    setAttachments((prev) => [...prev, ...added]);
+    for (const a of added) void upload(a.id, pickedFiles.current.get(a.id)!);
+  };
+  const retryAttachment = (key: number) => {
+    const file = pickedFiles.current.get(key);
+    if (!file) return;
+    setImageError('');
+    setAttachments((prev) => prev.map((a) => (a.id === key ? { ...a, status: 'uploading' } : a)));
+    void upload(key, file);
+  };
+  // Previews are object URLs: give their memory back when the chat closes.
+  const previews = useRef<Attachment[]>([]);
+  useEffect(() => {
+    previews.current = attachments;
+  }, [attachments]);
+  useEffect(
+    () => () => {
+      for (const a of previews.current) if (a.preview) URL.revokeObjectURL(a.preview);
+    },
+    [],
+  );
   // The pane's image button uploads and pastes a path: while the chat shows, it joins here.
   useEffect(() => {
     if (!pasteRef) return;
     pasteRef.current = (path) =>
       setAttachments((prev) => [
         ...prev,
-        { path, name: path.split(/[\\/]/).pop() ?? 'image', preview: null },
+        {
+          id: ++attachmentSeq,
+          status: 'ready',
+          path,
+          name: path.split(/[\\/]/).pop() ?? 'image',
+          preview: null,
+        },
       ]);
     return () => {
       pasteRef.current = null;
     };
   }, [pasteRef]);
-  const removeAttachment = (path: string) =>
+  const removeAttachment = (key: number) => {
+    pickedFiles.current.delete(key);
     setAttachments((prev) => {
-      const gone = prev.find((a) => a.path === path);
+      const gone = prev.find((a) => a.id === key);
       if (gone?.preview) URL.revokeObjectURL(gone.preview);
-      return prev.filter((a) => a.path !== path);
+      return prev.filter((a) => a.id !== key);
     });
+  };
 
   /**
    * Sends the box (text and images), or `quick`, a fixed message such as "continue" (PM-121)
@@ -999,7 +1049,8 @@ export function SessionChat({
    */
   const submit = async (quick?: string) => {
     const text = quick ?? draft.trim();
-    const images = quick ? [] : attachments;
+    // Uploaded images go; a failed one stays in the tray to retry or remove.
+    const images = quick ? [] : attachments.filter((a) => a.status === 'ready');
     if ((!text && !images.length) || sending || (!quick && uploading)) return;
     setSending(true);
     // Shown in the chat at once (PM-116), until the CLI's transcript records it.
@@ -1011,7 +1062,7 @@ export function SessionChat({
     ]);
     if (!quick) {
       setDraft('');
-      setAttachments([]);
+      setAttachments((prev) => prev.filter((a) => a.status !== 'ready'));
       setRecall(null);
     }
     atBottom.current = true;
@@ -1362,25 +1413,42 @@ export function SessionChat({
             </button>
           </p>
         )}
-        {(attachments.length > 0 || uploading > 0) && (
+        {attachments.length > 0 && (
           <div className="chat-attachments" aria-label="Images to send">
             {attachments.map((a) => (
-              <span key={a.path} className="chat-attachment" title={a.name}>
+              <span
+                key={a.id}
+                className={`chat-attachment is-${a.status}`}
+                title={a.name}
+                aria-busy={a.status === 'uploading'}
+              >
                 {a.preview ? <img src={a.preview} alt={a.name} /> : <span>{a.name}</span>}
+                {a.status === 'uploading' && (
+                  <span className="chat-attachment-state" role="status">
+                    <span className="spinner" aria-hidden="true" />
+                    <span className="sr-only">Uploading {a.name}</span>
+                  </span>
+                )}
+                {a.status === 'failed' && (
+                  <button
+                    type="button"
+                    className="chat-attachment-retry"
+                    aria-label={`Retry ${a.name}`}
+                    onClick={() => retryAttachment(a.id)}
+                  >
+                    Retry
+                  </button>
+                )}
                 <button
                   type="button"
+                  className="chat-attachment-remove"
                   aria-label={`Remove ${a.name}`}
-                  onClick={() => removeAttachment(a.path)}
+                  onClick={() => removeAttachment(a.id)}
                 >
-                  ×
+                  <span aria-hidden="true">×</span>
                 </button>
               </span>
             ))}
-            {uploading > 0 && (
-              <span className="chat-attachment is-uploading" role="status">
-                <span className="spinner" aria-hidden="true" /> Adding…
-              </span>
-            )}
           </div>
         )}
         <form

@@ -432,18 +432,67 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-attachment button {
+/* Remove: a small round x at the top right, with a 44px touch area around it (PM-301). */
+/* The tap area is the whole 36px corner (inside the chip, which clips anything outside it); the
+   visible x is the 22px circle in it. */
+.chat-attachment-remove {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 22px;
-  height: 22px;
+  top: 0;
+  right: 0;
+  display: flex;
+  justify-content: flex-end;
+  width: 36px;
+  height: 36px;
+  padding: 2px;
   border: 0;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  background: none;
   color: var(--text);
   font: inherit;
+  cursor: pointer;
+}
+.chat-attachment-remove > span {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
   line-height: 22px;
+  text-align: center;
+}
+.chat-attachment-remove:focus-visible {
+  outline: none;
+}
+.chat-attachment-remove:focus-visible > span {
+  outline: 2px solid var(--accent);
+}
+/* Uploading: the picture shows at once, dimmed under a spinner until it is uploaded. */
+.chat-attachment.is-uploading img {
+  opacity: 0.55;
+}
+.chat-attachment-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.chat-attachment.is-failed {
+  border-color: var(--danger);
+}
+.chat-attachment.is-failed img {
+  opacity: 0.4;
+}
+.chat-attachment-retry {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
   cursor: pointer;
 }
 .chat-attach {
