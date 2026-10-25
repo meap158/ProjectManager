@@ -115,6 +115,8 @@ describe('run', () => {
   const fresh = () => {
     const root = mkdtempSync(path.join(tmp, 'project-'));
     mkdirSync(path.join(root, 'References', 'owner-pages'), { recursive: true });
+    // The generator requires a roadmap in the project root (PM-289).
+    writeFileSync(path.join(root, 'ROADMAP.md'), '# Roadmap\n');
     return root;
   };
   const lines = () => {
@@ -168,6 +170,17 @@ describe('run', () => {
     );
     expect(run([], root, log)).toBe(1);
     expect(out.at(-1)).toMatch(/status must be one of/);
+    expect(existsSync(path.join(dir, 'owner-desk.html'))).toBe(false);
+  });
+
+  it('refuses to build without ROADMAP.md in the project root', () => {
+    const root = fresh();
+    rmSync(path.join(root, 'ROADMAP.md'));
+    const dir = path.join(root, 'References', 'owner-pages');
+    writeFileSync(path.join(dir, 'owner-desk.json'), JSON.stringify({ tasks: [task()] }));
+    const { out, log } = lines();
+    expect(run([], root, log)).toBe(1);
+    expect(out.join('\n')).toMatch(/ROADMAP\.md is missing/);
     expect(existsSync(path.join(dir, 'owner-desk.html'))).toBe(false);
   });
 });
