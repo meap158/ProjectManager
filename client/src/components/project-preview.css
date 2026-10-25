@@ -231,11 +231,13 @@
   background: var(--surface-hover);
   border-bottom: 1px solid var(--border);
 }
-/* The tabs scroll sideways when there are many; the new-tab button stays put. */
+/* Equal browser-style widths: grow to 240px, shrink together, then scroll at the readable
+   minimum. The strip's preferred width keeps + beside the final tab when space is available. */
 .preview-tabs {
   display: flex;
   align-items: flex-end;
   gap: 2px;
+  flex: 0 1 auto;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
@@ -247,7 +249,8 @@
   position: relative;
   display: flex;
   align-items: center;
-  flex: 0 1 190px;
+  flex: 1 1 240px;
+  max-width: 240px;
   min-width: 92px;
   height: 32px;
   margin-bottom: -1px; /* the active tab and the toolbar read as one surface */
@@ -539,9 +542,6 @@
   /* A phone gives its space to the page: the tab strip shows only once there is more than one tab. */
   .preview-tabstrip.is-single {
     display: none;
-  }
-  .preview-tab {
-    flex-basis: 150px;
   }
   /* The list or the browser, one at a time; the Apps button returns to the list. */
   .project-preview.has-target .preview-list-panel {

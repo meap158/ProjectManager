@@ -235,7 +235,16 @@ export function PreviewTabStrip({
 
   return (
     <div className={`preview-tabstrip${tabs.length === 1 ? ' is-single' : ''}`}>
-      <div className="preview-tabs" role="tablist" aria-label="Browser tabs">
+      <div
+        className="preview-tabs"
+        role="tablist"
+        aria-label="Browser tabs"
+        style={{
+          width:
+            tabs.reduce((width, tab) => width + (tab.pinned ? 38 : 240), 0) +
+            Math.max(0, tabs.length - 1) * 2,
+        }}
+      >
         {tabs.map((tab, index) => {
           const active = tab.id === activeId;
           return (
