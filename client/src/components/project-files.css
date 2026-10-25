@@ -94,6 +94,7 @@
 }
 .files-pin-open {
   display: flex;
+  overflow: hidden;
   flex: 1;
   align-items: center;
   gap: 6px;
@@ -128,8 +129,15 @@
 .files-pin.is-missing .files-icon {
   opacity: 0.5;
 }
-.files-pin-path {
-  flex: 0 1 auto;
+/* The file name comes first: it keeps its full width (flex-shrink 0, so no fractional-pixel
+   ellipsis either) unless it alone is wider than the row; the faint path hint gives way first, down
+   to nothing. The full path is in the tooltip. */
+.files-pin .files-name {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+.files-pin .files-pin-path {
+  flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
