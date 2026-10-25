@@ -1,0 +1,346 @@
+/* The Files tab's folder previewer (PM-286). Tokens only; phone first. */
+.fv {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.fv-crumb {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+.fv-crumb:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.fv-crumb:focus-visible,
+.fv-cell:focus-visible,
+.fv-row:focus-visible,
+.fv-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.fv-summary {
+  margin: 0;
+  font-size: 12.5px;
+}
+.fv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fv-changed {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.fv-filters-button,
+.fv-backdrop,
+.fv-done {
+  display: none;
+}
+
+/* Filters: inline on a wide screen, in two aligned lines. Every control is 34px tall and the
+   second line sits on one baseline (labels above the selects, the rest bottom-aligned with them),
+   so nothing steps up or down when the window narrows. */
+.fv-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.fv-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+.fv-line-b {
+  align-items: flex-end;
+}
+.fv-controls .input,
+.fv-controls .btn,
+.fv-controls .fv-check {
+  box-sizing: border-box;
+  height: 34px;
+  margin: 0;
+}
+.fv-controls .btn {
+  padding-block: 0;
+}
+.fv-search {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+.fv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fv-chip {
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fv-chip:hover {
+  background: var(--surface-hover);
+}
+.fv-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.fv-field {
+  display: grid;
+  gap: 3px;
+  font-size: 11.5px;
+  line-height: 1.2;
+  color: var(--text-3);
+}
+.fv-field .input {
+  min-width: 128px;
+}
+.fv-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.fv-check input {
+  margin: 0;
+}
+/* The clear button keeps its place at the end of the line. */
+.fv-reset {
+  margin-left: auto;
+}
+
+/* Entries: a grid of thumbnails. The thumbnail box has a fixed shape so nothing jumps as images load. */
+.fv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fv-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fv-cell:hover {
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+.fv-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+.fv-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.fv-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fv-meta {
+  overflow: hidden;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fv-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.fv-badge-new {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.fv-badge-changed {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.fv-row-name .fv-badge {
+  position: static;
+  flex: none;
+}
+
+/* Entries: a list. */
+.fv-list {
+  display: flex;
+  flex-direction: column;
+}
+.fv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px 110px 110px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+button.fv-row:hover {
+  background: var(--surface-hover);
+}
+.fv-row-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: default;
+}
+.fv-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.fv-more {
+  display: block;
+  margin: 12px auto;
+}
+.fv-stale {
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fv-stale {
+    transition: none;
+  }
+}
+
+/* A phone: the filters become a bottom sheet, targets are 44px, the grid is two or three columns. */
+@media (max-width: 640px), (pointer: coarse) {
+  .fv-grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  }
+  .fv-cell,
+  .fv-row {
+    min-height: 44px;
+  }
+  .fv-row {
+    grid-template-columns: minmax(0, 1fr) 70px 90px;
+    font-size: 15px;
+  }
+  .fv-col-created {
+    display: none;
+  }
+  .fv-filters-button,
+  .fv-done {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+  .fv-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: block;
+    border: 0;
+    background: color-mix(in srgb, #000 45%, transparent);
+  }
+  .fv-controls {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 61;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    max-height: 78dvh;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    overflow: auto;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 24px color-mix(in srgb, #000 35%, transparent);
+  }
+  .fv-controls.is-open {
+    display: flex;
+  }
+  .fv-line,
+  .fv-line-b {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .fv-chips {
+    gap: 8px;
+  }
+  .fv-chip {
+    height: 40px;
+    padding: 0 16px;
+    font-size: 14px;
+  }
+  .fv-controls .input,
+  .fv-controls .btn,
+  .fv-controls .fv-check {
+    height: 44px;
+    font-size: 16px;
+  }
+  .fv-field .input {
+    width: 100%;
+  }
+  .fv-reset {
+    margin-left: 0;
+  }
+}

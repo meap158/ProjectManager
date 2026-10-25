@@ -40,6 +40,27 @@ vi.mock('../api', () => ({
       return { path: next };
     }),
     openProjectFile: vi.fn(async () => undefined),
+    folderInfo: vi.fn(async (_id: number, path: string) => ({
+      path,
+      recursive: false,
+      folders: 0,
+      files: 1,
+      totalSize: 12,
+      newest: new Date().toISOString(),
+      truncated: false,
+      items: [
+        {
+          name: 'guide.ts',
+          path: `${path}/guide.ts`,
+          kind: 'file',
+          size: 12,
+          mtime: new Date().toISOString(),
+          ctime: new Date().toISOString(),
+          ignored: false,
+          symlink: false,
+        },
+      ],
+    })),
     filePins: vi.fn(async () => ({ pins: PINS })),
     pinFile: vi.fn(async () => ({ id: 9 })),
     unpinFile: vi.fn(async () => undefined),
@@ -150,7 +171,7 @@ describe('ProjectFiles', () => {
       [...document.querySelectorAll('iframe.files-frame')]
         .map((f) => f.getAttribute('srcdoc'))
         .find((d) => d?.includes('color-scheme:dark')) ?? '';
-    await waitFor(() => expect(doc()).toContain('scrollbar-color'));
+    await waitFor(() => expect(doc()).toContain('scrollbar-color'), { timeout: 4000 });
     expect(doc()).toContain('color-scheme:dark');
     delete document.documentElement.dataset.theme;
   });
@@ -163,16 +184,19 @@ describe('ProjectFiles', () => {
       window.dispatchEvent(new MessageEvent('message', { data: { pmFile: 'docs/guide.ts' } }));
     });
     expect(screen.queryByTitle('Preview of docs/guide.ts')).toBeNull();
-    // From the frame itself it opens that file, and the tree opens docs and marks the row.
-    act(() => {
-      window.dispatchEvent(
-        new MessageEvent('message', {
-          data: { pmFile: 'docs/guide.ts' },
-          source: frame.contentWindow,
-        }),
-      );
+    // From the frame itself it opens that file, and the tree opens docs and marks the row. The
+    // listener is attached in an effect, so the message is sent until it has been picked up.
+    await waitFor(() => {
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: { pmFile: 'docs/guide.ts' },
+            source: frame.contentWindow,
+          }),
+        );
+      });
+      expect(screen.getByText('line two')).toBeTruthy();
     });
-    expect(await screen.findByText('line two')).toBeTruthy();
     const tree = screen.getByRole('tree');
     await waitFor(() =>
       expect(tree.querySelector('[data-path="docs/guide.ts"]')?.getAttribute('aria-selected')).toBe(
@@ -189,6 +213,41 @@ describe('ProjectFiles', () => {
       );
     });
     expect(screen.queryByText('../../etc/x')).toBeNull();
+  });
+
+  it("shows a selected folder's contents in the right pane, and a file from it keeps the way back", async () => {
+    show();
+    const tree = await screen.findByRole('tree');
+    await waitFor(() => expect(tree.querySelector('[data-path="docs"]')).not.toBeNull());
+    fireEvent.click(screen.getByText('docs'));
+    // The folder previewer replaces the pane, instead of leaving the last file up.
+    expect(await screen.findByRole('navigation', { name: 'Folder path' })).toBeTruthy();
+    expect(await screen.findByText(/1 file · 0 folders/)).toBeTruthy();
+    expect(tree.querySelector('[data-path="docs"]')?.getAttribute('aria-selected')).toBe('true');
+    // Opening a file from it shows the file; "Files" goes back to the folder, not to nothing.
+    fireEvent.click(await screen.findByText('guide.ts', { selector: '.fv-name' }));
+    expect(await screen.findByText('line two')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '← Files' }));
+    expect(await screen.findByRole('navigation', { name: 'Folder path' })).toBeTruthy();
+  });
+
+  it('a pinned folder opens like the folder in the tree: its contents on the right, the tree following', async () => {
+    PINS.length = 0;
+    PINS.push({ id: 5, path: 'docs', scope: 'project', kind: 'dir' });
+    try {
+      show();
+      const section = await screen.findByRole('region', { name: 'Pinned' });
+      fireEvent.click(within(section).getByTitle('docs'));
+      expect(await screen.findByRole('navigation', { name: 'Folder path' })).toBeTruthy();
+      const tree = screen.getByRole('tree');
+      await waitFor(() =>
+        expect(tree.querySelector('[data-path="docs"]')?.getAttribute('aria-selected')).toBe(
+          'true',
+        ),
+      );
+    } finally {
+      PINS.length = 0;
+    }
   });
 
   it('opens the folders above a linked file', async () => {

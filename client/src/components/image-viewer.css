@@ -1,0 +1,244 @@
+/* The folder previewer's image viewer (PM-286): a lightbox over the page, tokens only. */
+.iv {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: block;
+  background: color-mix(in srgb, #000 78%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  color: #f4f4f2;
+  outline: none;
+}
+/* The stage fills the screen and leaves room for the tools above and the strip below; a click on
+   the dark around the picture closes the viewer, a click on the picture does not. */
+.iv-stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 56px 72px 112px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+.iv-stage[data-zoomed] {
+  cursor: grab;
+}
+/* The checkerboard sits on the picture itself, so transparency shows on the picture only. */
+.iv-image {
+  max-width: 100%;
+  max-height: 100%;
+  background-color: var(--surface-2);
+  background-image:
+    linear-gradient(
+      45deg,
+      var(--surface) 25%,
+      transparent 25%,
+      transparent 75%,
+      var(--surface) 75%
+    ),
+    linear-gradient(45deg, var(--surface) 25%, transparent 25%, transparent 75%, var(--surface) 75%);
+  background-position:
+    0 0,
+    10px 10px;
+  background-size: 20px 20px;
+  border-radius: 4px;
+  box-shadow: 0 10px 40px color-mix(in srgb, #000 55%, transparent);
+  transform-origin: center;
+  will-change: transform;
+}
+.iv-zoom {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #000 55%, transparent);
+  color: #e6e6e3;
+  font-size: 11.5px;
+  pointer-events: none;
+}
+.iv-tools {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+.iv-btn,
+.iv-nav {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #e6e6e3;
+  font: inherit;
+  cursor: pointer;
+}
+.iv-btn {
+  min-width: 34px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+.iv-btn.iv-text {
+  font-size: 12.5px;
+}
+.iv-btn:hover,
+.iv-btn[aria-pressed='true'],
+.iv-nav:hover {
+  background: color-mix(in srgb, #fff 16%, transparent);
+}
+.iv-btn:focus-visible,
+.iv-nav:focus-visible,
+.iv-thumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Chevrons at the sides, vertically centred on the picture area (not the whole screen). */
+.iv-nav {
+  position: absolute;
+  top: calc(50% - 28px);
+  width: 44px;
+  height: 56px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #000 45%, transparent);
+  font-size: 30px;
+  line-height: 1;
+}
+.iv-prev {
+  left: 12px;
+}
+.iv-next {
+  right: 12px;
+}
+.iv-info {
+  position: absolute;
+  top: 54px;
+  right: 12px;
+  width: 260px;
+  max-height: calc(100% - 180px);
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: 0 8px 28px color-mix(in srgb, #000 45%, transparent);
+}
+.iv-info dl {
+  margin: 0 0 12px;
+}
+.iv-info dt {
+  margin-top: 8px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.iv-info dd {
+  margin: 2px 0 0;
+}
+.iv-wrap {
+  overflow-wrap: anywhere;
+}
+.iv-foot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+.iv-foot > * {
+  pointer-events: auto;
+}
+.iv-caption {
+  max-width: min(640px, 100%);
+  padding: 2px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #000 55%, transparent);
+  color: #e6e6e3;
+  font-size: 12.5px;
+}
+.iv-strip {
+  display: flex;
+  max-width: min(100%, 720px);
+  gap: 6px;
+  padding: 6px;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+.iv-thumb {
+  flex: none;
+  width: 56px;
+  height: 42px;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: var(--surface-2);
+  cursor: pointer;
+  opacity: 0.65;
+}
+.iv-thumb[aria-current='true'] {
+  border-color: var(--accent);
+  opacity: 1;
+}
+.iv-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* A phone: the picture gets nearly the whole screen, controls are 44px, the chevrons stay at the
+   edges (swiping works too), and the info card sits above the strip. */
+@media (max-width: 640px), (pointer: coarse) {
+  .iv-stage {
+    padding: 56px 8px 120px;
+  }
+  .iv-btn {
+    min-width: 44px;
+    height: 44px;
+  }
+  .iv-tools {
+    top: 6px;
+    right: 6px;
+  }
+  .iv-nav {
+    width: 44px;
+    height: 64px;
+    top: calc(50% - 32px);
+  }
+  .iv-prev {
+    left: 4px;
+  }
+  .iv-next {
+    right: 4px;
+  }
+  .iv-thumb {
+    width: 52px;
+    height: 52px;
+  }
+  .iv-info {
+    top: auto;
+    right: 8px;
+    bottom: 132px;
+    left: 8px;
+    width: auto;
+    max-height: 42%;
+  }
+}

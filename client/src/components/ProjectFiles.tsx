@@ -17,6 +17,7 @@ import { formatBytes, formatRelative } from '../format';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { ConfirmDelete } from './ConfirmDelete';
 import { MoreIcon } from './icons';
+import { FolderView } from './FolderView';
 import { ChevronIcon, FileTypeIcon, iconFor } from './fileIcons';
 import './project-files.css';
 
@@ -134,9 +135,23 @@ interface Row {
  * Focuses a tree row without the browser's own scroll (which can move the page and the tree), then
  * scrolls the tree only as far as needed to show it: a visible row never moves (PM-268).
  */
+/**
+ * Scrolls a tree row into view by moving the tree's own scroller, and only when the row is outside
+ * it. `scrollIntoView` would also scroll the page (and every ancestor) to bring the row up, which is
+ * the jump people feel when they pick something in the tree.
+ */
+function revealInTree(row: HTMLElement) {
+  const tree = row.closest<HTMLElement>('.files-tree');
+  if (!tree) return;
+  const box = tree.getBoundingClientRect();
+  const at = row.getBoundingClientRect();
+  if (at.top < box.top) tree.scrollTop -= box.top - at.top;
+  else if (at.bottom > box.bottom) tree.scrollTop += at.bottom - box.bottom;
+}
+
 function focusQuietly(row: HTMLElement) {
   row.focus({ preventScroll: true });
-  row.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  revealInTree(row);
 }
 
 export function ProjectFiles({
@@ -149,9 +164,13 @@ export function ProjectFiles({
 }) {
   const [params, setParams] = useSearchParams();
   const openFile = params.get('file');
+  // A selected folder (PM-286): the right pane shows its contents instead of a file.
+  const openDir = params.get('dir');
   const [folders, setFolders] = useState<Map<string, FolderListing>>(new Map());
-  // Open: the root, and the folders leading to a linked file.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(foldersTo(openFile)));
+  // Open at first: the root, and the way to the linked file or folder.
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(foldersTo(openFile ?? (openDir ? `${openDir}/x` : null))),
+  );
   const [focused, setFocused] = useState<string | null>(openFile);
   const [filter, setFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -250,15 +269,17 @@ export function ProjectFiles({
     foldersRef.current = folders;
   }, [folders]);
   // State that follows a prop is set while rendering (React's pattern), not from an effect.
-  const [syncedFile, setSyncedFile] = useState(openFile);
-  if (openFile !== syncedFile) {
-    setSyncedFile(openFile);
-    if (openFile) {
-      const above = foldersTo(openFile);
+  const treeTarget = openFile ?? openDir;
+  const [syncedFile, setSyncedFile] = useState(treeTarget);
+  if (treeTarget !== syncedFile) {
+    setSyncedFile(treeTarget);
+    if (treeTarget) {
+      // A folder's own row is opened too; a file's folders are.
+      const above = foldersTo(openFile ? treeTarget : `${treeTarget}/x`);
       setExpanded((prev) =>
         above.every((p) => prev.has(p)) ? prev : new Set([...prev, ...above]),
       );
-      setFocused(openFile);
+      setFocused(treeTarget);
     }
   }
   // The first file's folders are loaded by the mount effect above; this reads the ones a later
@@ -269,16 +290,24 @@ export function ProjectFiles({
       filesChanged.current = true;
       return;
     }
-    if (!openFile) return;
-    for (const p of foldersTo(openFile)) if (!foldersRef.current.has(p)) void load(p);
-  }, [openFile, load]);
+    const target = openFile ?? openDir;
+    if (!target) return;
+    for (const p of foldersTo(openFile ? target : `${target}/x`))
+      if (!foldersRef.current.has(p)) void load(p);
+  }, [openFile, openDir, load]);
+  // The row of what is open is brought into view once per target: expanding some other folder
+  // redraws the rows, and that must not pull the tree back to the open file.
+  const revealed = useRef<string | null>(null);
   useEffect(() => {
-    if (!openFile) return;
+    const target = openFile ?? openDir;
+    if (!target || revealed.current === target) return;
     const row = [...(treeRef.current?.querySelectorAll<HTMLElement>('[data-path]') ?? [])].find(
-      (el) => el.dataset.path === openFile,
+      (el) => el.dataset.path === target,
     );
-    row?.scrollIntoView?.({ block: 'nearest' });
-  }, [openFile, rows]);
+    if (!row) return; // Not drawn yet (its folder is still loading): tried again when the rows change.
+    revealed.current = target;
+    revealInTree(row);
+  }, [openFile, openDir, rows]);
 
   const toggle = (entry: TreeEntry, open?: boolean) => {
     const next = new Set(expanded);
@@ -292,9 +321,24 @@ export function ProjectFiles({
 
   const select = (entry: TreeEntry) => {
     setFocused(entry.path);
-    if (entry.kind === 'dir') toggle(entry);
-    else setParams((p) => ({ ...Object.fromEntries(p), tab: 'files', file: entry.path }));
+    if (entry.kind === 'dir') {
+      toggle(entry);
+      goDir(entry.path);
+    } else
+      setParams((p) => {
+        // A file from the tree replaces the folder previewer.
+        const next = Object.fromEntries(p);
+        delete next.dir;
+        return { ...next, tab: 'files', file: entry.path };
+      });
   };
+
+  /** Shows a folder's contents, with the filters it was last shown with. */
+  const goDir = useCallback(
+    // The folder's own saved view (filters, sort, layout) is restored by the previewer.
+    (path: string) => setParams({ tab: 'files', dir: path }),
+    [setParams],
+  );
 
   const entryAt = (path: string) => rows.find((r) => r.entry.path === path)?.entry;
 
@@ -304,20 +348,23 @@ export function ProjectFiles({
   });
 
   /** Shows a pinned item in the tree: opens the folders above it, then the file or folder. */
-  const openPin = async (pin: FilePin) => {
+  const openPin = (pin: FilePin) => {
     if (!pin.kind) {
       say('This project has no such file or folder');
       return;
     }
-    const above = foldersTo(`${pin.path}/x`).filter((p) => pin.kind === 'dir' || p !== pin.path);
-    setExpanded(
-      (prev) => new Set([...prev, ...above.filter((p) => p !== pin.path || pin.kind === 'dir')]),
-    );
-    await Promise.all(above.filter((p) => !folders.has(p)).map((p) => load(p)));
+    // The same as picking it in the tree: a folder shows its contents (with the filters it had), a
+    // file its preview, and the tree follows either way.
     setFocused(pin.path);
-    if (pin.kind === 'file')
-      setParams((q) => ({ ...Object.fromEntries(q), tab: 'files', file: pin.path }));
-    focusRow(pin.path);
+    if (pin.kind === 'dir') {
+      goDir(pin.path);
+      return;
+    }
+    setParams((q) => {
+      const next = Object.fromEntries(q);
+      delete next.dir;
+      return { ...next, tab: 'files', file: pin.path };
+    });
   };
 
   /**
@@ -554,7 +601,7 @@ export function ProjectFiles({
 
   const root = folders.get('');
   return (
-    <div className={`project-files${openFile ? ' has-file' : ''}`}>
+    <div className={`project-files${openFile || openDir !== null ? ' has-file' : ''}`}>
       <section className="panel files-tree-panel" aria-label="Files">
         <div className="files-toolbar">
           <input
@@ -661,7 +708,7 @@ export function ProjectFiles({
           >
             {rows.map(({ entry, level }) => {
               const isOpen = entry.kind === 'dir' && expanded.has(entry.path);
-              const isCurrent = entry.path === openFile;
+              const isCurrent = entry.path === (openFile ?? openDir);
               const tabStop = (focused ?? rows[0]?.entry.path) === entry.path;
               return (
                 <li
@@ -826,8 +873,25 @@ export function ProjectFiles({
               })
             }
           />
+        ) : openDir !== null ? (
+          <FolderView
+            projectId={projectId}
+            dir={openDir}
+            onOpenFile={(path) =>
+              // From a folder's contents: the folder stays in the address, so Back returns to it.
+              setParams((p) => ({ ...Object.fromEntries(p), tab: 'files', file: path }))
+            }
+            onOpenDir={goDir}
+            onClose={() =>
+              setParams((p) => {
+                const next = Object.fromEntries(p);
+                delete next.dir;
+                return next;
+              })
+            }
+          />
         ) : (
-          <p className="faint files-empty">Choose a file to preview it.</p>
+          <p className="faint files-empty">Choose a file or a folder to preview it.</p>
         )}
       </section>
     </div>

@@ -312,6 +312,16 @@ adjacent-pair CVD separation in both modes).
   project is dimmed with "missing". Pin from the context menu or with Alt+P (this project) and Alt+Shift+P
   (all projects); the row's "..." menu moves a pin up or down within its scope, or unpins it. Pins are kept in
   this app's database (never in the project) and can only be changed on this computer; they are read everywhere.
+- **Folder previewer (`FolderView`, PM-286):** selecting a folder (in the tree, from a pin, a breadcrumb or a
+  subfolder) shows its contents in the right pane instead of the last file: every entry with size and times as a
+  Grid of thumbnails or a List; filters (name, type chips, modified range, include subfolders) and sort, kept in the
+  address and remembered per project and folder, so Images chosen in a folder is still on when you return; a
+  "New" or "Changed" badge on what changed since you last looked (with Mark all seen). Pictures bigger than 2 MB
+  show an icon instead of loading the whole file as a thumbnail; only a page (120) of entries is in the page at a
+  time. A picture opens in a **lightbox** (`ImageViewer`): dimmed backdrop, the picture centred on it, chevrons,
+  caption, filmstrip, zoom and pan, an info card; the dark around the picture or Escape closes it. On a phone the
+  filters are a bottom sheet and every target is 44px. Lists and the pane keep their size while loading and the tree
+  scrolls only itself, so picking something never moves the page.
 - **Context menu (`ContextMenu`, shared by the Preview tabs and the Files tree):** a real
   `role="menu"` (arrow keys, Home and End, Escape or Tab close, focus on the first enabled item and back
   on the trigger), closed by an outside click, a window blur or a resize. It is measured before paint
