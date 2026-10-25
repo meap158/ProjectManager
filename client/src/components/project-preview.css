@@ -143,6 +143,7 @@
 .preview-list-note {
   margin: 0 0 6px;
   font-size: 12.5px;
+  overflow-wrap: anywhere;
 }
 @media (pointer: coarse) {
   .preview-app-actions {

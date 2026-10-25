@@ -99,6 +99,17 @@ export function previewFrame(
 export const targetText = (t: PreviewTarget) =>
   `localhost:${t.port}${t.path === '/' ? '' : t.path}`;
 const POLL_MS = 5000;
+/** How long "Stopped …" stays up. */
+const STOPPED_NOTE_MS = 4000;
+/** A page title can be a whole sentence; the note names the app briefly and the port exactly. */
+const NOTE_NAME_MAX = 28;
+
+export function stoppedNote(name: string, port: number): string {
+  const clean = name.replace(/\s+/g, ' ').trim();
+  const short =
+    clean.length > NOTE_NAME_MAX ? `${clean.slice(0, NOTE_NAME_MAX - 1).trimEnd()}…` : clean;
+  return `Stopped ${short || 'the app'} (:${port}).`;
+}
 
 export type PreviewSort = 'port' | 'name' | 'name-desc' | 'project';
 export const PREVIEW_SORTS: { value: PreviewSort; label: string }[] = [
@@ -338,6 +349,12 @@ export function PreviewWorkspace() {
     anchor?: HTMLElement;
   } | null>(null);
   const [listNote, setListNote] = useState<{ text: string; error: boolean } | null>(null);
+  // A confirmation fades on its own; an error stays until the next action.
+  useEffect(() => {
+    if (!listNote || listNote.error) return;
+    const timer = setTimeout(() => setListNote(null), STOPPED_NOTE_MS);
+    return () => clearTimeout(timer);
+  }, [listNote]);
   const navigate = useNavigate();
   const addressRef = useRef<HTMLInputElement>(null);
   const focusAddress = useRef(false);
@@ -541,7 +558,7 @@ export function PreviewWorkspace() {
     setListNote(null);
     try {
       await api.stopLocalApp(app.port, app.pid);
-      setListNote({ text: `Stopped ${name} (:${app.port}).`, error: false });
+      setListNote({ text: stoppedNote(name, app.port), error: false });
     } catch (e) {
       setListNote({ text: e instanceof Error ? e.message : 'Could not stop it', error: true });
     }

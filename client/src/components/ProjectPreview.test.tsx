@@ -9,6 +9,7 @@ import {
   previewFrame,
   previewSrc,
   sortApps,
+  stoppedNote,
   type PreviewSort,
 } from './ProjectPreview';
 
@@ -153,6 +154,19 @@ describe('previewFrame', () => {
         { protocol: 'http:', hostname: 'localhost', port: '' },
       ).src,
     ).toBe('http://p3000.localhost/');
+  });
+});
+
+describe('stoppedNote', () => {
+  it('names the app briefly, keeps the port, and never prints a whole page title', () => {
+    expect(stoppedNote('TrendRelay', 3001)).toBe('Stopped TrendRelay (:3001).');
+    const title =
+      'with a third-party mark, ever — CLAUDE.md > "IP & naming rules", rule 1. Genre a';
+    const note = stoppedNote(title, 5187);
+    expect(note.length).toBeLessThan(50);
+    expect(note).toMatch(/…\s\(:5187\)\.$/);
+    expect(stoppedNote('  two   lines  ', 1)).toBe('Stopped two lines (:1).');
+    expect(stoppedNote('', 4000)).toBe('Stopped the app (:4000).');
   });
 });
 
