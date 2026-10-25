@@ -214,28 +214,28 @@ const VIEW_KEYS = ['view', 'sort', 'order', 'q', 'types', 'mod', 'rec'];
 export const hasViewParams = (params: URLSearchParams): boolean =>
   VIEW_KEYS.some((key) => params.has(key));
 
-const viewKey = (projectId: number, dir: string) => `pm.folderView.${projectId}:${dir}`;
+const VIEW_KEY = 'pm.folderView';
 
 /**
- * The filters, sort and layout last used in a folder, kept per project and folder so that choosing
- * Images in one folder is still in force when you come back to it (from a file, a pin, the tree or
- * another folder). Null when none were saved.
+ * The filters, sort and layout last used in the folder previewer, kept across folders and items so
+ * that choosing Images or Include subfolders stays in force as you move through the tree, pins,
+ * files and breadcrumbs. Null when none were saved.
  */
-export function readSavedView(projectId: number, dir: string): URLSearchParams | null {
+export function readSavedView(_projectId?: number, _dir?: string): URLSearchParams | null {
   try {
-    const raw = localStorage.getItem(viewKey(projectId, dir));
+    const raw = localStorage.getItem(VIEW_KEY);
     return raw ? new URLSearchParams(raw) : null;
   } catch {
     return null;
   }
 }
 
-export function writeSavedView(projectId: number, dir: string, state: FolderViewState): void {
+export function writeSavedView(_projectId: number, _dir: string, state: FolderViewState): void {
   try {
     const text = writeViewParams(state, new URLSearchParams()).toString();
     // The default view is not stored: nothing to restore.
-    if (text) localStorage.setItem(viewKey(projectId, dir), text);
-    else localStorage.removeItem(viewKey(projectId, dir));
+    if (text) localStorage.setItem(VIEW_KEY, text);
+    else localStorage.removeItem(VIEW_KEY);
   } catch {
     // Not remembered; the address still carries the view.
   }

@@ -20,6 +20,7 @@ const FOLDERS: Record<string, FolderListing> = {
     entries: [entry('docs', 'dir'), entry('dist', 'dir', true), entry('README.md', 'file')],
   },
   docs: { path: 'docs', truncated: false, entries: [entry('docs/guide.ts', 'file')] },
+  dist: { path: 'dist', truncated: false, entries: [] },
 };
 vi.mock('../api', () => ({
   api: {
@@ -229,6 +230,32 @@ describe('ProjectFiles', () => {
     expect(await screen.findByText('line two')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '← Files' }));
     expect(await screen.findByRole('navigation', { name: 'Folder path' })).toBeTruthy();
+  });
+
+  it('preserves active folder filters when navigating between folders and files', async () => {
+    localStorage.clear();
+    show();
+    const tree = await screen.findByRole('tree');
+    await waitFor(() => expect(tree.querySelector('[data-path="docs"]')).not.toBeNull());
+    fireEvent.click(screen.getByText('docs'));
+    await screen.findByRole('navigation', { name: 'Folder path' });
+    fireEvent.click(screen.getByRole('button', { name: 'Images' }));
+    fireEvent.click(screen.getByLabelText('Include subfolders'));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Images' }).getAttribute('aria-pressed')).toBe(
+        'true',
+      ),
+    );
+    // Navigate to a file in the tree, then to another folder: filters stay active.
+    fireEvent.click(within(tree).getByText('README.md'));
+    expect(await screen.findByTitle('Preview of README.md')).toBeTruthy();
+    fireEvent.click(within(tree).getByText('dist'));
+    await screen.findByRole('navigation', { name: 'Folder path' });
+    expect(screen.getByRole('button', { name: 'Images' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect((screen.getByLabelText('Include subfolders') as HTMLInputElement).checked).toBe(true);
+    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'dist', true);
   });
 
   it('a pinned folder opens like the folder in the tree: its contents on the right, the tree following', async () => {

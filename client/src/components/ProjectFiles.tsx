@@ -333,10 +333,14 @@ export function ProjectFiles({
       });
   };
 
-  /** Shows a folder's contents, with the filters it was last shown with. */
+  /** Shows a folder's contents, keeping the active filters, sort and layout across folders and items. */
   const goDir = useCallback(
-    // The folder's own saved view (filters, sort, layout) is restored by the previewer.
-    (path: string) => setParams({ tab: 'files', dir: path }),
+    (path: string) =>
+      setParams((p) => {
+        const next = Object.fromEntries(p);
+        delete next.file;
+        return { ...next, tab: 'files', dir: path };
+      }),
     [setParams],
   );
 

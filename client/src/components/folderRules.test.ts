@@ -192,18 +192,22 @@ describe('the last visit', () => {
   });
 });
 
-describe('the view kept for a folder', () => {
+describe('the saved view across folders', () => {
   afterEach(() => localStorage.clear());
-  it('remembers the filters per project and folder, and forgets them when cleared', () => {
+  it('remembers the filters across folders and items, and forgets them when cleared', () => {
     expect(readSavedView(1, 'assets')).toBeNull();
     writeSavedView(1, 'assets', state({ types: ['image'], modified: '7d', view: 'list' }));
     expect(readViewParams(readSavedView(1, 'assets')!)).toEqual(
       state({ types: ['image'], modified: '7d', view: 'list' }),
     );
-    expect(readSavedView(1, 'other')).toBeNull();
-    expect(readSavedView(2, 'assets')).toBeNull();
+    expect(readViewParams(readSavedView(1, 'other')!)).toEqual(
+      state({ types: ['image'], modified: '7d', view: 'list' }),
+    );
+    expect(readViewParams(readSavedView(2, 'assets')!)).toEqual(
+      state({ types: ['image'], modified: '7d', view: 'list' }),
+    );
     // Back to the default: nothing is stored.
-    writeSavedView(1, 'assets', state());
+    writeSavedView(1, 'other', state());
     expect(readSavedView(1, 'assets')).toBeNull();
   });
 

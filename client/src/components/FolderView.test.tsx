@@ -109,25 +109,35 @@ describe('FolderView', () => {
     expect(names().slice(0, 3)).toEqual(['icons', 'hero.jpg', 'logo.png']); // Name, A to Z.
   });
 
-  it('keeps the filters chosen in a folder, and brings them back on the next visit', async () => {
+  it('keeps the filters chosen in a folder across folders and items', async () => {
     show();
     await screen.findByText(/4 files/);
     fireEvent.click(screen.getByRole('button', { name: 'Images' }));
     await waitFor(() => expect(names()).toEqual(['logo.png', 'hero.jpg']));
-    expect(localStorage.getItem('pm.folderView.1:assets')).toContain('types=image');
+    expect(localStorage.getItem('pm.folderView')).toContain('types=image');
     cleanup();
-    // Arriving with no view in the address (a pin, the tree, a breadcrumb) restores it.
-    show();
+    // Arriving in another folder with no view in the address restores the same filters.
+    render(
+      <MemoryRouter initialEntries={['/projects/1?tab=files&dir=other']}>
+        <Where />
+        <FolderView
+          projectId={1}
+          dir="other"
+          onOpenFile={() => undefined}
+          onOpenDir={() => undefined}
+          onClose={() => undefined}
+        />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(names()).toEqual(['logo.png', 'hero.jpg']));
     expect(url()).toContain('types=image');
-    // Another folder has its own.
-    expect(localStorage.getItem('pm.folderView.1:other')).toBeNull();
   });
 
-  it('lets the address win over what was saved', async () => {
-    localStorage.setItem('pm.folderView.1:assets', 'types=image');
+  it('lets the address win over what was saved, and updates the saved view', async () => {
+    localStorage.setItem('pm.folderView', 'types=image');
     show('&types=document');
     await waitFor(() => expect(names()).toEqual(['notes.md']));
+    expect(localStorage.getItem('pm.folderView')).toContain('types=document');
   });
 
   it('shows the pixel size of a picture and its git state', async () => {

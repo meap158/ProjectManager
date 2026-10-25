@@ -64,17 +64,19 @@ export function FolderView({
   onClose: () => void;
 }) {
   const [params, setParams] = useSearchParams();
-  // The view comes from the address; with none there, from what was last used in this folder.
+  // The view comes from the address; with none there, from what was last used in the previewer.
   const saved = useMemo(
     () => (hasViewParams(params) ? null : readSavedView(projectId, dir)),
     [params, projectId, dir],
   );
   const view = useMemo(() => readViewParams(saved ?? params), [saved, params]);
-  // Brought into the address too, so the link and a reload show what is on screen.
+  // Brought into the address too, so the link and a reload show what is on screen; if the address
+  // already carries a view, remember it so moving between folders and files keeps it.
   useEffect(() => {
     if (saved)
       setParams((current) => writeViewParams(readViewParams(saved), current), { replace: true });
-  }, [saved, setParams]);
+    else if (hasViewParams(params)) writeSavedView(projectId, dir, view);
+  }, [saved, params, projectId, dir, view, setParams]);
   const change = (patch: Partial<FolderViewState>) => {
     const next = { ...view, ...patch };
     writeSavedView(projectId, dir, next);
