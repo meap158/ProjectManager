@@ -167,6 +167,15 @@ export function PageIcon(props: IconProps) {
   );
 }
 
+/** A thin cross, drawn rather than typed: the close mark on tabs (Chrome's, not a multiplication sign). */
+export function CloseIcon(props: IconProps) {
+  return (
+    <Base strokeWidth={1.6} {...props}>
+      <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+    </Base>
+  );
+}
+
 /** Stacked folders: the tracked-project list (mobile tab bar). */
 export function FoldersIcon(props: IconProps) {
   return (

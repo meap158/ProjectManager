@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
-import { GlobeIcon } from './icons';
+import { CloseIcon, GlobeIcon } from './icons';
 
 // The Preview browser's tab strip (PM-253): tabs, a new-tab button and the context menu a browser's
 // tabs have. The standard tabs pattern: one tablist with a roving tab stop, arrow keys move between
@@ -216,7 +216,7 @@ export function PreviewTabStrip({
                   aria-label={`Close ${tab.title}`}
                   onClick={() => onCommand('close', tab.id)}
                 >
-                  ×
+                  <CloseIcon size={12} />
                 </button>
               )}
             </div>
