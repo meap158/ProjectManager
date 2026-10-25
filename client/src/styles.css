@@ -6695,6 +6695,12 @@ span.path-link:hover .path-icon {
     width: 44px;
     height: 44px;
   }
+  /* The 44px touch target nearly fills the 48px top bar: tuck the badge inside it, over the bell,
+     or the bar's overflow cuts off its top. */
+  .inbox-count {
+    top: 3px;
+    right: 3px;
+  }
   .inbox-choices .btn,
   .inbox-reply .btn,
   .inbox-dismiss {
