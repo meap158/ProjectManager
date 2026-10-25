@@ -310,7 +310,7 @@ adjacent-pair CVD separation in both modes).
   and a row opens that session in Agents (`/workspace?open=<id>`). 36px button, 44px on touch, a bell (filled with a red count badge, capped at 9+, when something waits).
 - **Preview page (`/preview`):** full width (`.page-wide`, no centred 1280px column) and without a
   visible page header. A list panel (190-230px, sticky) beside a small browser, modelled on the one
-  built into Claude's desktop app. **Tabs** (36px strip, up to 12): each shows the page's own icon
+  built into Claude's desktop app. **Tabs** (36px strip, up to 12; each prefers 14% of the browser pane, kept between 128px and 184px, so a lone tab never fills a wide pane; they shrink equally to 88px, then the strip scrolls with + staying beside the last tab): each shows the page's own icon
   and title, a close ×, and a busy ring while it loads; "+" opens a new blank tab next to the current
   one with the address field focused. The tab pattern: one tablist with a single tab stop, Left and
   Right (also Home and End) move between tabs and show them, Delete closes, Alt+Left and Alt+Right

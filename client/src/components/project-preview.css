@@ -230,9 +230,13 @@
   padding: 4px 8px 0;
   background: var(--surface-hover);
   border-bottom: 1px solid var(--border);
+  /* The tabs size from this pane, not the screen: the browser sits beside a list and a sidebar. */
+  container-type: inline-size;
 }
-/* Equal browser-style widths: grow to 240px, shrink together, then scroll at the readable
-   minimum. The strip's preferred width keeps + beside the final tab when space is available. */
+/* Browser-style widths from the pane (PM-260): a tab prefers 14% of the pane, kept between 128px
+   and 184px, so a lone tab never fills a wide pane and a narrow pane is not left with slivers.
+   Tabs shrink equally as they multiply, down to 88px, then the strip scrolls. The strip's
+   preferred width keeps + beside the final tab when there is room. */
 .preview-tabs {
   display: flex;
   align-items: flex-end;
@@ -249,9 +253,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  flex: 1 1 240px;
-  max-width: 240px;
-  min-width: 92px;
+  flex: 1 1 clamp(128px, 14cqw, 184px);
+  max-width: 184px;
+  min-width: 88px;
   height: 32px;
   margin-bottom: -1px; /* the active tab and the toolbar read as one surface */
   border: 1px solid transparent;
