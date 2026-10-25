@@ -36,6 +36,7 @@ import {
   closeSync,
   fstatSync,
   statSync,
+  readdirSync,
   realpathSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -260,6 +261,10 @@ const hostKey = (row: { id: number; log_path: string }) => `session:${row.id}|${
 interface SessionBatch {
   autoContinue: Map<number, AgentSession['autoContinue']>;
   queued: Map<number, number>;
+  /** The selected Codex login, read once per list (it reads several credential files). */
+  codexProfile?: { id: string; name: string; home: string } | null;
+  /** Per log folder, the `.base` sidecars present: only compacted logs have one (`fileStat`). */
+  baseFiles: Map<string, Set<string>>;
 }
 
 interface SessionRow {
@@ -403,6 +408,7 @@ export class AgentSupervisor {
    */
   private codexRotationTried = new Map<string, number>();
   private switchingCodexSession = new Set<number>();
+  private tailCache = new Map<string, { version: string; tail: string | null }>();
   /**
    * Sessions this process (re)started that have not been sent a message since. A usage limit
    * still on their screen is from before the restart (the old login, PM-243): it would rotate
@@ -765,9 +771,13 @@ export class AgentSupervisor {
   }
 
   /** The Codex login from Settings. Every Codex CLI uses this, not a per-session account. */
-  private sessionCodexProfile(row: SessionRow): { id: string; name: string; home: string } | null {
+  private sessionCodexProfile(
+    row: SessionRow,
+    batch?: SessionBatch,
+  ): { id: string; name: string; home: string } | null {
     if (row.provider_id !== 'codex' || !this.codexAccounts) return null;
-    return this.codexAccounts.selectedProfile();
+    if (!batch) return this.codexAccounts.selectedProfile();
+    return (batch.codexProfile ??= this.codexAccounts.selectedProfile());
   }
 
   private withCodexAccounts<T>(run: (accounts: CodexAccounts) => T): T {
@@ -1027,7 +1037,7 @@ export class AgentSupervisor {
       )
       .all() as { session_id: number; bytes: number }[])
       queued.set(r.session_id, r.bytes);
-    return { autoContinue, queued };
+    return { autoContinue, queued, baseFiles: new Map() };
   }
 
   getSession(id: number, projectId?: number): AgentSession | null {
@@ -3320,12 +3330,12 @@ export class AgentSupervisor {
 
   private toSession(row: SessionRow, batch?: SessionBatch): AgentSession {
     const { command } = JSON.parse(row.command_json) as { command: string[] };
-    const codexProfile = this.sessionCodexProfile(row);
+    const codexProfile = this.sessionCodexProfile(row, batch);
     const live = this.live.get(`session:${row.id}`);
-    const { size: diskLogBytes, mtime: lastOutputAt } = this.fileStat(row.log_path);
+    const { size: diskLogBytes, mtime: lastOutputAt } = this.fileStat(row.log_path, batch);
     const progress = this.restarting.get(row.id);
     if (progress?.phase === 'restoring') {
-      const activity = this.sessionActivity(row, lastOutputAt);
+      const activity = this.sessionActivity(row, lastOutputAt, diskLogBytes);
       const hasOutputSince = !!lastOutputAt && Date.parse(lastOutputAt) >= progress.since;
       if (
         (hasOutputSince &&
@@ -3387,7 +3397,10 @@ export class AgentSupervisor {
       endedAt: row.ended_at,
       logBytes: live ? live.log.totalBytes : diskLogBytes,
       lastOutputAt,
-      tailState: row.status === 'running' || live ? this.sessionActivity(row, lastOutputAt) : null,
+      tailState:
+        row.status === 'running' || live
+          ? this.sessionActivity(row, lastOutputAt, diskLogBytes)
+          : null,
     };
   }
 
@@ -3445,13 +3458,34 @@ export class AgentSupervisor {
   }
 
   /** Log size as a logical offset (includes bytes compacted away) and last modification. */
-  private fileStat(file: string): { size: number; mtime: string | null } {
+  private fileStat(file: string, batch?: SessionBatch): { size: number; mtime: string | null } {
     try {
       const st = statSync(file);
-      return { size: logBase(file) + st.size, mtime: st.mtime.toISOString() };
+      return {
+        size: (!batch || this.hasLogBase(file, batch) ? logBase(file) : 0) + st.size,
+        mtime: st.mtime.toISOString(),
+      };
     } catch {
       return { size: 0, mtime: null };
     }
+  }
+
+  /**
+   * Whether a log has a `.base` sidecar, from one folder listing per list: reading every
+   * session's sidecar, almost all missing, cost more than the rest of the list together.
+   */
+  private hasLogBase(file: string, batch: SessionBatch): boolean {
+    const dir = path.dirname(file);
+    let names = batch.baseFiles.get(dir);
+    if (!names) {
+      try {
+        names = new Set(readdirSync(dir).filter((name) => name.endsWith('.base')));
+      } catch {
+        names = new Set();
+      }
+      batch.baseFiles.set(dir, names);
+    }
+    return names.has(`${path.basename(file)}.base`);
   }
 
   /** When the log last grew: the session's last output (the host writes the log itself). */
@@ -3466,8 +3500,15 @@ export class AgentSupervisor {
    *    said (hooks miss some turns, e.g. a queued prompt or a turn after a tool approval).
    * 3. Claude's hooks (exact turn state), else the screen, else null (recency decides).
    */
-  private sessionActivity(row: SessionRow, lastOutputAt: string | null): AgentSession['tailState'] {
-    const tail = this.logTail(row.log_path);
+  private sessionActivity(
+    row: SessionRow,
+    lastOutputAt: string | null,
+    logBytes?: number,
+  ): AgentSession['tailState'] {
+    const tail =
+      logBytes === undefined
+        ? this.logTail(row.log_path)
+        : this.unchangedTail(row.log_path, `${logBytes}|${lastOutputAt}`);
     const screen = tail ? tailState(tail) : null;
     if (screen === 'input') return 'input';
     const fresh = !!lastOutputAt && Date.now() - Date.parse(lastOutputAt) < FRESH_OUTPUT_MS;
@@ -3578,6 +3619,20 @@ export class AgentSupervisor {
   }
 
   /** The end of a session log: by default 4 KB (the latest output and a little before it). */
+  /**
+   * `logTail` for a log whose size and modified time the caller has just read: an unchanged log
+   * (most sessions sit idle) is not opened again. The session lists are polled every couple of
+   * seconds, and re-reading every running session's tail was most of their cost.
+   */
+  private unchangedTail(file: string, version: string): string | null {
+    const cached = this.tailCache.get(file);
+    if (cached?.version === version) return cached.tail;
+    const tail = this.logTail(file);
+    if (this.tailCache.size > 500) this.tailCache.clear();
+    this.tailCache.set(file, { version, tail });
+    return tail;
+  }
+
   private logTail(file: string, bytes = 4096): string | null {
     try {
       const fd = openSync(file, 'r');
