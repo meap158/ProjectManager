@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import './context-menu.css';
 
 // A context menu (PM-259): the real menu pattern (role="menu", arrow keys, Home and End, Escape,
@@ -14,7 +14,33 @@ export interface ContextMenuItem<T extends string = string> {
 }
 
 const MENU_WIDTH = 224;
-const ITEM_HEIGHT = 30;
+/** Space kept between the menu and the window's edges. */
+const EDGE = 4;
+
+/**
+ * Where a menu of this size goes for a click at (x, y): below and right of the pointer, or above
+ * / left of it when there is no room, and never past an edge. A menu taller than the window
+ * starts at the top edge and scrolls (its max-height is the window's).
+ */
+export function placeMenu(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  view: { width: number; height: number },
+): { left: number; top: number } {
+  const left =
+    x + width + EDGE <= view.width
+      ? x
+      : Math.max(EDGE, Math.min(x - width, view.width - width - EDGE));
+  const top =
+    y + height + EDGE <= view.height
+      ? y
+      : y - height >= EDGE
+        ? y - height
+        : Math.max(EDGE, view.height - height - EDGE);
+  return { left, top };
+}
 
 /** The context menu: a real menu (arrow keys, Home and End, Escape), kept inside the window. */
 export function ContextMenu<T extends string>({
@@ -34,6 +60,18 @@ export function ContextMenu<T extends string>({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Measured before paint (dividers and touch-sized rows change its height), then placed.
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const box = ref.current?.getBoundingClientRect();
+    if (!box) return;
+    setPos(
+      placeMenu(x, y, box.width, box.height, {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }),
+    );
+  }, [x, y, items.length]);
   const enabled = items.filter((item) => !item.disabled);
 
   useEffect(() => {
@@ -68,18 +106,18 @@ export function ContextMenu<T extends string>({
     event.stopPropagation();
   };
 
-  // Estimated from the item count, so no measuring pass is needed to keep it on screen.
-  const height = items.length * ITEM_HEIGHT + 12;
-  const left = Math.max(4, Math.min(x, window.innerWidth - MENU_WIDTH - 4));
-  const top = Math.max(4, Math.min(y, window.innerHeight - height - 4));
-
   return (
     <div
       ref={ref}
       className="ctx-menu"
       role="menu"
       aria-label={label}
-      style={{ left, top, width: MENU_WIDTH }}
+      style={{
+        left: pos?.left ?? x,
+        top: pos?.top ?? y,
+        width: MENU_WIDTH,
+        visibility: pos ? undefined : 'hidden',
+      }}
       onKeyDown={onKeyDown}
     >
       {items.map((item) => (

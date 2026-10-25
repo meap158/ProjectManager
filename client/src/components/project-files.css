@@ -9,6 +9,11 @@
 .files-preview-panel {
   min-width: 0;
 }
+/* As tall as the tree panel, so the page keeps its height while the next file loads: a shorter
+   page would clamp the scroll and the sticky tree would jump (PM-268). */
+.files-preview-panel {
+  min-height: calc(100dvh - 180px);
+}
 .files-tree-panel {
   position: sticky;
   top: 8px;
@@ -167,6 +172,9 @@
   .files-tree-panel {
     position: static;
     max-height: none;
+  }
+  .files-preview-panel {
+    min-height: 0;
   }
   .project-files.has-file .files-tree-panel,
   .project-files:not(.has-file) .files-preview-panel {

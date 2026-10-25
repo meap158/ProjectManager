@@ -305,8 +305,9 @@ adjacent-pair CVD separation in both modes).
   search styling is turned off).
 - **Context menu (`ContextMenu`, shared by the Preview tabs and the Files tree):** a real
   `role="menu"` (arrow keys, Home and End, Escape or Tab close, focus on the first enabled item and back
-  on the trigger), closed by an outside click, a window blur or a resize, clamped inside the window,
-  30px items (40px on touch), divider rules between groups. Use it for any new right-click menu; do
+  on the trigger), closed by an outside click, a window blur or a resize. It is measured before paint
+  and opens below/right of the pointer, flipping above/left when there is no room (`placeMenu`), and
+  scrolls if taller than the window (PM-268). 30px items (40px on touch), divider rules between groups. Use it for any new right-click menu; do
   not write another. **Files tree menu (PM-259):** right click, Shift+F10 or the Menu key; touch
   screens get a 40px "..." button on every row. Open in preview (Expand or Collapse for folders), Open
   in system app, Reveal in file manager, Copy path (absolute, in the project's own slash style), Copy

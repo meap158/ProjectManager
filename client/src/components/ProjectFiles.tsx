@@ -92,6 +92,15 @@ interface Row {
   level: number;
 }
 
+/**
+ * Focuses a tree row without the browser's own scroll (which can move the page and the tree), then
+ * scrolls the tree only as far as needed to show it: a visible row never moves (PM-268).
+ */
+function focusQuietly(row: HTMLElement) {
+  row.focus({ preventScroll: true });
+  row.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+}
+
 export function ProjectFiles({
   projectId,
   projectPath,
@@ -121,7 +130,8 @@ export function ProjectFiles({
   const focusRow = (path: string) =>
     setTimeout(() => {
       const rows = treeRef.current?.querySelectorAll<HTMLElement>('[data-path]') ?? [];
-      [...rows].find((row) => row.dataset.path === path)?.focus();
+      const row = [...rows].find((r) => r.dataset.path === path);
+      if (row) focusQuietly(row);
     }, 0);
 
   const load = useCallback(
@@ -265,7 +275,8 @@ export function ProjectFiles({
     const el = [...(treeRef.current?.querySelectorAll<HTMLElement>('[data-path]') ?? [])].find(
       (row) => row.dataset.path === focused,
     );
-    if (el && treeRef.current?.contains(document.activeElement)) el.focus();
+    if (el && el !== document.activeElement && treeRef.current?.contains(document.activeElement))
+      focusQuietly(el);
   }, [focused, rows]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLUListElement>) => {
