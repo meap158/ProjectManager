@@ -57,9 +57,12 @@ anything.
   an allowlisted email and an authenticator-code session (`server/totp.ts`). Remote settings and
   secrets are answered on this computer only. Never weaken any of the four checks or let that
   listener bind anything but 127.0.0.1.
-- **Preview proxy (`server/preview.ts`):** GET/HEAD only, `127.0.0.1` targets only, never this app's
-  own ports, no cookies either way, and the client shows it in a sandboxed iframe **without**
-  `allow-same-origin`. Never open `/api/preview/*` as a top-level page: it would run as this origin.
+- **Preview proxies (`server/preview.ts`, `server/previewHost.ts`):** `127.0.0.1` targets only, never this
+  app's own ports, no redirects off the app. Path mode (`/api/preview/<port>/`, used over LAN and
+  remote) is GET/HEAD only and shown in a sandbox **without** `allow-same-origin`; never open it as a
+  top-level page (it would run as this origin). Own-origin mode (`p<port>.localhost`) is routed ONLY
+  by the loopback listener in `index.ts`, never by the LAN or remote gates, so keep those calling
+  `handle` directly. Never accept a preview WebSocket from another website's origin.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
   the user explicitly starts may change project files. The one other exception is a pull request
   action the user confirms in the Pull requests tab: it may delete the PR's _local_ branch, and only

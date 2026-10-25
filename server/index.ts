@@ -11,6 +11,7 @@ import { openDb } from './db.js';
 import { ALREADY_RUNNING_MARKER, claimInstance, isAlive, releaseInstance } from './instance.js';
 import { LAN_HEADER, LanAccess } from './lan.js';
 import { LanBundle, viteBuilder } from './lanBundle.js';
+import { handlePreviewUpgrade, previewHostPort, proxyPreviewHost } from './previewHost.js';
 import { RemoteAccess } from './remote.js';
 import { appendFileSync, mkdirSync } from 'node:fs';
 
@@ -82,6 +83,19 @@ async function main() {
     cpuBudget: true,
   });
   root.route('/', api);
+  // A p<port>.localhost host is a previewed dev server on its own origin (any method, live-reload
+  // sockets): this computer's loopback listener only. The LAN and remote listeners call `handle`
+  // directly, so they never route these hosts and keep the read-only path mode.
+  const blockedPorts = () => {
+    const own = new Set<number>([config.port, config.port + 100]);
+    for (const port of [lan.status().port, remote.status().port]) if (port) own.add(port);
+    return own;
+  };
+  const route = (req: IncomingMessage, res: ServerResponse) => {
+    const port = previewHostPort(req.headers.host);
+    if (port === null) handle(req, res);
+    else proxyPreviewHost(req, res, port, blockedPorts());
+  };
   // Boards follow commits on their own: new commits' card refs apply within ~15s, no Refresh.
   api.scanner.watchCommits();
   // Pull requests on GitHub move cards too (open → Review, merged → Done).
@@ -93,6 +107,9 @@ async function main() {
   api.orchestrator.start();
 
   const server = createServer();
+  server.prependListener('upgrade', (req, socket, head) => {
+    handlePreviewUpgrade(req, socket, head, blockedPorts());
+  });
 
   if (config.isProduction) {
     // dist/server/index.js -> dist/client
@@ -106,7 +123,7 @@ async function main() {
     root.use('/*', serveStatic({ root: clientDir }));
     root.get('*', serveStatic({ path: path.join(clientDir, 'index.html') }));
     handle = getRequestListener(root.fetch);
-    server.on('request', handle);
+    server.on('request', route);
   } else {
     // Development: Vite runs inside this process (middleware mode), sharing our port, including
     // its HMR websocket. Imported lazily so production never loads Vite.
@@ -143,7 +160,7 @@ async function main() {
           () => vite.middlewares(req, res),
         );
     };
-    server.on('request', handle);
+    server.on('request', route);
     server.on('close', () => void vite.close());
   }
 
@@ -170,7 +187,7 @@ async function main() {
   // the IPv6 loopback too keeps localhost ours: the more specific address wins.
   const server6 = config.host === '127.0.0.1' ? createServer() : null;
   if (server6) {
-    server6.on('request', (req: IncomingMessage, res: ServerResponse) => handle(req, res));
+    server6.on('request', route);
     server6.on('upgrade', (...args) => server.emit('upgrade', ...args)); // Vite HMR.
     server6.on('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'EADDRNOTAVAIL' || error.code === 'EAFNOSUPPORT') return; // No IPv6.

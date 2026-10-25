@@ -127,6 +127,9 @@ export async function proxyPreview(
   }
   out.set('content-security-policy', "frame-ancestors 'self'");
   out.set('x-content-type-options', 'nosniff');
+  // The LAN and remote gates frame-deny every page. A preview is only ever shown by this app
+  // itself, so allow our own origin to frame it (the CSP above already says the same).
+  out.set('x-frame-options', 'SAMEORIGIN');
   out.set('cache-control', 'no-store');
 
   const type = upstream.headers.get('content-type') ?? '';

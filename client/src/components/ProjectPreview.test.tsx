@@ -5,6 +5,7 @@ import {
   isGroupOpen,
   groupApps,
   parsePreviewTarget,
+  previewFrame,
   previewSrc,
   sortApps,
   type PreviewSort,
@@ -106,5 +107,39 @@ describe('sorting and grouping', () => {
     expect(isGroupOpen('other', { other: false }, false)).toBe(false);
     expect(isGroupOpen('services', { services: false }, true)).toBe(false);
     expect(isGroupOpen('other', { other: true }, true)).toBe(true);
+  });
+});
+
+describe('previewFrame', () => {
+  const target = { port: 5188, path: '/docs?x=1' };
+
+  it('gives the app its own origin when this app is opened on this computer', () => {
+    for (const hostname of ['localhost', '127.0.0.1', '[::1]']) {
+      const frame = previewFrame(target, { protocol: 'http:', hostname, port: '5180' });
+      expect(frame.src).toBe('http://p5188.localhost:5180/docs?x=1');
+      expect(frame.ownOrigin).toBe(true);
+      expect(frame.sandbox).toContain('allow-same-origin');
+    }
+  });
+
+  it('keeps the read-only path mode, with no origin of its own, from any other address', () => {
+    for (const hostname of ['192.168.1.20', 'pm.example.com', 'phone.local']) {
+      const frame = previewFrame(target, { protocol: 'http:', hostname, port: '5180' });
+      expect(frame.src).toBe('/api/preview/5188/docs?x=1');
+      expect(frame.ownOrigin).toBe(false);
+      expect(frame.sandbox).not.toContain('allow-same-origin');
+    }
+    expect(
+      previewFrame(target, { protocol: 'https:', hostname: 'localhost', port: '' }).ownOrigin,
+    ).toBe(false);
+  });
+
+  it('omits the port when this app is served on a default one', () => {
+    expect(
+      previewFrame(
+        { port: 3000, path: '/' },
+        { protocol: 'http:', hostname: 'localhost', port: '' },
+      ).src,
+    ).toBe('http://p3000.localhost/');
   });
 });

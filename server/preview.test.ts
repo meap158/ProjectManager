@@ -87,7 +87,8 @@ describe('proxyPreview', () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain(`/api/preview/${port}/app.js`);
     expect(res.headers.get('set-cookie')).toBeNull();
-    expect(res.headers.get('x-frame-options')).toBeNull();
+    // The upstream's own is dropped; ours lets only this app frame it (the LAN gate would say DENY).
+    expect(res.headers.get('x-frame-options')).toBe('SAMEORIGIN');
     expect(res.headers.get('content-security-policy')).toBe("frame-ancestors 'self'");
     expect(seenCookie).toBeUndefined();
   });

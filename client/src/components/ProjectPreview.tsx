@@ -38,7 +38,36 @@ export function parsePreviewTarget(input: string): PreviewTarget | null {
   return { port, path: match[2] ?? '/' };
 }
 
+/** The read-only path mode: an address under this app (LAN, remote, any host but this computer). */
 export const previewSrc = (t: PreviewTarget) => `/api/preview/${t.port}${t.path}`;
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Where the frame loads from and what it may do. Opened on this computer, the app gets its own
+ * origin (`p<port>.localhost`): root-absolute URLs, cookies, forms and live-reload sockets work
+ * as on its own port, and it is a different origin from this app, so it cannot reach this app.
+ * Anywhere else (a phone on the LAN, the remote listener) there is no such host name, so it is
+ * the read-only path mode in a sandbox with no origin of its own.
+ */
+export function previewFrame(
+  target: PreviewTarget,
+  loc: Pick<Location, 'protocol' | 'hostname' | 'port'> = window.location,
+): { src: string; sandbox: string; ownOrigin: boolean } {
+  if (loc.protocol === 'http:' && LOCAL_HOSTS.has(loc.hostname)) {
+    const port = loc.port ? `:${loc.port}` : '';
+    return {
+      src: `http://p${target.port}.localhost${port}${target.path}`,
+      sandbox: 'allow-scripts allow-forms allow-popups allow-modals allow-same-origin',
+      ownOrigin: true,
+    };
+  }
+  return {
+    src: previewSrc(target),
+    sandbox: 'allow-scripts allow-forms allow-popups',
+    ownOrigin: false,
+  };
+}
 
 /** How an address reads in the address field. */
 export const targetText = (t: PreviewTarget) =>
@@ -395,6 +424,7 @@ export function PreviewWorkspace() {
     );
   }, [launches, sort]);
 
+  const frame = target ? previewFrame(target) : null;
   const tabTitle = target ? (running?.title ?? `localhost:${target.port}`) : 'New tab';
 
   return (
@@ -593,14 +623,14 @@ export function PreviewWorkspace() {
           </div>
         )}
         <div className="preview-stage">
-          {target ? (
+          {target && frame ? (
             <>
               <iframe
                 key={`${target.port}${target.path}:${reloads}`}
                 className="preview-frame"
                 title={`Preview of localhost:${target.port}`}
-                src={previewSrc(target)}
-                sandbox="allow-scripts allow-forms allow-popups"
+                src={frame.src}
+                sandbox={frame.sandbox}
                 referrerPolicy="no-referrer"
                 onLoad={() => setFrameLoading(false)}
               />

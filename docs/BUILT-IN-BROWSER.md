@@ -3,15 +3,29 @@
 Goal: from any screen, including a phone on the LAN or the remote listener, open the apps an agent
 is running on this computer's `localhost` ports, next to the sessions.
 
-Status: phase 1 is built (PM-253). `server/preview.ts` is a GET and HEAD only proxy to loopback ports
-at `/api/preview/<port>/...`. `server/localPorts.ts` detects listening apps (netstat on Windows,
-lsof elsewhere), attributes them to a project by command line, and reads each app's page title and
-icon. The **Preview** page (top bar; on phones the Agents tools menu) lists them beside a sandboxed iframe,
-with saved quick launches. "Has an icon" means the app's <link rel="icon"> (or /favicon.ico) was fetched and really is an image, because a single-page dev server answers every path with its HTML page; it is the cue that splits front ends (Apps) from back ends (Services) in the list. It is a global page on purpose: a dev server is not owned by one project,
-and phones and the remote listener reach it the same way. Not built yet: WebSocket proxying (HMR will
-not live-reload), the separate-origin phase 2. A page that builds root-absolute URLs in JavaScript
-still misses the proxy. The proxied address must never be opened as a top-level tab (it would run as
-this app's origin).
+Status: built (PM-253). `server/localPorts.ts` detects listening apps (netstat on Windows, lsof
+elsewhere), attributes them to a project by command line, and reads each app's page title and
+icon. "Has an icon" means its `<link rel="icon">` (or `/favicon.ico`) was fetched and really is an
+image, because a single-page dev server answers every path with its HTML; it is the cue that splits
+front ends (**Apps**) from back ends (**Services**). The **Preview** page (top bar; on phones the
+Agents tools menu) lists them beside a small browser. It is a global page on purpose: a dev server
+is not owned by one project. There are two ways to show an app:
+
+1. **Its own origin (this computer).** Opened on `localhost`, `127.0.0.1` or `[::1]`, the frame
+   loads `http://p<port>.localhost:<our port>` (`server/previewHost.ts`, routed first in
+   `server/index.ts`). The app behaves as it does on its own port: root-absolute URLs (`/src/main.tsx`,
+   `/_next/...`) resolve to it, cookies and storage are its own, every method works, and its
+   live-reload **WebSocket is proxied** (Vite HMR and the like; checked against a real Vite dev server).
+   It is a different origin from this app, so the page cannot reach this app's API or storage, and
+   this app's cookies never reach it. The frame is sandboxed with `allow-same-origin`, which only
+   means its own `p<port>.localhost` origin.
+2. **Read-only path mode (phones on the LAN, the remote listener, any other address).** There is no
+   wildcard host name there, so the app is shown under `/api/preview/<port>/` (`server/preview.ts`):
+   GET and HEAD only, a sandbox with no origin of its own, HTML URLs rewritten. Pages that build
+   root-absolute URLs in JavaScript (Vite, Next) miss the proxy, and there is no WebSocket, so no
+   live reload. It cannot be fixed without a host name per app. Simple and static pages work.
+
+The proxied path address must never be opened as a top-level tab (it would run as this origin).
 
 ## The security problem comes first
 
@@ -21,10 +35,17 @@ able to start agents. Therefore:
 
 - Never serve a previewed page from the app's own origin with scripts allowed to act as that
   origin.
+- Own-origin mode (`p<port>.localhost`) is routed only by the loopback listener. The LAN and remote
+  listeners call the handler directly, so they never see these host names. The port comes from the
+  host name and is checked like the path mode (1024+, never this app's own, LAN or remote ports);
+  targets are always 127.0.0.1; a redirect that leaves the app is refused. A WebSocket upgrade must
+  come from the preview's own origin (or a non-browser client), so another website cannot ride the
+  proxy to a local dev server's socket, and it is handled before this app's own Vite HMR so that
+  never claims a previewed app's socket.
 - Never weaken the Host allowlist, the LAN gate or the remote four-check gate (see CLAUDE.md).
   The preview only exists _behind_ those gates; it adds no new listener and binds nothing wider.
 
-## Recommended design
+## Original design (kept for the reasoning; the status above is current)
 
 1. **A "Preview" tab on the project page** (and a pane type in Agents later) holding an address
    bar (port or `localhost:port/path`), back, forward, reload, open-in-new-tab, and a list of
