@@ -170,4 +170,18 @@ describe('BoardPage', () => {
     );
     expect(container.querySelector('.gboard.is-compact')).toBeTruthy();
   });
+
+  it('shows an old Done card that the filter matches, past the cap', async () => {
+    vi.mocked(api.listAllCards).mockResolvedValueOnce(
+      Array.from({ length: 45 }, (_, i) => card(100 + i, 1, 'Alpha', 'done', `Done ${i}`)),
+    );
+    renderAt('/board');
+    const done = await screen.findByRole('region', { name: 'Done' });
+    await waitFor(() => expect(within(done).queryByText('Done 44')).toBeNull()); // Past the cap.
+    fireEvent.change(screen.getByRole('searchbox', { name: /Filter cards/ }), {
+      target: { value: 'PM-144' },
+    });
+    expect(within(done).getByText('Done 44')).toBeTruthy();
+    expect(within(done).queryByRole('button', { name: /older/ })).toBeNull();
+  });
 });

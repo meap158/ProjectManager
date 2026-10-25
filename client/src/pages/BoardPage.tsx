@@ -362,7 +362,8 @@ export function BoardPage() {
         >
           {columns.map((status) => {
             const items = visible.filter((c) => c.status === status);
-            const capped = status === 'done' && !expanded.has(status);
+            // A filter shows every match: an old Done card searched for is never left behind.
+            const capped = status === 'done' && !expanded.has(status) && words.length === 0;
             const shown = capped ? items.slice(0, DONE_LIMIT) : items;
             return (
               <section
