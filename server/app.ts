@@ -1,4 +1,5 @@
 import { GrokAccountError } from './agents/grokAccounts.js';
+import { jsonEtag } from './jsonEtag.js';
 import { OrchestratorService } from './orchestrator/service.js';
 import { registerOrchestratorRoutes } from './orchestrator/routes.js';
 import { OrchestratorChat } from './orchestrator/chat.js';
@@ -224,6 +225,8 @@ export function createApp(
 
   // Shrink repeated dashboard payloads over LAN; event streams must flush immediately.
   app.use('*', compress({ threshold: 2048, contentTypeFilter: /^application\/json(?:;|$)/i }));
+  // Polled reads revalidate instead of re-downloading (after compress: hashes the plain body).
+  app.use('*', jsonEtag);
 
   app.onError((error, c) => {
     if (error instanceof GrokAccountError) return c.json({ error: error.message }, 400);

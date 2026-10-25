@@ -8,6 +8,7 @@ import {
   type CardWithProject,
   type ProjectSummary,
 } from '../../../shared/types';
+import { serialPoll } from '../lib/serialPoll';
 import { api } from '../api';
 import { useBoardView } from '../boardView';
 import { BoardListView, BoardViewTabs } from '../components/BoardListView';
@@ -75,16 +76,16 @@ export function BoardPage() {
         },
         (e: Error) => active && setError(e.message),
       );
-    load();
     api.listProjects().then(
       (p) => active && setProjects(p),
       () => undefined,
     );
-    // Commits and agents move cards too; keep the board current without a reload.
-    const timer = setInterval(load, 10_000);
+    // Commits and agents move cards too; keep the board current without a reload. Not while the
+    // tab is hidden, and one read at a time (an unchanged list revalidates as a bodiless 304).
+    const stop = serialPoll(load, 10_000, { pauseWhenHidden: true });
     return () => {
       active = false;
-      clearInterval(timer);
+      stop();
     };
   }, []);
 

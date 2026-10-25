@@ -1,13 +1,17 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router';
 import type { AgentSession, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { formatCompact, formatRelative } from '../format';
 import { useProjectHref } from '../projectTabs';
 import { sessionActivity } from '../sessionActivity';
-import { AddProjectDialog } from './AddProjectDialog';
 import { applyCustomOrder, mergeVisibleOrder, moveBefore, moveBy } from '../projectOrder';
 import { PlanUsage } from './PlanUsage';
+
+// Opened from the + button only: loaded on first use, not with every page.
+const AddProjectDialog = lazy(() =>
+  import('./AddProjectDialog').then((m) => ({ default: m.AddProjectDialog })),
+);
 import { navigateProjectPane } from '../projectPaneNavigation';
 
 // Sorter modelled on the KDP Publishing Pipeline Library sorter: each mode has
@@ -576,20 +580,24 @@ export function ProjectSidebar({
         </div>
       )}
 
-      <AddProjectDialog
-        open={adding}
-        onClose={() => setAdding(false)}
-        onAdded={(project) => {
-          setAdding(false);
-          setProjects((prev) => (prev ? [...prev, project] : [project]));
-          navigate(`/projects/${project.id}`);
-        }}
-        onAddedMany={(result) => {
-          setAdding(false);
-          setProjects((prev) => (prev ? [...prev, ...result.added] : [...result.added]));
-          if (result.added.length === 1) navigate(`/projects/${result.added[0]!.id}`);
-        }}
-      />
+      {adding && (
+        <Suspense fallback={null}>
+          <AddProjectDialog
+            open={adding}
+            onClose={() => setAdding(false)}
+            onAdded={(project) => {
+              setAdding(false);
+              setProjects((prev) => (prev ? [...prev, project] : [project]));
+              navigate(`/projects/${project.id}`);
+            }}
+            onAddedMany={(result) => {
+              setAdding(false);
+              setProjects((prev) => (prev ? [...prev, ...result.added] : [...result.added]));
+              if (result.added.length === 1) navigate(`/projects/${result.added[0]!.id}`);
+            }}
+          />
+        </Suspense>
+      )}
     </aside>
   );
 }
