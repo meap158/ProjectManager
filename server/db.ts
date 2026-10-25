@@ -219,6 +219,16 @@ export const MIGRATIONS: string[] = [
     cwd TEXT NOT NULL, baseline_at TEXT NOT NULL, baseline_json TEXT
   );`,
   `ALTER TABLE agent_runs ADD COLUMN execution_resolution_json TEXT;`,
+  // Pinned files and folders on the Files tab (PM-284): one project's own (project_id set), or every
+  // project's by relative path (project_id NULL). A path is unique per scope.
+  `CREATE TABLE file_pins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX file_pins_unique ON file_pins(COALESCE(project_id, 0), path);`,
 ];
 
 export function openDb(dataDir: string): Db {

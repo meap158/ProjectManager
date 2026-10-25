@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { useSearchParams } from 'react-router';
 import { marked } from 'marked';
-import type { FilePreview, FolderListing, TreeEntry } from '../../../shared/types';
+import type { FilePin, FilePreview, FolderListing, TreeEntry } from '../../../shared/types';
 import { api } from '../api';
 import { THEME_EVENT } from '../theme';
 import { formatBytes, formatRelative } from '../format';
@@ -34,10 +34,29 @@ const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')
 
 /** What the Files context menu can do with one entry. */
 export type FileCommand =
-  'open' | 'open-system' | 'reveal' | 'copy-path' | 'copy-relative' | 'rename';
+  | 'open'
+  | 'open-system'
+  | 'reveal'
+  | 'copy-path'
+  | 'copy-relative'
+  | 'pin-project'
+  | 'pin-all'
+  | 'unpin-project'
+  | 'unpin-all'
+  | 'rename';
+
+/** Whether an entry is already pinned, in each scope (PM-284). */
+export interface PinState {
+  project: boolean;
+  all: boolean;
+}
 
 /** The menu for one entry (pure, so the labels and order are testable). */
-export function fileMenuItems(entry: TreeEntry, isOpen: boolean): ContextMenuItem<FileCommand>[] {
+export function fileMenuItems(
+  entry: TreeEntry,
+  isOpen: boolean,
+  pinned: PinState = { project: false, all: false },
+): ContextMenuItem<FileCommand>[] {
   return [
     {
       command: 'open',
@@ -54,6 +73,15 @@ export function fileMenuItems(entry: TreeEntry, isOpen: boolean): ContextMenuIte
     { command: 'reveal', label: 'Reveal in file manager' },
     { command: 'copy-path', label: 'Copy path', divider: true },
     { command: 'copy-relative', label: 'Copy relative path' },
+    {
+      command: pinned.project ? 'unpin-project' : 'pin-project',
+      label: pinned.project ? 'Unpin from this project' : 'Pin to this project',
+      divider: true,
+    },
+    {
+      command: pinned.all ? 'unpin-all' : 'pin-all',
+      label: pinned.all ? 'Unpin from all projects' : 'Pin to all projects (this path)',
+    },
     { command: 'rename', label: 'Rename…', divider: true },
   ];
 }
@@ -130,6 +158,15 @@ export function ProjectFiles({
   const [notice, setNotice] = useState<string | null>(null);
   const treeRef = useRef<HTMLUListElement>(null);
   const typeahead = useRef({ text: '', at: 0 });
+  const [pins, setPins] = useState<FilePin[]>([]);
+  const [pinsOpen, setPinsOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('pm.files.pinsOpen') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const [pinMenu, setPinMenu] = useState<{ id: number; x: number; y: number } | null>(null);
   const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [launcher, setLauncher] = useState<TreeEntry | null>(null);
@@ -145,6 +182,24 @@ export function ProjectFiles({
       const row = [...rows].find((r) => r.dataset.path === path);
       if (row) focusQuietly(row);
     }, 0);
+
+  const loadPins = useCallback(async () => {
+    try {
+      setPins((await api.filePins(projectId)).pins);
+    } catch {
+      // Pins are a convenience: the tree keeps working without them.
+    }
+  }, [projectId]);
+  useEffect(() => {
+    let current = true;
+    api
+      .filePins(projectId)
+      .then((result) => current && setPins(result.pins))
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [projectId]);
 
   const load = useCallback(
     async (path: string) => {
@@ -206,6 +261,49 @@ export function ProjectFiles({
 
   const entryAt = (path: string) => rows.find((r) => r.entry.path === path)?.entry;
 
+  const pinStateOf = (path: string): PinState => ({
+    project: pins.some((p) => p.path === path && p.scope === 'project'),
+    all: pins.some((p) => p.path === path && p.scope === 'all'),
+  });
+
+  /** Shows a pinned item in the tree: opens the folders above it, then the file or folder. */
+  const openPin = async (pin: FilePin) => {
+    if (!pin.kind) {
+      say('This project has no such file or folder');
+      return;
+    }
+    const above = foldersTo(`${pin.path}/x`).filter((p) => pin.kind === 'dir' || p !== pin.path);
+    setExpanded(
+      (prev) => new Set([...prev, ...above.filter((p) => p !== pin.path || pin.kind === 'dir')]),
+    );
+    await Promise.all(above.filter((p) => !folders.has(p)).map((p) => load(p)));
+    setFocused(pin.path);
+    if (pin.kind === 'file')
+      setParams((q) => ({ ...Object.fromEntries(q), tab: 'files', file: pin.path }));
+    focusRow(pin.path);
+  };
+
+  const togglePins = () => {
+    setPinsOpen((open) => {
+      try {
+        localStorage.setItem('pm.files.pinsOpen', open ? '0' : '1');
+      } catch {
+        // Not remembered; fine.
+      }
+      return !open;
+    });
+  };
+
+  /** Moves a pin within its scope (the Pinned list is project pins, then all-project pins). */
+  const movePin = async (pin: FilePin, direction: 'up' | 'down') => {
+    try {
+      await api.moveFilePin(pin.id, direction);
+      await loadPins();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const run = async (command: FileCommand, entry: TreeEntry) => {
     setError(null);
     try {
@@ -230,6 +328,21 @@ export function ProjectFiles({
               ? entry.path
               : absolutePath(projectPath, entry.path);
           say((await copyText(text)) ? 'Copied to the clipboard' : 'Could not copy');
+          break;
+        }
+        case 'pin-project':
+        case 'pin-all':
+          await api.pinFile(projectId, entry.path, command === 'pin-all' ? 'all' : 'project');
+          await loadPins();
+          say(command === 'pin-all' ? 'Pinned in every project with this path' : 'Pinned');
+          break;
+        case 'unpin-project':
+        case 'unpin-all': {
+          const scope = command === 'unpin-all' ? 'all' : 'project';
+          const pin = pins.find((p) => p.path === entry.path && p.scope === scope);
+          if (pin) await api.unpinFile(pin.id);
+          await loadPins();
+          say('Unpinned');
           break;
         }
         case 'rename':
@@ -302,6 +415,24 @@ export function ProjectFiles({
       const target = rows[Math.max(0, Math.min(rows.length - 1, i))];
       if (target) setFocused(target.entry.path);
     };
+    // Alt+P pins the row to this project, Alt+Shift+P to every project (toggling), as VS Code's
+    // own keyboard-first tree does for its commands. Alt keeps it out of type-ahead.
+    if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'p' && row) {
+      const state = pinStateOf(row.entry.path);
+      const all = e.shiftKey;
+      void run(
+        all
+          ? state.all
+            ? 'unpin-all'
+            : 'pin-all'
+          : state.project
+            ? 'unpin-project'
+            : 'pin-project',
+        row.entry,
+      );
+      e.preventDefault();
+      return;
+    }
     switch (e.key) {
       case 'ArrowDown':
         move(index + 1);
@@ -347,7 +478,7 @@ export function ProjectFiles({
         // starts with them (a repeated letter cycles). Never inside the rename box.
         if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
         if ((e.target as HTMLElement).closest('input, textarea')) return;
-        const now = Date.now();
+        const now = e.timeStamp;
         const typed = typeahead.current;
         typed.text = now - typed.at > 700 ? e.key.toLowerCase() : typed.text + e.key.toLowerCase();
         typed.at = now;
@@ -399,6 +530,63 @@ export function ProjectFiles({
           </button>
         </div>
         {error && <div className="error-banner">{error}</div>}
+        {pins.length > 0 && (
+          <section className="files-pins" aria-label="Pinned">
+            <button
+              type="button"
+              className="files-pins-head"
+              aria-expanded={pinsOpen}
+              onClick={togglePins}
+            >
+              <span className={`files-chevron${pinsOpen ? ' is-open' : ''}`} aria-hidden="true">
+                <ChevronIcon size={12} />
+              </span>
+              Pinned <span className="faint num">{pins.length}</span>
+            </button>
+            {pinsOpen && (
+              <ul className="files-pin-list">
+                {pins.map((pin) => {
+                  const name = pin.path.split('/').pop() ?? pin.path;
+                  return (
+                    <li key={pin.id} className={`files-pin${pin.kind ? '' : ' is-missing'}`}>
+                      <button
+                        type="button"
+                        className="files-pin-open"
+                        onClick={() => void openPin(pin)}
+                        title={pin.kind ? pin.path : `${pin.path} (not in this project)`}
+                      >
+                        <span className="files-icon" aria-hidden="true">
+                          <FileTypeIcon
+                            spec={iconFor({ name, kind: pin.kind === 'dir' ? 'dir' : 'file' })}
+                            size={16}
+                          />
+                        </span>
+                        <span className="files-name">{name}</span>
+                        {pin.path !== name && (
+                          <span className="faint files-meta files-pin-path">{pin.path}</span>
+                        )}
+                        {pin.scope === 'all' && <span className="files-pin-badge">All</span>}
+                        {!pin.kind && <span className="faint files-meta">missing</span>}
+                      </button>
+                      <button
+                        type="button"
+                        className="files-more"
+                        aria-label={`Actions for pinned ${name}`}
+                        aria-haspopup="menu"
+                        onClick={(e) => {
+                          const box = e.currentTarget.getBoundingClientRect();
+                          setPinMenu({ id: pin.id, x: box.right - 8, y: box.bottom });
+                        }}
+                      >
+                        <MoreIcon size={14} />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        )}
         {notice && (
           <p className="faint files-notice" role="status">
             {notice}
@@ -523,12 +711,43 @@ export function ProjectFiles({
           }}
         />
       )}
+      {pinMenu &&
+        pins.find((p) => p.id === pinMenu.id) &&
+        (() => {
+          const pin = pins.find((p) => p.id === pinMenu.id)!;
+          const sameScope = pins.filter((p) => p.scope === pin.scope);
+          const at = sameScope.findIndex((p) => p.id === pin.id);
+          return (
+            <ContextMenu
+              label={`Actions for pinned ${pin.path}`}
+              x={pinMenu.x}
+              y={pinMenu.y}
+              items={[
+                { command: 'open', label: pin.kind === 'dir' ? 'Show in tree' : 'Open in preview' },
+                { command: 'up', label: 'Move up', disabled: at <= 0, divider: true },
+                { command: 'down', label: 'Move down', disabled: at >= sameScope.length - 1 },
+                { command: 'unpin', label: 'Unpin', divider: true },
+              ]}
+              onClose={() => setPinMenu(null)}
+              onPick={(command) => {
+                setPinMenu(null);
+                if (command === 'open') void openPin(pin);
+                else if (command === 'up' || command === 'down') void movePin(pin, command);
+                else
+                  void api
+                    .unpinFile(pin.id)
+                    .then(loadPins)
+                    .catch((e: Error) => setError(e.message));
+              }}
+            />
+          );
+        })()}
       {menu && entryAt(menu.path) && (
         <ContextMenu
           label={`Actions for ${entryAt(menu.path)!.name}`}
           x={menu.x}
           y={menu.y}
-          items={fileMenuItems(entryAt(menu.path)!, expanded.has(menu.path))}
+          items={fileMenuItems(entryAt(menu.path)!, expanded.has(menu.path), pinStateOf(menu.path))}
           onClose={() => {
             setMenu(null);
             focusRow(menu.path);

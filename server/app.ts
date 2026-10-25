@@ -13,6 +13,7 @@ import type {
   PreviewLaunch,
   DirectoryEntry,
   DirectoryListing,
+  FilePin,
   LanStatus,
   RemoteConfig,
   RemoteStatus,
@@ -453,6 +454,66 @@ export function createApp(
       z.object({ path: z.string().max(4096), mode: z.enum(['open', 'reveal', 'run']) }),
     );
     await fileErrors(() => openEntry(root, rel, mode));
+    return c.body(null, 204);
+  });
+
+  // Pinned files and folders (PM-284). Reading is open to every listener; changing pins writes to
+  // this app's own database only (never the project), but like the other Files actions it answers
+  // on this computer only, so a phone or tunnel session cannot rearrange them.
+  const pinsHostOnly = (c: Context) => {
+    if (c.req.header(LAN_HEADER) || c.req.header(REMOTE_HEADER))
+      throw new HttpError(403, 'Pins can only be changed on the computer running ProjectManager');
+  };
+  const pinError = <T>(run: () => T): T => {
+    try {
+      return run();
+    } catch (error) {
+      throw new HttpError(400, (error as Error).message);
+    }
+  };
+  app.get('/projects/:id/file-pins', (c) => {
+    const root = projectRoot(c);
+    const pins: FilePin[] = store.listFilePinRows(db, parseId(c)).map((row) => {
+      // What is there now: a plain stat inside the project (the path was validated when pinned).
+      let kind: FilePin['kind'] = null;
+      try {
+        const stats = statSync(path.join(root, ...row.path.split('/')));
+        kind = stats.isDirectory() ? 'dir' : stats.isFile() ? 'file' : null;
+      } catch {
+        // Missing here: shown dimmed, with a remove action.
+      }
+      return {
+        id: row.id,
+        path: row.path,
+        scope: row.project_id === null ? 'all' : 'project',
+        kind,
+      };
+    });
+    return c.json({ pins });
+  });
+  app.post('/projects/:id/file-pins', async (c) => {
+    pinsHostOnly(c);
+    const root = projectRoot(c);
+    const { path: raw, scope } = await parseBody(
+      c,
+      z.object({ path: z.string().max(4096), scope: z.enum(['project', 'all']) }),
+    );
+    const clean = pinError(() => store.cleanPinPath(raw));
+    // Pinning something that is not there would only make a dead row: refuse it for this project.
+    if (!existsSync(path.join(root, ...clean.split('/'))))
+      throw new HttpError(404, 'That file or folder is not in this project');
+    const added = pinError(() => store.addFilePin(db, scope === 'all' ? null : parseId(c), clean));
+    return c.json({ id: added.id }, 201);
+  });
+  app.delete('/file-pins/:id', (c) => {
+    pinsHostOnly(c);
+    if (!store.removeFilePin(db, parseId(c))) throw new HttpError(404, 'Pin not found');
+    return c.body(null, 204);
+  });
+  app.post('/file-pins/:id/move', async (c) => {
+    pinsHostOnly(c);
+    const { direction } = await parseBody(c, z.object({ direction: z.enum(['up', 'down']) }));
+    store.moveFilePin(db, parseId(c), direction);
     return c.body(null, 204);
   });
 

@@ -443,3 +443,95 @@ function toCard(row: CardRow): Card {
     issueUrl: row.issue_url ?? null,
   };
 }
+
+// ---- Pinned files and folders (PM-284) ------------------------------------------------------
+
+/** At most this many pins per scope (one project's own, or the all-projects ones). */
+export const MAX_PINS_PER_SCOPE = 50;
+
+/**
+ * A pin is a relative path inside a project: no leading or trailing slash, no "." or ".." parts,
+ * no backslash, drive letter, colon or control character, at most 500 characters. Throws a message
+ * the caller shows as is.
+ */
+export function cleanPinPath(raw: string): string {
+  let path = raw.trim().replace(/^\.\//, '');
+  while (path.endsWith('/')) path = path.slice(0, -1);
+  if (!path) throw new Error('Choose a file or folder inside the project');
+  if (path.length > 500) throw new Error('That path is too long to pin');
+  const controlCharacter = [...path].some((c) => c.charCodeAt(0) < 32);
+  if (path.startsWith('/') || /[\\:]/.test(path) || controlCharacter)
+    throw new Error('Pin a path relative to the project folder');
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.' || part === '..')
+      throw new Error('Pin a path inside the project folder');
+  }
+  return path;
+}
+
+interface FilePinRow {
+  id: number;
+  project_id: number | null;
+  path: string;
+  position: number;
+}
+
+/** This project's own pins first, then the all-projects ones; each in the user's order. */
+export function listFilePinRows(db: Db, projectId: number): FilePinRow[] {
+  return db
+    .prepare(
+      `SELECT id, project_id, path, position FROM file_pins
+        WHERE project_id = ? OR project_id IS NULL
+        ORDER BY (project_id IS NULL), position, id`,
+    )
+    .all(projectId) as unknown as FilePinRow[];
+}
+
+/** Adds a pin to a scope (null: all projects); pinning the same path again returns the old pin. */
+export function addFilePin(db: Db, projectId: number | null, path: string): { id: number } {
+  const existing = db
+    .prepare('SELECT id FROM file_pins WHERE COALESCE(project_id, 0) = ? AND path = ?')
+    .get(projectId ?? 0, path) as { id: number } | undefined;
+  if (existing) return existing;
+  const { n, last } = db
+    .prepare(
+      `SELECT COUNT(*) AS n, COALESCE(MAX(position), 0) AS last FROM file_pins
+        WHERE COALESCE(project_id, 0) = ?`,
+    )
+    .get(projectId ?? 0) as { n: number; last: number };
+  if (n >= MAX_PINS_PER_SCOPE)
+    throw new Error(`You can pin up to ${MAX_PINS_PER_SCOPE} items here; unpin one first`);
+  const result = db
+    .prepare('INSERT INTO file_pins (project_id, path, position, created_at) VALUES (?, ?, ?, ?)')
+    .run(projectId, path, last + 1, new Date().toISOString());
+  return { id: Number(result.lastInsertRowid) };
+}
+
+export function removeFilePin(db: Db, id: number): boolean {
+  return db.prepare('DELETE FROM file_pins WHERE id = ?').run(id).changes > 0;
+}
+
+/** Swaps a pin with its neighbour in the same scope. False when it is already at that end. */
+export function moveFilePin(db: Db, id: number, direction: 'up' | 'down'): boolean {
+  const pin = db.prepare('SELECT id, project_id, position FROM file_pins WHERE id = ?').get(id) as
+    { id: number; project_id: number | null; position: number } | undefined;
+  if (!pin) return false;
+  const neighbour = db
+    .prepare(
+      `SELECT id, position FROM file_pins
+        WHERE COALESCE(project_id, 0) = ? AND position ${direction === 'up' ? '<' : '>'} ?
+        ORDER BY position ${direction === 'up' ? 'DESC' : 'ASC'} LIMIT 1`,
+    )
+    .get(pin.project_id ?? 0, pin.position) as { id: number; position: number } | undefined;
+  if (!neighbour) return false;
+  db.exec('BEGIN');
+  try {
+    db.prepare('UPDATE file_pins SET position = ? WHERE id = ?').run(neighbour.position, pin.id);
+    db.prepare('UPDATE file_pins SET position = ? WHERE id = ?').run(pin.position, neighbour.id);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  return true;
+}

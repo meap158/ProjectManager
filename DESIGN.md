@@ -304,6 +304,14 @@ adjacent-pair CVD separation in both modes).
   shared rules raise both to 40px together. A `type="search"` input keeps the `.input` box (native
   search styling is turned off).
 - **Owner Pages (`scripts/owner-pages.mjs`, PM-258):** the pages the owner reads, built from the same tokens as the app (`--bg`, `--surface`, `--accent`, `--danger`, `--good`, radii and the system font stack, copied from `client/src/styles.css`, so keep the two in step) in both themes through one shell: a sticky top bar with the page links and a Theme button (the choice is kept in this browser and set before first paint), one centred column of at most 920px, cards on `--surface` with a 1px `--border`. The Owner desk shows four summary tiles (Pending, Blocked, Completed, Blocking the agent, the last in `--danger` when above zero), filters for status, priority, category and text, and one card per task: blocking ones get a `--danger` border, Completed ones a green status chip and an evidence block. Owners tick tasks on the page; ticks are saved in this browser only and the page says so. Pages work from the filesystem with no server and no external requests.
+- **Files tree (`ProjectFiles`, PM-252/259/282/284):** VS Code's Explorer in this app's tokens. A chevron caret
+  per folder (turns down when open, a 32 x 44 touch target on phones), a line icon per file type
+  (`fileIcons.tsx`: exact name first, then extension, tones from tokens), indent guides, type-ahead, the ARIA
+  tree keys, F2 rename. **Pinned** (PM-284): a collapsible list above the tree of items you keep returning to,
+  for this project only or for every project by relative path (an "All" badge). A pin whose path is absent in a
+  project is dimmed with "missing". Pin from the context menu or with Alt+P (this project) and Alt+Shift+P
+  (all projects); the row's "..." menu moves a pin up or down within its scope, or unpins it. Pins are kept in
+  this app's database (never in the project) and can only be changed on this computer; they are read everywhere.
 - **Context menu (`ContextMenu`, shared by the Preview tabs and the Files tree):** a real
   `role="menu"` (arrow keys, Home and End, Escape or Tab close, focus on the first enabled item and back
   on the trigger), closed by an outside click, a window blur or a resize. It is measured before paint

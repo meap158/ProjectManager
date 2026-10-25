@@ -44,6 +44,7 @@ import type {
   PullRequestListState,
   PullRequestsResult,
   ProjectSummary,
+  FilePin,
   FilePreview,
   FolderListing,
   ShortcutOverrides,
@@ -317,6 +318,13 @@ export const api = {
     request<{ path: string }>('POST', `/projects/${id}/files/rename`, { path, name }),
   openProjectFile: (id: number, path: string, mode: 'open' | 'reveal' | 'run') =>
     request<void>('POST', `/projects/${id}/files/open`, { path, mode }),
+  /** Pinned files and folders (PM-284): this project's own, then the all-projects ones. */
+  filePins: (id: number) => request<{ pins: FilePin[] }>('GET', `/projects/${id}/file-pins`),
+  pinFile: (id: number, path: string, scope: 'project' | 'all') =>
+    request<{ id: number }>('POST', `/projects/${id}/file-pins`, { path, scope }),
+  unpinFile: (pinId: number) => request<void>('DELETE', `/file-pins/${pinId}`),
+  moveFilePin: (pinId: number, direction: 'up' | 'down') =>
+    request<void>('POST', `/file-pins/${pinId}/move`, { direction }),
   /** A file's bytes (images, a previewed page's styles), as a URL for the page to load. */
   projectRawUrl: (id: number, path: string) =>
     `/api/projects/${id}/raw?path=${encodeURIComponent(path)}`,

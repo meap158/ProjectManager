@@ -46,6 +46,89 @@
 .files-tree {
   --files-step: 14px;
 }
+/* Pinned items (PM-284): a collapsible list above the tree, so the files you keep returning to are
+   one tap away. */
+.files-pins {
+  flex: none;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.files-pins-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.files-pins-head:hover {
+  background: var(--surface-hover);
+}
+.files-pin-list {
+  max-height: 168px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.files-pin {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.files-pin-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.files-pin-open:hover {
+  background: var(--surface-hover);
+}
+.files-pin:hover .files-more,
+.files-pin:focus-within .files-more {
+  display: grid;
+}
+.files-pin.is-missing .files-name,
+.files-pin.is-missing .files-icon {
+  opacity: 0.5;
+}
+.files-pin-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.files-pin-badge {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+}
 .files-row {
   position: relative;
   display: flex;
@@ -298,6 +381,16 @@
   .files-chevron svg {
     width: 14px;
     height: 14px;
+  }
+  .files-pins-head {
+    min-height: 40px;
+  }
+  .files-pin-open {
+    min-height: 44px;
+    font-size: 15px;
+  }
+  .files-pin-list {
+    max-height: 220px;
   }
   .files-icon svg {
     width: 18px;

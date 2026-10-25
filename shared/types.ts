@@ -868,3 +868,14 @@ export interface PreviewLaunch {
   path: string;
   projectId: number | null;
 }
+
+/** A pinned file or folder on the Files tab (PM-284). */
+export interface FilePin {
+  id: number;
+  /** A relative path inside the project, "/"-separated. */
+  path: string;
+  /** "project": this project only. "all": every project that has this relative path. */
+  scope: 'project' | 'all';
+  /** What is there now; null when this project has no such path (the pin shows as missing). */
+  kind: 'file' | 'dir' | null;
+}

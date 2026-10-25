@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { FolderListing, TreeEntry } from '../../../shared/types';
+import type { FilePin, FolderListing, TreeEntry } from '../../../shared/types';
 
 const entry = (path: string, kind: 'dir' | 'file', ignored = false): TreeEntry => ({
   name: path.split('/').pop()!,
@@ -12,6 +12,7 @@ const entry = (path: string, kind: 'dir' | 'file', ignored = false): TreeEntry =
   ignored,
   symlink: false,
 });
+const PINS: FilePin[] = [];
 const FOLDERS: Record<string, FolderListing> = {
   '': {
     path: '',
@@ -39,6 +40,10 @@ vi.mock('../api', () => ({
       return { path: next };
     }),
     openProjectFile: vi.fn(async () => undefined),
+    filePins: vi.fn(async () => ({ pins: PINS })),
+    pinFile: vi.fn(async () => ({ id: 9 })),
+    unpinFile: vi.fn(async () => undefined),
+    moveFilePin: vi.fn(async () => undefined),
   },
 }));
 
@@ -161,6 +166,8 @@ describe('context menu', () => {
       'Reveal in file manager',
       'Copy path',
       'Copy relative path',
+      'Pin to this project',
+      'Pin to all projects (this path)',
       'Rename…',
     ]);
     fireEvent.keyDown(menu, { key: 'Escape' });
@@ -286,6 +293,56 @@ describe('path helpers', () => {
     expect(remapPath('src', 'src', 'lib')).toBe('lib');
     expect(remapPath('srcx/a', 'src', 'lib')).toBe('srcx/a');
     expect(fileMenuItems(entry('d', 'dir'), true)[0]!.label).toBe('Collapse folder');
+  });
+});
+
+describe('pinned items', () => {
+  const pinned = (
+    id: number,
+    path: string,
+    scope: 'project' | 'all',
+    kind: 'file' | 'dir' | null,
+  ) => ({ id, path, scope, kind }) as FilePin;
+
+  it('offers pin and unpin per scope in the menu', () => {
+    const e = entry('docs', 'dir');
+    const labels = (state?: { project: boolean; all: boolean }) =>
+      fileMenuItems(e, false, state).map((i) => `${i.command}:${i.label}`);
+    expect(labels()).toContain('pin-project:Pin to this project');
+    expect(labels()).toContain('pin-all:Pin to all projects (this path)');
+    const both = labels({ project: true, all: true });
+    expect(both).toContain('unpin-project:Unpin from this project');
+    expect(both).toContain('unpin-all:Unpin from all projects');
+  });
+
+  it('lists pins above the tree, opens one, and marks a missing one', async () => {
+    PINS.length = 0;
+    PINS.push(pinned(1, 'README.md', 'project', 'file'), pinned(2, 'ROADMAP.md', 'all', null));
+    try {
+      show();
+      const section = await screen.findByRole('region', { name: 'Pinned' });
+      expect(within(section).getByText('README.md')).toBeTruthy();
+      expect(within(section).getByText('All')).toBeTruthy(); // The all-projects badge.
+      expect(within(section).getByText('missing')).toBeTruthy();
+      fireEvent.click(within(section).getByTitle('README.md'));
+      expect(await screen.findByTitle('Preview of README.md')).toBeTruthy();
+    } finally {
+      PINS.length = 0;
+    }
+  });
+
+  it('pins the focused row with Alt+P (this project) and Alt+Shift+P (all projects)', async () => {
+    PINS.length = 0;
+    show();
+    const tree = await screen.findByRole('tree');
+    await waitFor(() => expect(tree.querySelector('[data-path="docs"]')).not.toBeNull());
+    const row = tree.querySelector<HTMLElement>('[data-path="docs"]')!;
+    row.focus();
+    fireEvent.focusIn(row);
+    fireEvent.keyDown(tree, { key: 'p', altKey: true });
+    await waitFor(() => expect(api.pinFile).toHaveBeenCalledWith(1, 'docs', 'project'));
+    fireEvent.keyDown(tree, { key: 'P', altKey: true, shiftKey: true });
+    await waitFor(() => expect(api.pinFile).toHaveBeenCalledWith(1, 'docs', 'all'));
   });
 });
 
