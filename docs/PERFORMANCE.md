@@ -87,9 +87,19 @@ account during the audit); with none at a limit the tick is a few milliseconds.
 | Orchestrators                | 164 ms      | ~550 ms | overview 80 ms in the browser (61 KB)                   |
 | Server restart (`tsx watch`) | –           | 1.3 s   | API answering again, Vite included; first list in 31 ms |
 
-The Board renders every card; it is not slow today, but Done alone holds 225 cards and grows.
-Virtualizing long columns, capping Done and a compact density are tracked in PM-296; measure
-scroll smoothness there in a focused browser window (automated tabs throttle animation frames).
+**Board: Done is capped at its newest 40 cards** ("Show 191 older" draws the rest; the column
+count still shows them all). Done grows without end, while the working columns always show every
+card, so nothing waiting on you is hidden. A move puts the card first, matching the server's
+newest-first order, so a dropped card is never past the cap.
+
+| Board (296 cards), switching from List to Board, 7 runs | Before | After |
+| ------------------------------------------------------- | ------ | ----- |
+| Time to draw the board (median, dev build)              | 41 ms  | 17 ms |
+| Cards drawn                                             | 296    | 105   |
+| Page elements                                           | 2,431  | 1,286 |
+
+A compact density and grouping by project stay on PM-296. Scroll smoothness has to be measured
+in a focused browser window (automated tabs throttle animation frames).
 
 ### What changed
 
@@ -126,6 +136,8 @@ scroll smoothness there in a focused browser window (automated tabs throttle ani
     (Refresh, Stop's safety re-check) skip the cache.
 11. **Codex auto-switch setting** is read on its own instead of through the full account state
     (6.7 ms), and recovered-quota checks read the logins once per tick (`4cf95a2`).
+12. **Board Done column** draws its newest 40 cards until "Show older" (41 -> 17 ms to draw the
+    board, half the page elements).
 
 ### Checked and left as is
 

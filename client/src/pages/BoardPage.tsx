@@ -42,6 +42,13 @@ const parseShow = (v: string | null): Show => (v === 'planned' || v === 'active'
 const projectNameOf = (projects: ProjectSummary[], projectId: number): string =>
   projects.find((p) => p.id === projectId)?.name || (projectId ? '' : 'All projects');
 
+/**
+ * Done cards drawn until "Show older" is pressed (newest first, as the server lists them). Done
+ * grows without end (225 cards in Oct 2026) and drawing them all doubled the time to open the
+ * board; the working columns always show every card, so nothing waiting on you is hidden.
+ */
+const DONE_LIMIT = 40;
+
 export function BoardPage() {
   const [params, setParams] = useSearchParams();
   const show = parseShow(params.get('show'));
@@ -55,6 +62,8 @@ export function BoardPage() {
   const [dropOn, setDropOn] = useState<CardStatus | null>(null);
   // Adding: the column whose + was clicked (null = closed).
   const [addingTo, setAddingTo] = useState<CardStatus | null>(null);
+  // Done shows every card once "Show older" is pressed (until the page is left).
+  const [expanded, setExpanded] = useState<ReadonlySet<CardStatus>>(() => new Set());
   const [view, setView] = useBoardView();
   const stuckTop = useStuckTop();
 
@@ -111,11 +120,15 @@ export function BoardPage() {
     if (card.status === status) return;
     // Optimistic: the card moves at once; a failure puts it back.
     const before = cards;
-    setCards(
-      (prev) =>
-        prev?.map((c) =>
-          c.id === card.id ? { ...c, status, updatedAt: new Date().toISOString() } : c,
-        ) ?? prev,
+    // The server lists newest first, so the moved card goes to the front of its new column (and
+    // so is never hidden past Done's cap, below).
+    setCards((prev) =>
+      prev
+        ? [
+            { ...card, status, updatedAt: new Date().toISOString() },
+            ...prev.filter((c) => c.id !== card.id),
+          ]
+        : prev,
     );
     try {
       const saved = await api.updateCard(card.id, { status });
@@ -230,6 +243,8 @@ export function BoardPage() {
         >
           {columns.map((status) => {
             const items = visible.filter((c) => c.status === status);
+            const capped = status === 'done' && !expanded.has(status);
+            const shown = capped ? items.slice(0, DONE_LIMIT) : items;
             return (
               <section
                 key={status}
@@ -270,7 +285,7 @@ export function BoardPage() {
                   </header>
                 </div>
                 <div className="gcolumn-cards">
-                  {items.map((c) => (
+                  {shown.map((c) => (
                     <button
                       key={c.id}
                       type="button"
@@ -303,6 +318,15 @@ export function BoardPage() {
                       </span>
                     </button>
                   ))}
+                  {items.length > shown.length && (
+                    <button
+                      type="button"
+                      className="btn gcolumn-more"
+                      onClick={() => setExpanded((prev) => new Set(prev).add(status))}
+                    >
+                      Show {items.length - shown.length} older
+                    </button>
+                  )}
                   {items.length === 0 && <p className="faint gcolumn-empty">No cards here.</p>}
                 </div>
               </section>

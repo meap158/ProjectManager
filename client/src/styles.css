@@ -3301,6 +3301,13 @@ span.path-link:hover .path-icon {
   margin: 4px;
   font-size: 12.5px;
 }
+/* Below a capped column: draws the rest on demand (BoardPage DONE_LIMIT). */
+.gcolumn-more {
+  width: 100%;
+  justify-content: center;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
 .gcard {
   display: flex;
   flex-direction: column;

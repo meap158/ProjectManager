@@ -113,4 +113,20 @@ describe('BoardPage', () => {
     const todo = await screen.findByRole('region', { name: 'To do' });
     await waitFor(() => expect(within(todo).getByText('Beta')).toBeTruthy());
   });
+
+  it('draws the newest 40 Done cards until asked, and every card in the working columns', async () => {
+    vi.mocked(api.listAllCards).mockResolvedValueOnce([
+      ...Array.from({ length: 45 }, (_, i) => card(100 + i, 1, 'Alpha', 'done', `Done ${i}`)),
+      ...Array.from({ length: 45 }, (_, i) => card(200 + i, 1, 'Alpha', 'review', `Review ${i}`)),
+    ]);
+    renderAt('/board');
+    const done = await screen.findByRole('region', { name: 'Done' });
+    await waitFor(() => expect(within(done).getAllByText(/^Done \d+$/)).toHaveLength(40));
+    expect(within(done).getByText('45')).toBeTruthy(); // The count is still the whole column.
+    const review = screen.getByRole('region', { name: 'Review' });
+    expect(within(review).getAllByText(/^Review \d+$/)).toHaveLength(45);
+    fireEvent.click(within(done).getByRole('button', { name: 'Show 5 older' }));
+    expect(within(done).getAllByText(/^Done \d+$/)).toHaveLength(45);
+    expect(within(done).queryByRole('button', { name: /older/ })).toBeNull();
+  });
 });
