@@ -1,4 +1,5 @@
 import type { AntigravityAccountsState } from '../../shared/antigravityAccounts';
+import type { NativeAccountsState } from '../../shared/nativeAccounts';
 import type {
   OrchestratorOverview,
   OrchestratorChatWork,
@@ -473,6 +474,21 @@ export const api = {
   // ---- Codex accounts (PM-164) ------------------------------------------------------------------
   getAntigravityAccounts: () =>
     request<AntigravityAccountsState>('GET', '/agents/antigravity-accounts'),
+  getGrokAccounts: () => request<NativeAccountsState>('GET', '/agents/grok-accounts?refresh=stale'),
+  refreshGrokAccounts: () => request<NativeAccountsState>('POST', '/agents/grok-accounts/usage'),
+  refreshGrokAccount: (id: string) =>
+    request<NativeAccountsState>('POST', `/agents/grok-accounts/${encodeURIComponent(id)}/usage`),
+  saveGrokAccount: () => request<NativeAccountsState>('POST', '/agents/grok-accounts', {}),
+  importGrokAccount: (authJson: string) =>
+    request<NativeAccountsState>('POST', '/agents/grok-accounts', { authJson }),
+  switchGrokAccount: (accountId: string) =>
+    request<NativeAccountsState>('PUT', '/agents/grok-accounts/active', { accountId }),
+  renameGrokAccount: (id: string, name: string) =>
+    request<NativeAccountsState>('PATCH', `/agents/grok-accounts/${encodeURIComponent(id)}`, {
+      name,
+    }),
+  removeGrokAccount: (id: string) =>
+    request<NativeAccountsState>('DELETE', `/agents/grok-accounts/${encodeURIComponent(id)}`),
   saveAntigravityAccount: () =>
     request<AntigravityAccountsState>('POST', '/agents/antigravity-accounts', {}),
   importAntigravityAccount: (authJson: string) =>

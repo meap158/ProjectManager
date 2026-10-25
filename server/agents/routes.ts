@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { GrokAccounts } from './grokAccounts.js';
 import {
   antigravityAccounts,
   switchAntigravityAccount,
@@ -214,6 +215,58 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
 
   // ---- Codex accounts (PM-164: saved auth.json profiles + automatic usage-limit rotation) ----
   app.get('/agents/antigravity-accounts', async (c) => c.json(await antigravityAccounts()));
+  const grokService = supervisor.dataDir ? new GrokAccounts(supervisor.dataDir) : null;
+  const grokAccounts = () => {
+    if (!grokService) throw new AgentError(400, 'Account storage is unavailable');
+    return grokService;
+  };
+  const grokId = (id: string) =>
+    z
+      .string()
+      .regex(/^grok_[a-f0-9]{32}$/)
+      .parse(id);
+  const grokBody = async (c: Context): Promise<unknown> => {
+    try {
+      return await c.req.json();
+    } catch {
+      throw new AgentError(400, 'Request body must be valid JSON.');
+    }
+  };
+  app.get('/agents/grok-accounts', (c) =>
+    c.json(grokAccounts().state(c.req.query('refresh') === 'stale')),
+  );
+  app.post('/agents/grok-accounts', async (c) => {
+    const body = z
+      .object({
+        name: z.string().trim().max(160).optional(),
+        authJson: z.string().max(65536).optional(),
+      })
+      .parse(await grokBody(c));
+    return c.json(
+      await (body.authJson !== undefined
+        ? grokAccounts().import(body.authJson, body.name)
+        : grokAccounts().saveCurrent(body.name)),
+    );
+  });
+  app.post('/agents/grok-accounts/usage', async (c) => c.json(await grokAccounts().refresh()));
+  app.post('/agents/grok-accounts/:id/usage', async (c) =>
+    c.json(
+      await grokAccounts().refresh(
+        c.req.param('id') === 'default' ? 'default' : grokId(c.req.param('id')),
+      ),
+    ),
+  );
+  app.put('/agents/grok-accounts/active', async (c) => {
+    const body = z.object({ accountId: z.string() }).parse(await grokBody(c));
+    return c.json(await grokAccounts().switch(grokId(body.accountId)));
+  });
+  app.patch('/agents/grok-accounts/:id', async (c) => {
+    const body = z.object({ name: z.string().trim().min(1).max(160) }).parse(await grokBody(c));
+    return c.json(await grokAccounts().rename(grokId(c.req.param('id')), body.name));
+  });
+  app.delete('/agents/grok-accounts/:id', async (c) =>
+    c.json(await grokAccounts().remove(grokId(c.req.param('id')))),
+  );
   app.post('/agents/antigravity-accounts/:id/usage', async (c) =>
     c.json(
       await refreshAntigravityAccount(

@@ -1,9 +1,7 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react';
-import type {
-  AntigravityAccount,
-  AntigravityAccountsState,
-} from '../../../shared/antigravityAccounts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { NativeAccount, NativeAccountsState } from '../../../shared/nativeAccounts';
 import { api } from '../api';
+import { serialPoll } from '../lib/serialPoll';
 import { useViewPreference } from '../useViewPreference';
 import { AccountActionIcon } from './CodexAccountsPanel';
 import { ProviderIcon } from './icons';
@@ -39,38 +37,83 @@ function AccountToolbarAction({
 }
 
 export function AntigravityAccountsPanel() {
+  return <NativeAccountsPanel providerId="antigravity" />;
+}
+export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' | 'grok' }) {
+  const isGrok = providerId === 'grok';
+  const title = isGrok ? 'Grok' : 'Antigravity';
+  const methods = useMemo(
+    () =>
+      isGrok
+        ? {
+            get: api.getGrokAccounts,
+            refresh: api.refreshGrokAccounts,
+            refreshOne: api.refreshGrokAccount,
+            save: api.saveGrokAccount,
+            import: api.importGrokAccount,
+            switch: api.switchGrokAccount,
+            rename: api.renameGrokAccount,
+            remove: api.removeGrokAccount,
+          }
+        : {
+            get: api.getAntigravityAccounts,
+            refresh: api.refreshAntigravityAccounts,
+            refreshOne: api.refreshAntigravityAccount,
+            save: api.saveAntigravityAccount,
+            import: api.importAntigravityAccount,
+            switch: api.switchAntigravityAccount,
+            rename: api.renameAntigravityAccount,
+            remove: api.removeAntigravityAccount,
+          },
+    [isGrok],
+  );
   const [now] = useState(() => Date.now());
-  const [state, setState] = useState<AntigravityAccountsState | null>(null);
+  const [state, setState] = useState<NativeAccountsState | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const acting = useRef(false),
     fileRef = useRef<HTMLInputElement>(null);
+  const actionRevision = useRef(0);
   const [chosen, setChosen] = useState<string | null>(null),
     [renaming, setRenaming] = useState<string | null>(null),
     [draft, setDraft] = useState('');
   const [reordering, setReordering] = useState(false);
   const [order, setOrder] = useViewPreference<string[]>(
-    'pm.accounts.order.antigravity',
+    `pm.accounts.order.${providerId}`,
     [],
     (v): v is string[] => Array.isArray(v) && v.every((id) => typeof id === 'string'),
   );
   useEffect(() => {
     let mounted = true;
-    api.getAntigravityAccounts().then(
-      (s) => {
-        if (mounted && !acting.current) setState(s);
-      },
-      () => {
-        if (mounted) setError('Unable to read Antigravity accounts.');
-      },
-    );
+    let revision = 0;
+    const load = async () => {
+      if (acting.current) return;
+      const started = ++revision;
+      const actionAtStart = actionRevision.current;
+      try {
+        const next = await methods.get();
+        if (
+          mounted &&
+          !acting.current &&
+          started === revision &&
+          actionAtStart === actionRevision.current
+        )
+          setState(next);
+      } catch {
+        if (mounted && actionAtStart === actionRevision.current)
+          setError(`Unable to read ${title} accounts.`);
+      }
+    };
+    const stop = serialPoll(load, isGrok ? 5000 : 60000, { pauseWhenHidden: true });
     return () => {
       mounted = false;
+      stop();
     };
-  }, []);
-  const act = useCallback(async (fn: () => Promise<AntigravityAccountsState>) => {
+  }, [isGrok, methods, title]);
+  const act = useCallback(async (fn: () => Promise<NativeAccountsState>) => {
     if (acting.current) return;
     acting.current = true;
+    actionRevision.current++;
     setBusy(true);
     setError('');
     try {
@@ -97,7 +140,7 @@ export function AntigravityAccountsPanel() {
     ids.splice(target, 0, id);
     setOrder(ids);
   }
-  function usage(a: AntigravityAccount | null | undefined) {
+  function usage(a: NativeAccount | null | undefined) {
     const windows = [
       { label: '5-hour', windowMinutes: 300, usedPercent: a?.usage.fiveHour },
       { label: 'Weekly', windowMinutes: 10080, usedPercent: a?.usage.weekly },
@@ -110,25 +153,33 @@ export function AntigravityAccountsPanel() {
         <span className="codex-account-usage-status faint">
           {busy
             ? 'Updating...'
-            : a?.usage.updatedAt
-              ? `Usage checked ${new Date(a.usage.updatedAt).toLocaleString()}`
-              : 'Usage not refreshed'}
+            : a?.usageStatus === 'expired'
+              ? `Login expired: sign in with ${isGrok ? 'grok' : 'agy'}, then save the login again`
+              : a?.usageStatus === 'unavailable'
+                ? 'Usage unavailable; try refreshing later'
+                : a?.usageStatus === 'stale'
+                  ? 'Usage may be out of date; refreshing'
+                  : a?.usage.updatedAt
+                    ? `Usage checked ${new Date(a.usage.updatedAt).toLocaleString()}`
+                    : 'Usage not refreshed'}
         </span>
-        {windows.length > 0 && (
+        {(a?.limits || windows.length > 0) && (
           <UsageLimits
             now={now}
-            limits={{
-              providerId: 'antigravity',
-              source: 'Antigravity account service',
-              asOf: a?.usage.updatedAt ?? '',
-              windows: windows.map((w) => ({ ...w, resetsAt: null })),
-            }}
+            limits={
+              a?.limits ?? {
+                providerId,
+                source: `${title} account service`,
+                asOf: a?.usage.updatedAt ?? '',
+                windows: windows.map((w) => ({ ...w, resetsAt: null })),
+              }
+            }
           />
         )}
       </span>
     );
   }
-  function row(a: AntigravityAccount | null, isDefault = false) {
+  function row(a: NativeAccount | null, isDefault = false) {
     const id = isDefault ? 'default' : a!.id;
     return (
       <li key={id} data-account-id={id} className="codex-account-row">
@@ -184,7 +235,7 @@ export function AntigravityAccountsPanel() {
         />
         <span className="codex-account-info">
           <span className="codex-account-heading">
-            <b>{isDefault ? 'Default Antigravity account' : a!.name}</b>
+            <b>{isDefault ? `Default ${title} account` : a!.name}</b>
             {isDefault && (
               <span className="faint">
                 {' '}
@@ -204,7 +255,7 @@ export function AntigravityAccountsPanel() {
             kind="refresh"
             label={`Refresh usage for ${isDefault ? 'default account' : a!.name}`}
             disabled={busy}
-            onClick={() => void act(() => api.refreshAntigravityAccount(id))}
+            onClick={() => void act(() => methods.refreshOne(id))}
           />
           {!isDefault && (
             <>
@@ -237,7 +288,7 @@ export function AntigravityAccountsPanel() {
                 text="Remove"
                 heading={`Remove ${a!.name}?`}
                 message="Removes only the saved profile. The current CLI login and running sessions remain available."
-                onConfirm={() => act(() => api.removeAntigravityAccount(id)).then(() => undefined)}
+                onConfirm={() => act(() => methods.remove(id)).then(() => undefined)}
                 disabled={busy}
               />
             </>
@@ -248,7 +299,7 @@ export function AntigravityAccountsPanel() {
             className="actions"
             onSubmit={(e) => {
               e.preventDefault();
-              void act(() => api.renameAntigravityAccount(id, draft));
+              void act(() => methods.rename(id, draft));
             }}
           >
             <input
@@ -272,7 +323,7 @@ export function AntigravityAccountsPanel() {
             <button
               className="btn btn-primary btn-sm"
               disabled={busy}
-              onClick={() => void act(() => api.switchAntigravityAccount(id))}
+              onClick={() => void act(() => methods.switch(id))}
             >
               Confirm switch
             </button>{' '}
@@ -285,14 +336,14 @@ export function AntigravityAccountsPanel() {
     );
   }
   return (
-    <div className="codex-accounts-panel" role="region" aria-label="Antigravity accounts">
+    <div className="codex-accounts-panel" role="region" aria-label={`${title} accounts`}>
       <div
         className="panel-header"
         style={{ marginBottom: 6, paddingBottom: 0, borderBottom: 'none' }}
       >
         <span className="actions">
-          <ProviderIcon id="antigravity" size={14} />
-          <strong style={{ fontSize: 13 }}>Antigravity accounts</strong>
+          <ProviderIcon id={providerId} size={14} />
+          <strong style={{ fontSize: 13 }}>{title} accounts</strong>
         </span>
         <span className="meta">
           active:{' '}
@@ -308,13 +359,13 @@ export function AntigravityAccountsPanel() {
       )}
       {!state && !error && <div className="skeleton" style={{ height: 100 }} />}
       {state && !state.available && (
-        <p>Native Antigravity account management is unavailable on this platform.</p>
+        <p>Native {title} account management is unavailable on this platform.</p>
       )}
       {state?.available && (
         <>
           <p className="faint">
-            Switching changes the login for new Antigravity launches. Existing sessions keep their
-            login until restarted.
+            Switching changes the login for new {title} launches. Existing sessions keep their login
+            until restarted.
           </p>
           <div className="codex-accounts-toolbar">
             <span className="faint">Saved logins are encrypted locally.</span>
@@ -323,13 +374,13 @@ export function AntigravityAccountsPanel() {
                 kind="refresh"
                 label="Refresh usage"
                 disabled={busy}
-                onClick={() => void act(api.refreshAntigravityAccounts)}
+                onClick={() => void act(methods.refresh)}
               />
               <AccountToolbarAction
                 kind="save"
                 label="Save current CLI login"
                 disabled={busy}
-                onClick={() => void act(api.saveAntigravityAccount)}
+                onClick={() => void act(methods.save)}
               />
               <AccountToolbarAction
                 kind="import"
@@ -344,7 +395,7 @@ export function AntigravityAccountsPanel() {
             ref={fileRef}
             type="file"
             accept=".json,application/json"
-            aria-label="Antigravity credential file"
+            aria-label={`${title} credential file`}
             hidden
             onChange={async (e) => {
               const file = e.target.files?.[0];
@@ -354,7 +405,7 @@ export function AntigravityAccountsPanel() {
                 setError('Credential file is too large.');
                 return;
               }
-              await act(async () => api.importAntigravityAccount(await file.text()));
+              await act(async () => methods.import(await file.text()));
             }}
           />
           {rows.length > 1 && (

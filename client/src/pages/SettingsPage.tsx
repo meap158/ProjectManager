@@ -28,7 +28,7 @@ import { LanAccessPanel } from '../components/LanAccessPanel';
 import { RemoteAccessPanel } from '../components/RemoteAccessPanel';
 import { UsageLimits } from '../components/UsageLimits';
 import { Dropdown } from '../components/Dropdown';
-import { AntigravityAccountsPanel } from '../components/AntigravityAccountsPanel';
+import { NativeAccountsPanel } from '../components/AntigravityAccountsPanel';
 import { useViewPreference } from '../useViewPreference';
 
 const TerminalView = lazy(() =>
@@ -77,7 +77,11 @@ export function SettingsPage() {
     'pm.settings.expandedAccounts',
     null,
     (value): value is string | null =>
-      value === null || value === 'codex' || value === 'claude' || value === 'antigravity',
+      value === null ||
+      value === 'codex' ||
+      value === 'claude' ||
+      value === 'antigravity' ||
+      value === 'grok',
   );
   const [error, setError] = useState<string | null>(null);
   // Plan usage limits per CLI (PM-17) and the clock for "resets in …".
@@ -198,7 +202,10 @@ export function SettingsPage() {
             <ul className="list settings-cli-list">
               {clis.map((p) => {
                 const isExpandable =
-                  p.id === 'codex' || p.id === 'claude' || p.id === 'antigravity';
+                  p.id === 'codex' ||
+                  p.id === 'claude' ||
+                  p.id === 'antigravity' ||
+                  p.id === 'grok';
                 const isExpanded = isExpandable && expandedCliId === p.id;
                 const toggleExpand = () =>
                   setExpandedCliId((prev) => (prev === p.id ? null : p.id));
@@ -302,8 +309,8 @@ export function SettingsPage() {
                     </div>
                     {isExpanded && (
                       <div id={`settings-cli-drawer-${p.id}`} className="settings-cli-drawer">
-                        {p.id === 'antigravity' ? (
-                          <AntigravityAccountsPanel />
+                        {p.id === 'antigravity' || p.id === 'grok' ? (
+                          <NativeAccountsPanel key={p.id} providerId={p.id} />
                         ) : (
                           <CodexAccountsPanel
                             providerId={p.id as 'codex' | 'claude'}

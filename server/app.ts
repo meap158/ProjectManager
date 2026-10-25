@@ -1,3 +1,4 @@
+import { GrokAccountError } from './agents/grokAccounts.js';
 import { OrchestratorService } from './orchestrator/service.js';
 import { registerOrchestratorRoutes } from './orchestrator/routes.js';
 import { OrchestratorChat } from './orchestrator/chat.js';
@@ -9,8 +10,8 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { BOARD_PRESETS, CARD_STATUSES, SHORTCUT_IDS } from '../shared/types.js';
 import type {
-  DirectoryEntry,
   PreviewLaunch,
+  DirectoryEntry,
   DirectoryListing,
   LanStatus,
   RemoteConfig,
@@ -19,10 +20,10 @@ import type {
 } from '../shared/types.js';
 import { LAN_HEADER } from './lan.js';
 import { FileAccessError, listFolder, previewFile, readRaw } from './projectFiles.js';
-import { REMOTE_HEADER } from './remote.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
 import { config } from './config.js';
 import { detectLocalApps } from './localPorts.js';
+import { REMOTE_HEADER } from './remote.js';
 import type { Db } from './db.js';
 import { Scanner } from './scanner.js';
 import * as store from './store.js';
@@ -105,7 +106,6 @@ const updateCardBody = z
   })
   .partial();
 
-class HttpError extends Error {
 const PREVIEW_LAUNCHES_KEY = 'preview-quick-launches';
 const previewLaunchesBody = z.object({
   launches: z
@@ -120,6 +120,7 @@ const previewLaunchesBody = z.object({
     .max(30),
 });
 
+class HttpError extends Error {
   constructor(
     public status: 400 | 403 | 404 | 409 | 413 | 415,
     message: string,
@@ -214,19 +215,18 @@ export function createApp(
   app.use('*', compress({ threshold: 2048, contentTypeFilter: /^application\/json(?:;|$)/i }));
 
   app.onError((error, c) => {
+    if (error instanceof GrokAccountError) return c.json({ error: error.message }, 400);
+    if (c.req.path.includes('/agents/grok-accounts') && error instanceof z.ZodError)
+      return c.json({ error: 'Invalid Grok account request.' }, 400);
     if (error instanceof HttpError) return c.json({ error: error.message }, error.status);
     if (error instanceof AgentError) return c.json({ error: error.message }, error.status);
+    if (error instanceof PreviewError) return c.json({ error: error.message }, error.status);
     console.error('[api]', error);
     return c.json({ error: 'Internal server error' }, 500);
   });
 
-    if (error instanceof PreviewError) return c.json({ error: error.message }, error.status);
   app.get('/health', (c) => c.json({ ok: true }));
 
-  registerAgentRoutes(app, db, supervisor);
-  const orchestrator = new OrchestratorService(db, supervisor, options.dataDir ?? null, () =>
-    store.listProjects(db, (id) => scanner.state(id)),
-  );
   // Built-in browser (PM-253, docs/BUILT-IN-BROWSER.md): a read-only view of a dev server on this
   // computer's loopback. This app's own ports are refused so the proxy can't loop into the API.
   const previewHandler = async (c: Context) => {
@@ -272,6 +272,10 @@ export function createApp(
   app.get('/preview/:port', previewHandler);
   app.get('/preview/:port/*', previewHandler);
 
+  registerAgentRoutes(app, db, supervisor);
+  const orchestrator = new OrchestratorService(db, supervisor, options.dataDir ?? null, () =>
+    store.listProjects(db, (id) => scanner.state(id)),
+  );
   const orchestratorChat = new OrchestratorChat(
     db,
     supervisor,
