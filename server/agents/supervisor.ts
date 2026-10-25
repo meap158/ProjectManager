@@ -3430,7 +3430,11 @@ export class AgentSupervisor {
       (tailState === null && !!lastOutputAt && Date.now() - Date.parse(lastOutputAt) > 20_000);
     const question =
       quiet && !row.orchestrator_id
-        ? this.questions.get(row.id, `${diskLogBytes}|${lastOutputAt}|${row.last_input_at}`)
+        ? this.questions.get(
+            row.id,
+            `${diskLogBytes}|${lastOutputAt}|${row.last_input_at}`,
+            row.last_input_at ?? '',
+          )
         : null;
     return {
       restartProgress: this.restarting.get(row.id)?.phase ?? null,

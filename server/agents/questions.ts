@@ -102,23 +102,27 @@ export interface QuestionSource {
 export class QuestionCache {
   private entries = new Map<
     number,
-    { version: string; question: string | null; file?: string; size?: number }
+    { version: string; turn: string; question: string | null; file?: string; size?: number }
   >();
   private reading = new Set<number>();
 
   constructor(private source: (id: number) => QuestionSource | null) {}
 
-  get(id: number, version: string): string | null {
+  /**
+   * `version` changes whenever the log moves (redraws too); `turn` only when you send a message.
+   * A question from an earlier turn is never shown while the new one is read: you just answered it.
+   */
+  get(id: number, version: string, turn: string): string | null {
     const entry = this.entries.get(id);
-    if (entry?.version !== version && !this.reading.has(id)) void this.refresh(id, version);
-    return entry?.question ?? null;
+    if (entry?.version !== version && !this.reading.has(id)) void this.refresh(id, version, turn);
+    return entry?.turn === turn ? entry.question : null;
   }
 
   forget(keep: ReadonlySet<number>): void {
     for (const id of this.entries.keys()) if (!keep.has(id)) this.entries.delete(id);
   }
 
-  private async refresh(id: number, version: string): Promise<void> {
+  private async refresh(id: number, version: string, turn: string): Promise<void> {
     this.reading.add(id);
     const previous = this.entries.get(id);
     try {
@@ -130,12 +134,13 @@ export class QuestionCache {
         if (!file) return;
         const { size } = await stat(file);
         if (previous?.file === file && previous.size === size) {
-          this.entries.set(id, { ...previous, version });
+          this.entries.set(id, { ...previous, version, turn });
           return;
         }
         const reply = lastReplyText(await tailItems(file, size, src.providerId));
         this.entries.set(id, {
           version,
+          turn,
           file,
           size,
           question: reply ? askedQuestion(reply) : null,
@@ -145,11 +150,11 @@ export class QuestionCache {
       if (['opencode', 'grok', 'antigravity'].includes(src.providerId)) {
         const { items } = await readProviderTranscript(src.providerId, src.resumeJson, src.cwd);
         const reply = lastReplyText(items);
-        this.entries.set(id, { version, question: reply ? askedQuestion(reply) : null });
+        this.entries.set(id, { version, turn, question: reply ? askedQuestion(reply) : null });
         return;
       }
       // Shells and custom commands keep no transcript: menus on screen still count (tailState).
-      this.entries.set(id, { version, question: null });
+      this.entries.set(id, { version, turn, question: null });
     } catch {
       // Unreadable now: try again when the log moves on.
     } finally {

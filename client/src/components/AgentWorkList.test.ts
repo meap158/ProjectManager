@@ -82,6 +82,14 @@ describe('facts', () => {
 });
 
 describe('stateLabel', () => {
+  it('counts an idle session whose reply asks you something as needing attention (PM-298)', () => {
+    const item = {
+      kind: 'session' as const,
+      item: session(1, { tailState: 'idle', question: 'Do you want me to build that next?' }),
+    };
+    expect(workStatus(item, NOW)).toBe('input');
+    expect(stateLabel(item, NOW)).toMatchObject({ text: 'Asks you', tone: 'attention' });
+  });
   it.each(['stopping', 'starting', 'restoring'] as const)(
     'keeps a %s session in Running during the stop/start gap',
     (phase) => {

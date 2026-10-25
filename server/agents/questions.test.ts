@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatItem } from '../../shared/types.js';
-import { askedQuestion, lastReplyText } from './questions.js';
+import { QuestionCache, askedQuestion, lastReplyText } from './questions.js';
 
 // Ends of real replies from running sessions (Oct 2026), labelled by whether they wait on you.
 const ASKING: [string, RegExp][] = [
@@ -58,5 +58,23 @@ describe('lastReplyText', () => {
   it('is the newest reply of the current turn, and none once you have written', () => {
     expect(lastReplyText([item('user', 'hi'), item('assistant', 'A'), item('tool', '')])).toBe('A');
     expect(lastReplyText([item('assistant', 'A'), item('user', 'next')])).toBeNull();
+  });
+});
+
+describe('QuestionCache', () => {
+  it("never shows the last turn's question once you have replied, while the new reply is read", async () => {
+    // A provider without a transcript file (read in full): its last reply asks something.
+    const cache = new QuestionCache(() => ({ providerId: 'shell', resumeJson: null, cwd: '/' }));
+    const internals = cache as unknown as {
+      entries: Map<number, { version: string; turn: string; question: string | null }>;
+    };
+    internals.entries.set(1, { version: 'v1', turn: 't1', question: 'Do you want X?' });
+    expect(cache.get(1, 'v1', 't1')).toBe('Do you want X?');
+    // Only redraws since: the same turn, still shown while it re-checks.
+    expect(cache.get(1, 'v2', 't1')).toBe('Do you want X?');
+    // You replied (a new turn): nothing until the new reply is read.
+    expect(cache.get(1, 'v3', 't2')).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(cache.get(1, 'v3', 't2')).toBeNull(); // No transcript for a shell: nothing asked.
   });
 });

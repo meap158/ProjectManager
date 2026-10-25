@@ -166,6 +166,8 @@ export const WORK_STATUS_LABELS: Record<WorkStatus, string> = {
 export function workStatus(w: WorkItem, now: number): WorkStatus {
   if (w.kind === 'session') {
     const activity = sessionActivity(w.item, now);
+    // Idle with a reply that asks you something needs you, as in the inbox (PM-298).
+    if (activity === 'idle' && w.item.question) return 'input';
     return activity === 'stopped' ? 'ended' : activity;
   }
   const r = w.item;
@@ -201,6 +203,7 @@ export function stateLabel(
     if (s.usageLimit) return { text: 'Usage limit', tone: 'attention' };
     const activity = sessionActivity(s, now);
     if (activity === 'input') return { text: ACTIVITY_LABEL.input, tone: 'attention', activity };
+    if (activity === 'idle' && s.question) return { text: 'Asks you', tone: 'attention', activity };
     if (activity !== 'stopped') return { text: ACTIVITY_LABEL[activity], tone: 'good', activity };
     if (s.status === 'dead') return { text: 'crashed', tone: 'bad' };
     return { text: s.status === 'killed' ? 'stopped' : 'ended' };
