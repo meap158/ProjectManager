@@ -4,7 +4,7 @@ import { CARD_STATUS_LABELS, type ProjectDetail } from '../../../shared/types';
 import { api } from '../api';
 import { remoteWebUrl } from '../gitRemote';
 import { rememberProjectTab } from '../projectTabs';
-import { PullRequestsPanel } from '../components/PullRequestsPanel';
+import { PullRequestsPanel, prefetchPullRequests } from '../components/PullRequestsPanel';
 import { AgentsPanel } from '../components/AgentsPanel';
 import { BoardIcon, FoldersIcon, GridIcon, TerminalIcon } from '../components/icons';
 import { ProjectFiles } from '../components/ProjectFiles';
@@ -205,6 +205,13 @@ export function ProjectPage() {
               className="tab"
               aria-selected={tab === t}
               onClick={() => setParams(t === 'overview' ? {} : { tab: t })}
+              // GitHub takes about a second: start while the pointer is on its way (PM-294).
+              {...(t === 'pull-requests'
+                ? {
+                    onPointerEnter: () => prefetchPullRequests(id),
+                    onFocus: () => prefetchPullRequests(id),
+                  }
+                : {})}
             >
               {TAB_ICONS[t]}
               {TAB_LABELS[t]}

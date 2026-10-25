@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PullRequest, PullRequestsResult } from '../../../shared/types';
 import { api } from '../api';
-import { PullRequestsPanel } from './PullRequestsPanel';
+import { PullRequestsPanel, prefetchPullRequests } from './PullRequestsPanel';
 
 vi.mock('../api', () => ({
   api: {
@@ -212,4 +212,16 @@ it('shows the last list at once on a revisit, marked as updating, until GitHub a
   await screen.findByText(/Second answer/);
   expect(screen.queryByText(/First answer/)).toBeNull();
   expect(screen.queryByText(/updating…/)).toBeNull();
+});
+
+it('opens on a list prefetched when the tab was hovered, without asking GitHub again', async () => {
+  vi.mocked(api.pullRequests).mockResolvedValueOnce(result([pr({ title: 'Prefetched' })]));
+  prefetchPullRequests(888);
+  prefetchPullRequests(888); // Hovering again soon after does not ask again.
+  await waitFor(() => expect(api.pullRequests).toHaveBeenCalledTimes(1));
+  await new Promise((r) => setTimeout(r, 0));
+  render(<PullRequestsPanel projectId={888} visible />);
+  expect(await screen.findByText(/Prefetched/)).toBeTruthy();
+  expect(screen.queryByText(/updating…/)).toBeNull();
+  expect(api.pullRequests).toHaveBeenCalledTimes(1);
 });

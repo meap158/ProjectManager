@@ -74,6 +74,27 @@ function reviewText(decision: string | null): string {
  */
 const lastLists = new Map<string, PullRequestsResult>();
 const listKey = (projectId: number, state: PullRequestListState) => `${projectId}:${state}`;
+/** When each open list was last prefetched (PM-294). */
+const prefetched = new Map<string, number>();
+/** A prefetched list this fresh is shown as it is when the tab opens, without asking again. */
+const PREFETCH_FRESH_MS = 10_000;
+
+/**
+ * Starts loading a project's open pull requests before its tab is opened (on hover or focus of
+ * the tab), so GitHub's second is spent while the pointer travels. At most once a minute per
+ * project; a request still in flight when the tab opens is shared, not repeated.
+ */
+export function prefetchPullRequests(projectId: number): void {
+  const key = listKey(projectId, 'open');
+  if (Date.now() - (prefetched.get(key) ?? 0) < 60_000) return;
+  prefetched.set(key, Date.now());
+  void api.pullRequests(projectId, 'open').then(
+    (result) => {
+      if (!result.error) lastLists.set(key, result);
+    },
+    () => undefined,
+  );
+}
 
 export function PullRequestsPanel({ projectId, visible }: { projectId: number; visible: boolean }) {
   const [listState, setListState] = useState<PullRequestListState>('open');
@@ -91,23 +112,28 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
   const [expanded, setExpanded] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const load = useCallback(
-    (state: PullRequestListState) =>
-      api
-        .pullRequests(projectId, state)
+    (state: PullRequestListState, acceptPrefetched = false) => {
+      const k = listKey(projectId, state);
+      const ready = lastLists.get(k);
+      // Opening the tab right after a prefetch finished: that list is current.
+      const request =
+        acceptPrefetched && ready && Date.now() - (prefetched.get(k) ?? 0) < PREFETCH_FRESH_MS
+          ? Promise.resolve(ready)
+          : api.pullRequests(projectId, state);
+      return request
         .then(
           (next) => {
-            const k = listKey(projectId, state);
             if (!next.error) lastLists.set(k, next);
             setLoaded({ key: k, value: next });
             setError(null);
           },
           (e: Error) => {
-            const k = listKey(projectId, state);
             setLoaded({ key: k, value: lastLists.get(k) ?? null });
             setError(e.message);
           },
         )
-        .finally(() => setBusy(false)),
+        .finally(() => setBusy(false));
+    },
     [projectId],
   );
   // Each list is fetched once per visit, even when a remembered one is already showing.
@@ -115,7 +141,7 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
   useEffect(() => {
     if (!visible || fetched.current === key) return;
     fetched.current = key;
-    void load(listState);
+    void load(listState, true);
   }, [visible, key, listState, load]);
 
   // Every action refreshes the list, so rows show GitHub's state rather than a guess. Errors

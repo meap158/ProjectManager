@@ -153,6 +153,11 @@ A steady 60 fps either way; the cap removes the two dropped frames. The Board al
     button reading "Loading…", and the fresh list replaces it when it arrives; actions always
     reload and failed loads aren't remembered. Leaving the project and coming back: 1,027 ms ->
     12 ms to a list on screen.
+14. **Pull requests: prefetched on intent.** Hovering or focusing the tab starts the request
+    (at most once a minute per project), and the click shares it instead of starting another.
+    Measured on first opens: GitHub answering in 1,169 ms with a 300 ms hover, the list was on
+    screen 863 ms after the click; answering in 1,908 ms after a 1.8 s pause on the tab, 97 ms.
+    A list prefetched in the last 10 s is shown as it is, without a second call.
 
 ### Checked and left as is
 
