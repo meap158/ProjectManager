@@ -128,8 +128,13 @@
   border: 0;
   background: transparent;
   box-shadow: none;
+  color: var(--text-3);
   width: 26px;
   height: 26px;
+}
+.preview-app-actions:hover,
+.preview-app-actions:focus-visible {
+  color: var(--text);
 }
 .preview-app-actions[aria-expanded='true'] {
   background: var(--accent-soft);
