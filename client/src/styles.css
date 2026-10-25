@@ -2688,15 +2688,18 @@ kbd {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* Edge columns: the value aligns with its bar's outer edge instead of centring past the plot. */
-.colchart-col:first-of-type .colchart-val {
-  left: 0;
-  transform: none;
-}
-.colchart-col:last-of-type .colchart-val {
-  left: auto;
-  right: 0;
-  transform: none;
+/* Edge columns, narrow screens only: the value aligns with its bar's outer edge instead of
+   centring past the plot. With room (a 12-column chart on a desktop) it stays centred on its bar. */
+@media (max-width: 640px) {
+  .colchart-col:first-of-type .colchart-val {
+    left: 0;
+    transform: none;
+  }
+  .colchart-col:last-of-type .colchart-val {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
 }
 .colchart-x {
   grid-column: 2;
