@@ -64,7 +64,7 @@ export function viaCloudflare(headers: IncomingMessage['headers']): boolean {
 const HARDENING = {
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
-  'referrer-policy': 'no-referrer',
+  'referrer-policy': 'same-origin',
   'cache-control': 'no-store',
 };
 
@@ -417,7 +417,7 @@ export class RemoteAccess {
       }
     }
     res.setHeader('x-frame-options', 'DENY');
-    res.setHeader('referrer-policy', 'no-referrer');
+    res.setHeader('referrer-policy', 'same-origin');
     setHeader(req, 'host', new URL(this.localOrigin()).host);
     setHeader(req, LAN_HEADER, '1'); // Same restrictions as a LAN device, and the same bundle.
     setHeader(req, REMOTE_HEADER, '1');

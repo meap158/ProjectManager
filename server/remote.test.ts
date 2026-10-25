@@ -307,4 +307,15 @@ describe('remote access gate', () => {
     expect(viaCloudflare({ 'cf-access-jwt-assertion': 'x' })).toBe(true);
     expect(viaCloudflare({ host: 'localhost:5180', accept: '*/*' })).toBe(false);
   });
+
+  it('sends the origin on its own form posts (same-origin policy) and still refuses a "null" one', async () => {
+    const t = await setup();
+    // A browser omits the Origin only under "no-referrer"; "same-origin" keeps it for the code form.
+    const page = await send(t.port, 'GET', '/', t.headers());
+    expect(page.headers['referrer-policy']).toBe('same-origin');
+    const ok = await t.form(t.codeAt(0), { origin: `https://${hostname}` });
+    expect(ok.status).toBe(303);
+    const sent = await t.form(t.codeAt(1), { origin: 'null' });
+    expect(sent.status).toBe(403);
+  });
 });
