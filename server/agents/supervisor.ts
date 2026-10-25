@@ -86,6 +86,7 @@ import { applyCpuBudget, getCpuBudget } from './cpuBudget.js';
 import { CpuGovernor, type GovernorStats } from './cpuGovernor.js';
 import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
 import { claudeSessionId, codexResumeId, codexSessionFor, staleClaudeResume } from './usage.js';
+import { slimResumeImages } from './codexImages.js';
 import {
   antigravityConversationFor,
   claudeCustomTitle,
@@ -2286,6 +2287,25 @@ export class AgentSupervisor {
           409,
           'Cannot identify the exact Codex conversation. Restart cancelled instead of starting a different conversation.',
         );
+      // A resumed Codex re-sends its whole history at once; too many screenshots in it and the
+      // connection is dropped on every retry (PM-276). Slim them first; best effort.
+      if (isRelaunch && resume && row.provider_id === 'codex') {
+        const id = codexResumeId(resume);
+        const accounts = this.codexAccounts;
+        const rollout =
+          id && accounts ? accounts.findRollout(env.CODEX_HOME ?? accounts.runHome(), id) : null;
+        if (rollout) {
+          try {
+            const slimmed = await slimResumeImages(rollout);
+            if (slimmed)
+              note(
+                `Kept the newest ${slimmed.images - slimmed.removed} of ${slimmed.images} screenshots in the resumed conversation (${Math.round(slimmed.bytesBefore / 1048576)} MB was too large to send); the originals stay in its saved history`,
+              );
+          } catch (e) {
+            console.error('[agents] slimming Codex screenshots failed:', (e as Error).message);
+          }
+        }
+      }
       // Grok saves a pinned conversation only once it has one; until then start fresh.
       if (isRelaunch && resume && row.provider_id === 'grok') {
         const id = claudeSessionId(resume);
