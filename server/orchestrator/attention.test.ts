@@ -4,6 +4,7 @@ import { listCards } from '../store.js';
 import type { ProjectSummary } from '../../shared/types.js';
 import {
   dismissProjectAttention,
+  datedTitle,
   followProjectAttention,
   pruneProjectAttention,
 } from './attention.js';
@@ -30,6 +31,7 @@ it('deduplicates attention across ticks and allows a new episode after resolutio
     expect(listCards(db, 1)).toHaveLength(1);
     expect(listCards(db, 1)[0]?.description).toContain('Uncommitted');
     expect(listCards(db, 1)[0]?.description).toContain('Unpushed');
+    expect(listCards(db, 1)[0]?.title).toBe(datedTitle('Follow up Dashboard attention'));
     db.prepare("UPDATE cards SET status = 'done' WHERE id = ?").run(id!);
     expect(followProjectAttention(db, project)).toBeNull();
     followProjectAttention(db, { ...project, git: null });
@@ -125,4 +127,10 @@ it('keeps missing-folder attention in review instead of dispatching into an inva
   } finally {
     db.close();
   }
+});
+
+it('dates a recurring card title in a fixed, readable format', () => {
+  expect(datedTitle('Follow up Dashboard attention', new Date(2026, 9, 26, 23, 30))).toBe(
+    'Follow up Dashboard attention — Oct 26, 2026',
+  );
 });

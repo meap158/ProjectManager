@@ -94,6 +94,16 @@ export function pruneProjectAttention(db: Db, project: ProjectSummary): PruneAtt
   return { prunedCardId: null, cleared: false, remainingKinds: kinds };
 }
 
+/**
+ * A recurring card's title with the day it was opened ("… — Oct 26, 2026"), so follow-ups from
+ * different days are told apart at a glance. Local date, fixed English format (not the system
+ * locale), so titles read the same on every machine.
+ */
+export function datedTitle(base: string, now = new Date()): string {
+  const day = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${base} — ${day}`;
+}
+
 /** One card per attention episode, including across restarts and multiple masters. */
 export function followProjectAttention(db: Db, project: ProjectSummary): number | null {
   const key = `orchestrator-attention:${project.id}`;
@@ -119,7 +129,7 @@ export function followProjectAttention(db: Db, project: ProjectSummary): number 
     return null;
   }
   const card = insertCard(db, project.id, {
-    title: 'Follow up Dashboard attention',
+    title: datedTitle('Follow up Dashboard attention'),
     description: `Inspect the pending Dashboard items for ${project.name}:\n${items.map((i) => `- ${i.kind}: ${i.detail}`).join('\n')}\n\nRecheck current state before acting. Preserve existing work and coordinate with any active workers. Diagnose and validate pending changes, identify what remains, and report concrete next steps. Do not discard changes or force-push. Commit or push only when the project instructions authorize it and validation succeeds.`,
     status: project.missing ? 'review' : 'todo',
   });
