@@ -21,7 +21,7 @@ import {
   BookmarkIcon,
   GlobeIcon,
   RefreshIcon,
-  StopIcon,
+  MoreIcon,
 } from './icons';
 import { LoadingMark } from './LoadingMark';
 import { PreviewTabStrip, type StripTab, type TabCommand } from './PreviewTabStrip';
@@ -331,11 +331,17 @@ export function PreviewWorkspace() {
   const [projects, setProjects] = useState<Map<number, string>>(new Map());
   const [sort, setSortState] = useState<PreviewSort>(readSort);
   const [chosenOpen, setChosenOpen] = useState(readOpen);
-  const [appMenu, setAppMenu] = useState<{ app: LocalApp; x: number; y: number } | null>(null);
+  const [appMenu, setAppMenu] = useState<{
+    app: LocalApp;
+    x: number;
+    y: number;
+    anchor?: HTMLElement;
+  } | null>(null);
   const [listNote, setListNote] = useState<{ text: string; error: boolean } | null>(null);
   const navigate = useNavigate();
   const addressRef = useRef<HTMLInputElement>(null);
   const focusAddress = useRef(false);
+  const closeAppMenu = useCallback(() => setAppMenu(null), []);
 
   const load = useCallback((fresh = false) => {
     setRefreshing(true);
@@ -541,7 +547,7 @@ export function PreviewWorkspace() {
     }
     await load(true);
   };
-  /** The row's own Stop button holds the confirmation; the menu opens it. */
+  /** The hidden confirmation trigger is invoked only after choosing Stop from the menu. */
   const askStop = (app: LocalApp) =>
     document
       .querySelector<HTMLButtonElement>(`[data-stop="${app.port}:${app.pid}"] button`)
@@ -603,6 +609,7 @@ export function PreviewWorkspace() {
         )}
         {appMenu && (
           <ContextMenu
+            anchor={appMenu.anchor}
             x={appMenu.x}
             y={appMenu.y}
             label={`${appName(appMenu.app, projects)} actions`}
@@ -612,7 +619,7 @@ export function PreviewWorkspace() {
               setAppMenu(null);
               runAppCommand(command, app);
             }}
-            onClose={() => setAppMenu(null)}
+            onClose={closeAppMenu}
           />
         )}
         {groups.map((group) => (
@@ -650,11 +657,44 @@ export function PreviewWorkspace() {
                           <span className="preview-row-sub">:{app.port}</span>
                         </span>
                       </button>
-                      <span className="preview-stop" data-stop={`${app.port}:${app.pid}`}>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-icon preview-app-actions"
+                        aria-label={`Actions for ${name}`}
+                        title={`Actions for ${name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={
+                          appMenu?.app.port === app.port && appMenu.app.pid === app.pid
+                        }
+                        data-app-actions={`${app.port}:${app.pid}`}
+                        onClick={(event) => {
+                          if (appMenu?.app.port === app.port && appMenu.app.pid === app.pid) {
+                            setAppMenu(null);
+                            return;
+                          }
+                          const box = event.currentTarget.getBoundingClientRect();
+                          setAppMenu({
+                            app,
+                            x: box.right,
+                            y: box.bottom,
+                            anchor: event.currentTarget,
+                          });
+                        }}
+                      >
+                        <MoreIcon size={15} />
+                      </button>
+                      <span data-stop={`${app.port}:${app.pid}`}>
                         <ConfirmDelete
                           small
+                          hideTrigger
+                          onDismiss={() =>
+                            document
+                              .querySelector<HTMLButtonElement>(
+                                `[data-app-actions="${app.port}:${app.pid}"]`,
+                              )
+                              ?.focus()
+                          }
                           label={`Stop ${name}`}
-                          icon={<StopIcon size={12} />}
                           heading={`Stop ${name}?`}
                           message={`This ends process ${app.pid}${app.name ? ` (${app.name})` : ''} listening on port ${app.port}, and the processes it started. Unsaved work in that app is lost.${app.command ? ` Command: ${app.command}` : ''}`}
                           confirmLabel="Stop process"

@@ -50,6 +50,7 @@ export function ContextMenu<T extends string>({
   label,
   onPick,
   onClose,
+  anchor,
 }: {
   x: number;
   y: number;
@@ -58,6 +59,8 @@ export function ContextMenu<T extends string>({
   label: string;
   onPick: (command: T) => void;
   onClose: () => void;
+  /** A menu-button trigger can toggle the menu without being treated as an outside click. */
+  anchor?: HTMLElement;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // Measured before paint (dividers and touch-sized rows change its height), then placed.
@@ -78,7 +81,8 @@ export function ContextMenu<T extends string>({
     ref.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
     // Anything outside the menu closes it.
     const away = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) onClose();
+      if (!ref.current?.contains(event.target as Node) && !anchor?.contains(event.target as Node))
+        onClose();
     };
     document.addEventListener('pointerdown', away, true);
     window.addEventListener('blur', onClose);
@@ -88,7 +92,7 @@ export function ContextMenu<T extends string>({
       window.removeEventListener('blur', onClose);
       window.removeEventListener('resize', onClose);
     };
-  }, [onClose]);
+  }, [onClose, anchor]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const buttons = [
@@ -100,8 +104,10 @@ export function ContextMenu<T extends string>({
     else if (event.key === 'ArrowUp') focus(at - 1);
     else if (event.key === 'Home') focus(0);
     else if (event.key === 'End') focus(buttons.length - 1);
-    else if (event.key === 'Escape' || event.key === 'Tab') onClose();
-    else return;
+    else if (event.key === 'Escape' || event.key === 'Tab') {
+      anchor?.focus();
+      onClose();
+    } else return;
     event.preventDefault();
     event.stopPropagation();
   };

@@ -35,6 +35,8 @@ export function ConfirmDelete({
   small,
   disabled,
   shortcut,
+  hideTrigger = false,
+  onDismiss,
 }: {
   /** The keyboard shortcut that opens this confirmation (PM-244): shown in the tooltip only. */
   shortcut?: ShortcutId;
@@ -50,6 +52,9 @@ export function ConfirmDelete({
   icon?: ReactNode;
   small?: boolean;
   disabled?: boolean;
+  /** For a confirmation opened from an action menu rather than its own visible button. */
+  hideTrigger?: boolean;
+  onDismiss?: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -72,6 +77,7 @@ export function ConfirmDelete({
     <>
       <button
         type="button"
+        style={hideTrigger ? { display: 'none' } : undefined}
         className={`btn ${tone === 'primary' ? 'btn-primary' : 'btn-danger'}${text ? '' : ' btn-icon'}${small ? ' btn-sm' : ''}`}
         disabled={disabled}
         title={title}
@@ -91,7 +97,10 @@ export function ConfirmDelete({
         aria-labelledby={headingId}
         // React passes a nested dialog's close up the component tree: cancelling here must not
         // also close a dialog this one was opened from (e.g. the card dialog).
-        onClose={(e) => e.stopPropagation()}
+        onClose={(e) => {
+          e.stopPropagation();
+          onDismiss?.();
+        }}
       >
         <div className="dialog-body">
           <h2 id={headingId}>{heading}</h2>

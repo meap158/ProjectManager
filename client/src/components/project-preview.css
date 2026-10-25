@@ -122,30 +122,25 @@
   display: flex;
   align-items: center;
 }
-/* Stop (PM-270): shown on hover or keyboard focus within the row, always on touch screens. */
-.preview-stop {
+/* A discoverable, neutral menu keeps consequential actions out of the row itself. */
+.preview-app-actions {
   flex: none;
-  opacity: 0;
-}
-.preview-app:hover .preview-stop,
-.preview-app:focus-within .preview-stop {
-  opacity: 1;
-}
-.preview-stop .btn-icon {
   width: 26px;
   height: 26px;
+}
+.preview-app-actions[aria-expanded='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .preview-list-note {
   margin: 0 0 6px;
   font-size: 12.5px;
 }
 @media (pointer: coarse) {
-  .preview-stop {
-    opacity: 1;
-  }
-  .preview-stop .btn-icon {
-    width: 40px;
-    height: 40px;
+  .preview-app-actions {
+    width: 44px;
+    height: 44px;
   }
 }
 .preview-row {
