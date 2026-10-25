@@ -125,12 +125,14 @@
 /* A discoverable, neutral menu keeps consequential actions out of the row itself. */
 .preview-app-actions {
   flex: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   width: 26px;
   height: 26px;
 }
 .preview-app-actions[aria-expanded='true'] {
   background: var(--accent-soft);
-  border-color: var(--accent);
   color: var(--accent);
 }
 .preview-list-note {

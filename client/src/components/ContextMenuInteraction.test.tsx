@@ -7,7 +7,7 @@ it('keeps its trigger available for toggling and restores focus after keyboard d
   const anchor = document.createElement('button');
   document.body.append(anchor);
   const close = vi.fn();
-  const { unmount } = render(
+  const { unmount, container } = render(
     <ContextMenu
       x={10}
       y={10}
@@ -19,6 +19,8 @@ it('keeps its trigger available for toggling and restores focus after keyboard d
     />,
   );
   expect(document.activeElement).toBe(screen.getByRole('menuitem'));
+  expect(container.querySelector('[role="menu"]')).toBeNull();
+  expect(screen.getByRole('menu').parentElement).toBe(document.body);
   fireEvent.pointerDown(anchor);
   expect(close).not.toHaveBeenCalled();
   fireEvent.keyDown(screen.getByRole('menuitem'), { key: 'Escape' });

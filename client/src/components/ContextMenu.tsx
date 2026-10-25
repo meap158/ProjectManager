@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import './context-menu.css';
 
 // A context menu (PM-259): the real menu pattern (role="menu", arrow keys, Home and End, Escape,
@@ -112,7 +113,7 @@ export function ContextMenu<T extends string>({
     event.stopPropagation();
   };
 
-  return (
+  return createPortal(
     <div
       ref={ref}
       className="ctx-menu"
@@ -140,6 +141,7 @@ export function ContextMenu<T extends string>({
           </button>
         </div>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
