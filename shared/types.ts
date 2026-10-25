@@ -840,3 +840,28 @@ export interface FolderListing {
 export type FilePreview =
   | { kind: 'text'; path: string; size: number; mtime: string; content: string }
   | { kind: 'image' | 'binary' | 'too-large'; path: string; size: number; mtime: string };
+
+/** An app listening on this computer's loopback (Preview page, PM-253). */
+export interface LocalApp {
+  port: number;
+  pid: number;
+  /** Executable name, like "node.exe". */
+  name: string;
+  /** Trimmed command line; empty when it can't be read. */
+  command: string;
+  /** The tracked project whose folder the command line mentions, else null. */
+  projectId: number | null;
+  /** The page's <title>, when the app answers with HTML on "/". */
+  title: string | null;
+  /** Where its icon is, as a path on that app ("/favicon.ico"); null when it has none. */
+  icon: string | null;
+}
+
+/** A saved Preview address: a dev server the owner opens often. */
+export interface PreviewLaunch {
+  name: string;
+  port: number;
+  /** Starts with "/". */
+  path: string;
+  projectId: number | null;
+}

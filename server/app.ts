@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { BOARD_PRESETS, CARD_STATUSES, SHORTCUT_IDS } from '../shared/types.js';
 import type {
   DirectoryEntry,
+  PreviewLaunch,
   DirectoryListing,
   LanStatus,
   RemoteConfig,
@@ -19,6 +20,9 @@ import type {
 import { LAN_HEADER } from './lan.js';
 import { FileAccessError, listFolder, previewFile, readRaw } from './projectFiles.js';
 import { REMOTE_HEADER } from './remote.js';
+import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
+import { config } from './config.js';
+import { detectLocalApps } from './localPorts.js';
 import type { Db } from './db.js';
 import { Scanner } from './scanner.js';
 import * as store from './store.js';
@@ -102,6 +106,20 @@ const updateCardBody = z
   .partial();
 
 class HttpError extends Error {
+const PREVIEW_LAUNCHES_KEY = 'preview-quick-launches';
+const previewLaunchesBody = z.object({
+  launches: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(60),
+        port: z.number().int().min(1024).max(65535),
+        path: z.string().max(200).startsWith('/').default('/'),
+        projectId: z.number().int().positive().nullable().default(null),
+      }),
+    )
+    .max(30),
+});
+
   constructor(
     public status: 400 | 403 | 404 | 409 | 413 | 415,
     message: string,
@@ -202,12 +220,58 @@ export function createApp(
     return c.json({ error: 'Internal server error' }, 500);
   });
 
+    if (error instanceof PreviewError) return c.json({ error: error.message }, error.status);
   app.get('/health', (c) => c.json({ ok: true }));
 
   registerAgentRoutes(app, db, supervisor);
   const orchestrator = new OrchestratorService(db, supervisor, options.dataDir ?? null, () =>
     store.listProjects(db, (id) => scanner.state(id)),
   );
+  // Built-in browser (PM-253, docs/BUILT-IN-BROWSER.md): a read-only view of a dev server on this
+  // computer's loopback. This app's own ports are refused so the proxy can't loop into the API.
+  const previewHandler = async (c: Context) => {
+    const hostPort = Number(/:(\d+)$/.exec(c.req.header('host') ?? '')?.[1]);
+    const blocked = new Set<number>([config.port, config.port + 100]);
+    for (const own of [hostPort, options.lan?.status().port, options.remote?.status().port]) {
+      if (own) blocked.add(own);
+    }
+    const port = parsePreviewPort(c.req.param('port') ?? '', blocked);
+    const prefix = `/api/preview/${port}`;
+    const rest = new URL(c.req.url).pathname.slice(prefix.length) || '/';
+    console.log('[preview]', port, rest);
+    return proxyPreview(c.req.raw, port, rest, new URL(c.req.url).search);
+  };
+  // Apps listening on this computer (detected) and the saved quick launches (PM-253).
+  const ownPorts = () => {
+    const blocked = new Set<number>([config.port, config.port + 100]);
+    for (const own of [options.lan?.status().port, options.remote?.status().port]) {
+      if (own) blocked.add(own);
+    }
+    return blocked;
+  };
+  app.get('/local-apps', async (c) => {
+    const projects = store
+      .listProjects(db, (id) => scanner.state(id))
+      .map((p) => ({
+        id: p.id,
+        path: p.path,
+      }));
+    return c.json({
+      apps: await detectLocalApps(projects, ownPorts(), c.req.query('fresh') === '1'),
+    });
+  });
+  app.get('/preview-launches', (c) =>
+    c.json({ launches: store.getSetting<PreviewLaunch[]>(db, PREVIEW_LAUNCHES_KEY) ?? [] }),
+  );
+  app.put('/preview-launches', async (c) => {
+    const parsed = previewLaunchesBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) throw new HttpError(400, 'Quick launches need a name and a port');
+    store.setSetting(db, PREVIEW_LAUNCHES_KEY, parsed.data.launches);
+    return c.json({ launches: parsed.data.launches });
+  });
+  app.get('/preview/:port', previewHandler);
+  app.get('/preview/:port/*', previewHandler);
+
   const orchestratorChat = new OrchestratorChat(
     db,
     supervisor,
