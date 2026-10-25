@@ -6432,13 +6432,17 @@ span.path-link:hover .path-icon {
   position: relative;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--text-2);
+  color: var(--text-3);
   cursor: pointer;
+}
+.inbox-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .inbox-button:hover,
 .inbox-button[aria-expanded='true'] {
@@ -6450,17 +6454,19 @@ span.path-link:hover .path-icon {
 }
 .inbox-count {
   position: absolute;
-  top: 1px;
-  right: 0;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: 10.5px;
+  top: -4px;
+  right: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border: 2px solid var(--bg);
+  box-sizing: content-box;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--danger-text);
+  font-size: 10px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 15px;
   text-align: center;
 }
 .inbox-panel {
@@ -6538,8 +6544,8 @@ span.path-link:hover .path-icon {
 }
 @media (pointer: coarse) {
   .inbox-button {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
   .inbox-row {
     min-height: 44px;

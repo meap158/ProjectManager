@@ -293,12 +293,15 @@ export function InfoIcon(props: IconProps) {
   );
 }
 
-/** Inbox tray. */
-export function InboxIcon(props: IconProps) {
+/** Notification bell; filled when something is waiting. */
+export function BellIcon({ filled = false, ...props }: IconProps & { filled?: boolean }) {
   return (
     <Base {...props}>
-      <path d="M2 9.5l1.7-5.2a1 1 0 0 1 .95-.7h6.7a1 1 0 0 1 .95.7L14 9.5V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />
-      <path d="M2 9.5h3.5a2.5 2.5 0 0 0 5 0H14" />
+      <path
+        d="M3.5 11.5h9l-1-1.6V6.8a3.5 3.5 0 0 0-7 0v3.1z"
+        fill={filled ? 'currentColor' : 'none'}
+      />
+      <path d="M6.5 13.4a1.6 1.6 0 0 0 3 0" />
     </Base>
   );
 }

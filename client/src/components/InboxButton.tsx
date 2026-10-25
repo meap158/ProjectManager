@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import type { AgentSession, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { serialPoll } from '../lib/serialPoll';
-import { InboxIcon } from './icons';
+import { BellIcon } from './icons';
 
 // One place for everything waiting on you, from any page (PM-261): the sessions that are asking you
 // to choose or approve something, and the ones whose restart failed. It reads the session list the
@@ -79,8 +79,12 @@ export function InboxButton() {
         title="What is waiting for you"
         onClick={() => setOpen((v) => !v)}
       >
-        <InboxIcon />
-        {count > 0 && <span className="inbox-count">{count}</span>}
+        <BellIcon size={18} filled={count > 0} />
+        {count > 0 && (
+          <span className="inbox-count" aria-hidden="true">
+            {count > 9 ? '9+' : count}
+          </span>
+        )}
       </button>
       {open && (
         <div className="inbox-panel" role="dialog" aria-label="Inbox">
