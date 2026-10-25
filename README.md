@@ -4,16 +4,9 @@
 
 # ProjectManager
 
-The launcher now recovers unexpected server exits automatically, with at most five restarts
-in five minutes. Ctrl+C still stops it. Crash output is saved in `data/server-output.log`
-(one rotated backup); fatal server stacks also go to `data/server-crashes.log`.
-After updating launcher code, start `npm run launch` again to load the recovery behavior.
-
-**Persistent AI coding sessions. Every project. Any screen.**<br>
-Organize Claude Code, Codex and other agent CLIs across your projects in one browser workspace.
-Keep sessions running when you close a tab, resume conversations after restarts, and work from
-your phone with compact controls and real terminal access. Your projects and session data stay
-on your computer.
+**A local-first workspace for running Claude Code, Codex, Grok, Antigravity and OpenCode across all your projects, with a self-updating Kanban board.**<br>
+Persistent AI coding agent sessions. Every project. Any screen, including your phone.
+Your projects and session data stay on your computer.
 
 [![Node 22.13+](https://img.shields.io/badge/node-22.13%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -23,8 +16,10 @@ on your computer.
 
 [Quick start](#-quick-start) ·
 [Features](#-what-you-get) ·
-[How cards move](#-the-board-keeps-itself-up-to-date) ·
+[Board](#-the-board-keeps-itself-up-to-date) ·
 [AI agents](#-ai-agents-in-real-terminals) ·
+[Phone](#-use-it-from-your-phone) ·
+[Roadmap](#-roadmap) ·
 [FAQ](#-faq)
 
 <br>
@@ -39,14 +34,9 @@ on your computer.
 
 </div>
 
-Saved Codex and Claude logins are available under **Settings > Agent CLIs > Accounts**.
-Codex supports automatic account rotation at usage limits; Claude switching is manual.
-Switching a Codex account works like `codex login` with it: the saved login becomes the default
-`~/.codex/auth.json` (the one it replaces is saved back first), and running Codex CLIs restart
-and resume their conversations.
-In Agents, **Batch CLI choices** applies detected attention-menu choices across sessions
-and reports queued or failed input. Ended task sessions can be disposed of after confirmation;
-their board cards remain available.
+**ProjectManager** is an open-source, self-hosted AI coding agent manager and project dashboard.
+Add your project folders, start agent CLI sessions in real terminals, link them to board cards, and
+watch commits and pull requests move the cards for you. No account, no cloud, no tracking.
 
 ---
 
@@ -59,18 +49,17 @@ their board cards remain available.
 ### 🔄 Sessions that survive restarts
 
 Close the browser without stopping your agents. A separate session host keeps CLI processes
-running across quick server restarts. Closing ProjectManager, even abruptly, ends them within
-about 20 seconds; on the next start (or after a reboot) active sessions relaunch with their saved
-conversation when the CLI supports resume; terminal history stays with the session.
+running across quick server restarts, and active sessions relaunch with their saved conversation
+when the CLI supports resume. Terminal history stays with the session.
 
 </td>
 <td width="50%" valign="top">
 
 ### 🤖 Multiple agents, multiple projects
 
-Run **Claude Code, Codex, Grok, Antigravity and OpenCode** in the same workspace. Mix agent
-harnesses across projects, name your sessions, and switch between a filtered list and up to
-four terminal panes. See which sessions are working, idle, or waiting for your input.
+Run **Claude Code, Codex, Grok, Antigravity and OpenCode** side by side. Name sessions, filter
+the list, or watch up to four terminal panes. See which sessions are working, idle or waiting
+for you, and switch saved Codex and Claude accounts under **Settings > Agent CLIs**.
 
 </td>
 </tr>
@@ -79,22 +68,18 @@ four terminal panes. See which sessions are working, idle, or waiting for your i
 
 ### 🗂️ Projects and tasks in context
 
-Link sessions to board cards and hand work directly to an agent. Commits and pull requests move
-cards through **Backlog → To do → In progress → Review → Done**. Code stats, languages, disk
-usage and commit charts keep the bigger picture close to the work. The **Pull requests** tab
-works like GitHub's own page: see checks, reviews and whether a PR can merge, then merge (merge
-commit, squash or rebase, or auto-merge), update the branch, mark ready or draft, close or
-reopen, and delete or restore the branch. With several accounts in `gh auth login`, it acts as
-the one that owns the repo (shown as "Acting as …", and changeable per project).
+Link sessions to board cards and hand work to an agent. Commits and pull requests move cards
+through **Backlog → To do → In progress → Review → Done**. Code stats, languages, disk usage and
+commit heatmaps sit beside the work. The **Pull requests** tab shows checks, reviews and
+mergeability, and merges, updates or closes PRs as the repo owner's `gh` account.
 
 </td>
 <td width="50%" valign="top">
 
 ### 📱 Works on your phone too
 
-Use the same workspace from your phone: compact session rows, collapsible tools and filters,
-touch scrolling, fullscreen terminals and image uploads. Turn on LAN access and scan the host's
-QR code to pair your browser once, then return to your sessions from anywhere on the same network.
+Compact session rows, collapsible filters, touch scrolling, fullscreen terminals, image uploads
+and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone once.
 
 </td>
 </tr>
@@ -132,6 +117,20 @@ QR code to pair your browser once, then return to your sessions from anywhere on
 
 </details>
 
+### Recent quality-of-life updates
+
+- **Account switching:** saved Codex and Claude logins, optional Antigravity accounts, live usage
+  and reset times, and automatic Codex rotation at usage limits.
+- **Batch CLI choices:** answer matching attention menus across many sessions at once, with
+  queued and failed input reported.
+- **Keyboard shortcuts:** act on the selected session without leaving the keyboard, assignable in
+  Settings.
+- **Orchestrators:** a chat that follows up on tasks and moves cards across all your projects.
+- **Remote access (opt-in):** reach your workspace through your own Cloudflare Tunnel with
+  Cloudflare Access, an email allowlist and an authenticator code.
+- **Searchable dropdowns, grouped Settings tabs, chat view for OpenCode and Grok** and a more
+  stable launcher that restarts the server after an unexpected exit.
+
 ---
 
 ## 🚀 Quick start
@@ -146,12 +145,11 @@ npm run launch
 ```
 
 Your browser opens on **http://localhost:5180**. Click **＋ Add**, pick a project folder, then
-open **Agents → + New** to start a CLI session. Add more sessions across projects and agent
-harnesses as needed; use **List** to find them or **Panes** to work side by side.
+open **Agents → + New** to start a CLI session.
 
 > [!TIP]
 > On Windows you can double-click **`launch.bat`**. On macOS or Linux run **`./launch.sh`**.
-> If port 5180 is busy, the launcher simply picks the next free one and tells you which.
+> If port 5180 is busy, the launcher picks the next free one and tells you which.
 
 <details>
 <summary><b>Optional extras</b></summary>
@@ -182,6 +180,9 @@ Copy `.env.example` to `.env` and change what you need:
 | `SCC`      | (unset)     | Set to `off` to ignore an installed `scc`                 |
 
 </details>
+
+The launcher restarts the server after an unexpected exit (at most five times in five minutes).
+Ctrl+C still stops it. Crash output goes to `data/server-output.log` and `data/server-crashes.log`.
 
 ---
 
@@ -224,22 +225,33 @@ stateDiagram-v2
 
 </details>
 
+<details>
+<summary><b>Linking cards to GitHub issues</b></summary>
+<br>
+
+In a card editor, set **GitHub issue** to its full `https://github.com/owner/repo/issues/123`
+URL. The link is saved separately from the PM key; issue #123 is never assumed to be PM-123.
+
+- A commit referencing the issue moves the card to **In progress**.
+- A closing commit on a feature branch moves it to **Review**; on the default branch, to **Done**.
+- An open pull request moves linked work to **Review**. A merged PR completes it only when GitHub
+  reports the issue as a closing reference. Closed, unmerged PRs never complete cards.
+- Short `#123` references resolve only against the project's origin repository; full URLs and
+  `owner/repo#123` are explicit.
+
+Use `Closes https://github.com/owner/repo/issues/123` in a PR body to close the issue on merge
+([GitHub docs](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)).
+This reads commit and PR evidence into the local board; dragging a local card does not write
+GitHub Project status.
+
+</details>
+
 ---
 
 ## 🤖 AI agents in real terminals
 
-The **Agents** workspace brings your existing coding CLIs together. Start several sessions for
-one project, or work across several projects and harnesses at once. Every row and pane keeps
-the session's project and linked card visible, so you can switch tasks without losing context.
-
-Session records, terminal logs and conversation identifiers are saved locally. Closing a tab
-leaves the process running. The separate session host keeps CLI processes alive during quick
-server restarts, and the app reconnects to them. Closing ProjectManager (or a crash) ends every
-session's process within about 20 seconds, so no agent keeps running unseen. If the host is
-unavailable, sessions run in the server and end with it. Active sessions relaunch when
-ProjectManager starts again, using the CLI's saved conversation when available. Closing or
-rebooting interrupts the current process; resuming the conversation does not preserve an
-in-flight command.
+The **Agents** workspace brings your existing coding CLIs together. Every row and pane shows the
+session's project and linked card, so you can switch tasks without losing context.
 
 | Agent       | Exact resume after a restart | Name syncs with `/rename` |
 | ----------- | :--------------------------: | :-----------------------: |
@@ -249,100 +261,80 @@ in-flight command.
 | OpenCode    |              ✅              |             —             |
 | Antigravity |              ✅              |             —             |
 
-- **Hand over a card.** Open a card, choose an agent, and it starts in a terminal with the task
-  already typed in. The card moves to **In progress**.
-- **One-shot runs.** Or let the agent run on its own. When it finishes you see what changed
-  ("3 files changed · 1 commit") and choose **Accept** or **Reject**.
-- **Pick how much it may do:** Read-only, Edit files, or Full access. Set it once for every agent,
-  or per agent.
-- **Watch them side by side.** The **Agents** page shows 1 to 4 terminals at once.
-  <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>4</kbd> jumps between panes, <kbd>Alt</kbd>+<kbd>Enter</kbd>
-  makes one full size, and you can drag panes to swap them.
-- **Pick up after a restart.** Hosted sessions keep running across server restarts; after a reboot,
-  active sessions relaunch when ProjectManager starts again.
-  **Start** reopens a stopped session using its saved conversation when the CLI can resume it.
-  Terminal history stays available alongside the resumed session.
-- **Keep many sessions organized.** Filter the list by project, agent, activity, or task name;
-  rename sessions to distinguish several conversations with the same agent.
-- **Working or waiting?** Each session shows whether the agent is busy or waiting for you.
-- **Plan usage at a glance.** See how much of your 5-hour and weekly limits you've used, and
-  when they reset (Claude Code and Codex).
+- **Hand over a card.** Choose an agent and it starts in a terminal with the task typed in. The
+  card moves to **In progress**.
+- **One-shot runs.** Let the agent run on its own; when it finishes you see what changed and
+  choose **Accept** or **Reject**.
+- **Pick how much it may do:** Read-only, Edit files, or Full access, globally or per agent.
+- **Watch them side by side.** 1 to 4 terminals at once. <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>4</kbd>
+  jumps between panes, <kbd>Alt</kbd>+<kbd>Enter</kbd> maximizes one, and you can drag panes to swap them.
+- **Stay organized.** Filter by project, agent, activity or task name, and rename sessions.
+- **Plan usage at a glance.** See your 5-hour and weekly limits and when they reset (Claude Code
+  and Codex).
+- **Batch CLI choices.** Apply detected attention-menu choices across sessions.
+
+Closing ProjectManager (or a crash) ends every session's process within about 20 seconds, so no
+agent keeps running unseen. Resuming a conversation does not preserve an in-flight command.
 
 <details>
 <summary><b>Board tools for agents</b> (MCP)</summary>
 <br>
 
 Claude Code, Codex and OpenCode sessions started from ProjectManager get a small built-in tool
-set, so the agent can read its card and keep it up to date: `get_card`, `update_status`,
-`add_note`, `read_image` and `create_card`. An agent can only touch the card it was given. A
-session started without a card can create one card for its own work. Every change is recorded in
-the card's history.
+set so the agent can read its card and keep it up to date: `get_card`, `update_status`,
+`add_note`, `read_image` and `create_card`. An agent can only touch the card it was given. Every
+change is recorded in the card's history.
 
-Agents are also told to commit in small steps and mention their card (`Refs PM-12` while working,
-`Fixes PM-12` when done), so the board follows their work.
-
-Your CLI config files are never edited: the tools are passed to each process when it starts.
+Agents are told to commit in small steps and mention their card (`Refs PM-12` while working,
+`Fixes PM-12` when done), so the board follows their work. Your CLI config files are never
+edited: the tools are passed to each process when it starts.
 
 </details>
 
-### Keyboard shortcuts
+<details>
+<summary><b>Keyboard shortcuts</b></summary>
+<br>
 
 In the Agents list, select a session and act on it from the keyboard, even while its terminal
 has focus: <kbd>Ctrl</kbd>+<kbd>↓</kbd>/<kbd>↑</kbd> moves the selection, and
 <kbd>Alt</kbd>+<kbd>Shift</kbd> with <kbd>P</kbd> shows it in a pane, <kbd>C</kbd> continues it,
 <kbd>R</kbd> restarts it, <kbd>S</kbd> stops or starts it and <kbd>D</kbd> deletes it (after
-asking). Each button's tooltip shows its key. Change or clear any of them under **Settings >
-Keyboard shortcuts**; a key already in use is refused. Keys without Ctrl, Alt or ⌘ only work
-outside text fields and terminals, so they never get in the way of typing.
+asking). Change any of them under **Settings > Keyboard shortcuts**.
+
+</details>
 
 ---
 
 ## 📱 Use it from your phone
 
 1. Open **Settings → LAN access** and turn it on.
-2. Scan the QR code shown on the host. It opens the address and fills in the current pairing code.
+2. Scan the QR code shown on the host. It opens the address and fills in the pairing code.
 3. Tap **Sign in**. Use the same address and browser on future visits to stay signed in.
 
-You can also open an address manually and type the **4-character code**. Prefer the computer's
-`.local` address when your phone resolves it: it survives changes to the host's network IP.
-
-Mobile controls prioritize the work: **+ New** opens session setup, **⋯** opens workspace tools,
-and **Filters** reveals extra list filters. Session actions live under **⋯** in a terminal
-header; maximize a pane to give the CLI more screen space.
+You can also type the **4-character code** manually. Prefer the computer's `.local` address when
+your phone resolves it: it survives changes to the host's network IP. Mobile chat is available
+for Claude Code, Codex, OpenCode and Grok sessions; CLI view shows the original screen.
 
 <details>
 <summary><b>How it stays safe</b></summary>
 <br>
 
-- LAN access is **off by default**. It uses the same port as the app (e.g. `192.168.1.20:5180`)
-  but is a separate, guarded listener: the normal app still only listens on your own computer.
+- LAN access is **off by default**. It is a separate, guarded listener on the app's port; the
+  normal app still only listens on your own computer.
 - A code works **once**, expires after **10 minutes**, and is thrown away after 5 wrong tries.
-  Too many wrong tries from one device are blocked for a while.
 - Each browser gets its own HttpOnly device cookie and appears in Settings, where you can sign it
-  out. Tokens survive restarts; the cookie is renewed on page visits. Returning through links or
-  a QR scan sends the cookie too. Clearing cookies, using private browsing, changing browsers or
-  changing from an IP address to a hostname requires pairing that browser/address again.
-- QR codes are generated locally and contain the same short-lived, single-use pairing code.
-  The code is carried in the URL fragment and removed from the address after opening it.
-- Only this computer's own network addresses are accepted, and a phone can't change the LAN
-  settings.
+  out. Clearing cookies, private browsing or switching browser or address means pairing again.
+- Only this computer's own network addresses are accepted, and a phone can't change LAN settings.
 - On Windows, allow Node.js on **Private** networks when asked.
 
-Tip: add it to your home screen (Safari: Share → Add to Home Screen) to open it like an app.
-
-Phones load fast even while the app runs in development: they get a production build of the
-app (about 30 gzipped files, under 0.5 MB), made in the background the first time a phone opens
-a page and again after the code changes. Until it is ready, phones get the development files
-gzipped and without source maps. The build goes in `data/lan-client`.
-
-In an agent's terminal, **swipe** to scroll back through the terminal, including the prompt and
-footer in normal terminal mode. Touch updates are combined per display frame; full-screen
-terminal apps keep their own scroll handling. To show an agent a picture, open **⋯** in the
-terminal's header, tap the image icon and pick a photo or take one: it's sent to the computer and its path is pasted
-in, so Claude Code attaches it as `[Image #1]`. On a computer you can also paste or drop an image
-onto a terminal.
+Add it to your home screen (Safari: Share → Add to Home Screen) to open it like an app. Phones
+get a small production build of the app, made in the background the first time one connects.
 
 </details>
+
+For access away from home, the opt-in Cloudflare Tunnel mode puts Cloudflare Access (MFA), an
+email allowlist and an authenticator code in front of it: see
+[docs/REMOTE-ACCESS.md](docs/REMOTE-ACCESS.md).
 
 ---
 
@@ -353,6 +345,27 @@ onto a terminal.
 - ProjectManager **never changes files in your projects**. Only agents you start yourself do that.
   Removing a project from the list only stops tracking it.
 - The server only listens on `127.0.0.1` and refuses requests from other websites.
+
+---
+
+## 🗺️ Roadmap
+
+**Next**
+
+- [ ] Project file tree with a VS Code-style explorer and Markdown/HTML preview (PM-252)
+- [ ] Built-in browser to reach `localhost` apps, also when working remotely (PM-253)
+- [ ] More agent options, such as OpenCode with other models and Cline (PM-212)
+- [ ] Ideas from terminal agent managers: agent state, inbox, hooks (PM-211)
+
+**Recently shipped**
+
+- [x] Account switching with live usage for Codex, Claude and Antigravity
+- [x] Orchestrator chat across all projects
+- [x] Remote access through Cloudflare Tunnel
+- [x] Pull requests tab with merge, update and branch actions
+- [x] Mobile chat view and phone-friendly Agents workspace
+
+Have an idea? [Open an issue](https://github.com/meap158/ProjectManager/issues).
 
 ---
 
@@ -374,47 +387,40 @@ No. Stats, the activity heatmaps, the dashboard and the self-updating board all 
 <details>
 <summary><b>Can I use Claude Code and Codex together?</b></summary>
 <br>
-Yes. Each session runs its own CLI in its project's folder. Mix supported agents, keep several
-conversations per project, and use List or Panes to move between them. ProjectManager uses your
-installed CLIs and their existing provider authentication.
+Yes. Each session runs its own CLI in its project's folder, using your installed CLIs and their
+existing authentication. Mix agents and keep several conversations per project.
 </details>
 
 <details>
 <summary><b>Will many agents at once overload my computer?</b></summary>
 <br>
-Settings → CPU budget caps how many CPU threads all agents may use together, including the
-builds and tests they start (three quarters by default), and runs them at below-normal priority
-so the rest of your computer stays responsive. Card runs also share a machine-wide limit: up to a
-quarter of your CPU threads (at most 4) run at once, and the rest wait as queued and start on
-their own when one finishes. Project scans run two at a time. Closing ProjectManager ends every
-agent it started.
+Settings → CPU budget caps how many CPU threads all agents may use together (three quarters by
+default) and runs them at below-normal priority. Card runs also share a machine-wide limit of up
+to a quarter of your CPU threads (at most 4); the rest queue and start on their own.
 </details>
 
 <details>
 <summary><b>What happens if I close the browser or restart my computer?</b></summary>
 <br>
-Closing the browser leaves sessions running. The separate session host also keeps CLI processes
-running across quick server restarts. Closing ProjectManager (even by closing its window or
-ending it in Task Manager) or rebooting ends them, then active sessions relaunch when
-ProjectManager starts again. Saved conversation identifiers let supported CLIs resume their
-conversation; terminal history is retained locally.
+Closing the browser leaves sessions running. Closing ProjectManager or rebooting ends them, then
+active sessions relaunch when ProjectManager starts again, resuming the saved conversation where
+the CLI supports it. Terminal history is retained locally.
 </details>
 
 <details>
 <summary><b>Which languages does it count?</b></summary>
 <br>
 Dozens, from TypeScript, Python, Go and Rust to Kotlin, C#, shaders and config files. Generated
-folders like <code>node_modules</code> and build output are left out of the code stats but still
-show up in the size on disk.
+folders like <code>node_modules</code> and build output are left out of code stats but still show
+up in size on disk.
 </details>
 
 <details>
 <summary><b>Can it run on a server for my team?</b></summary>
 <br>
 It's built for one person on one computer. It can read your folders and run agents, so don't put
-it on the internet directly. LAN access is for your own devices at home. If you need it from
-elsewhere, the opt-in Cloudflare Tunnel mode puts Cloudflare Access (MFA), an email list and an
-authenticator code in front of it: see [docs/REMOTE-ACCESS.md](docs/REMOTE-ACCESS.md).
+it on the internet directly. Use LAN access for your own devices, or the opt-in Cloudflare Tunnel
+mode described above.
 </details>
 
 ---
@@ -433,7 +439,7 @@ Built with **Node.js** (built-in `node:sqlite`, so no database to set up), **Hon
 
 Contributors and AI agents: start with [CLAUDE.md](CLAUDE.md) (how we work),
 [DESIGN.md](DESIGN.md) (how it looks) and [AGENT_HANDOVER.md](AGENT_HANDOVER.md) (where things
-stand).
+stand, local only).
 
 ---
 
@@ -451,32 +457,4 @@ stand).
 <sub>Made for people running several coding agents across several projects. ⭐ Star it if it helps you keep your work together.</sub>
 </div>
 
-### Linking board cards to GitHub issues
-
-In a card editor, set **GitHub issue** to its full `https://github.com/owner/repo/issues/123`
-URL. The link is saved separately from the PM card key; issue #123 is never assumed to be PM-123.
-New default agent prompts include both identities and instructions for referencing them.
-
-On a project refresh, linked issue references in commits move cards to In progress.
-Closing commits on feature branches move them to Review; closing commits on the default
-branch move them to Done. An open pull request moves linked work to Review. A merged PR
-completes linked issue work only when GitHub reports that issue as a closing reference.
-A non-closing mention stays in Review. Closed, unmerged PRs do not complete cards.
-Short `#123` references resolve only against the project's origin repository; full issue
-URLs and `owner/repo#123` references are explicit. Existing PM references continue working.
-
-Use `Closes https://github.com/owner/repo/issues/123` in a PR body when it fully resolves the
-issue. GitHub closes linked issues when the PR merges into the default branch:
-[GitHub linking documentation](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue).
-GitHub issue state is Open/Closed, whereas a Project's status field holds workflow columns.
-This integration reads commit/PR evidence into the local board; dragging local cards does
-not yet write GitHub Project status or request reviewers. Those remote actions need a
-separate opt-in synchronization policy with durable retries and visible failures.
-
-Mobile chat is available for Claude Code, Codex, OpenCode and Grok PTY sessions. OpenCode/Grok chat reads the exact saved conversation, including tool results. Use CLI view for the original screen and full history. New server code requires restarting ProjectManager; this update does not restart running agents.
-
-PM-192: shared Dropdown menus with 8+ options include a searchable list; short lists retain their existing presentation (callers may override searchable). Filtering matches label, description and hint without accent/case sensitivity, never changes selection by itself, and reports no matches. Keyboard arrows/Enter/Escape and multi-select remain supported. Search fits inside the existing viewport-bounded popup with a 32px input row and 16px text to avoid iPhone focus zoom. Closed trigger sizing and the 360px menu cap remain unchanged; no permanent extra control or enlarged field. Browser/Windows runtime initialization failed with "failed to write kernel assets ... os error 3", so physical phone visual QA remains outstanding.
-
-PM-197: saved Codex profiles default to inclusion in automatic switching. With global automatic switching enabled, each saved row offers Include in automatic switching; opt-outs persist in the profile registry and nextUnused skips them, including unknown/exhausted fallback selection. Manual switching stays available. Turning global automation off hides the row controls without resetting eligibility. No saved credential content is returned or changed. Focused account regressions: 22 passing, covering persistence/defaults/rotation/manual selection and conditional UI. Server reload is needed for the new eligibility endpoint and selection behavior.
-
-PM-196: Claude saved profiles now display usage from credential-specific statusline snapshots instead of hardcoded unsupported. Statusline identity is a SHA256 fingerprint pinned at session launch; no token is included in settings command or returned payload. A session started before identity pinning continues only the global cache. Only matching snapshots populate account rows; missing shows not_loaded, expired snapshot stale. Selected profile reads live refreshed credential. Requires server reload and newly started/relaunched Claude session reply to collect attributable usage; no login switched or model call made. Validation:23 focused account/UI/limits tests passed, then14 attribution/limits tests after launch-pin hardening; types/lint/diff checks pass. Existing unrelated shared changes and scratch test preserved.
+<!-- Topics: ai-coding-agents, claude-code, codex, kanban, project-management, local-first, terminal, mcp, developer-tools -->
