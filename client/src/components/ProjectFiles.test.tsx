@@ -57,6 +57,7 @@ const {
   fileMenuItems,
   projectLinkHref,
   rewriteRelative,
+  buildFrameDocument,
 } = await import('./ProjectFiles');
 
 // Files tab (PM-252): the tree loads folders as they open, works from the keyboard, and opens
@@ -121,11 +122,12 @@ describe('ProjectFiles', () => {
     expect(screen.getByLabelText('File contents').textContent).toMatch(/^1line one2line two$/);
   });
 
-  it('renders Markdown in a frame that cannot run scripts, with a Source view', async () => {
+  it('renders Markdown in a sandboxed frame that only runs its own click handler, with a Source view', async () => {
     show('?tab=files&file=README.md');
     const frame = (await screen.findByTitle('Preview of README.md')) as HTMLIFrameElement;
-    expect(frame.getAttribute('sandbox')).not.toContain('allow-scripts');
+    // Scripts are allowed only so the one nonce'd click script can run; the CSP blocks any other.
     expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(frame.getAttribute('srcdoc')).toMatch(/script-src 'nonce-[a-z0-9]+'/);
     expect(frame.getAttribute('srcdoc')).toContain('<h1>Title</h1>');
     expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'");
     fireEvent.click(screen.getByRole('button', { name: 'Source' }));
@@ -142,10 +144,51 @@ describe('ProjectFiles', () => {
       document.documentElement.dataset.theme = 'dark';
       window.dispatchEvent(new Event('pm-theme')); // What applyTheme does after switching.
     });
-    const doc = () => screen.getByTitle('Preview of README.md').getAttribute('srcdoc');
+    // The new page loads in the frame behind the visible one and takes over when it has loaded, so
+    // look at every frame for it.
+    const doc = () =>
+      [...document.querySelectorAll('iframe.files-frame')]
+        .map((f) => f.getAttribute('srcdoc'))
+        .find((d) => d?.includes('color-scheme:dark')) ?? '';
     await waitFor(() => expect(doc()).toContain('scrollbar-color'));
     expect(doc()).toContain('color-scheme:dark');
     delete document.documentElement.dataset.theme;
+  });
+
+  it('switches to another file when the frame asks, without a page load', async () => {
+    show('?tab=files&file=README.md');
+    const frame = (await screen.findByTitle('Preview of README.md')) as HTMLIFrameElement;
+    // A message from some other window is ignored.
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data: { pmFile: 'docs/guide.ts' } }));
+    });
+    expect(screen.queryByTitle('Preview of docs/guide.ts')).toBeNull();
+    // From the frame itself it opens that file, and the tree opens docs and marks the row.
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { pmFile: 'docs/guide.ts' },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(await screen.findByText('line two')).toBeTruthy();
+    const tree = screen.getByRole('tree');
+    await waitFor(() =>
+      expect(tree.querySelector('[data-path="docs/guide.ts"]')?.getAttribute('aria-selected')).toBe(
+        'true',
+      ),
+    );
+    // A path that leaves the project, or is not a string, does nothing.
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { pmFile: '../../etc/x' },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(screen.queryByText('../../etc/x')).toBeNull();
   });
 
   it('opens the folders above a linked file', async () => {
@@ -354,6 +397,43 @@ describe('pinned items', () => {
   });
 });
 
+describe('the preview frame document', () => {
+  const head =
+    '<meta http-equiv="Content-Security-Policy" content="script-src nonce-abc"><base target="_blank">';
+  const hostile =
+    '<script>alert(1)</script><html><head><title>t</title></head><body onload="x()">' +
+    '<a href="javascript:alert(2)" onclick="y()">bad</a><img src=a.png onerror="z()">' +
+    '<a href="x.md" data-pm-file="x.md">ok</a><script src="//evil.test/s.js"></script></body></html>';
+
+  it('strips scripts, handlers and javascript: addresses, then puts the policy first', () => {
+    const out = buildFrameDocument(hostile, head, 'abc');
+    const parsed = new DOMParser().parseFromString(out, 'text/html');
+    // Only our script remains, and it carries the nonce.
+    const scripts = [...parsed.querySelectorAll('script')];
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]!.getAttribute('nonce')).toBe('abc');
+    expect(out).not.toMatch(/alert\(/);
+    expect(out).not.toMatch(/\sonload=|\sonclick=|\sonerror=/i);
+    expect(out).not.toContain('javascript:');
+    expect(out).not.toContain('evil.test');
+    // The policy is the first thing in the head, ahead of the page's own head content.
+    expect(parsed.head.firstElementChild?.getAttribute('http-equiv')).toBe(
+      'Content-Security-Policy',
+    );
+    expect(out.startsWith('<!doctype html>')).toBe(true);
+    // The page's own markup is kept.
+    expect(parsed.querySelector('a[data-pm-file="x.md"]')?.textContent).toBe('ok');
+    expect(parsed.title).toBe('t');
+  });
+
+  it('copes with a fragment that has no head or body', () => {
+    const out = buildFrameDocument('<p>hello</p><script>boom()</script>', head, 'n1');
+    expect(out).toContain('<p>hello</p>');
+    expect(out).not.toContain('boom()');
+    expect(out).toContain('nonce="n1"');
+  });
+});
+
 describe('links inside a previewed page', () => {
   const base = 'http://localhost:5180/projects/17';
   it("turns a relative link into this app's address for that file", () => {
@@ -398,11 +478,13 @@ describe('links inside a previewed page', () => {
     );
     expect(out).toContain('href="https://x.test/"');
     // Project links go to the top window (this tab); a web link keeps the page's own target.
-    expect(out).toMatch(/<a href="[^"]*owner-desk\.html" target="_top">desk<\/a>/);
+    expect(out).toMatch(
+      /<a href="[^"]*owner-desk\.html" target="_top" data-pm-file="References\/owner-pages\/owner-desk\.html">desk<\/a>/,
+    );
     expect(out).toContain('<a href="https://x.test/">web</a>');
     expect(
       rewriteRelative('<a target="_blank" href="../x.md">x</a>', '/r?p=', 'a/b', base),
-    ).toMatch(/<a href="[^"]*" target="_top">x<\/a>/);
+    ).toMatch(/<a href="[^"]*" target="_top" data-pm-file="a\/x\.md">x<\/a>/);
     expect(rewriteRelative('<a href="../../../x">x</a>', '/r?p=', 'a', base)).toContain(
       '<a href="#" target="_self">',
     );

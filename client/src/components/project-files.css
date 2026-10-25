@@ -307,6 +307,37 @@
   font: inherit;
   background: none;
 }
+/* Two frames stack here; the new page loads behind the visible one and they swap when it is ready,
+   so changing file never shows a blank frame. */
+.files-frames {
+  position: relative;
+}
+.files-frame.is-behind {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.files-frames .files-frame,
+.files-image,
+.files-stale {
+  transition: opacity 0.15s ease;
+}
+/* The next file is on its way: the one shown stays, a little dimmed. */
+.files-frames.is-loading .files-frame:not(.is-behind),
+.files-image.is-loading,
+.files-stale {
+  opacity: 0.6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .files-frames .files-frame,
+  .files-image,
+  .files-stale {
+    transition: none;
+  }
+}
 .files-frame {
   display: block;
   width: 100%;

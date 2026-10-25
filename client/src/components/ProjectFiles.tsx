@@ -243,6 +243,43 @@ export function ProjectFiles({
     return out;
   }, [folders, expanded, filter]);
 
+  // The tree follows the open file, however it was reached (a link in a preview, the address, a
+  // pin): its folders open, the row is marked, and it scrolls into view without taking focus.
+  const foldersRef = useRef(folders);
+  useEffect(() => {
+    foldersRef.current = folders;
+  }, [folders]);
+  // State that follows a prop is set while rendering (React's pattern), not from an effect.
+  const [syncedFile, setSyncedFile] = useState(openFile);
+  if (openFile !== syncedFile) {
+    setSyncedFile(openFile);
+    if (openFile) {
+      const above = foldersTo(openFile);
+      setExpanded((prev) =>
+        above.every((p) => prev.has(p)) ? prev : new Set([...prev, ...above]),
+      );
+      setFocused(openFile);
+    }
+  }
+  // The first file's folders are loaded by the mount effect above; this reads the ones a later
+  // file needs.
+  const filesChanged = useRef(false);
+  useEffect(() => {
+    if (!filesChanged.current) {
+      filesChanged.current = true;
+      return;
+    }
+    if (!openFile) return;
+    for (const p of foldersTo(openFile)) if (!foldersRef.current.has(p)) void load(p);
+  }, [openFile, load]);
+  useEffect(() => {
+    if (!openFile) return;
+    const row = [...(treeRef.current?.querySelectorAll<HTMLElement>('[data-path]') ?? [])].find(
+      (el) => el.dataset.path === openFile,
+    );
+    row?.scrollIntoView?.({ block: 'nearest' });
+  }, [openFile, rows]);
+
   const toggle = (entry: TreeEntry, open?: boolean) => {
     const next = new Set(expanded);
     const willOpen = open ?? !next.has(entry.path);
@@ -282,6 +319,22 @@ export function ProjectFiles({
       setParams((q) => ({ ...Object.fromEntries(q), tab: 'files', file: pin.path }));
     focusRow(pin.path);
   };
+
+  /**
+   * A link inside a previewed page: show that file as if it had been picked in the tree. The path
+   * comes from a frame, so it is re-checked: a relative path inside the project, nothing else.
+   */
+  const openFromPreview = useCallback(
+    (raw: string) => {
+      const target = joinPath('', raw);
+      if (!target) return;
+      setFocused(target);
+      setParams((q) => ({ ...Object.fromEntries(q), tab: 'files', file: target }), {
+        replace: false,
+      });
+    },
+    [setParams],
+  );
 
   const togglePins = () => {
     setPinsOpen((open) => {
@@ -762,9 +815,9 @@ export function ProjectFiles({
       <section className="panel files-preview-panel" aria-label="Preview">
         {openFile ? (
           <FileView
-            key={openFile}
             projectId={projectId}
             path={openFile}
+            onOpenFile={openFromPreview}
             onClose={() =>
               setParams((p) => {
                 const next = Object.fromEntries(p);
@@ -838,24 +891,43 @@ function FileView({
   projectId,
   path,
   onClose,
+  onOpenFile,
 }: {
   projectId: number;
   path: string;
   onClose: () => void;
+  onOpenFile: (path: string) => void;
 }) {
-  const [preview, setPreview] = useState<FilePreview | null>(null);
+  // The file on screen stays until the next one has arrived (no blank pane, no skeleton flash),
+  // dimmed a little meanwhile; the header already names the new file.
+  const [shown, setShown] = useState<{ path: string; preview: FilePreview } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const ext = extOf(path);
-  const [rendered, setRendered] = useState(RENDERED.has(ext));
+  const [rendered, setRendered] = useState(RENDERED.has(extOf(path)));
   const [copied, setCopied] = useState(false);
+  const preview = shown?.preview ?? null;
+  const shownPath = shown?.path ?? path;
+  const ext = extOf(shownPath);
+  const loading = shown !== null && shown.path !== path && !error;
 
   useEffect(() => {
-    api.projectFile(projectId, path).then(setPreview, (e: Error) => setError(e.message));
+    let current = true;
+    api.projectFile(projectId, path).then(
+      (next) => {
+        if (!current) return;
+        setError(null);
+        setShown({ path, preview: next });
+        setRendered(RENDERED.has(extOf(path)));
+      },
+      (e: Error) => current && setError(e.message),
+    );
+    return () => {
+      current = false;
+    };
   }, [projectId, path]);
 
   const crumbs = path.split('/');
   return (
-    <div className="files-view">
+    <div className="files-view" aria-busy={loading}>
       <div className="files-view-head">
         <button type="button" className="btn btn-sm files-back" onClick={onClose}>
           ← Files
@@ -903,8 +975,8 @@ function FileView({
       ) : !preview ? (
         <div className="skeleton" style={{ height: 240 }} />
       ) : preview.kind === 'image' ? (
-        <div className="files-image">
-          <img src={api.projectRawUrl(projectId, path)} alt={path} />
+        <div className={`files-image${loading ? ' is-loading' : ''}`}>
+          <img src={api.projectRawUrl(projectId, shownPath)} alt={shownPath} />
         </div>
       ) : preview.kind === 'binary' ? (
         <p className="faint files-empty">Binary file: no preview.</p>
@@ -915,12 +987,16 @@ function FileView({
       ) : preview.kind !== 'text' ? null : rendered && RENDERED.has(ext) ? (
         <RenderedFrame
           projectId={projectId}
-          path={path}
+          path={shownPath}
           source={preview.content}
           markdown={ext !== 'html' && ext !== 'htm'}
+          onOpenFile={onOpenFile}
+          loading={loading}
         />
       ) : (
-        <SourceView content={preview.content} />
+        <div className={loading ? 'files-stale' : undefined}>
+          <SourceView content={preview.content} />
+        </div>
       )}
     </div>
   );
@@ -972,14 +1048,21 @@ function RenderedFrame({
   path,
   source,
   markdown,
+  onOpenFile,
+  loading = false,
 }: {
   projectId: number;
   path: string;
   source: string;
   markdown: boolean;
+  /** A link in the page to another project file: open it in place, like a click in the tree. */
+  onOpenFile: (path: string) => void;
+  /** The next file is being fetched: this one stays, dimmed. */
+  loading?: boolean;
 }) {
   const theme = useDocumentTheme();
   const doc = useMemo(() => {
+    const nonce = newNonce();
     const dir = parentOf(path);
     const rawBase = `${location.origin}/api/projects/${projectId}/raw?path=`;
     const css = getComputedStyle(document.documentElement);
@@ -991,9 +1074,10 @@ function RenderedFrame({
       theme === 'dark'
         ? `<style>html{scrollbar-color:${color('--border-strong', '#3d3d39')} ${color('--surface', '#1a1a19')}}</style>`
         : '';
-    const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${location.origin} https: data:; style-src 'unsafe-inline' ${location.origin}; font-src ${location.origin} data:"><base target="_blank">${scrollbar}`;
+    const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; img-src ${location.origin} https: data:; style-src 'unsafe-inline' ${location.origin}; font-src ${location.origin} data:"><base target="_blank">${scrollbar}`;
     const pageBase = `${location.origin}/projects/${projectId}`;
-    if (!markdown) return withBase(source, head, rawBase, dir, pageBase);
+    if (!markdown)
+      return buildFrameDocument(rewriteRelative(source, rawBase, dir, pageBase), head, nonce);
     const body = marked.parse(source, { async: false, gfm: true }) as string;
     // Rendered Markdown wears the app's colours throughout, so its form controls match too.
     const style = `<style>
@@ -1006,16 +1090,83 @@ function RenderedFrame({
       blockquote{margin:0;padding-left:12px;border-left:3px solid ${color('--border', '#ddd')};color:${color('--text-2', '#555')}}
       h1,h2{border-bottom:1px solid ${color('--border', '#ddd')};padding-bottom:4px}
     </style>`;
-    return `<!doctype html><html><head>${head}${style}</head><body>${rewriteRelative(body, rawBase, dir, pageBase)}</body></html>`;
+    return buildFrameDocument(
+      `<!doctype html><html><head></head><body>${rewriteRelative(body, rawBase, dir, pageBase)}</body></html>`,
+      `${head}${style}`,
+      nonce,
+    );
   }, [projectId, path, source, markdown, theme]);
+
+  // Two stacked frames, swapped when the new page has loaded. A frame that is reloaded in place
+  // blanks (white, in the dark app) for a moment; this way the old page stays up until the new
+  // one is painted, then they trade places. Setting state while rendering is React's pattern for
+  // state derived from props.
+  const [slots, setSlots] = useState<[string, string]>(() => [doc, '']);
+  const [active, setActive] = useState<0 | 1>(0);
+  const [waiting, setWaiting] = useState<0 | 1 | null>(null);
+  if (slots[active] === doc) {
+    if (waiting !== null) setWaiting(null);
+  } else if (waiting === null || slots[waiting] !== doc) {
+    const next: 0 | 1 = active === 0 ? 1 : 0;
+    setSlots((prev) => (next === 0 ? [doc, prev[1]] : [prev[0], doc]));
+    setWaiting(next);
+  }
+  const activeSlot = useRef<0 | 1>(0);
+  useEffect(() => {
+    activeSlot.current = active;
+  }, [active]);
+  // A frame that never reports a load (blocked, very slow) must not leave the old page up for good.
+  useEffect(() => {
+    if (waiting === null) return;
+    const timer = setTimeout(() => {
+      setActive(waiting);
+      setWaiting(null);
+    }, FRAME_SWAP_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
+  const frameRefs = [useRef<HTMLIFrameElement>(null), useRef<HTMLIFrameElement>(null)];
+  // Only the visible frame may ask to open a file, and only with a path string (re-checked by the
+  // caller). The frame's origin is opaque, so the source window is the identity check.
+  useEffect(() => {
+    const onMessage = (event: globalThis.MessageEvent) => {
+      if (event.source !== frameRefs[activeSlot.current]?.current?.contentWindow) return;
+      const data = event.data as { pmFile?: unknown } | null;
+      if (data && typeof data.pmFile === 'string') onOpenFile(data.pmFile);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+    // The refs are stable objects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onOpenFile]);
+
   return (
-    <iframe
-      className="files-frame"
-      title={`Preview of ${path}`}
-      sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
-      referrerPolicy="no-referrer"
-      srcDoc={doc}
-    />
+    <div className={`files-frames${loading ? ' is-loading' : ''}`}>
+      {([0, 1] as const).map((slot) =>
+        slots[slot] ? (
+          <iframe
+            key={slot}
+            ref={frameRefs[slot]}
+            className={`files-frame${slot === active ? '' : ' is-behind'}`}
+            title={slot === active ? `Preview of ${path}` : undefined}
+            aria-hidden={slot === active ? undefined : true}
+            tabIndex={slot === active ? 0 : -1}
+            // allow-scripts is only for the one nonce'd click script (the CSP blocks every other
+            // script, and the markup has them stripped); there is no allow-same-origin, so the page
+            // has no access to this app. Top navigation on a click stays as the fallback if the
+            // script cannot run.
+            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
+            referrerPolicy="no-referrer"
+            srcDoc={slots[slot]}
+            onLoad={() => {
+              if (slot === waiting) {
+                setActive(slot);
+                setWaiting(null);
+              }
+            }}
+          />
+        ) : null,
+      )}
+    </div>
   );
 }
 
@@ -1040,7 +1191,10 @@ export function joinPath(dir: string, rel: string): string | null {
  * landed on /projects/<name>. Web addresses, mail links and in-page "#" links are left alone
  * (null); a path that would leave the project becomes an inert "#"; a folder opens the Files tab.
  */
-export function projectLinkHref(url: string, dir: string, pageBase: string): string | null {
+function resolveProjectLink(
+  url: string,
+  dir: string,
+): { target: string | null; folder: boolean } | null {
   const value = url.trim();
   if (
     !value ||
@@ -1051,9 +1205,15 @@ export function projectLinkHref(url: string, dir: string, pageBase: string): str
     return null;
   const path = value.split(/[?#]/)[0]!;
   const target = path.startsWith('/') ? joinPath('', path.slice(1)) : joinPath(dir, path);
-  if (target === null) return '#';
-  if (target === '' || path.endsWith('/')) return `${pageBase}?tab=files`;
-  return `${pageBase}?tab=files&file=${encodeURIComponent(target)}`;
+  return { target, folder: target === '' || path.endsWith('/') };
+}
+
+export function projectLinkHref(url: string, dir: string, pageBase: string): string | null {
+  const link = resolveProjectLink(url, dir);
+  if (!link) return null;
+  if (link.target === null) return '#';
+  if (link.folder) return `${pageBase}?tab=files`;
+  return `${pageBase}?tab=files&file=${encodeURIComponent(link.target)}`;
 }
 
 export function rewriteRelative(
@@ -1084,11 +1244,16 @@ export function rewriteRelative(
         const found = /\shref="([^"]*)"/i.exec(tag);
         const href = found ? projectLinkHref(found[1]!, dir, pageBase) : null;
         if (href === null) return tag;
+        const link = resolveProjectLink(found![1]!, dir);
+        // data-pm-file lets the frame's click handler ask the app to switch files in place.
+        const file =
+          link && link.target && !link.folder ? ` data-pm-file="${escapeAttr(link.target)}"` : '';
         const base = tag
           .replace(/\shref="[^"]*"/i, ` href="${href}"`)
           .replace(/\starget="[^"]*"/i, '')
+          .replace(/\sdata-pm-file="[^"]*"/i, '')
           .replace(/\/?>$/, '');
-        return `${base} target="${href === '#' ? '_self' : '_top'}">`;
+        return `${base} target="${href === '#' ? '_self' : '_top'}"${file}>`;
       })
     : withSrcset;
   return withLinks.replace(
@@ -1101,16 +1266,59 @@ export function rewriteRelative(
   );
 }
 
-/** An HTML file with the CSP and base injected into its head, and relative assets rewritten. */
-function withBase(
-  html: string,
-  head: string,
-  rawBase: string,
-  dir: string,
-  pageBase: string,
-): string {
-  const rewritten = rewriteRelative(html, rawBase, dir, pageBase);
-  return /<head[^>]*>/i.test(rewritten)
-    ? rewritten.replace(/<head[^>]*>/i, (m) => `${m}${head}`)
-    : `<!doctype html><html><head>${head}</head><body>${rewritten}</body></html>`;
+/** The longest the old page waits for the new one to report that it has loaded. */
+const FRAME_SWAP_MS = 1500;
+
+const escapeAttr = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * The frame's one script. It runs because it carries the page's nonce; every other script is
+ * removed below and blocked by the CSP. On a plain left click on a link to another project file it
+ * asks the app to open that file in place (no page load); modified clicks keep their normal
+ * behaviour. It sends only a path string, which the app re-validates.
+ */
+const FRAME_CLICK_SCRIPT = `document.addEventListener('click',function(e){
+if(e.defaultPrevented||e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
+var a=e.target&&e.target.closest?e.target.closest('a[data-pm-file]'):null;
+if(!a)return;
+e.preventDefault();
+parent.postMessage({pmFile:a.getAttribute('data-pm-file')},'*');
+});`;
+
+/**
+ * Turns previewed markup into the frame's document. The markup is parsed (an inert document,
+ * nothing runs or loads), every script, inline event handler and javascript: address is removed,
+ * the policy and base come first in the head, and the one click script is added last. Done on the
+ * parsed tree rather than with patterns, so odd markup (a script before the head, a missing head)
+ * cannot slip past the policy. Defence in depth: the sandbox has no same-origin, and the CSP only
+ * allows the script carrying this render's nonce.
+ */
+export function buildFrameDocument(markup: string, headMarkup: string, nonce: string): string {
+  const doc = new DOMParser().parseFromString(markup, 'text/html');
+  doc.querySelectorAll('script').forEach((el) => el.remove());
+  doc.querySelectorAll('*').forEach((el) => {
+    for (const attr of [...el.attributes]) {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith('on')) el.removeAttribute(attr.name);
+      else if (
+        (name === 'href' || name === 'src' || name === 'action' || name === 'formaction') &&
+        /^\s*(?:javascript|vbscript):/i.test(attr.value)
+      )
+        el.removeAttribute(attr.name);
+    }
+  });
+  const holder = doc.createElement('template');
+  holder.innerHTML = headMarkup;
+  doc.head.prepend(holder.content);
+  const script = doc.createElement('script');
+  script.setAttribute('nonce', nonce);
+  script.textContent = FRAME_CLICK_SCRIPT;
+  doc.body.append(script);
+  return `<!doctype html>${doc.documentElement.outerHTML}`;
 }
+
+const newNonce = () =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID().replace(/-/g, '')
+    : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
