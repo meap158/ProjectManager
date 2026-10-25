@@ -445,7 +445,7 @@ mode described above.
 Built with **Node.js** (built-in `node:sqlite`, so no database to set up), **Hono**, **React 19**,
 **Vite**, **xterm.js** and **node-pty** (optional, for terminals).
 
-Contributors and AI agents: start with [CLAUDE.md](CLAUDE.md) (how we work),
+Contributors and AI agents: start with [AGENTS.md](AGENTS.md) (how we work),
 [DESIGN.md](DESIGN.md) (how it looks) and [AGENT_HANDOVER.md](AGENT_HANDOVER.md) (where things
 stand, local only).
 
