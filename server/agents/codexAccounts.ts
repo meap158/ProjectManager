@@ -23,6 +23,7 @@ import { getSetting, setSetting } from '../store.js';
 import type { CodexAccount, CodexAccountsState } from '../../shared/types.js';
 import { claudeLimits } from './limits.js';
 import { readCodexAccountUsage, type AccountUsageResult } from './accountUsage.js';
+import { ACCOUNT_USAGE_MAX_AGE_MS, usageIsFresh, verifiedRemainingQuota } from './accountPolicy.js';
 
 const REGISTRY = 'codex-accounts.json';
 const ACTIVE_KEY = 'codex-accounts-active';
@@ -30,7 +31,7 @@ const AUTO_SWITCH_KEY = 'codex-accounts-auto-switch';
 /** Last usage read per account home (limits and times only, never credentials). */
 const USAGE_KEY = 'codex-accounts-usage-identity-v2';
 /** Opening the accounts panel re-reads usage older than this, in the background. */
-export const USAGE_MAX_AGE_MS = 60_000;
+export const USAGE_MAX_AGE_MS = ACCOUNT_USAGE_MAX_AGE_MS;
 const MAX_AUTH_BYTES = 1024 * 1024;
 
 interface StoredAccount {
@@ -223,7 +224,7 @@ export class CodexAccounts {
     // Conversation rollouts can belong to another login after switching or history carry.
     const limits = current?.limits ?? null;
     const usageStatus =
-      current?.status === 'fresh' && now - Date.parse(current.checkedAt) > 60000
+      current?.status === 'fresh' && !usageIsFresh(current.checkedAt, now)
         ? ('stale' as const)
         : (current?.status ?? (limits ? ('stale' as const) : ('not_loaded' as const)));
     return { limits, usageStatus, usageCheckedAt: limits?.asOf ?? current?.checkedAt ?? null };
@@ -591,25 +592,7 @@ export class CodexAccounts {
     const sources = this.usageSources();
     const remaining = (home: string): number | null => {
       const reading = this.knownUsage(sources.get(home) ?? home);
-      if (
-        !reading ||
-        reading.status !== 'fresh' ||
-        !reading.limits?.windows.length ||
-        !Number.isFinite(Date.parse(reading.checkedAt)) ||
-        now < Date.parse(reading.checkedAt) ||
-        now - Date.parse(reading.checkedAt) > USAGE_MAX_AGE_MS ||
-        reading.limits.windows.some(
-          (w) =>
-            !Number.isFinite(w.usedPercent) ||
-            w.usedPercent < 0 ||
-            w.usedPercent > 100 ||
-            w.resetSinceReport ||
-            (w.resetsAt &&
-              (!Number.isFinite(Date.parse(w.resetsAt)) || Date.parse(w.resetsAt) <= now)),
-        )
-      )
-        return null;
-      return Math.min(...reading.limits.windows.map((w) => 100 - w.usedPercent));
+      return verifiedRemainingQuota(reading, now);
     };
     const currentHome =
       currentKey && currentKey !== 'default' ? this.home(currentKey) : this.defaultHome();
@@ -1143,6 +1126,22 @@ const CLAUDE_AUTO_SWITCH_KEY = 'claude-accounts-auto-switch';
  */
 export class ClaudeAccounts {
   private readonly root: string;
+  private sameCredential(left: string, right: string): boolean {
+    try {
+      const a = normalizeClaudeAuth(JSON.parse(readFileSync(left, 'utf8')));
+      const b = normalizeClaudeAuth(JSON.parse(readFileSync(right, 'utf8')));
+      if (!a || !b) return false;
+      const x = a.claudeAiOauth as Record<string, unknown> | undefined;
+      const y = b.claudeAiOauth as Record<string, unknown> | undefined;
+      if (x && y)
+        return ['accessToken', 'refreshToken'].some(
+          (key) => typeof x[key] === 'string' && !!x[key] && x[key] === y[key],
+        );
+      return typeof a.ANTHROPIC_API_KEY === 'string' && a.ANTHROPIC_API_KEY === b.ANTHROPIC_API_KEY;
+    } catch {
+      return false;
+    }
+  }
 
   constructor(
     private readonly dataDir: string,
@@ -1155,7 +1154,14 @@ export class ClaudeAccounts {
     const registry = this.readRegistry();
     const saved = getSetting<string | null>(this.db, CLAUDE_ACTIVE_KEY) ?? null;
     const activeProfileId =
-      saved && registry.accounts.some((account) => account.id === saved) ? saved : null;
+      saved &&
+      registry.accounts.some((account) => account.id === saved) &&
+      this.sameCredential(
+        path.join(this.defaultHome(), '.credentials.json'),
+        path.join(this.home(saved), '.credentials.json'),
+      )
+        ? saved
+        : null;
     const autoSwitch = getSetting<boolean>(this.db, CLAUDE_AUTO_SWITCH_KEY) ?? true;
     const defCredsFile = this.defaultBackupCredsFile();
     const liveCredsFile = path.join(this.defaultHome(), '.credentials.json');
@@ -1203,11 +1209,7 @@ export class ClaudeAccounts {
       return {
         limits,
         usageCheckedAt: limits?.asOf ?? null,
-        usageStatus: limits
-          ? now - Date.parse(limits.asOf) > USAGE_MAX_AGE_MS
-            ? 'stale'
-            : 'fresh'
-          : 'not_loaded',
+        usageStatus: limits ? (!usageIsFresh(limits.asOf, now) ? 'stale' : 'fresh') : 'not_loaded',
       };
     } catch {
       return { limits: null, usageStatus: 'unavailable', usageCheckedAt: null };
@@ -1220,7 +1222,7 @@ export class ClaudeAccounts {
     if (normalized !== null && !account)
       throw new CodexAccountError(404, 'Claude account not found');
 
-    const currentActive = getSetting<string | null>(this.db, CLAUDE_ACTIVE_KEY) ?? null;
+    const currentActive = this.state().activeProfileId;
     const liveCreds = path.join(this.defaultHome(), '.credentials.json');
     const backupCreds = this.defaultBackupCredsFile();
 
@@ -1357,7 +1359,8 @@ export class ClaudeAccounts {
     });
     rmSync(profileHome, { recursive: true, force: true });
     if (getSetting(this.db, CLAUDE_ACTIVE_KEY) === id) {
-      this.setActive(null);
+      // Removing a saved copy must not sign out or replace the current CLI login.
+      setSetting(this.db, CLAUDE_ACTIVE_KEY, null);
     }
     return this.state();
   }

@@ -78,7 +78,13 @@ it('preserves refreshed tokens and restores an unsigned-in default without reviv
   process.env.CLAUDE_CONFIG_DIR = home;
   const db = openDb(':memory:');
   const live = path.join(home, '.credentials.json');
-  const auth = (token: string) => JSON.stringify({ claudeAiOauth: { accessToken: token } });
+  const auth = (token: string) =>
+    JSON.stringify({
+      claudeAiOauth: {
+        accessToken: token,
+        refreshToken: (token === 'refreshed' ? 'first' : token) + '-refresh',
+      },
+    });
   try {
     const pool = new ClaudeAccounts(temp, db);
     const first = pool.importAccount('First', auth('first')).accounts[0]!.id;
@@ -98,10 +104,39 @@ it('preserves refreshed tokens and restores an unsigned-in default without reviv
     rmSync(live);
     pool.setActive(first);
     pool.removeAccount(first);
-    expect(existsSync(live)).toBe(false);
+    expect(readFileSync(live, 'utf8')).toBe(auth('refreshed'));
     rmSync(path.join(temp, 'claude-accounts', second, '.credentials.json'));
     expect(() => pool.setActive(second)).toThrow('credentials file is missing');
     expect(pool.state().activeProfileId).toBeNull();
+  } finally {
+    db.close();
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+it('does not attribute an external login to the previously selected profile or overwrite its credentials', () => {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'pm-claude-external-'));
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  const home = path.join(temp, 'default');
+  mkdirSync(home);
+  process.env.CLAUDE_CONFIG_DIR = home;
+  const db = openDb(':memory:');
+  const auth = (token: string) =>
+    JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: token + '-refresh' } });
+  const live = path.join(home, '.credentials.json');
+  try {
+    const pool = new ClaudeAccounts(temp, db);
+    const a = pool.importAccount('A', auth('a')).accounts[0]!.id;
+    const b = pool.importAccount('B', auth('b')).accounts[1]!.id;
+    pool.setActive(a);
+    writeFileSync(live, auth('external'));
+    expect(pool.state().activeProfileId).toBeNull();
+    pool.setActive(b);
+    pool.setActive(a);
+    expect(JSON.parse(readFileSync(live, 'utf8'))).toEqual(JSON.parse(auth('a')));
+    pool.setActive(null);
+    expect(readFileSync(live, 'utf8')).toBe(auth('external'));
   } finally {
     db.close();
     if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;

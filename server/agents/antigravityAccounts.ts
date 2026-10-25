@@ -46,7 +46,7 @@ export function parseAntigravityAccounts(raw: string): AntigravityAccountsState 
 }
 const native = new NativeAntigravityAccounts(config.dataDir);
 export const antigravityAccounts = (refresh = false) =>
-  refresh ? native.refresh() : native.state();
+  refresh ? native.refresh() : native.state(true);
 export const switchAntigravityAccount = (id: string) => native.switch(id);
 export const saveAntigravityAccount = (name?: string) => native.saveCurrent(name);
 export const importAntigravityAccount = (raw: string, name?: string) => native.import(raw, name);

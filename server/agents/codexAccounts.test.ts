@@ -433,6 +433,17 @@ describe('CodexAccounts (PM-164)', () => {
           ).lastInsertRowid,
       );
 
+      await expect(
+        supervisor.switchSessionCodexAccount(sessionId, accountId, { automatic: true }),
+      ).rejects.toThrow('Session ended');
+      supervisor.setActiveCodexAccount(accountId, { activeOnly: true });
+      expect(
+        (
+          db.prepare('SELECT command_json FROM agent_sessions WHERE id = ?').get(sessionId) as {
+            command_json: string;
+          }
+        ).command_json,
+      ).toContain('"codexAccountId":"default"');
       await supervisor.switchSessionCodexAccount(sessionId, accountId);
 
       const row = db

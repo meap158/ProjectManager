@@ -170,14 +170,12 @@ export function codexLimits(
   return latest && rollOver(latest, now);
 }
 
-/** A window whose reset time has passed since the report starts again from zero. */
+/** Elapsed reset times invalidate a reading; only a provider report can confirm new quota. */
 export function rollOver(limits: ProviderLimits, now: number): ProviderLimits {
   return {
     ...limits,
     windows: limits.windows.map((w) =>
-      w.resetsAt && Date.parse(w.resetsAt) <= now
-        ? { ...w, usedPercent: 0, resetsAt: null, resetSinceReport: true }
-        : w,
+      w.resetsAt && Date.parse(w.resetsAt) <= now ? { ...w, resetSinceReport: true } : w,
     ),
   };
 }

@@ -29,14 +29,14 @@ export function UsageLimits({ limits, now }: { limits: ProviderLimits; now: numb
       {limits.windows.map((w) => {
         const level = w.usedPercent >= 90 ? 'high' : w.usedPercent >= 75 ? 'warn' : 'ok';
         const reset = w.resetSinceReport
-          ? 'reset since'
+          ? 'reset due · awaiting refresh'
           : w.resetsAt
             ? Date.parse(w.resetsAt) <= currentTime
               ? 'reset due · awaiting refresh'
               : `resets ${formatReset(w.resetsAt, currentTime)}`
             : null;
         const resetTooltip = w.resetSinceReport
-          ? 'Reset since the last report'
+          ? 'Reset due · awaiting refresh'
           : w.resetsAt
             ? Date.parse(w.resetsAt) <= currentTime
               ? 'Reset due · awaiting refresh'

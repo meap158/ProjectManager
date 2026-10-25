@@ -64,15 +64,15 @@ describe('Codex usage limits', () => {
     expect(found?.windows.map((w) => w.usedPercent)).toEqual([40, 75]);
   });
 
-  it('shows a window that reset since the report as 0%, and nothing when Codex never ran', () => {
+  it('retains reported usage when a reset is due, without assuming replenishment', () => {
     const home = codexHome([
       { day: '2026/10/06', lines: [event('2026-10-06T09:00:00Z', 60, 70, 1_791_280_000)] },
     ]);
     const after = (1_791_280_000 + 1) * 1000;
     const found = codexLimits(home, home, after);
     expect(found?.windows[0]).toMatchObject({
-      usedPercent: 0,
-      resetsAt: null,
+      usedPercent: 60,
+      resetsAt: new Date(1_791_280_000 * 1000).toISOString(),
       resetSinceReport: true,
     });
     expect(codexLimits(home, path.join(home, 'missing'), after)).toBeNull();

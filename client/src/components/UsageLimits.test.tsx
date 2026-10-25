@@ -75,6 +75,6 @@ describe('UsageLimits', () => {
     expect(meters.map((m) => m.getAttribute('aria-valuenow'))).toEqual(['24', '92']);
     expect(meters[1]!.className).toContain('is-high');
     expect(screen.getByText('resets in 4h 5m')).toBeTruthy();
-    expect(screen.getByText('reset since')).toBeTruthy();
+    expect(screen.getByText(/reset due .* awaiting refresh/)).toBeTruthy();
   });
 });

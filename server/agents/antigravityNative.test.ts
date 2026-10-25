@@ -162,7 +162,15 @@ it('uses the selected credential token for quota and preserves missing quota as 
         JSON.stringify(
           String(url).endsWith(':loadCodeAssist')
             ? { paidTier: { name: 'Pro' } }
-            : { groups: [{ buckets: [{ window: '5h', remainingFraction: 0.75 }] }] },
+            : {
+                groups: [
+                  {
+                    buckets: [
+                      { window: '5h', remainingFraction: 0.75, resetTime: '2099-01-01T00:00:00Z' },
+                    ],
+                  },
+                ],
+              },
         ),
         { status: 200 },
       ),
@@ -176,7 +184,52 @@ it('uses the selected credential token for quota and preserves missing quota as 
   await service.import(credential('a@example.com'));
   const result = await service.refresh();
   expect(result.accounts[0]?.usage).toMatchObject({ fiveHour: 25, weekly: null });
+  expect(result.accounts[0]?.limits?.windows[0]).toMatchObject({
+    usedPercent: 25,
+    resetsAt: '2099-01-01T00:00:00.000Z',
+  });
   expect(request.mock.calls[0]?.[1]?.headers).toMatchObject({
     Authorization: 'Bearer access-a@example.com',
   });
+});
+it('never replaces the live refreshed credential when selecting its already-active saved account', async () => {
+  const { service, store, setLive } = setup();
+  const initial = credential('a@example.com');
+  setLive(initial);
+  const saved = await service.saveCurrent();
+  const changed = JSON.parse(initial);
+  changed.token.access_token = 'fresh-access';
+  setLive(JSON.stringify(changed));
+  await service.switch(saved.accounts[0]!.id);
+  expect(store.write).not.toHaveBeenCalled();
+});
+it('invalidates cached quota on credential changes and does not resurrect disk usage after restart', async () => {
+  const { root, store, setLive } = setup();
+  const raw = credential('a@example.com');
+  setLive(raw);
+  const request = vi.fn(
+    async (url: string | URL | Request) =>
+      new Response(
+        JSON.stringify(
+          String(url).endsWith(':loadCodeAssist')
+            ? { paidTier: { name: 'Pro' } }
+            : { groups: [{ buckets: [{ window: '5h', remainingFraction: 0.2 }] }] },
+        ),
+      ),
+  );
+  const create = () =>
+    new NativeAntigravityAccounts(
+      path.join(root, 'data'),
+      path.join(root, 'home'),
+      store,
+      request as typeof fetch,
+    );
+  const service = create();
+  await service.saveCurrent();
+  expect((await service.refresh()).defaultAccount?.usage.fiveHour).toBe(80);
+  const updated = JSON.parse(raw);
+  updated.token.access_token = 'new-token';
+  setLive(JSON.stringify(updated));
+  expect((await service.state()).defaultAccount?.usage.fiveHour).toBeNull();
+  expect((await create().state()).accounts[0]?.usage.fiveHour).toBeNull();
 });

@@ -12,6 +12,8 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
+import { usageIsFresh } from './accountPolicy.js';
+import type { UsageWindow } from '../../shared/limits.js';
 import type {
   AntigravityAccount,
   AntigravityAccountsState,
@@ -107,7 +109,11 @@ async function credentialBridge(
 }
 export class NativeAntigravityAccounts {
   private busy = false;
-  private defaultUsage: AntigravityAccount | null = null;
+  private lastRefresh = 0;
+  private readonly quota = new Map<string, { owner: string; account: AntigravityAccount }>();
+  private owner(raw: string) {
+    return createHash('sha256').update(raw).digest('hex');
+  }
   private readonly root: string;
   private readonly tokenFile: string;
   constructor(
@@ -193,41 +199,68 @@ export class NativeAntigravityAccounts {
     }
     return existsSync(this.tokenFile) ? readFileSync(this.tokenFile, 'utf8') : null;
   }
-  async state(): Promise<AntigravityAccountsState> {
+  private accountView(raw: string, saved?: AntigravityAccount): AntigravityAccount {
+    const meta = identity(raw);
+    const cached = this.quota.get(meta.id);
+    const report = cached?.owner === this.owner(raw) ? cached.account : null;
+    const expiry = parseAgyCredential(raw).token.expiry;
+    const expired =
+      !expiry || !Number.isFinite(Date.parse(expiry)) || Date.parse(expiry) <= Date.now();
+    const generic =
+      !saved ||
+      saved.name === 'Antigravity account' ||
+      saved.name === 'Default Antigravity account';
+    return {
+      ...meta,
+      name: generic ? meta.email || 'Antigravity account' : saved!.name,
+      active: false,
+      plan: report?.plan ?? saved?.plan ?? null,
+      usage: expired
+        ? { fiveHour: null, weekly: null, updatedAt: null }
+        : (report?.usage ?? { fiveHour: null, weekly: null, updatedAt: null }),
+      limits: expired ? null : (report?.limits ?? null),
+      usageStatus: expired
+        ? 'expired'
+        : report?.usageStatus === 'fresh' && !usageIsFresh(report.usage.updatedAt)
+          ? 'stale'
+          : (report?.usageStatus ?? 'not_loaded'),
+    };
+  }
+  async state(refreshStale = false): Promise<AntigravityAccountsState> {
     const raw = await this.current();
     const active = raw ? identity(raw).id : null;
-    const meta = raw ? identity(raw) : null;
-    // Current credential metadata is authoritative, even if a previously saved row lacks it.
-    const accounts = this.registry().map((a) => ({
-      ...a,
-      email: a.id === active && meta?.email ? meta.email : a.email,
-      name:
-        a.id === active &&
-        meta?.email &&
-        (a.name === 'Antigravity account' || a.name === 'Default Antigravity account')
-          ? meta.email
-          : a.name,
-      active: a.id === active,
-    }));
-    const defaultAccount = meta
-      ? (accounts.find((a) => a.id === active) ??
-        (this.defaultUsage?.id === active
-          ? this.defaultUsage
-          : {
-              ...meta,
-              name: meta.email || 'Default Antigravity account',
-              active: true,
-              plan: null,
-              usage: { fiveHour: null, weekly: null, updatedAt: null },
-            }))
-      : null;
+    const saved = this.registry();
+    const accounts = saved.map((row) => {
+      try {
+        const credential = row.id === active && raw ? raw : this.decrypt(row.id);
+        if (identity(credential).id !== row.id) throw new Error('Saved account identity mismatch.');
+        return { ...this.accountView(credential, row), active: row.id === active };
+      } catch {
+        return {
+          ...row,
+          active: false,
+          limits: null,
+          usage: { fiveHour: null, weekly: null, updatedAt: null },
+          usageStatus: 'unavailable' as const,
+        };
+      }
+    });
+    if (refreshStale && !this.busy && !usageIsFresh(new Date(this.lastRefresh).toISOString())) {
+      this.lastRefresh = Date.now();
+      void this.refresh().catch(() => undefined);
+    }
     return {
       available: true,
       accounts,
-      defaultAccount: defaultAccount && {
-        ...defaultAccount,
-        email: meta?.email || defaultAccount.email,
-      },
+      defaultAccount: raw
+        ? {
+            ...this.accountView(
+              raw,
+              saved.find((a) => a.id === active),
+            ),
+            active: true,
+          }
+        : null,
     };
   }
   private async exclusive(fn: () => Promise<AntigravityAccountsState>) {
@@ -259,6 +292,7 @@ export class NativeAntigravityAccounts {
       const raw = this.decrypt(id);
       parseAgyCredential(raw);
       const old = await this.current();
+      if (old && identity(old).id === id) return this.state();
       if (old) {
         this.snapshot(old);
         this.atomic(path.join(this.root, 'previous.enc'), this.encrypt(old));
@@ -316,6 +350,7 @@ export class NativeAntigravityAccounts {
       if (!rows.some((a) => a.id === id)) throw new Error('Account not found.');
       this.saveRegistry(rows.filter((a) => a.id !== id));
       rmSync(path.join(this.root, id + '.enc'), { force: true });
+      this.quota.delete(id);
       return this.state();
     });
   }
@@ -342,8 +377,12 @@ export class NativeAntigravityAccounts {
         )
           continue;
         row.usage = { fiveHour: null, weekly: null, updatedAt: null };
+        row.limits = null;
+        row.usageStatus = 'unavailable';
+        let raw: string | null = null;
         try {
-          const raw = active && identity(active).id === row.id ? active : this.decrypt(row.id);
+          raw = active && identity(active).id === row.id ? active : this.decrypt(row.id);
+          if (identity(raw).id !== row.id) throw new Error('Saved account identity mismatch.');
           const credential = parseAgyCredential(raw);
           if (
             !credential.token.access_token ||
@@ -404,12 +443,14 @@ export class NativeAntigravityAccounts {
                       window: z.string().optional(),
                       bucketId: z.string().optional(),
                       remainingFraction: z.number().min(0).max(1).optional(),
+                      resetTime: z.string().optional(),
                     }),
                   ),
                 }),
               ),
             })
             .parse(summary);
+          const windows = new Map<string, UsageWindow>();
           for (const group of groups.groups)
             for (const bucket of group.buckets) {
               if (bucket.remainingFraction === undefined) continue;
@@ -419,19 +460,50 @@ export class NativeAntigravityAccounts {
                 : /5h|5-hour|five/.test(label)
                   ? 'fiveHour'
                   : null;
-              if (key)
+              if (key) {
                 row.usage[key] = Math.max(
                   row.usage[key] ?? 0,
                   Math.round((1 - bucket.remainingFraction) * 100),
                 );
+                const usedPercent = (1 - bucket.remainingFraction) * 100;
+                if (!windows.has(key) || usedPercent > windows.get(key)!.usedPercent)
+                  windows.set(key, {
+                    label: key === 'weekly' ? 'Weekly' : '5-hour',
+                    windowMinutes: key === 'weekly' ? 10080 : 300,
+                    usedPercent,
+                    resetsAt:
+                      bucket.resetTime && Number.isFinite(Date.parse(bucket.resetTime))
+                        ? new Date(bucket.resetTime).toISOString()
+                        : null,
+                  });
+              }
             }
           row.usage.updatedAt = new Date().toISOString();
+          row.limits = windows.size
+            ? {
+                providerId: 'antigravity',
+                source: 'Antigravity quota service',
+                asOf: row.usage.updatedAt,
+                windows: [...windows.values()],
+              }
+            : null;
+          row.usageStatus = 'fresh';
         } catch {
           /* Failed quota stays unavailable, never another account's cached value. */
         }
+        if (raw) this.quota.set(row.id, { owner: this.owner(raw), account: structuredClone(row) });
       }
-      if (active) this.defaultUsage = rows.find((a) => a.id === identity(active).id) ?? null;
-      this.saveRegistry(rows.filter((a) => savedIds.has(a.id)));
+      this.saveRegistry(
+        rows
+          .filter((a) => savedIds.has(a.id))
+          .map((row) => ({
+            ...row,
+            limits: null,
+            usage: { fiveHour: null, weekly: null, updatedAt: null },
+            usageStatus: 'not_loaded',
+          })),
+      );
+      if (!onlyId) this.lastRefresh = Date.now();
       return this.state();
     });
   }

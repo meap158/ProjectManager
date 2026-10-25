@@ -14,9 +14,10 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { NativeAccount, NativeAccountsState } from '../../shared/nativeAccounts.js';
 import type { ProviderLimits } from '../../shared/limits.js';
+import { ACCOUNT_USAGE_MAX_AGE_MS, usageIsFresh } from './accountPolicy.js';
 
 const MAX_AUTH = 64 * 1024;
-const MAX_AGE = 60_000;
+const MAX_AGE = ACCOUNT_USAGE_MAX_AGE_MS;
 export class GrokAccountError extends Error {
   readonly status = 400;
 }
@@ -253,8 +254,7 @@ export class GrokAccounts {
       limits: expired ? null : (valid?.limits ?? null),
       usageStatus: expired
         ? 'expired'
-        : valid?.usageStatus === 'fresh' &&
-            Date.now() - Date.parse(valid.usage.updatedAt ?? '') > MAX_AGE
+        : valid?.usageStatus === 'fresh' && !usageIsFresh(valid.usage.updatedAt)
           ? 'stale'
           : (valid?.usageStatus ?? 'not_loaded'),
     };

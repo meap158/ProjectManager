@@ -9,7 +9,7 @@ export interface UsageWindow {
   usedPercent: number;
   /** ISO time the window resets, when known. */
   resetsAt: string | null;
-  /** The window reset after the CLI's last report: it starts from 0% on next use. */
+  /** The reported reset time elapsed; quota remains unconfirmed until a new provider report. */
   resetSinceReport?: boolean;
 }
 

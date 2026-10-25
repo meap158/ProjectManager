@@ -508,12 +508,14 @@ export class AgentSupervisor {
 
   setActiveCodexAccount(
     id: string | null,
-    options: { keepRotation?: boolean } = {},
+    options: { keepRotation?: boolean; activeOnly?: boolean } = {},
   ): CodexAccountsState {
     const state = this.withCodexAccounts((accounts) => accounts.setActive(id));
     // A choice in Settings starts a fresh rotation. Auto-switch keeps the accounts it already tried.
     if (!options.keepRotation) this.codexRotationTried = [];
-    this.applyCodexAccountToSessions(id === null || id === 'default' ? 'default' : id);
+    this.applyCodexAccountToSessions(id === null || id === 'default' ? 'default' : id, {
+      activeOnly: options.activeOnly,
+    });
     return state;
   }
 
@@ -525,7 +527,7 @@ export class AgentSupervisor {
    */
   private applyCodexAccountToSessions(
     targetKey: string,
-    options: { exceptId?: number } = {},
+    options: { exceptId?: number; activeOnly?: boolean } = {},
   ): void {
     const profileId = targetKey === 'default' ? null : targetKey;
     const rows = this.db
@@ -533,6 +535,8 @@ export class AgentSupervisor {
       .all() as unknown as SessionRow[];
     for (const row of rows) {
       if (row.id === options.exceptId || this.switchingCodexSession.has(row.id)) continue;
+      if (options.activeOnly && (row.status !== 'running' || row.desired_state !== 'running'))
+        continue;
       const storedKey = this.storedCodexProfile(row)?.id ?? null;
       if (storedKey === targetKey) continue;
       if (storedKey === null && targetKey === 'default') continue;
@@ -597,12 +601,19 @@ export class AgentSupervisor {
   async switchSessionCodexAccount(
     id: number,
     profileId: string | null,
-    options: { continuePrompt?: boolean; setGlobal?: boolean; keepRotation?: boolean } = {},
+    options: {
+      continuePrompt?: boolean;
+      setGlobal?: boolean;
+      keepRotation?: boolean;
+      automatic?: boolean;
+    } = {},
   ): Promise<AgentSession> {
     const row = this.getSessionRow(id);
     if (!row) throw new AgentError(404, 'Session not found');
     if (row.provider_id !== 'codex')
       throw new AgentError(400, 'Account switching is only supported for Codex sessions');
+    if (options.automatic && (row.status !== 'running' || row.desired_state !== 'running'))
+      throw new AgentError(409, 'Session ended before automatic account switching.');
     const targetKey = profileId === null || profileId === 'default' ? 'default' : profileId;
     const target = this.withCodexAccounts((accounts) => accounts.profile(targetKey));
     // The login stored on this session, not the Settings selection. Reading the selection after
@@ -618,7 +629,7 @@ export class AgentSupervisor {
         accounts.setActive(target.id === 'default' ? null : target.id),
       );
       if (!options.keepRotation) this.codexRotationTried = [];
-      this.applyCodexAccountToSessions(target.id, { exceptId: id });
+      this.applyCodexAccountToSessions(target.id, { exceptId: id, activeOnly: options.automatic });
     }
     const parsed = JSON.parse(row.command_json) as {
       command: string[];
@@ -1471,6 +1482,7 @@ export class AgentSupervisor {
               continuePrompt: true,
               setGlobal: true,
               keepRotation: true,
+              automatic: true,
             }).catch(() => undefined);
             continue;
           }
@@ -2875,6 +2887,11 @@ export class AgentSupervisor {
             // Selection fails closed unless existing identity-verified readings are still fresh.
           }
           if (this.closed) return;
+          // Stop/delete can happen while quota requests are pending; never revive ended work.
+          const latest = this.db
+            .prepare('SELECT status, log_path FROM agent_runs WHERE id = ?')
+            .get(row.id) as { status: string; log_path: string } | undefined;
+          if (!latest || latest.status !== 'running' || latest.log_path !== row.log_path) return;
           const next =
             !live.stoppedByUser && this.codexAccounts.state().autoSwitch
               ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now())
@@ -2883,6 +2900,7 @@ export class AgentSupervisor {
             this.codexRotationTried = [...new Set([...this.codexRotationTried, codexProfile.id])];
             this.setActiveCodexAccount(next.id === 'default' ? null : next.id, {
               keepRotation: true,
+              activeOnly: true,
             });
             const nextCmdJson = JSON.stringify({
               ...storedCmd,
