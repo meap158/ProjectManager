@@ -21,7 +21,7 @@ import {
   BookmarkIcon,
   GlobeIcon,
   RefreshIcon,
-  MoreIcon,
+  MoreVerticalIcon,
 } from './icons';
 import { LoadingMark } from './LoadingMark';
 import { PreviewTabStrip, type StripTab, type TabCommand } from './PreviewTabStrip';
@@ -681,7 +681,7 @@ export function PreviewWorkspace() {
                           });
                         }}
                       >
-                        <MoreIcon size={15} />
+                        <MoreVerticalIcon size={15} />
                       </button>
                       <span data-stop={`${app.port}:${app.pid}`}>
                         <ConfirmDelete
