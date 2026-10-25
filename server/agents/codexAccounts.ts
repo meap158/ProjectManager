@@ -432,6 +432,11 @@ export class CodexAccounts {
     return this.state();
   }
 
+  /** The auto-switch setting alone: `state()` also reads every login and usage reading. */
+  autoSwitchEnabled(): boolean {
+    return getSetting<boolean>(this.db, AUTO_SWITCH_KEY) ?? true;
+  }
+
   setAutoSwitch(enabled: boolean): CodexAccountsState {
     setSetting(this.db, AUTO_SWITCH_KEY, enabled);
     return this.state();
@@ -638,12 +643,26 @@ export class CodexAccounts {
    * `since` shows some left (its window reset). Lets the rotation come back to it instead of
    * stopping for good once every account has been tried.
    */
-  quotaRecovered(id: string, since: number, now = Date.now()): boolean {
+  quotaRecovered(
+    id: string,
+    since: number,
+    now = Date.now(),
+    sources: Map<string, string> = this.usageSources(),
+  ): boolean {
     const home = id === 'default' ? this.defaultHome() : this.account(id) ? this.home(id) : null;
     if (!home) return false;
-    const reading = this.knownUsage(this.usageSources().get(home) ?? home);
+    const reading = this.knownUsage(sources.get(home) ?? home);
     const checked = Date.parse(reading?.checkedAt ?? '');
     return checked > since && (verifiedRemainingQuota(reading, now) ?? 0) > 0;
+  }
+
+  /** The accounts among `tried` whose quota is back (`quotaRecovered`), reading logins once. */
+  recoveredAccounts(tried: ReadonlyMap<string, number>, now = Date.now()): string[] {
+    if (!tried.size) return [];
+    const sources = this.usageSources();
+    return [...tried]
+      .filter(([id, since]) => this.quotaRecovered(id, since, now, sources))
+      .map(([id]) => id);
   }
 
   /** Keep the native resume picker independent of the selected credential. */

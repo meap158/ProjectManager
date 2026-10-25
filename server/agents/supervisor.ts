@@ -1548,8 +1548,8 @@ export class AgentSupervisor {
 
   /** The rotation's tried accounts plus the current one, minus any whose quota is back. */
   private codexTried(currentKey: string): string[] {
-    for (const [id, since] of this.codexRotationTried)
-      if (this.codexAccounts?.quotaRecovered(id, since)) this.codexRotationTried.delete(id);
+    for (const id of this.codexAccounts?.recoveredAccounts(this.codexRotationTried) ?? [])
+      this.codexRotationTried.delete(id);
     return [...new Set([...this.codexRotationTried.keys(), currentKey])];
   }
 
@@ -1568,7 +1568,7 @@ export class AgentSupervisor {
     const switchDecision = () => {
       if (decision !== undefined) return decision;
       const accounts = this.codexAccounts;
-      if (!accounts?.state().autoSwitch) return (decision = null);
+      if (!accounts?.autoSwitchEnabled()) return (decision = null);
       const currentKey = accounts.selectedId();
       accounts.refreshUsageIfStale();
       const next = accounts.nextUnused(currentKey, this.codexTried(currentKey), Date.now());
@@ -2981,7 +2981,7 @@ export class AgentSupervisor {
           !timedOut &&
           row.provider_id === 'codex' &&
           codexProfile &&
-          this.codexAccounts?.state().autoSwitch &&
+          this.codexAccounts?.autoSwitchEnabled() &&
           this.runHitUsageLimit(row.log_path, codexProfile.home)
         ) {
           const tried = [...new Set([...(storedCmd.triedCodexAccounts ?? []), codexProfile.id])];
@@ -2997,7 +2997,7 @@ export class AgentSupervisor {
             .get(row.id) as { status: string; log_path: string } | undefined;
           if (!latest || latest.status !== 'running' || latest.log_path !== row.log_path) return;
           const next =
-            !live.stoppedByUser && this.codexAccounts.state().autoSwitch
+            !live.stoppedByUser && this.codexAccounts.autoSwitchEnabled()
               ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now())
               : null;
           if (next && next.id !== codexProfile.id) {
