@@ -29,6 +29,12 @@ const ALREADY_RUNNING_MARKER = '[server] ALREADY_RUNNING';
 const args = new Set(process.argv.slice(2));
 const prod = args.has('--prod');
 
+/** Names this window for whoever has several open: "ProjectManager - Server :5181". Terminals that
+ * ignore title requests just show the escape's text away; nothing is written to a pipe or a file. */
+const setTitle = (text) => {
+  if (process.stdout.isTTY) process.stdout.write(`\x1b]0;${text}\x07`);
+};
+
 const log = (msg) => console.log(`\x1b[36m[launch]\x1b[0m ${msg}`);
 const fail = (msg) => {
   console.error(`\x1b[31m[launch] ${msg}\x1b[0m`);
@@ -290,6 +296,7 @@ for (let attempt = 0; attempt < 5; attempt++) {
   const ready = await waitUntilReady(port, child);
 
   if (ready) {
+    setTitle(`ProjectManager - Server :${port}`);
     const url = `http://localhost:${port}`;
     const note = port === preferredPort ? '' : ` (preferred port ${preferredPort} was busy)`;
     console.log(
