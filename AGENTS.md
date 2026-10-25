@@ -17,28 +17,30 @@ anything.
 
 ## Architecture map
 
-| Path                           | What lives there                                                                    |
-| ------------------------------ | ----------------------------------------------------------------------------------- |
-| `scripts/launch.mjs`           | One-command launcher: prerequisite checks, free-port search, process-tree cleanup   |
-| `server/index.ts`              | HTTP bootstrap. Dev: Vite middleware on the same port. Prod: serves `dist/client`   |
-| `server/app.ts`                | Hono API (`/api/*`), validation (zod), security middleware                          |
-| `server/store.ts`              | All project/card SQL. Routes never touch the DB directly                            |
-| `server/db.ts`                 | `node:sqlite` connection + **append-only** migrations (`PRAGMA user_version`)       |
-| `server/boardMcp.ts`           | Scoped agent board tools, process config injection and audit records                |
-| `scripts/board-mcp.mjs`        | MCP stdio bridge to the live local server                                           |
-| `server/pullRequests.ts`       | gh-backed pull requests for a project: list, mergeability, and PR actions           |
-| `server/ghAccount.ts`          | Which gh account a project acts as (repo owner's login, via per-call GH_TOKEN)      |
-| `server/gitIdentity.ts`        | Per-project commit author + gh account injected into agent env only (PM-186)        |
-| `server/projectFileActions.ts` | Files tab context menu: rename in place, open/reveal on the host (PM-259)           |
-| `scripts/owner-pages.mjs`      | Owner Pages generator: Owner desk and index from `owner-desk.json` (PM-258)         |
-| `server/preview.ts`            | Built-in browser proxy: read-only, loopback ports only (`docs/BUILT-IN-BROWSER.md`) |
-| `server/scanner.ts`            | Background scans; cards auto-move from commits, branches and PRs (no agent)         |
-| `server/analysis/*`            | Pure-ish analysis: line counter, languages, file listing, disk walk, git, scc       |
-| `server/agents/*`              | AI agent providers, run/session supervisor, agent API routes                        |
-| `shared/types.ts`              | Types shared by API and client. Change both sides together                          |
-| `client/src/pages/*`           | Route-level views                                                                   |
-| `client/src/components/*`      | App components. `components/ui/` holds Rare UI (shadcn registry) copies             |
-| `client/src/styles.css`        | Design tokens + component CSS (see DESIGN.md)                                       |
+| Path                           | What lives there                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------ |
+| `scripts/launch.mjs`           | One-command launcher: prerequisite checks, free-port search, process-tree cleanup          |
+| `server/index.ts`              | HTTP bootstrap. Dev: Vite middleware on the same port. Prod: serves `dist/client`          |
+| `server/app.ts`                | Hono API (`/api/*`), validation (zod), security middleware                                 |
+| `server/store.ts`              | All project/card SQL. Routes never touch the DB directly                                   |
+| `server/db.ts`                 | `node:sqlite` connection + **append-only** migrations (`PRAGMA user_version`)              |
+| `server/boardMcp.ts`           | Scoped agent board tools, process config injection and audit records                       |
+| `scripts/board-mcp.mjs`        | MCP stdio bridge to the live local server                                                  |
+| `server/pullRequests.ts`       | gh-backed pull requests for a project: list, mergeability, and PR actions                  |
+| `server/ghAccount.ts`          | Which gh account a project acts as (repo owner's login, via per-call GH_TOKEN)             |
+| `server/gitIdentity.ts`        | Per-project commit author + gh account injected into agent env only (PM-186)               |
+| `server/projectFileActions.ts` | Files tab context menu: rename in place, open/reveal on the host (PM-259)                  |
+| `scripts/owner-pages.mjs`      | Owner Pages generator: Owner desk and index from `owner-desk.json` (PM-258)                |
+| `server/preview.ts`            | Built-in browser proxy: read-only, loopback ports only (`docs/BUILT-IN-BROWSER.md`)        |
+| `server/jsonEtag.ts`           | ETag + 304 for JSON GETs, so polls of unchanged lists cost no body (`docs/PERFORMANCE.md`) |
+| `scripts/benchmark-app.mjs`    | `npm run bench`: bundle size and API latency, read-only (`docs/PERFORMANCE.md`)            |
+| `server/scanner.ts`            | Background scans; cards auto-move from commits, branches and PRs (no agent)                |
+| `server/analysis/*`            | Pure-ish analysis: line counter, languages, file listing, disk walk, git, scc              |
+| `server/agents/*`              | AI agent providers, run/session supervisor, agent API routes                               |
+| `shared/types.ts`              | Types shared by API and client. Change both sides together                                 |
+| `client/src/pages/*`           | Route-level views                                                                          |
+| `client/src/components/*`      | App components. `components/ui/` holds Rare UI (shadcn registry) copies                    |
+| `client/src/styles.css`        | Design tokens + component CSS (see DESIGN.md)                                              |
 
 ## Conventions
 

@@ -1,0 +1,274 @@
+{
+  "at": "2026-10-25T20:13:21.066Z",
+  "node": "v22.21.0",
+  "bundle": {
+    "initialJs": {
+      "bytes": 345069,
+      "gzip": 108980,
+      "brotli": 94479
+    },
+    "initialChunks": [
+      "assets/index-j0W7D9SR.js",
+      "assets/jsx-runtime-BuqwL3YU.js",
+      "assets/rolldown-runtime-CbXtAM7H.js"
+    ],
+    "css": {
+      "bytes": 198652,
+      "gzip": 41013,
+      "brotli": 35328
+    },
+    "totalJs": {
+      "bytes": 1529175,
+      "gzip": 459652,
+      "brotli": 377924
+    },
+    "chunkCount": 23,
+    "largest": [
+      {
+        "file": "assets/TerminalView-H7oGqNS6.js",
+        "bytes": 403405,
+        "gzip": 97389,
+        "brotli": 74899
+      },
+      {
+        "file": "assets/index-j0W7D9SR.js",
+        "bytes": 336237,
+        "gzip": 105499,
+        "brotli": 91365
+      },
+      {
+        "file": "assets/StatTile-DSXP7Wf9.js",
+        "bytes": 177558,
+        "gzip": 57996,
+        "brotli": 51487
+      },
+      {
+        "file": "assets/ProjectPage-Dwci2w2B.js",
+        "bytes": 148222,
+        "gzip": 45719,
+        "brotli": 40090
+      },
+      {
+        "file": "assets/jsQR-moY_pGiY.js",
+        "bytes": 129986,
+        "gzip": 46621,
+        "brotli": 26218
+      },
+      {
+        "file": "assets/SettingsPage-Ms4mEd9i.js",
+        "bytes": 89516,
+        "gzip": 27323,
+        "brotli": 23143
+      },
+      {
+        "file": "assets/OrchestratorPage-959lqt-d.js",
+        "bytes": 54946,
+        "gzip": 14146,
+        "brotli": 12543
+      },
+      {
+        "file": "assets/WorkspacePage-3VpcV_J6.js",
+        "bytes": 45249,
+        "gzip": 14055,
+        "brotli": 12545
+      }
+    ]
+  },
+  "api": [
+    {
+      "path": "/api/projects",
+      "status": 200,
+      "medianMs": 7.5,
+      "p95Ms": 9.9,
+      "bytes": 176000,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 45805,
+      "revalidate": {
+        "status": 304,
+        "ms": 4.7,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/agent-sessions",
+      "status": 200,
+      "medianMs": 18.8,
+      "p95Ms": 20.6,
+      "bytes": 72392,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 8403,
+      "revalidate": {
+        "status": 200,
+        "ms": 17.8,
+        "bytes": 72392
+      }
+    },
+    {
+      "path": "/api/cards",
+      "status": 200,
+      "medianMs": 20.5,
+      "p95Ms": 26.5,
+      "bytes": 599552,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 193884,
+      "revalidate": {
+        "status": 304,
+        "ms": 6.8,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/cards/in-flight",
+      "status": 200,
+      "medianMs": 9.1,
+      "p95Ms": 10,
+      "bytes": 251509,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 87375,
+      "revalidate": {
+        "status": 304,
+        "ms": 3.1,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/agent-limits",
+      "status": 200,
+      "medianMs": 13.6,
+      "p95Ms": 15,
+      "bytes": 384,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 243,
+      "revalidate": {
+        "status": 304,
+        "ms": 12.2,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/agent-runs",
+      "status": 200,
+      "medianMs": 0.9,
+      "p95Ms": 1.1,
+      "bytes": 2,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 22,
+      "revalidate": {
+        "status": 304,
+        "ms": 0.6,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/orchestrators",
+      "status": 200,
+      "medianMs": 3.2,
+      "p95Ms": 4.3,
+      "bytes": 94337,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 9903,
+      "revalidate": {
+        "status": 304,
+        "ms": 1.7,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/orchestrators/overview",
+      "status": 200,
+      "medianMs": 27.2,
+      "p95Ms": 29.1,
+      "bytes": 307003,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 62487,
+      "revalidate": {
+        "status": 200,
+        "ms": 28.9,
+        "bytes": 307003
+      }
+    },
+    {
+      "path": "/api/agents/providers",
+      "status": 200,
+      "medianMs": 0.9,
+      "p95Ms": 1.1,
+      "bytes": 4374,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 1134,
+      "revalidate": {
+        "status": 304,
+        "ms": 0.6,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/agents/sensors",
+      "status": 200,
+      "medianMs": 0.9,
+      "p95Ms": 1.1,
+      "bytes": 149,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 149,
+      "revalidate": {
+        "status": 304,
+        "ms": 0.5,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/agents/codex-accounts",
+      "status": 200,
+      "medianMs": 7.1,
+      "p95Ms": 9.2,
+      "bytes": 3677,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 783,
+      "revalidate": {
+        "status": 304,
+        "ms": 8.7,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/workspace",
+      "status": 200,
+      "medianMs": 0.8,
+      "p95Ms": 1.1,
+      "bytes": 52,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 67,
+      "revalidate": {
+        "status": 304,
+        "ms": 0.5,
+        "bytes": 0
+      }
+    },
+    {
+      "path": "/api/preview-launches",
+      "status": 200,
+      "medianMs": 0.8,
+      "p95Ms": 1.1,
+      "bytes": 15,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 35,
+      "revalidate": {
+        "status": 304,
+        "ms": 0.4,
+        "bytes": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,209 @@
+{
+  "at": "2026-10-25T19:59:47.234Z",
+  "node": "v22.21.0",
+  "bundle": {
+    "initialJs": {
+      "bytes": 351029,
+      "gzip": 110497,
+      "brotli": 95780
+    },
+    "initialChunks": [
+      "assets/index-K4Bn-OGL.js",
+      "assets/jsx-runtime-BuqwL3YU.js",
+      "assets/rolldown-runtime-CbXtAM7H.js"
+    ],
+    "css": {
+      "bytes": 198652,
+      "gzip": 41013,
+      "brotli": 35328
+    },
+    "totalJs": {
+      "bytes": 1528725,
+      "gzip": 458811,
+      "brotli": 377089
+    },
+    "chunkCount": 22,
+    "largest": [
+      {
+        "file": "assets/TerminalView-YZLFca_Y.js",
+        "bytes": 403405,
+        "gzip": 97389,
+        "brotli": 74788
+      },
+      {
+        "file": "assets/index-K4Bn-OGL.js",
+        "bytes": 342197,
+        "gzip": 107016,
+        "brotli": 92666
+      },
+      {
+        "file": "assets/StatTile-BWsXyF11.js",
+        "bytes": 177558,
+        "gzip": 57997,
+        "brotli": 51499
+      },
+      {
+        "file": "assets/ProjectPage-CuRt4-0w.js",
+        "bytes": 148223,
+        "gzip": 45699,
+        "brotli": 40086
+      },
+      {
+        "file": "assets/jsQR-moY_pGiY.js",
+        "bytes": 129986,
+        "gzip": 46621,
+        "brotli": 26218
+      },
+      {
+        "file": "assets/SettingsPage-B9cdt-CL.js",
+        "bytes": 89516,
+        "gzip": 27312,
+        "brotli": 23163
+      },
+      {
+        "file": "assets/OrchestratorPage-BpO3hxZw.js",
+        "bytes": 54946,
+        "gzip": 14141,
+        "brotli": 12555
+      },
+      {
+        "file": "assets/WorkspacePage-BSzTxqCf.js",
+        "bytes": 45255,
+        "gzip": 14049,
+        "brotli": 12552
+      }
+    ]
+  },
+  "api": [
+    {
+      "path": "/api/projects",
+      "status": 200,
+      "medianMs": 11.3,
+      "p95Ms": 20.1,
+      "bytes": 176061,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 45853
+    },
+    {
+      "path": "/api/agent-sessions",
+      "status": 200,
+      "medianMs": 116.4,
+      "p95Ms": 273.9,
+      "bytes": 72396,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 8384
+    },
+    {
+      "path": "/api/cards",
+      "status": 200,
+      "medianMs": 37.4,
+      "p95Ms": 330.9,
+      "bytes": 597460,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 192989
+    },
+    {
+      "path": "/api/cards/in-flight",
+      "status": 200,
+      "medianMs": 16.1,
+      "p95Ms": 26.9,
+      "bytes": 246484,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 85524
+    },
+    {
+      "path": "/api/agent-limits",
+      "status": 200,
+      "medianMs": 25.5,
+      "p95Ms": 36.9,
+      "bytes": 384,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 245
+    },
+    {
+      "path": "/api/agent-runs",
+      "status": 200,
+      "medianMs": 2.9,
+      "p95Ms": 6.7,
+      "bytes": 2,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 22
+    },
+    {
+      "path": "/api/orchestrators",
+      "status": 200,
+      "medianMs": 5.4,
+      "p95Ms": 23.6,
+      "bytes": 94288,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 9892
+    },
+    {
+      "path": "/api/orchestrators/overview",
+      "status": 200,
+      "medianMs": 99.4,
+      "p95Ms": 349.1,
+      "bytes": 306810,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 62451
+    },
+    {
+      "path": "/api/agents/providers",
+      "status": 200,
+      "medianMs": 1.6,
+      "p95Ms": 5.4,
+      "bytes": 4374,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 1134
+    },
+    {
+      "path": "/api/agents/sensors",
+      "status": 200,
+      "medianMs": 1.8,
+      "p95Ms": 4.7,
+      "bytes": 150,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 149
+    },
+    {
+      "path": "/api/agents/codex-accounts",
+      "status": 200,
+      "medianMs": 8.8,
+      "p95Ms": 16.9,
+      "bytes": 3677,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 785
+    },
+    {
+      "path": "/api/workspace",
+      "status": 200,
+      "medianMs": 2.1,
+      "p95Ms": 7.1,
+      "bytes": 52,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 67
+    },
+    {
+      "path": "/api/preview-launches",
+      "status": 200,
+      "medianMs": 2.2,
+      "p95Ms": 7.5,
+      "bytes": 15,
+      "encoding": "gzip",
+      "wireBytes": null,
+      "gzipBytes": 35
+    }
+  ]
+}
