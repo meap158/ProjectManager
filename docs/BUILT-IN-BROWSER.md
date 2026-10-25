@@ -36,6 +36,17 @@ storage, like real tabs on one site).
 
 The proxied path address must never be opened as a top-level tab (it would run as this origin).
 
+**Actions on a listed app (PM-270).** Right click (or Shift+F10 / the Menu key) on an app: Open,
+Open in new tab, Copy address (`http://localhost:<port>/`), Go to project (when attributed), and
+Stop process. Each row also has a Stop button (on hover or focus; always on touch). Stopping asks
+for confirmation with the pid, executable and command line, then `POST /api/local-apps/:port/stop
+{ pid }` ends that process and its children (`taskkill /pid <pid> /T /F` on Windows, SIGTERM
+elsewhere; argument arrays only). The server first runs a fresh detection and stops the pid only if
+it is still the one listening on that port. So a stale list can't hit a process that reused the pid,
+and this app's own ports and system services, which never reach the list, can't be stopped. It
+also refuses this server's own pid and its launcher's. It answers on this computer only: the LAN
+and remote listeners get 403.
+
 ## The security problem comes first
 
 The app's server can read any folder and run agent CLIs. A page served from the **same origin** as

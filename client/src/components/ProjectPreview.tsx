@@ -6,13 +6,23 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent,
   type MouseEvent,
 } from 'react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import type { LocalApp, PreviewLaunch, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
+import { ConfirmDelete } from './ConfirmDelete';
+import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { Dropdown } from './Dropdown';
-import { ArrowLeftIcon, ArrowRightIcon, BookmarkIcon, GlobeIcon, RefreshIcon } from './icons';
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  BookmarkIcon,
+  GlobeIcon,
+  RefreshIcon,
+  StopIcon,
+} from './icons';
 import { LoadingMark } from './LoadingMark';
 import { PreviewTabStrip, type StripTab, type TabCommand } from './PreviewTabStrip';
 import {
@@ -290,6 +300,19 @@ function startTabs(link: PreviewTarget | null): TabsState {
 
 const addressOf = (t: PreviewTarget) => `http://localhost:${t.port}${t.path}`;
 
+type AppCommand = 'open' | 'open-tab' | 'copy' | 'project' | 'stop';
+
+/** The menu on a listed app (PM-270): open it, copy its address, go to its project, or stop it. */
+export function appMenuItems(app: LocalApp): ContextMenuItem<AppCommand>[] {
+  return [
+    { command: 'open', label: 'Open' },
+    { command: 'open-tab', label: 'Open in new tab' },
+    { command: 'copy', label: 'Copy address', divider: true },
+    ...(app.projectId !== null ? [{ command: 'project' as const, label: 'Go to project' }] : []),
+    { command: 'stop', label: 'Stop process…', divider: true },
+  ];
+}
+
 export function PreviewWorkspace() {
   const [params, setParams] = useSearchParams();
   const [state, dispatch] = useReducer(tabsReducer, undefined, () =>
@@ -308,6 +331,9 @@ export function PreviewWorkspace() {
   const [projects, setProjects] = useState<Map<number, string>>(new Map());
   const [sort, setSortState] = useState<PreviewSort>(readSort);
   const [chosenOpen, setChosenOpen] = useState(readOpen);
+  const [appMenu, setAppMenu] = useState<{ app: LocalApp; x: number; y: number } | null>(null);
+  const [listNote, setListNote] = useState<{ text: string; error: boolean } | null>(null);
+  const navigate = useNavigate();
   const addressRef = useRef<HTMLInputElement>(null);
   const focusAddress = useRef(false);
 
@@ -505,6 +531,46 @@ export function PreviewWorkspace() {
     },
   });
 
+  const stopApp = async (app: LocalApp, name: string) => {
+    setListNote(null);
+    try {
+      await api.stopLocalApp(app.port, app.pid);
+      setListNote({ text: `Stopped ${name} (:${app.port}).`, error: false });
+    } catch (e) {
+      setListNote({ text: e instanceof Error ? e.message : 'Could not stop it', error: true });
+    }
+    await load(true);
+  };
+  /** The row's own Stop button holds the confirmation; the menu opens it. */
+  const askStop = (app: LocalApp) =>
+    document
+      .querySelector<HTMLButtonElement>(`[data-stop="${app.port}:${app.pid}"] button`)
+      ?.click();
+  const runAppCommand = (command: AppCommand, app: LocalApp) => {
+    const next = { port: app.port, path: '/' };
+    if (command === 'open') open(next);
+    else if (command === 'open-tab') open(next, true);
+    else if (command === 'copy')
+      void navigator.clipboard
+        ?.writeText(`http://localhost:${app.port}/`)
+        .then(() => setListNote({ text: `Copied http://localhost:${app.port}/`, error: false }));
+    else if (command === 'project' && app.projectId !== null)
+      navigate(`/projects/${app.projectId}`);
+    else if (command === 'stop') askStop(app);
+  };
+  const rowMenu = (app: LocalApp) => ({
+    onContextMenu: (event: MouseEvent) => {
+      event.preventDefault();
+      setAppMenu({ app, x: event.clientX, y: event.clientY });
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+      event.preventDefault();
+      const box = event.currentTarget.getBoundingClientRect();
+      setAppMenu({ app, x: box.left + 16, y: box.bottom });
+    },
+  });
+
   return (
     <div className={`project-preview${target ? ' has-target' : ''}`}>
       <section className="panel preview-list-panel" aria-label="Local apps">
@@ -525,6 +591,30 @@ export function PreviewWorkspace() {
             <RefreshIcon />
           </button>
         </div>
+        {listNote && (
+          <p
+            className={
+              listNote.error ? 'error-banner preview-list-note' : 'faint preview-list-note'
+            }
+            role={listNote.error ? 'alert' : 'status'}
+          >
+            {listNote.text}
+          </p>
+        )}
+        {appMenu && (
+          <ContextMenu
+            x={appMenu.x}
+            y={appMenu.y}
+            label={`${appName(appMenu.app, projects)} actions`}
+            items={appMenuItems(appMenu.app)}
+            onPick={(command) => {
+              const app = appMenu.app;
+              setAppMenu(null);
+              runAppCommand(command, app);
+            }}
+            onClose={() => setAppMenu(null)}
+          />
+        )}
         {groups.map((group) => (
           <div key={group.id} className="preview-group">
             <GroupHead
@@ -540,12 +630,17 @@ export function PreviewWorkspace() {
                   const name = appName(app, projects);
                   const project = app.projectId !== null ? projects.get(app.projectId) : null;
                   return (
-                    <li key={`${app.port}:${app.pid}`}>
+                    <li key={`${app.port}:${app.pid}`} className="preview-app">
                       <button
                         type="button"
                         className={`preview-row${target?.port === app.port ? ' is-active' : ''}`}
                         {...rowOpen({ port: app.port, path: '/' })}
-                        title={[project, app.command || app.name, 'Ctrl-click: new tab']
+                        {...rowMenu(app)}
+                        title={[
+                          project,
+                          app.command || app.name,
+                          'Ctrl-click: new tab · right click or Shift+F10: more',
+                        ]
                           .filter(Boolean)
                           .join(' · ')}
                       >
@@ -555,6 +650,17 @@ export function PreviewWorkspace() {
                           <span className="preview-row-sub">:{app.port}</span>
                         </span>
                       </button>
+                      <span className="preview-stop" data-stop={`${app.port}:${app.pid}`}>
+                        <ConfirmDelete
+                          small
+                          label={`Stop ${name}`}
+                          icon={<StopIcon size={12} />}
+                          heading={`Stop ${name}?`}
+                          message={`This ends process ${app.pid}${app.name ? ` (${app.name})` : ''} listening on port ${app.port}, and the processes it started. Unsaved work in that app is lost.${app.command ? ` Command: ${app.command}` : ''}`}
+                          confirmLabel="Stop process"
+                          onConfirm={() => stopApp(app, name)}
+                        />
+                      </span>
                     </li>
                   );
                 })}

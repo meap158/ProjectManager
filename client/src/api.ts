@@ -324,6 +324,9 @@ export const api = {
   /** Preview (PM-253): apps listening on this computer, and the saved quick launches. */
   localApps: (fresh = false) =>
     request<{ apps: LocalApp[] }>('GET', fresh ? '/local-apps?fresh=1' : '/local-apps'),
+  /** Stops the program listening on a listed port, and what it started (PM-270). */
+  stopLocalApp: (port: number, pid: number) =>
+    request<{ ok: true }>('POST', `/local-apps/${port}/stop`, { pid }),
   previewLaunches: () => request<{ launches: PreviewLaunch[] }>('GET', '/preview-launches'),
   savePreviewLaunches: (launches: PreviewLaunch[]) =>
     request<{ launches: PreviewLaunch[] }>('PUT', '/preview-launches', { launches }),

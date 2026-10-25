@@ -314,3 +314,47 @@ export async function detectLocalApps(
   cache = { at: Date.now(), key, apps };
   return apps;
 }
+
+/**
+ * Why ProjectManager must not stop this process, or null when it may (PM-270). Pure, so the guards
+ * are easy to test: the pid must still be the one listening on that port in a fresh detection (so
+ * a stale list can never kill a process that took the pid over), and never this server or the
+ * launcher that started it. System services and this app's own ports never reach the list.
+ */
+export function stopRefusal(
+  apps: LocalApp[],
+  port: number,
+  pid: number,
+  protectedPids: ReadonlySet<number>,
+): string | null {
+  if (protectedPids.has(pid)) return 'That process is ProjectManager itself';
+  if (!apps.some((a) => a.port === port && a.pid === pid))
+    return `Process ${pid} is no longer listening on port ${port}. Refresh the list.`;
+  return null;
+}
+
+/** Stops the program listening on a loopback port, with its child processes (PM-270). */
+export async function stopLocalApp(
+  port: number,
+  pid: number,
+  projects: { id: number; path: string }[],
+  blocked: ReadonlySet<number>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const apps = await detectLocalApps(projects, blocked, true);
+  const refusal = stopRefusal(apps, port, pid, new Set([process.pid, process.ppid]));
+  if (refusal) return { ok: false, error: refusal };
+  try {
+    if (process.platform === 'win32') {
+      // /T takes its children too (a dev server's workers), like the launcher's cleanup.
+      await run('taskkill', ['/pid', String(pid), '/T', '/F'], { timeoutMs: 15_000 });
+    } else {
+      process.kill(pid, 'SIGTERM');
+    }
+  } catch (error) {
+    return { ok: false, error: `Could not stop process ${pid}: ${(error as Error).message}` };
+  } finally {
+    cache = null;
+    metaCache.delete(port);
+  }
+  return { ok: true };
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   candidates,
+  stopRefusal,
   inlineIcon,
   isImageResponse,
   looksLikePage,
@@ -161,5 +162,32 @@ describe('isImageResponse', () => {
     expect(isImageResponse(200, 'text/html; charset=utf-8')).toBe(false);
     expect(isImageResponse(404, 'image/png')).toBe(false);
     expect(isImageResponse(200, null)).toBe(false);
+  });
+});
+
+describe('stopRefusal (PM-270)', () => {
+  const app = (port: number, pid: number) => ({
+    port,
+    pid,
+    name: 'node.exe',
+    command: 'node vite',
+    projectId: null,
+    title: null,
+    icon: null,
+    web: true,
+  });
+  const listed = [app(3000, 111), app(4400, 222)];
+
+  it('allows the pid a fresh detection still sees on that port', () => {
+    expect(stopRefusal(listed, 3000, 111, new Set([9]))).toBeNull();
+  });
+
+  it('refuses a pid that is not (or no longer) listening on that port', () => {
+    expect(stopRefusal(listed, 3000, 222, new Set())).toMatch(/no longer listening/);
+    expect(stopRefusal(listed, 5180, 111, new Set())).toMatch(/no longer listening/);
+  });
+
+  it('never stops ProjectManager itself or its launcher', () => {
+    expect(stopRefusal([...listed, app(6000, 9)], 6000, 9, new Set([9]))).toMatch(/itself/);
   });
 });

@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LocalApp } from '../../../shared/types';
 import {
+  appMenuItems,
   isGroupOpen,
   groupApps,
   parsePreviewTarget,
@@ -152,5 +153,34 @@ describe('previewFrame', () => {
         { protocol: 'http:', hostname: 'localhost', port: '' },
       ).src,
     ).toBe('http://p3000.localhost/');
+  });
+});
+
+describe('appMenuItems (PM-270)', () => {
+  const app = (projectId: number | null) =>
+    ({
+      port: 3000,
+      pid: 1,
+      name: '',
+      command: '',
+      projectId,
+      title: null,
+      icon: null,
+      web: true,
+    }) as LocalApp;
+  it('offers the project only when the app belongs to one, and Stop last', () => {
+    expect(appMenuItems(app(null)).map((i) => i.command)).toEqual([
+      'open',
+      'open-tab',
+      'copy',
+      'stop',
+    ]);
+    expect(appMenuItems(app(4)).map((i) => i.command)).toEqual([
+      'open',
+      'open-tab',
+      'copy',
+      'project',
+      'stop',
+    ]);
   });
 });

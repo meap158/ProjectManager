@@ -117,9 +117,36 @@
 .preview-rows li {
   min-width: 0;
 }
-.preview-saved {
+.preview-saved,
+.preview-app {
   display: flex;
   align-items: center;
+}
+/* Stop (PM-270): shown on hover or keyboard focus within the row, always on touch screens. */
+.preview-stop {
+  flex: none;
+  opacity: 0;
+}
+.preview-app:hover .preview-stop,
+.preview-app:focus-within .preview-stop {
+  opacity: 1;
+}
+.preview-stop .btn-icon {
+  width: 26px;
+  height: 26px;
+}
+.preview-list-note {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+}
+@media (pointer: coarse) {
+  .preview-stop {
+    opacity: 1;
+  }
+  .preview-stop .btn-icon {
+    width: 40px;
+    height: 40px;
+  }
 }
 .preview-row {
   display: flex;

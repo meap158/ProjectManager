@@ -23,7 +23,7 @@ import { openEntry, renameEntry } from './projectFileActions.js';
 import { FileAccessError, listFolder, previewFile, readRaw } from './projectFiles.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
 import { config } from './config.js';
-import { detectLocalApps } from './localPorts.js';
+import { detectLocalApps, stopLocalApp } from './localPorts.js';
 import { REMOTE_HEADER } from './remote.js';
 import type { Db } from './db.js';
 import { Scanner } from './scanner.js';
@@ -260,6 +260,25 @@ export function createApp(
     return c.json({
       apps: await detectLocalApps(projects, ownPorts(), c.req.query('fresh') === '1'),
     });
+  });
+  // Stops the program on a listed port (PM-270). It ends a process on this computer, so only this
+  // computer may ask (the LAN and remote listeners get 403), and only for the pid a fresh detection
+  // still sees on that port: never this server, its launcher, its own ports or system services.
+  app.post('/local-apps/:port/stop', async (c) => {
+    if (c.req.header(LAN_HEADER) || c.req.header(REMOTE_HEADER))
+      throw new HttpError(
+        403,
+        'Programs can only be stopped on the computer running ProjectManager',
+      );
+    const port = Number(c.req.param('port'));
+    const { pid } = await parseBody(c, z.object({ pid: z.number().int().positive() }));
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new HttpError(400, 'Bad port');
+    const projects = store
+      .listProjects(db, (id) => scanner.state(id))
+      .map((p) => ({ id: p.id, path: p.path }));
+    const result = await stopLocalApp(port, pid, projects, ownPorts());
+    if (!result.ok) throw new HttpError(409, result.error);
+    return c.json({ ok: true });
   });
   app.get('/preview-launches', (c) =>
     c.json({ launches: store.getSetting<PreviewLaunch[]>(db, PREVIEW_LAUNCHES_KEY) ?? [] }),

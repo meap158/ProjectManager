@@ -73,7 +73,11 @@ anything.
   single plain name, never overwriting, never `.git`, never through a link out of the project, the
   project root excluded) and **open or reveal** an entry on the host (argument arrays only; files the
   system would run, like .bat or .exe, are never opened). Both answer on this computer only: the LAN
-  and remote listeners get 403. Keep every one of those checks.
+  and remote listeners get 403. Keep every one of those checks. Preview's **Stop process** (PM-270,
+  `stopLocalApp` in `server/localPorts.ts`) ends a program listening on a listed loopback port: only
+  the pid a fresh detection still sees on that port, never this server or its launcher, this app's
+  ports or system services, after the user confirms, and on this computer only (LAN and remote get
+  403).
 - **DB changes** go in a new migration appended to `MIGRATIONS` in `server/db.ts`. Never edit a
   migration that has shipped: real databases have already run the old text (this happened once, and
   `repairSchema()` exists to clean up after it).
