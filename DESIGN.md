@@ -173,8 +173,9 @@ a populated pane.
   density (one line per card), No grouping/Group by project (a small heading per project inside
   each column, cards drop their tag), and a WIP limit for In progress ("4/3 over" in
   `--status-review`, the word as well as the colour). Done draws its newest 40 cards until
-  "Show N older". On phones the row joins the header grid: the filter gets its own row and the
-  view options scroll sideways in one row instead of stacking.
+  "Show N older". On phones the header keeps its two rows: the filter opens below them only
+  from a search button next to "+ New" (closing it clears the filter), and density, grouping and
+  the WIP limit are desktop-only.
 - **Sorter (KDP Library sorter):** modes Name / Recent commit / Lines of code, each with a
   natural direction (A–Z, newest first, most code first). Re-selecting the active mode flips
   its direction; switching modes restarts from the new mode's natural direction. The trigger

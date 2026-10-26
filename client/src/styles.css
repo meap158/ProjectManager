@@ -3681,6 +3681,10 @@ span.path-link:hover .path-icon {
   display: flex;
   gap: 8px;
 }
+/* Phones only (below): the filter behind a search button. */
+.board-search-toggle {
+  display: none;
+}
 
 .blist {
   display: flex;
@@ -5577,7 +5581,7 @@ span.path-link:hover .path-icon {
 @media (max-width: 640px) {
   .board-page > .sticky-head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 6px 8px;
     padding: 4px 0 8px;
   }
@@ -5612,32 +5616,38 @@ span.path-link:hover .path-icon {
     background: var(--accent-soft);
     border-color: var(--accent);
   }
-  /* The tool row joins the grid: the filter gets a row of its own, and the view options one
-     sideways-scrolling row (filter chips, as in Gmail or Linear) instead of three stacked. */
+  /* The header keeps its two rows on a phone: the filter opens below them only from the search
+     button (and stays while it has text); density, grouping and the WIP limit are desktop-only. */
   .board-page .board-tools {
     display: contents;
   }
   .board-page .board-tools > :not(.view-tabs) {
     margin: 0;
   }
-  .board-page .board-filter {
+  .board-page .board-filter,
+  .board-page .board-options {
+    display: none;
+  }
+  .board-page .board-tools.is-searching .board-filter {
+    display: block;
     grid-column: 1 / -1;
     grid-row: 3;
     width: 100%;
     height: 36px;
   }
-  .board-page .board-options {
-    grid-column: 1 / -1;
-    grid-row: 4;
-    gap: 6px;
-    overflow-x: auto;
-    scrollbar-width: none;
+  .board-page .board-search-toggle {
+    display: inline-grid;
+    place-items: center;
+    grid-column: 2;
+    grid-row: 1;
+    width: 40px;
+    height: 40px;
   }
-  .board-page .board-options .dropdown {
-    flex: none;
+  .board-page .board-search-toggle[aria-expanded='true'] {
+    color: var(--accent);
   }
   .board-page .board-new {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
     min-height: 40px;
     justify-self: end;
@@ -5651,6 +5661,12 @@ span.path-link:hover .path-icon {
   .board-page .page-header > .actions > .dropdown {
     grid-row: 2;
     min-width: 0;
+  }
+  .board-page .page-header > .actions > .dropdown:first-of-type {
+    grid-column: 1;
+  }
+  .board-page .page-header > .actions > .dropdown:last-of-type {
+    grid-column: 2 / -1;
   }
   .board-page .page-header > .actions > .dropdown .dropdown-trigger {
     width: 100%;

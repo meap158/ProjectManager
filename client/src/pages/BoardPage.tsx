@@ -137,12 +137,16 @@ export function BoardPage() {
   const wipLimit = Number(wip);
   const [filter, setFilter] = useState('');
   const filterRef = useRef<HTMLInputElement>(null);
+  // Phones keep the filter behind a search button (the field takes a row of its own).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searching = searchOpen || filter !== '';
   // "/" jumps to the filter, as in GitHub, Linear and Gmail; Esc in it clears it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || typingIn(e.target)) return;
       if (document.querySelector('dialog[open]')) return;
       e.preventDefault();
+      setSearchOpen(true);
       filterRef.current?.focus();
     };
     document.addEventListener('keydown', onKey);
@@ -241,6 +245,33 @@ export function BoardPage() {
           <div className="actions">
             <button
               type="button"
+              className="icon-btn board-search-toggle"
+              aria-label={searching ? 'Close the filter' : 'Filter cards'}
+              aria-expanded={searching}
+              title={searching ? 'Close the filter (clears it)' : 'Filter cards'}
+              onClick={() => {
+                if (searching) {
+                  setSearchOpen(false);
+                  setFilter('');
+                } else {
+                  setSearchOpen(true);
+                  // After the field is shown.
+                  requestAnimationFrame(() => filterRef.current?.focus());
+                }
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                <path
+                  d="M10.5 10.5 14 14"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
               className="btn btn-primary board-new"
               onClick={() => setAddingTo(columns[0]!)}
               title="Add a card to one of your projects"
@@ -266,13 +297,14 @@ export function BoardPage() {
           </div>
         </div>
 
-        <div className="board-tools">
+        <div className={`board-tools${searching ? ' is-searching' : ''}`}>
           <BoardViewTabs view={view} onChange={setView} />
           <input
             ref={filterRef}
             type="search"
             className="input board-filter"
-            placeholder="Filter cards  /"
+            placeholder="Filter cards"
+            title="Filter by title, key or project (press / to jump here)"
             aria-label="Filter cards by title, key or project (press / to focus)"
             aria-keyshortcuts="/"
             value={filter}
