@@ -72,7 +72,11 @@ anything.
   remote) is GET/HEAD only and shown in a sandbox **without** `allow-same-origin`; never open it as a
   top-level page (it would run as this origin). Own-origin mode (`p<port>.localhost`) is routed ONLY
   by the loopback listener in `index.ts`, never by the LAN or remote gates, so keep those calling
-  `handle` directly. Never accept a preview WebSocket from another website's origin.
+  `handle` directly. Never accept a preview WebSocket from another website's origin. Both modes add
+  one script to HTML pages, the element picker (`server/previewPicker.ts`, PM-311): inert until the
+  framing app sends "start", never in nested frames, reporting only to `window.parent`; the app
+  accepts its messages only from the shown frame while picking and treats them as untrusted (parsed,
+  capped, shown as text). It must stay read-only: it never sends requests or changes the page.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
   the user explicitly starts may change project files. The one other exception is a pull request
   action the user confirms in the Pull requests tab: it may delete the PR's _local_ branch, and only

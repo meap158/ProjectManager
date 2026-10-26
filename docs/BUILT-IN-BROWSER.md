@@ -95,6 +95,28 @@ port>/` is a different origin from `localhost`. Add those names to the Host allo
 5. **Audit**: log each preview port opened (`[preview]` prefix), and show the active target in the
    address bar so it is obvious what is being displayed.
 
+## Element picker (PM-311)
+
+The Preview toolbar's **Select element** button lets you point at something in the page and send
+it to a CLI session. Both proxies add one script to HTML pages for this
+(`server/previewPicker.ts`): inline in the path mode (whose responses carry no page CSP), and as
+`/__pm-picker.js` from the page's own origin in the own-origin mode (allowed by a CSP's `'self'`; a
+page whose CSP forbids it simply can't be picked). The own-origin proxy asks the app for page loads
+uncompressed so it can add the tag after `<head>` as the page streams.
+
+The script does nothing until the framing ProjectManager window posts `start`. Then hovering
+outlines an element with its tag and size, and a click or tap reports: the page address and title,
+a CSS selector, trimmed `outerHTML` and text, the accessible role and name, its box and the
+viewport, a few computed styles, and, on a React development build, the nearest component, its
+plain props and the components around it. Esc stops it. It runs only in the top-level previewed
+page, never in nested frames, and never sends requests.
+
+The app accepts the message only from the shown tab's frame while picking, keeps known fields of
+bounded size (`parsePicked`), and opens a dialog: "What should change?", the context (editable,
+with the app's own address rather than the proxy's), and a session to send to (the app's project
+first, then the most recently messaged). Sending types it into that session after whatever is in
+its input and presses Enter; it never clears the input.
+
 ## Theme
 
 The viewer's surface, border and loading mark follow the selected theme. The previewed page is the

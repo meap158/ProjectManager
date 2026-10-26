@@ -5,6 +5,7 @@ import http, {
 } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { PreviewError, parsePreviewPort } from './preview.js';
+import { PICKER_EXTERNAL, PICKER_JS, PICKER_PATH, injectPicker } from './previewPicker.js';
 
 // Built-in browser, phase 2 (docs/BUILT-IN-BROWSER.md): a previewed dev server gets its OWN origin,
 // `http://p<port>.localhost:<our port>`, so it behaves like it does on its own port: root-absolute
@@ -128,13 +129,28 @@ export function proxyPreviewHost(
     fail(res, error instanceof PreviewError ? error.status : 400, (error as Error).message);
     return;
   }
+  // The element picker (PM-311) is served from the page's own origin, so a CSP allowing 'self'
+  // lets it load; it stays inert until the app frames the page and asks.
+  if (req.method === 'GET' && req.url === PICKER_PATH) {
+    res.writeHead(200, {
+      'content-type': 'text/javascript; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    });
+    res.end(PICKER_JS);
+    return;
+  }
+  const headers = requestHeaders(req.headers, hostHeader, port);
+  // A page load: ask for it uncompressed, so the picker can be added to the HTML as it streams.
+  const pageLoad = req.method === 'GET' && /text\/html/i.test(String(req.headers.accept ?? ''));
+  if (pageLoad) headers['accept-encoding'] = 'identity';
   const upstream = http.request(
     {
       host: '127.0.0.1',
       port,
       method: req.method,
       path: req.url,
-      headers: requestHeaders(req.headers, hostHeader, port),
+      headers,
       timeout: TIMEOUT_MS,
     },
     (appRes) => {
@@ -159,8 +175,14 @@ export function proxyPreviewHost(
         appRes.headers['content-security-policy'] as string | undefined,
         parentOrigins(hostHeader),
       );
+      const html =
+        pageLoad &&
+        /^text\/html\b/i.test(String(appRes.headers['content-type'] ?? '')) &&
+        !appRes.headers['content-encoding'];
+      if (html) delete headers['content-length'];
       res.writeHead(appRes.statusCode ?? 502, appRes.statusMessage, headers);
-      appRes.pipe(res);
+      if (html) streamWithPicker(appRes, res);
+      else appRes.pipe(res);
       appRes.on('error', () => res.destroy());
     },
   );
@@ -263,4 +285,29 @@ export function handlePreviewUpgrade(
   socket.on('error', () => upstream.destroy());
   upstream.end();
   return true;
+}
+
+/**
+ * Streams an HTML page through, adding the picker tag right after `<head>`: the start is held
+ * until the tag (or 64 KB) has gone by, then the rest flows unchanged.
+ */
+function streamWithPicker(appRes: IncomingMessage, res: ServerResponse): void {
+  let head = '';
+  let done = false;
+  appRes.setEncoding('utf8');
+  appRes.on('data', (chunk: string) => {
+    if (done) {
+      res.write(chunk);
+      return;
+    }
+    head += chunk;
+    if (/<head(\s[^>]*)?>/i.test(head) || head.length > 65_536) {
+      done = true;
+      res.write(injectPicker(head, PICKER_EXTERNAL));
+    }
+  });
+  appRes.on('end', () => {
+    if (!done) res.write(injectPicker(head, PICKER_EXTERNAL));
+    res.end();
+  });
 }

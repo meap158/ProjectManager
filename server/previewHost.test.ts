@@ -170,6 +170,19 @@ describe('the proxy, against a stand-in dev server', () => {
     expect(res.headers['set-cookie']).toEqual(['sid=1; Path=/']);
   });
 
+  it('adds the element picker to a page load, asking the app for it uncompressed (PM-311)', async () => {
+    const res = await call('/', { headers: { accept: 'text/html', 'accept-encoding': 'gzip' } });
+    expect(seen.headers['accept-encoding']).toBe('identity');
+    expect(res.body).toBe(
+      '<script src="/__pm-picker.js" data-pm-picker></script><script type="module" src="/src/main.tsx"></script>',
+    );
+    expect(res.headers['content-length']).toBeUndefined();
+    const js = await call('/__pm-picker.js');
+    expect(js.status).toBe(200);
+    expect(js.headers['content-type']).toMatch(/^text\/javascript/);
+    expect(js.body).toContain('pmPicker');
+  });
+
   it('forwards every method with its body, and shows the app its own address', async () => {
     const res = await call('/api/login?next=1', {
       method: 'POST',

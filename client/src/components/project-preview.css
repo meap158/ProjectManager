@@ -460,6 +460,46 @@
 .preview-back {
   display: none;
 }
+/* Picking an element (PM-311): a slim bar saying how to finish or stop. */
+.preview-picking {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.preview-pick-dialog {
+  width: min(560px, calc(100vw - 24px));
+}
+.preview-pick-dialog h2 code {
+  font-size: 0.9em;
+}
+.preview-pick-where {
+  margin-top: -4px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+.preview-pick-dialog textarea {
+  display: block;
+  width: 100%;
+  margin: 6px 0;
+}
+.preview-pick-context {
+  min-height: 160px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+.preview-pick-dialog select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
 .preview-error {
   flex: none;
   margin: 6px 8px 0;

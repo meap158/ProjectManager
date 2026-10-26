@@ -6,6 +6,7 @@
 //  - Redirects are not followed: a Location is rewritten back under the proxy, or refused.
 //  - Framing is limited to this app, and the page must be shown in a sandboxed iframe without
 //    `allow-same-origin` (the client's job), so it can't act as the app's origin.
+import { PICKER_INLINE, injectPicker } from './previewPicker.js';
 
 export class PreviewError extends Error {
   constructor(
@@ -156,10 +157,15 @@ export async function proxyPreview(
   const bytes = new Uint8Array(await upstream.arrayBuffer());
   if (bytes.byteLength > MAX_BODY_BYTES) throw new PreviewError(502, 'The page is too large');
   if (/^text\/html\b/i.test(type)) {
-    const html = rewriteHtml(
-      new TextDecoder().decode(bytes),
-      port,
-      previewWantsDark(request.headers.get('cookie')),
+    // The element picker (PM-311), inert until the app asks; inline, since this mode drops the
+    // page's CSP.
+    const html = injectPicker(
+      rewriteHtml(
+        new TextDecoder().decode(bytes),
+        port,
+        previewWantsDark(request.headers.get('cookie')),
+      ),
+      PICKER_INLINE,
     );
     return new Response(html, { status: upstream.status, headers: out });
   }
