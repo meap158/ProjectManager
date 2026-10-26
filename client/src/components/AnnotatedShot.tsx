@@ -72,7 +72,7 @@ export function AnnotatedShot({
   const canvas = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [shapes, setShapes] = useState<Shape[]>(initial);
-  const [tool, setTool] = useState<Tool>('box');
+  const [tool, setTool] = useState<Tool>('pen');
   const [color, setColor] = useState<string>(COLORS[0]);
   const [draft, setDraft] = useState<Shape | null>(null);
   const [typing, setTyping] = useState<{ at: Point; screen: Point } | null>(null);
@@ -118,41 +118,6 @@ export function AnnotatedShot({
 
   return (
     <div className="shot">
-      <div className="shot-tools" role="toolbar" aria-label="Annotate">
-        {(['box', 'pen', 'text'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            className="shot-tool"
-            aria-pressed={tool === t}
-            onClick={() => setTool(t)}
-          >
-            {t === 'box' ? 'Box' : t === 'pen' ? 'Pen' : 'Text'}
-          </button>
-        ))}
-        <span className="shot-colors" role="radiogroup" aria-label="Colour">
-          {COLORS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              role="radio"
-              aria-checked={color === c}
-              aria-label={COLOR_NAMES[c]}
-              className="shot-color"
-              style={{ background: c }}
-              onClick={() => setColor(c)}
-            />
-          ))}
-        </span>
-        <button
-          type="button"
-          className="shot-tool"
-          disabled={shapes.length === 0}
-          onClick={() => setShapes((s) => s.slice(0, -1))}
-        >
-          Undo
-        </button>
-      </div>
       <div className="shot-stage">
         {!image && <div className="skeleton shot-skeleton" />}
         <canvas
@@ -224,7 +189,99 @@ export function AnnotatedShot({
             onBlur={() => setTyping(null)}
           />
         )}
+        {image && (
+          <div className="shot-tools" role="toolbar" aria-label="Mark up the screenshot">
+            {(
+              [
+                ['pen', 'Draw', PenIcon],
+                ['box', 'Box', BoxIcon],
+                ['text', 'Text', TextIcon],
+              ] as const
+            ).map(([t, label, Icon]) => (
+              <button
+                key={t}
+                type="button"
+                className="shot-tool"
+                aria-pressed={tool === t}
+                aria-label={label}
+                title={label}
+                onClick={() => setTool(t)}
+              >
+                <Icon />
+              </button>
+            ))}
+            <span className="shot-sep" aria-hidden="true" />
+            <span className="shot-colors" role="radiogroup" aria-label="Colour">
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  role="radio"
+                  aria-checked={color === c}
+                  aria-label={COLOR_NAMES[c]}
+                  title={COLOR_NAMES[c]}
+                  className="shot-color"
+                  onClick={() => setColor(c)}
+                >
+                  <span style={{ background: c }} />
+                </button>
+              ))}
+            </span>
+            <span className="shot-sep" aria-hidden="true" />
+            <button
+              type="button"
+              className="shot-tool"
+              aria-label="Undo"
+              title="Undo"
+              disabled={shapes.length === 0}
+              onClick={() => setShapes((s) => s.slice(0, -1))}
+            >
+              <UndoIcon />
+            </button>
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+const icon = {
+  width: 15,
+  height: 15,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+} as const;
+function PenIcon() {
+  return (
+    <svg {...icon}>
+      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+}
+function BoxIcon() {
+  return (
+    <svg {...icon}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+    </svg>
+  );
+}
+function TextIcon() {
+  return (
+    <svg {...icon}>
+      <path d="M4 7V4h16v3M9 20h6M12 4v16" />
+    </svg>
+  );
+}
+function UndoIcon() {
+  return (
+    <svg {...icon}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </svg>
   );
 }

@@ -3,6 +3,7 @@ import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
 import { sendMessageToSession } from '../sessionSend';
 import { AnnotatedShot } from './AnnotatedShot';
+import { Dropdown } from './Dropdown';
 
 // Preview's element picker, the sending half (PM-311): what the picker reported about an element,
 // shown for review, then sent as a message to a CLI session of the owner's choice.
@@ -158,6 +159,8 @@ export function PreviewPickDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useId();
+  const requestId = useId();
+  const targetId = useId();
   const [sessions, setSessions] = useState<AgentSession[] | null>(null);
   const [target, setTarget] = useState<number | null>(null);
   const [request, setRequest] = useState('');
@@ -277,42 +280,59 @@ export function PreviewPickDialog({
         }}
       >
         <div className="dialog-body">
-          <h2 id={heading}>
-            Send <code>{`<${element.tag}>`}</code>
-            {element.react ? ` (${element.react.component})` : ''} to a session
-          </h2>
-          <p className="faint preview-pick-where">{element.selector}</p>
-          <label>
-            What should change?
+          <header className="pick-head">
+            <h2 id={heading}>Send to a session</h2>
+            <p className="pick-element" title={element.selector}>
+              <code>{`<${element.tag}>`}</code>
+              {element.react && <span className="pick-component">{element.react.component}</span>}
+              <span className="pick-selector">{element.selector}</span>
+            </p>
+          </header>
+
+          <div className="field">
+            <label htmlFor={requestId}>What should change?</label>
             <textarea
-              className="textarea preview-pick-request"
+              id={requestId}
+              className="textarea pick-request"
               value={request}
-              rows={3}
+              rows={2}
               maxLength={4000}
               placeholder="e.g. Make this heading smaller on phones"
               onChange={(e) => setRequest(e.target.value)}
               autoFocus
             />
-          </label>
-          <div className="preview-pick-shot">
-            <div className="preview-pick-shot-head">
-              <label className="preview-pick-include">
+          </div>
+
+          <section className="pick-shot" aria-label="Screenshot">
+            <div className="pick-shot-head">
+              <label className={`pick-check${includeShot && shot ? ' is-checked' : ''}`}>
                 <input
                   type="checkbox"
                   checked={includeShot}
                   disabled={!shot}
                   onChange={(e) => setIncludeShot(e.target.checked)}
                 />
-                Include a screenshot
+                <span className="pick-check-box" aria-hidden="true">
+                  <svg width="10" height="10" viewBox="0 0 12 12">
+                    <path
+                      d="M2.5 6.2l2.4 2.3 4.6-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.9"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span>Screenshot</span>
               </label>
               <span className="faint">
                 {!where
-                  ? 'No screenshot for this address.'
-                  : (shotError ??
-                    (shot ? 'Retaken by ProjectManager: mark it up below' : 'Taking it…'))}
+                  ? 'Not available for this address'
+                  : (shotError ?? (shot ? 'Retaken by ProjectManager' : 'Taking it…'))}
               </span>
             </div>
-            {shot && includeShot && (
+            {includeShot && shot && (
               <AnnotatedShot
                 src={shot}
                 exportRef={exportShot}
@@ -329,39 +349,56 @@ export function PreviewPickDialog({
                 ]}
               />
             )}
+            {includeShot && !shot && where && !shotError && (
+              <div className="skeleton pick-shot-skeleton" />
+            )}
+          </section>
+
+          <div className="field">
+            <label htmlFor={targetId}>Session</label>
+            <Dropdown
+              id={targetId}
+              label="Session"
+              value={target ?? 0}
+              disabled={!sessions?.length}
+              options={
+                sessions?.length
+                  ? sessions.map((s) => ({
+                      value: s.id,
+                      label: s.name,
+                      sub: projectNames.get(s.projectId) ?? 'All projects',
+                      hint: s.projectId === projectId ? 'this app' : undefined,
+                    }))
+                  : [
+                      {
+                        value: 0,
+                        label: sessions === null ? 'Loading sessions…' : 'No running sessions',
+                      },
+                    ]
+              }
+              onChange={(id) => setTarget(id || null)}
+            />
+            <span className="faint pick-note">
+              Typed after whatever is already in its input, then submitted.
+            </span>
           </div>
-          <details>
-            <summary>Context sent with it (editable)</summary>
+
+          <details className="pick-context">
+            <summary>Context sent with it</summary>
             <textarea
-              className="textarea preview-pick-context"
+              className="textarea"
+              aria-label="Context sent with it"
               value={context}
               rows={8}
               maxLength={8000}
               onChange={(e) => setContext(e.target.value)}
             />
           </details>
-          <label>
-            Send to
-            <select
-              className="input"
-              value={target ?? ''}
-              disabled={!sessions?.length}
-              onChange={(e) => setTarget(Number(e.target.value) || null)}
-            >
-              {sessions === null && <option value="">Loading sessions…</option>}
-              {sessions?.length === 0 && <option value="">No running sessions</option>}
-              {sessions?.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} · {projectNames.get(s.projectId) ?? 'All projects'}
-                  {s.projectId === projectId ? ' · this app' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="faint">
-            Typed into that session after whatever is already in its input, then submitted.
-          </p>
-          {status && <p role="status">{status}</p>}
+          {status && (
+            <p role="status" className="pick-status">
+              {status}
+            </p>
+          )}
         </div>
         <div className="dialog-footer">
           <span />

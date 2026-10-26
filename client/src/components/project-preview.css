@@ -460,18 +460,51 @@
 .preview-back {
   display: none;
 }
-/* Picking an element (PM-311): a slim bar saying how to finish or stop. */
+/* Picking an element (PM-311): a small floating pill at the foot of the page, as the Claude app's
+   toolbar, instead of a bar pushing the page down. */
 .preview-picking {
-  display: flex;
-  flex: none;
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 3;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 4px 8px 4px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--accent-soft);
+  padding: 5px 6px 5px 14px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-raised, var(--surface));
+  box-shadow: 0 6px 20px color-mix(in srgb, #000 30%, transparent);
   color: var(--text);
   font-size: 12.5px;
+  white-space: nowrap;
+}
+.preview-picking kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-2);
+  font:
+    11px ui-monospace,
+    Consolas,
+    monospace;
+}
+.preview-picking-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 16px;
+  cursor: pointer;
+}
+.preview-picking-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 /* Wider than other confirm dialogs: the screenshot needs the room. */
 .confirm-dialog.preview-pick-dialog {
@@ -480,116 +513,179 @@
   max-height: calc(100dvh - 24px);
   overflow-y: auto;
 }
-.preview-pick-shot {
+.preview-pick-dialog .dialog-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 8px 0;
+  gap: 14px;
 }
-.preview-pick-shot-head {
+.pick-head h2 {
+  margin: 0 0 4px;
+}
+.pick-element {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px 12px;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
   font-size: 12.5px;
 }
-.preview-pick-include {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.pick-element code {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--accent);
 }
-/* Annotation (AnnotatedShot). */
-.shot {
+.pick-component {
+  flex: none;
+  font-weight: 600;
+}
+.pick-selector {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-family: ui-monospace, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pick-request {
+  min-height: 0;
+  resize: vertical;
+}
+.pick-shot {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
-.shot-tools {
+.pick-shot-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
 }
-.shot-tool {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
+.pick-shot-skeleton {
+  height: 180px;
+  border-radius: var(--radius);
+}
+.pick-note {
+  font-size: 12px;
+}
+.pick-context summary {
   color: var(--text-2);
-  font: inherit;
   font-size: 12.5px;
   cursor: pointer;
 }
+.pick-context textarea {
+  min-height: 150px;
+  margin-top: 8px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+.pick-status {
+  margin: 0;
+}
+/* Annotation (AnnotatedShot): the screenshot, and a floating toolbar of icons at its foot. */
+.shot-stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.shot-canvas {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  /* Tall pages stay inside the dialog, so Session and Send remain in view. */
+  max-height: min(52vh, 520px);
+  margin: 0 auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+.shot-tools {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-raised, var(--surface));
+  box-shadow: 0 6px 20px color-mix(in srgb, #000 35%, transparent);
+}
+.shot-tool {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.shot-tool:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
 .shot-tool[aria-pressed='true'] {
-  border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
 }
 .shot-tool:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: default;
+}
+.shot-tool:focus-visible,
+.shot-color:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.shot-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border-strong);
 }
 .shot-colors {
   display: inline-flex;
-  gap: 4px;
-  margin: 0 6px;
+  gap: 2px;
 }
 .shot-color {
-  width: 22px;
-  height: 22px;
-  border: 2px solid transparent;
-  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   cursor: pointer;
 }
-.shot-color[aria-checked='true'] {
-  border-color: var(--text);
+.shot-color span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
 }
-.shot-stage {
-  position: relative;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.shot-canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  cursor: crosshair;
-  touch-action: none;
-}
-.shot-skeleton {
-  height: 240px;
+.shot-color[aria-checked='true'] span {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--text);
 }
 .shot-text {
   position: absolute;
   width: 200px;
   height: 30px;
 }
-.preview-pick-dialog h2 code {
-  font-size: 0.9em;
-}
-.preview-pick-where {
-  margin-top: -4px;
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 12px;
-  word-break: break-all;
-}
-.preview-pick-dialog textarea {
-  display: block;
-  width: 100%;
-  margin: 6px 0;
-}
-.preview-pick-context {
-  min-height: 160px;
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 12px;
-}
-.preview-pick-dialog select {
-  display: block;
-  width: 100%;
-  margin-top: 6px;
+@media (pointer: coarse) {
+  .shot-tool,
+  .shot-color {
+    width: 38px;
+    height: 38px;
+  }
 }
 .preview-error {
   flex: none;
@@ -742,4 +838,49 @@
     height: 40px;
     font-size: 16px;
   }
+}
+.shot-skeleton {
+  height: 240px;
+}
+/* The screenshot checkbox: the Files view's box (folder-view.css loads only with that view). */
+.pick-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 550;
+  cursor: pointer;
+  user-select: none;
+}
+.pick-check input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.pick-check:has(input:focus-visible) .pick-check-box {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.pick-check:has(input:disabled) {
+  color: var(--text-3);
+  cursor: default;
+}
+.pick-check-box {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: transparent;
+}
+.pick-check.is-checked .pick-check-box {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
 }

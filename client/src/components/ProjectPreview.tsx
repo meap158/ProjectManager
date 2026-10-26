@@ -926,15 +926,19 @@ export function PreviewWorkspace() {
               setPicking(!picking);
             }}
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="M2.5 2.5h3M2.5 2.5v3M13.5 2.5h-3M13.5 2.5v3M2.5 13.5h3M2.5 13.5v-3"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <path d="M8 7l6 2.2-2.6 1.1L10.3 13z" fill="currentColor" />
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z" />
+              <path d="M5 3a2 2 0 0 0-2 2M19 3a2 2 0 0 1 2 2M5 21a2 2 0 0 1-2-2M9 3h1M9 21h2M14 3h1M3 9v1M21 9v2M3 14v1" />
             </svg>
           </button>
           <button
@@ -952,21 +956,6 @@ export function PreviewWorkspace() {
         {error && (
           <div className="error-banner preview-error" role="alert">
             {error}
-          </div>
-        )}
-        {picking && (
-          <div className="preview-picking" role="status">
-            <span>Click an element in the page to send it to a session.</span>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                tellPicker('stop');
-                setPicking(false);
-              }}
-            >
-              Cancel
-            </button>
           </div>
         )}
         {picked && (
@@ -999,6 +988,24 @@ export function PreviewWorkspace() {
               />
             );
           })}
+          {picking && (
+            <div className="preview-picking" role="status">
+              <span>Click an element</span>
+              <kbd>Esc</kbd>
+              <button
+                type="button"
+                className="preview-picking-close"
+                aria-label="Stop selecting"
+                title="Stop selecting"
+                onClick={() => {
+                  tellPicker('stop');
+                  setPicking(false);
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
           {target && frame && active.loading && (
             <div className="preview-loading" role="status">
               <LoadingMark />

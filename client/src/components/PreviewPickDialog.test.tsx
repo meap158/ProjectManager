@@ -109,7 +109,10 @@ describe('the picked element (PM-311)', () => {
         onClose={() => {}}
       />,
     );
-    await screen.findByRole('option', { name: /Builder · OmniProbe · this app/ });
+    // The app's own dropdown, defaulting to the app's project's most recent session.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Session/ }).textContent).toContain('Builder'),
+    );
     fireEvent.change(screen.getByLabelText('What should change?'), {
       target: { value: 'Make it smaller on phones' },
     });
