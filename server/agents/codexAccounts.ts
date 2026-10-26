@@ -594,11 +594,18 @@ export class CodexAccounts {
    * Requires verified current-account exhaustion, then picks the untried account with the most
    * quota (`bySwitchQuota`: 5-hour, then weekly, then list order). Unknown, stale or reset-due
    * readings never authorize a switch, and with no candidate left it stays put.
+   *
+   * "Exhausted" is what the usage meter shows: under 1% left counts (a reading of 99.6% used is
+   * the 100% the owner sees, and a strict zero never matched it). `limitShown` says a session or
+   * run printed the CLI's own usage-limit message: that is a second signal, so a fresh verified
+   * reading with 5% or less left is enough, which covers a meter that lags the CLI. An unknown
+   * or stale reading still authorizes nothing.
    */
   nextUnused(
     currentKey: string | null,
     tried: readonly string[],
     now = Date.now(),
+    limitShown = false,
   ): { id: string; name: string; home: string } | null {
     // A manual switch during an awaited refresh invalidates the caller's original selection.
     if ((currentKey ?? 'default') !== (this.defaultMatch() ?? 'default')) return null;
@@ -619,7 +626,8 @@ export class CodexAccounts {
     const reading = (home: string) => this.knownUsage(sources.get(home) ?? home);
     const currentHome =
       currentKey && currentKey !== 'default' ? this.home(currentKey) : this.defaultHome();
-    if (verifiedRemainingQuota(reading(currentHome), now) !== 0) return null;
+    const left = verifiedRemainingQuota(reading(currentHome), now);
+    if (left === null || left >= (limitShown ? 5.0001 : 1)) return null;
     const ranked = accounts
       .filter((a) => a.id !== currentKey && !tried.includes(a.id))
       .map((account) => ({ account, quota: switchQuota(reading(account.home), now) }))
@@ -629,7 +637,7 @@ export class CodexAccounts {
         ): candidate is {
           account: (typeof accounts)[number];
           quota: NonNullable<ReturnType<typeof switchQuota>>;
-        } => candidate.quota !== null,
+        } => candidate.quota !== null && candidate.quota.usable >= 1,
       )
       .sort((a, b) => bySwitchQuota(a.quota, b.quota));
     const chosen = ranked[0]?.account;

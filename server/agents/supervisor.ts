@@ -1687,8 +1687,16 @@ export class AgentSupervisor {
       const accounts = this.codexAccounts;
       if (!accounts?.autoSwitchEnabled()) return (decision = null);
       const currentKey = accounts.selectedId();
-      accounts.refreshUsageIfStale();
-      const next = accounts.nextUnused(currentKey, this.codexTried(currentKey), Date.now());
+      // A session printing the CLI's own limit message is a second signal next to the meter:
+      // read usage again sooner, and accept a meter that is nearly (not exactly) at its end.
+      const limitShown = this.usageLimits.size > 0;
+      accounts.refreshUsageIfStale(limitShown ? 15_000 : undefined);
+      const next = accounts.nextUnused(
+        currentKey,
+        this.codexTried(currentKey),
+        Date.now(),
+        limitShown,
+      );
       return (decision = { currentKey, next });
     };
     for (const row of rows) {
@@ -3117,7 +3125,7 @@ export class AgentSupervisor {
             if (!latest || latest.status !== 'running' || latest.log_path !== row.log_path) return;
             let next =
               !live.stoppedByUser && this.codexAccounts.autoSwitchEnabled()
-                ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now())
+                ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now(), true)
                 : null;
             if (next && !this.codexRotationReady()) {
               log.append(
@@ -3143,7 +3151,7 @@ export class AgentSupervisor {
                   return;
                 next =
                   this.codexAccounts.autoSwitchEnabled() && !live.stoppedByUser
-                    ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now())
+                    ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now(), true)
                     : null;
               } else next = null;
             }

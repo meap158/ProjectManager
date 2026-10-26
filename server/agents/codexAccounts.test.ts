@@ -951,6 +951,13 @@ describe('CodexAccounts (PM-164)', () => {
     expect(accounts.nextUnused('default', ['default'], now)).toBeNull();
     await read(99);
     expect(accounts.nextUnused('default', ['default'], now)).toBeNull();
+    // The CLI's own limit message is a second signal: a meter within 5% of its end is enough.
+    expect(accounts.nextUnused('default', ['default'], now, true)?.id).toBe(a.id);
+    await read(94);
+    expect(accounts.nextUnused('default', ['default'], now, true)).toBeNull();
+    // The meter shows 100% for 99.6% used; a strict zero never matched that.
+    await read(99.6);
+    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(a.id);
     await read(100);
     expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(a.id);
     accounts.setAutoSwitchEligible(a.id, false);
