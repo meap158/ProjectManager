@@ -54,6 +54,16 @@ export function readLastPage(): string | null {
   }
 }
 
+/** The launcher's `/` is temporary until RememberLastPage restores the real route. */
+export function lastPageRestorePending(): boolean {
+  try {
+    const saved = readLastPage();
+    return sessionStorage.getItem(GATE_KEY) !== 'done' && !!saved && saved !== '/';
+  } catch {
+    return false;
+  }
+}
+
 export function saveLastPage(path: string): void {
   const clean = sanitizeLastPage(path);
   if (!clean) return;

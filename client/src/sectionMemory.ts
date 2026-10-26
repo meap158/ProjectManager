@@ -4,13 +4,15 @@
 // back/forward memory; the Agents page also remembers its open terminal (WorkspacePage).
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router';
+import { lastPageRestorePending, sanitizeLastPage } from './lastPage';
 
 const PATHS_KEY = 'pm-section-paths';
 const SCROLL_KEY = 'pm-section-scroll';
+const HOME_KEY = 'pm-home-selection';
 
-/** The nav section an address belongs to; null for addresses outside the nav (project pages). */
+/** Project details and the portfolio belong to Home. */
 export function sectionOf(pathname: string): string | null {
-  if (pathname === '/') return '/';
+  if (pathname === '/' || /^\/projects\/[1-9]\d*$/.test(pathname)) return '/';
   for (const section of ['/board', '/workspace', '/preview', '/orchestrators', '/settings']) {
     if (pathname === section || pathname.startsWith(`${section}/`)) return section;
   }
@@ -36,8 +38,22 @@ function write(key: string, value: Record<string, string | number>): void {
 
 /** Where a nav link to `section` should go: the address last open there, else the section. */
 export function sectionHref(section: string): string {
+  if (section === '/') {
+    try {
+      const home = sanitizeLastPage(localStorage.getItem(HOME_KEY));
+      if (home && sectionOf(home.split('?')[0]!) === '/') return home;
+    } catch {
+      // Fall back to this tab's selection when persistent storage is unavailable.
+    }
+  }
   const saved = read(PATHS_KEY)[section];
   return typeof saved === 'string' && sectionOf(saved.split('?')[0]!) === section ? saved : section;
+}
+
+/** Explicit Home URLs win immediately, including browser back/forward and direct links. */
+export function useHomeHref(): string {
+  const { pathname, search } = useLocation();
+  return sectionOf(pathname) === '/' ? pathname + search : sectionHref('/');
 }
 
 /** The scrolling page area (the sidebar and nav stay put; see .app-main in styles.css). */
@@ -65,6 +81,13 @@ export function useSectionMemory(): void {
     current.current = path;
     const section = sectionOf(pathname);
     if (section) write(PATHS_KEY, { ...read(PATHS_KEY), [section]: path });
+    if (section === '/' && !(pathname === '/' && lastPageRestorePending())) {
+      try {
+        localStorage.setItem(HOME_KEY, sanitizeLastPage(path) ?? '/');
+      } catch {
+        // The current selection still works without persistent storage.
+      }
+    }
     const target = read(SCROLL_KEY)[path];
     const el = scroller();
     if (!el) return;

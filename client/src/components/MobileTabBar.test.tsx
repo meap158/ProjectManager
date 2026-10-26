@@ -47,13 +47,14 @@ const projectsTab = () => screen.getByRole('button', { name: 'Projects' });
 const panel = () => screen.queryByRole('dialog', { name: 'Project panel' });
 
 describe('MobileTabBar', () => {
-  it('marks the current route active, and Projects on a project page', () => {
+  it('marks Home active on project pages and Projects only while the picker is open', () => {
     renderAt('/board');
     expect(screen.getByRole('link', { name: 'Board' }).className).toBe('is-active');
     expect(projectsTab().className).toBe('');
     cleanup();
     renderAt('/projects/3');
-    expect(projectsTab().className).toBe('is-active');
+    expect(projectsTab().className).toBe('');
+    expect(screen.getByRole('link', { name: 'Home' }).className).toBe('is-active');
   });
 
   it('toggles the project panel, which takes the active state while open', () => {

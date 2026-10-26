@@ -47,6 +47,22 @@ const app = (port: number, projectId: number | null, web: boolean): LocalApp => 
 });
 
 describe('running app indicator', () => {
+  it('retains the selected project highlight while another section is open', async () => {
+    localStorage.setItem('pm-home-selection', '/projects/2?tab=files');
+    vi.mocked(api.listProjects).mockResolvedValue([project(1, 'Probe'), project(2, 'Quiet')]);
+    vi.mocked(api.localApps).mockResolvedValue({ apps: [] });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <ProjectSidebar />
+      </MemoryRouter>,
+    );
+    const selected = await screen.findByRole('link', { name: /Quiet/ });
+    expect(selected.classList.contains('is-active')).toBe(true);
+    expect(screen.getByRole('link', { name: /Probe/ }).classList.contains('is-active')).toBe(false);
+    expect(screen.getByRole('link', { name: /All projects/ }).classList.contains('is-active')).toBe(
+      false,
+    );
+  });
   it("marks a project whose web app is running, and only with that project's web ports", async () => {
     vi.mocked(api.listProjects).mockResolvedValue([project(1, 'Probe'), project(2, 'Quiet')]);
     vi.mocked(api.localApps).mockResolvedValue({

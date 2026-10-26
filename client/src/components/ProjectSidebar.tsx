@@ -10,6 +10,7 @@ import { PlanUsage } from './PlanUsage';
 import { navigateProjectPane } from '../projectPaneNavigation';
 import { serialPoll } from '../lib/serialPoll';
 import { GlobeIcon } from './icons';
+import { useHomeHref } from '../sectionMemory';
 
 // Opened from the + button only: loaded on first use, not with every page.
 const AddProjectDialog = lazy(() =>
@@ -124,6 +125,7 @@ export function ProjectSidebar({
   onNavigate,
 }: { panelOpen?: boolean; onNavigate?: () => void } = {}) {
   const navigate = useNavigate();
+  const selectedHome = useHomeHref().split('?')[0];
   const projectHref = useProjectHref();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -356,11 +358,7 @@ export function ProjectSidebar({
         if ((e.target as Element).closest('a')) onNavigate?.();
       }}
     >
-      <NavLink
-        to="/"
-        end
-        className={({ isActive }) => `sidebar-home${isActive ? ' is-active' : ''}`}
-      >
+      <NavLink to="/" end className={`sidebar-home${selectedHome === '/' ? ' is-active' : ''}`}>
         <span aria-hidden="true" className="sidebar-home-icon">
           ▦
         </span>
@@ -483,6 +481,7 @@ export function ProjectSidebar({
         {visible.map((p) => {
           const item = (
             <SidebarItem
+              selected={selectedHome === `/projects/${p.id}`}
               project={p}
               href={projectHref(p.id)}
               activity={activity.get(p.id) ?? { running: 0, idle: p.runningSessions, input: 0 }}
@@ -649,11 +648,13 @@ export function runningAppsLabel(apps: LocalApp[]): string {
 }
 
 function SidebarItem({
+  selected,
   project: p,
   href,
   activity,
   apps,
 }: {
+  selected: boolean;
   project: ProjectSummary;
   href: string;
   activity: Activity;
@@ -666,7 +667,7 @@ function SidebarItem({
   return (
     <NavLink
       to={href}
-      className={({ isActive }) => `sidebar-item${isActive ? ' is-active' : ''}`}
+      className={`sidebar-item${selected ? ' is-active' : ''}`}
       title={p.path}
       aria-label={`${p.name} — ${p.path}${live ? ` — ${live}` : ''}`}
     >

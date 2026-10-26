@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
 import { InboxButton } from './components/InboxButton';
 import { MobileTabBar } from './components/MobileTabBar';
-import { sectionHref, useSectionMemory } from './sectionMemory';
+import { sectionHref, sectionOf, useHomeHref, useSectionMemory } from './sectionMemory';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ThemeSwitch } from './components/ThemeSwitch';
 import { BoardIcon, GridIcon, MonitorIcon, SettingsIcon, TerminalIcon } from './components/icons';
@@ -31,6 +31,8 @@ const SettingsPage = lazy(() =>
 );
 
 export function App() {
+  const homeHref = useHomeHref();
+  const homeActive = sectionOf(useLocation().pathname) === '/';
   // The agent workspace takes the full width: terminals need the screen space more than the list.
   const fullWidth = ['/workspace', '/orchestrators'].includes(useLocation().pathname);
   // Phone widths: the project list is a full-screen panel opened from the bottom tab bar.
@@ -46,19 +48,14 @@ export function App() {
     <>
       <RememberLastPage />
       <header className="topbar">
-        <Link to="/" className="brand" aria-label="ProjectManager">
+        <Link to={homeHref} className="brand" aria-label="ProjectManager">
           <img src="/favicon.svg" alt="" />
           <span>ProjectManager</span>
         </Link>
         <nav className="topnav" aria-label="Primary">
-          <NavLink
-            to="/"
-            end
-            aria-label="All projects"
-            className={({ isActive }) => (isActive ? 'is-active' : '')}
-          >
+          <NavLink to={homeHref} end aria-label="Home" className={homeActive ? 'is-active' : ''}>
             <GridIcon />
-            <span>All projects</span>
+            <span>Home</span>
           </NavLink>
           <NavLink
             to={sectionHref('/board')}

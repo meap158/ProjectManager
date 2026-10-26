@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from 'react-router';
 import { BoardIcon, FoldersIcon, GridIcon, SettingsIcon, TerminalIcon } from './icons';
-import { sectionHref } from '../sectionMemory';
+import { sectionHref, sectionOf, useHomeHref } from '../sectionMemory';
 
 /**
  * Bottom tab bar for phone widths (DESIGN.md §2, KDP's 65px mobile bar). CSS hides it above the
@@ -16,7 +16,7 @@ export function MobileTabBar({
   onToggleProjects: () => void;
 }) {
   const { pathname } = useLocation();
-  const onProject = pathname.startsWith('/projects/');
+  const homeHref = useHomeHref();
   // Orchestrators and Preview live under Agents on phones, reached from its tools menu.
   const onAgentsTools = pathname.startsWith('/orchestrators') || pathname.startsWith('/preview');
   // While the project panel covers the page, it is the active tab, not the route underneath.
@@ -24,13 +24,17 @@ export function MobileTabBar({
     isActive && !projectsOpen ? 'is-active' : '';
   return (
     <nav className="tabbar" aria-label="Primary">
-      <NavLink to="/" end className={routeClass}>
+      <NavLink
+        to={homeHref}
+        end
+        className={() => routeClass({ isActive: sectionOf(pathname) === '/' })}
+      >
         <GridIcon size={20} />
         <span>Home</span>
       </NavLink>
       <button
         type="button"
-        className={projectsOpen || onProject ? 'is-active' : ''}
+        className={projectsOpen ? 'is-active' : ''}
         aria-expanded={projectsOpen}
         aria-controls="project-panel"
         onClick={onToggleProjects}

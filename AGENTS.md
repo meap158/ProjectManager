@@ -153,3 +153,6 @@ anything.
 - PM-305: preserve fresh identity-bound exhaustion, 5-hour/weekly/saved-order ranking and the global
   idle/input/run guard for Codex rotation. Recheck stop/delete and selection after asynchronous usage
   reads. Only limit-blocked work receives Continue. See `docs/ACCOUNT-SWITCHER-AUDIT.md`.
+
+- PM-306: Home includes `/` and `/projects/:id`. Keep the persistent Home selection separate from
+  last-page startup restoration; the temporary launcher `/` must not overwrite it. See `homeSelection.test.tsx`.

@@ -2,7 +2,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { sectionHref, sectionOf } from './sectionMemory';
 
-afterEach(() => sessionStorage.clear());
+afterEach(() => {
+  sessionStorage.clear();
+  localStorage.clear();
+});
 
 describe('section memory (PM-72)', () => {
   it('maps addresses to their nav section', () => {
@@ -10,7 +13,7 @@ describe('section memory (PM-72)', () => {
     expect(sectionOf('/board')).toBe('/board');
     expect(sectionOf('/workspace')).toBe('/workspace');
     expect(sectionOf('/orchestrators')).toBe('/orchestrators');
-    expect(sectionOf('/projects/3')).toBeNull(); // Opened from the project list, not a nav tab.
+    expect(sectionOf('/projects/3')).toBe('/'); // Project pages belong to Home.
   });
 
   it("links a section to the address last open in it, never another section's", () => {

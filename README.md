@@ -470,3 +470,6 @@ stand, local only).
 Codex automatic account switching waits for safe idle prompts so grace work can finish. Accounts
 are ranked by remaining 5-hour quota, weekly quota, then saved order, with fresh positive quota
 required in every reported window. See [the account audit](docs/ACCOUNT-SWITCHER-AUDIT.md).
+
+Home remembers whether you last viewed All projects or an individual project, including its tab.
+The selection survives section changes and reloads in this browser.
