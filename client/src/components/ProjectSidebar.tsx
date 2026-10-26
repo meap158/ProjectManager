@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useLocation, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import type { AgentSession, LocalApp, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { formatCompact, formatRelative } from '../format';
@@ -134,7 +134,19 @@ export function ProjectSidebar({
     : null;
   const selectedHome =
     boardProject === null ? homeChoice : boardProject ? `/projects/${boardProject}` : '/';
-  const projectHref = useProjectHref();
+  const pageHref = useProjectHref();
+  // On Board a project opens on its own Board tab (as opening the project and choosing Board
+  // would), which Home then remembers (PM-306); All projects stays on the full board, keeping the
+  // board's other choices (columns shown, view).
+  const fullBoardHref = () => {
+    const next = new URLSearchParams(search);
+    next.delete('card');
+    next.delete('project');
+    const query = next.toString();
+    return `/board${query ? `?${query}` : ''}`;
+  };
+  const projectHref = (id: number) =>
+    boardProject === null ? pageHref(id) : `/projects/${id}?tab=board`;
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   // Web apps running on this computer, by the project they were started from (Preview's detection).
@@ -366,7 +378,11 @@ export function ProjectSidebar({
         if ((e.target as Element).closest('a')) onNavigate?.();
       }}
     >
-      <NavLink to="/" end className={`sidebar-home${selectedHome === '/' ? ' is-active' : ''}`}>
+      <Link
+        to={boardProject === null ? '/' : fullBoardHref()}
+        aria-current={selectedHome === '/' ? 'page' : undefined}
+        className={`sidebar-home${selectedHome === '/' ? ' is-active' : ''}`}
+      >
         <span aria-hidden="true" className="sidebar-home-icon">
           ▦
         </span>
@@ -381,7 +397,7 @@ export function ProjectSidebar({
                 : `Portfolio · ${projects.length} project${projects.length === 1 ? '' : 's'}`}
           </span>
         </span>
-      </NavLink>
+      </Link>
       <div className="sidebar-top">
         <input
           className="input"
@@ -673,8 +689,9 @@ function SidebarItem({
   const topLang = p.code?.languages[0]?.name;
   const live = apps?.length ? runningAppsLabel(apps) : null;
   return (
-    <NavLink
+    <Link
       to={href}
+      aria-current={selected ? 'page' : undefined}
       className={`sidebar-item${selected ? ' is-active' : ''}`}
       title={p.path}
       aria-label={`${p.name} — ${p.path}${live ? ` — ${live}` : ''}`}
@@ -728,7 +745,7 @@ function SidebarItem({
           <span className="faint">no commits</span>
         )}
       </span>
-    </NavLink>
+    </Link>
   );
 }
 

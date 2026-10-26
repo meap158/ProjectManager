@@ -58,6 +58,8 @@ describe('running app indicator', () => {
     );
     const selected = await screen.findByRole('link', { name: /Quiet/ });
     expect(selected.classList.contains('is-active')).toBe(true);
+    // Away from Board, a project row opens the project's page as before.
+    expect(selected.getAttribute('href')).toMatch(/^\/projects\/2/);
     expect(screen.getByRole('link', { name: /Probe/ }).classList.contains('is-active')).toBe(false);
     expect(screen.getByRole('link', { name: /All projects/ }).classList.contains('is-active')).toBe(
       false,
@@ -79,13 +81,23 @@ describe('running app indicator', () => {
     expect(screen.getByRole('link', { name: /Quiet/ }).classList.contains('is-active')).toBe(false);
     unmount();
     render(
-      <MemoryRouter initialEntries={['/board?project=1']}>
+      <MemoryRouter initialEntries={['/board?project=1&show=active']}>
         <ProjectSidebar />
       </MemoryRouter>,
     );
-    expect(
-      (await screen.findByRole('link', { name: /Probe/ })).classList.contains('is-active'),
-    ).toBe(true);
+    const probe = await screen.findByRole('link', { name: /Probe/ });
+    expect(probe.classList.contains('is-active')).toBe(true);
+    // On Board a project opens on its own Board tab; All projects keeps the full board.
+    expect(screen.getByRole('link', { name: /Quiet/ }).getAttribute('href')).toBe(
+      '/projects/2?tab=board',
+    );
+    expect(screen.getByRole('link', { name: /All projects/ }).getAttribute('href')).toBe(
+      '/board?show=active',
+    );
+    // Only the selected item is the current page.
+    expect(screen.getAllByRole('link').filter((l) => l.getAttribute('aria-current'))).toEqual([
+      probe,
+    ]);
     // Home's own choice is untouched, for when the owner goes back there.
     expect(localStorage.getItem('pm-home-selection')).toBe('/projects/2?tab=files');
   });
