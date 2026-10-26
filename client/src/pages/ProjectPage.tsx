@@ -313,7 +313,7 @@ function ProjectTitle({
     );
   }
   return (
-    <h1>
+    <h1 className="project-title">
       <button
         className="btn-ghost"
         style={{

@@ -670,15 +670,22 @@ code,
 }
 /* A web app from this project is running (Preview's detection): a small globe beside the name,
    in the "live" colour, with the address in its label. Icon only, so it fits the tablet chips. */
+/* The name and its globe on one centred row (vertical-align: middle sat on the lowercase middle,
+   below the centre of a capitalised name). */
+.project-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 /* The same globe beside a project's name on its page (PM-309): a link into Preview. */
 .project-live {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
-  margin-left: 6px;
-  vertical-align: middle;
   border-radius: 50%;
   color: var(--good, #0ca30c);
 }
