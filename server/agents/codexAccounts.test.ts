@@ -955,9 +955,9 @@ describe('CodexAccounts (PM-164)', () => {
     expect(accounts.nextUnused('default', ['default'], now, true)?.id).toBe(a.id);
     await read(94);
     expect(accounts.nextUnused('default', ['default'], now, true)).toBeNull();
-    // The meter shows 100% for 99.6% used; a strict zero never matched that.
+    // 99.6% used is not exhausted on the meter alone.
     await read(99.6);
-    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(a.id);
+    expect(accounts.nextUnused('default', ['default'], now)).toBeNull();
     await read(100);
     expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(a.id);
     accounts.setAutoSwitchEligible(a.id, false);

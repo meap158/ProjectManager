@@ -366,25 +366,29 @@ export function CodexAccountsPanel({
       ) : (
         <>
           <div className="codex-accounts-toolbar">
-            {!isClaude && (
-              <label
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={state.autoSwitch}
-                  disabled={busy}
-                  onChange={() => act(() => api.setCodexAutoSwitch(!state.autoSwitch))}
-                />
-                <span>Automatically switch accounts when hitting usage limits</span>
-              </label>
-            )}
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 13,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={state.autoSwitch}
+                disabled={busy}
+                onChange={() =>
+                  act(() =>
+                    isClaude
+                      ? api.setClaudeAutoSwitch(!state.autoSwitch)
+                      : api.setCodexAutoSwitch(!state.autoSwitch),
+                  )
+                }
+              />
+              <span>Automatically switch accounts when hitting usage limits</span>
+            </label>
             {!isClaude && (
               <button
                 type="button"

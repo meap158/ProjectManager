@@ -111,6 +111,7 @@ import {
   rememberMode,
   withPermissions,
 } from './permissions.js';
+import { claudeLimitOnScreen, currentClaudeId, nextClaudeAccount } from './claudeRotation.js';
 import { forgetTurn, persistTurns, turnState } from './turnState.js';
 import { QuestionCache } from './questions.js';
 import { HostClient } from './host/client.js';
@@ -444,6 +445,10 @@ export class AgentSupervisor {
    * the account again at once. A limit only comes back in reply to a request.
    */
   private noTurnSinceStart = new Set<number>();
+  /** Claude accounts auto-rotation left, and when: skipped until their window has had time to reset. */
+  private claudeRotationTried = new Map<string, number>();
+  private claudeRotating = false;
+  private claudeLimitSeen = new Map<number, { at: number; shown: boolean }>();
   /** Resolves once boot reconciliation (re-attach / relaunch) is done. */
   readonly ready: Promise<void>;
 
@@ -507,6 +512,11 @@ export class AgentSupervisor {
           this.tickContinuation();
         } catch (e) {
           console.error('[agents] auto-continue:', e);
+        }
+        try {
+          this.tickClaudeRotation();
+        } catch (e) {
+          console.error('[agents] claude account rotation:', e);
         }
       }
     }, 10_000);
@@ -1668,6 +1678,75 @@ export class AgentSupervisor {
     for (const id of this.codexAccounts?.recoveredAccounts(this.codexRotationTried) ?? [])
       this.codexRotationTried.delete(id);
     return [...new Set([...this.codexRotationTried.keys(), currentKey])];
+  }
+
+  /**
+   * Switches the Claude Code login when it runs out (opt-in, Settings > Agent CLIs). Signals: the
+   * status line's reading of the login in use, and the CLI's own limit message on a session
+   * (`claudeRotation.ts`). Sessions that are idle, or showing the limit, restart on the new login
+   * with their conversation resumed; the ones showing the limit also get Continue. A session that
+   * is mid-turn is left alone. A login left is not used again for five hours, and a restarted
+   * session's old limit message is ignored until it has taken a turn.
+   */
+  private tickClaudeRotation(): void {
+    const accounts = this.claudeAccounts;
+    if (!accounts || this.claudeRotating || !accounts.autoSwitchEnabled()) return;
+    const rows = this.db
+      .prepare(`SELECT * FROM agent_sessions WHERE provider_id = 'claude' AND status = 'running'`)
+      .all() as unknown as SessionRow[];
+    const now = Date.now();
+    for (const id of this.claudeLimitSeen.keys())
+      if (!rows.some((r) => r.id === id)) this.claudeLimitSeen.delete(id);
+    if (!rows.length) return;
+    const blocked = new Set<number>();
+    for (const row of rows) {
+      if (this.noTurnSinceStart.has(row.id)) continue;
+      let seen = this.claudeLimitSeen.get(row.id);
+      if (!seen || now - seen.at >= 15_000) {
+        seen = { at: now, shown: claudeLimitOnScreen(this.sessionScreen(row.id, 3000) ?? '') };
+        this.claudeLimitSeen.set(row.id, seen);
+      }
+      if (seen.shown) blocked.add(row.id);
+    }
+    for (const [id, at] of this.claudeRotationTried)
+      if (now - at > 5 * 60 * 60_000) this.claudeRotationTried.delete(id);
+    const state = accounts.state(now);
+    const next = nextClaudeAccount(
+      state,
+      [...this.claudeRotationTried.keys()],
+      blocked.size > 0,
+      now,
+    );
+    if (!next) return;
+    const restartable = rows.filter(
+      (row) =>
+        this.live.has(`session:${row.id}`) &&
+        row.desired_state === 'running' &&
+        !this.queuedInputBytes(row.id) &&
+        !(this.restarting.get(row.id) && this.restarting.get(row.id)?.phase !== 'failed') &&
+        (blocked.has(row.id) ||
+          this.sessionActivity(row, this.fileModifiedAt(row.log_path)) === 'idle'),
+    );
+    this.claudeRotating = true;
+    this.claudeRotationTried.set(currentClaudeId(state), now);
+    void (async () => {
+      try {
+        accounts.setActive(next.id === 'default' ? null : next.id);
+        for (const row of restartable) {
+          this.outputFor(`session:${row.id}`, row.log_path).append(
+            `\r\n[supervisor] Claude usage limit: switching to ${next.name}\r\n`,
+          );
+          await this.restartSession(row.id, { continuePrompt: blocked.has(row.id) }).catch(
+            (e: Error) => console.error('[agents] claude rotation restart:', e.message),
+          );
+          this.claudeLimitSeen.delete(row.id);
+        }
+      } catch (e) {
+        console.error('[agents] claude account rotation:', e);
+      } finally {
+        this.claudeRotating = false;
+      }
+    })();
   }
 
   private tickContinuation(): void {

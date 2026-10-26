@@ -595,11 +595,10 @@ export class CodexAccounts {
    * quota (`bySwitchQuota`: 5-hour, then weekly, then list order). Unknown, stale or reset-due
    * readings never authorize a switch, and with no candidate left it stays put.
    *
-   * "Exhausted" is what the usage meter shows: under 1% left counts (a reading of 99.6% used is
-   * the 100% the owner sees, and a strict zero never matched it). `limitShown` says a session or
-   * run printed the CLI's own usage-limit message: that is a second signal, so a fresh verified
-   * reading with 5% or less left is enough, which covers a meter that lags the CLI. An unknown
-   * or stale reading still authorizes nothing.
+   * Exhausted means a fresh verified zero. `limitShown` says a session or run printed the CLI's
+   * own usage-limit message: a second signal, so a fresh verified reading with 5% or less left is
+   * then enough, which covers a meter that lags the CLI. An unknown or stale reading authorizes
+   * nothing.
    */
   nextUnused(
     currentKey: string | null,
@@ -627,7 +626,7 @@ export class CodexAccounts {
     const currentHome =
       currentKey && currentKey !== 'default' ? this.home(currentKey) : this.defaultHome();
     const left = verifiedRemainingQuota(reading(currentHome), now);
-    if (left === null || left >= (limitShown ? 5.0001 : 1)) return null;
+    if (left === null || left > (limitShown ? 5 : 0)) return null;
     const ranked = accounts
       .filter((a) => a.id !== currentKey && !tried.includes(a.id))
       .map((account) => ({ account, quota: switchQuota(reading(account.home), now) }))
@@ -1224,7 +1223,7 @@ export class ClaudeAccounts {
       )
         ? saved
         : null;
-    const autoSwitch = getSetting<boolean>(this.db, CLAUDE_AUTO_SWITCH_KEY) ?? true;
+    const autoSwitch = this.autoSwitchEnabled();
     const defCredsFile = this.defaultBackupCredsFile();
     const liveCredsFile = path.join(this.defaultHome(), '.credentials.json');
     const sourceCredsFile = activeProfileId ? defCredsFile : liveCredsFile;
@@ -1328,6 +1327,11 @@ export class ClaudeAccounts {
       this.writeRegistry({ ...registry, activeProfileId: normalized });
     }
     return this.state();
+  }
+
+  /** Off until chosen: Claude rotation restarts sessions, so it is never a surprise. */
+  autoSwitchEnabled(): boolean {
+    return getSetting<boolean>(this.db, CLAUDE_AUTO_SWITCH_KEY) === true;
   }
 
   setAutoSwitch(enabled: boolean): CodexAccountsState {
