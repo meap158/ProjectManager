@@ -968,6 +968,8 @@ export interface SopAuditor {
   name: string;
   terminal: AgentSession['terminal'];
   kind: 'session' | 'orchestrator';
+  /** The agent CLI it runs, e.g. 'claude' or 'codex'. */
+  providerId: string;
   /** What it can audit: "This project", "All projects" or "3 projects". */
   scope: string;
   lastInputAt: string | null;

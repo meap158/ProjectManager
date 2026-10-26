@@ -579,6 +579,7 @@ export function createApp(
           name: instance.name,
           terminal: s.terminal,
           kind: 'orchestrator',
+          providerId: s.providerId,
           scope: all ? 'All projects' : `${instance.projectIds.length} projects`,
           lastInputAt: s.lastInputAt ?? null,
         });
@@ -588,6 +589,7 @@ export function createApp(
           name: s.name,
           terminal: s.terminal,
           kind: 'session',
+          providerId: s.providerId,
           scope: 'This project',
           lastInputAt: s.lastInputAt ?? null,
         });

@@ -51,6 +51,7 @@ const session = (id: number, projectId: number, patch: Partial<AgentSession> = {
     id,
     projectId,
     name: `s${id}`,
+    providerId: 'codex',
     status: 'running',
     terminal: 'pty',
     orchestratorId: null,
@@ -115,6 +116,12 @@ describe('the picked element (PM-311)', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /Session/ }).textContent).toContain('Builder'),
     );
+    // The closed picker names the agent through its secondary line once opened (PM-331).
+    fireEvent.click(screen.getByRole('button', { name: /Session/ }));
+    expect(screen.getByRole('option', { name: /Builder/ }).textContent).toContain(
+      'Codex · OmniProbe',
+    );
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
     fireEvent.change(screen.getByLabelText('What should change?'), {
       target: { value: 'Make it smaller on phones' },
     });

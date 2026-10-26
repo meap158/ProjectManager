@@ -3,6 +3,7 @@ import type { SopAuditor } from '../../../shared/types';
 import { api } from '../api';
 import { sendMessageToSession } from '../sessionSend';
 import { Dropdown } from './Dropdown';
+import { sessionOption } from './sessionOption';
 
 // Hands an SOP audit to an agent (PM-316): a project's own session, or the chat of an orchestrator
 // whose scope includes the project. The message points the agent at its audit tool (sop_check or
@@ -65,11 +66,12 @@ export function SopAuditSend({
           disabled={!auditors?.length}
           options={
             auditors?.length
-              ? auditors.map((a) => ({
-                  value: a.id,
-                  label: a.name,
-                  sub: a.kind === 'orchestrator' ? `Orchestrator · ${a.scope}` : 'Project session',
-                }))
+              ? auditors.map((a) =>
+                  sessionOption(
+                    a,
+                    a.kind === 'orchestrator' ? `Orchestrator · ${a.scope}` : 'Project session',
+                  ),
+                )
               : [
                   {
                     value: 0,

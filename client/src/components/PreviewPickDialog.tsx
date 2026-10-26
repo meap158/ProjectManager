@@ -5,6 +5,7 @@ import { sendMessageToSession } from '../sessionSend';
 import { AnnotatedShot } from './AnnotatedShot';
 import { scaleShapes, type Shape } from './Markup';
 import { Dropdown } from './Dropdown';
+import { sessionOption } from './sessionOption';
 
 // Preview's element picker, the sending half (PM-311): what the picker reported about an element,
 // shown for review, then sent as a message to a CLI session of the owner's choice.
@@ -462,12 +463,13 @@ export function PreviewPickDialog({
               disabled={!sessions?.length}
               options={
                 sessions?.length
-                  ? sessions.map((s) => ({
-                      value: s.id,
-                      label: s.name,
-                      sub: projectNames.get(s.projectId) ?? 'All projects',
-                      hint: s.projectId === projectId ? 'this app' : undefined,
-                    }))
+                  ? sessions.map((s) =>
+                      sessionOption(
+                        s,
+                        projectNames.get(s.projectId) ?? 'All projects',
+                        s.projectId === projectId ? 'this app' : undefined,
+                      ),
+                    )
                   : [
                       {
                         value: 0,
