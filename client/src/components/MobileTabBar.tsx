@@ -1,6 +1,12 @@
 import { NavLink, useLocation } from 'react-router';
 import { BoardIcon, FoldersIcon, GridIcon, SettingsIcon, TerminalIcon } from './icons';
-import { sectionHref, sectionOf, useHomeHref } from '../sectionMemory';
+import {
+  allProjectsBoardHref,
+  projectBoardId,
+  sectionHref,
+  sectionOf,
+  useHomeHref,
+} from '../sectionMemory';
 
 /**
  * Bottom tab bar for phone widths (DESIGN.md §2, KDP's 65px mobile bar). CSS hides it above the
@@ -15,8 +21,10 @@ export function MobileTabBar({
   projectsOpen: boolean;
   onToggleProjects: () => void;
 }) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const homeHref = useHomeHref();
+  // A project's Board tab is part of Board (as in the top bar).
+  const onProjectBoard = projectBoardId(pathname, search) !== null;
   // Orchestrators and Preview live under Agents on phones, reached from its tools menu.
   const onAgentsTools = pathname.startsWith('/orchestrators') || pathname.startsWith('/preview');
   // While the project panel covers the page, it is the active tab, not the route underneath.
@@ -27,7 +35,7 @@ export function MobileTabBar({
       <NavLink
         to={homeHref}
         end
-        className={() => routeClass({ isActive: sectionOf(pathname) === '/' })}
+        className={() => routeClass({ isActive: sectionOf(pathname) === '/' && !onProjectBoard })}
       >
         <GridIcon size={20} />
         <span>Home</span>
@@ -42,7 +50,10 @@ export function MobileTabBar({
         <FoldersIcon size={20} />
         <span>Projects</span>
       </button>
-      <NavLink to={sectionHref('/board')} className={routeClass}>
+      <NavLink
+        to={onProjectBoard ? allProjectsBoardHref() : sectionHref('/board')}
+        className={({ isActive }) => routeClass({ isActive: isActive || onProjectBoard })}
+      >
         <BoardIcon size={20} />
         <span>Board</span>
       </NavLink>

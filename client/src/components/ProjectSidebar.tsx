@@ -12,7 +12,7 @@ import { GlobeIcon } from './icons';
 import { runningAppsLabel, useRunningApps } from '../runningApps';
 
 export { runningAppsLabel };
-import { useHomeHref } from '../sectionMemory';
+import { allProjectsBoardHref, projectBoardId, useHomeHref } from '../sectionMemory';
 
 // Opened from the + button only: loaded on first use, not with every page.
 const AddProjectDialog = lazy(() =>
@@ -131,9 +131,11 @@ export function ProjectSidebar({
   // project, so All projects is selected there unless the board is filtered to one (PM-307).
   const homeChoice = useHomeHref().split('?')[0];
   const { pathname, search } = useLocation();
-  const boardProject = pathname.startsWith('/board')
+  // Board is the board page or a project's Board tab (the Board menu is highlighted on both).
+  const onBoardPage = pathname.startsWith('/board');
+  const boardProject = onBoardPage
     ? Number(new URLSearchParams(search).get('project')) || 0
-    : null;
+    : projectBoardId(pathname, search);
   const selectedHome =
     boardProject === null ? homeChoice : boardProject ? `/projects/${boardProject}` : '/';
   const pageHref = useProjectHref();
@@ -141,6 +143,7 @@ export function ProjectSidebar({
   // would), which Home then remembers (PM-306); All projects stays on the full board, keeping the
   // board's other choices (columns shown, view).
   const fullBoardHref = () => {
+    if (!onBoardPage) return allProjectsBoardHref();
     const next = new URLSearchParams(search);
     next.delete('card');
     next.delete('project');

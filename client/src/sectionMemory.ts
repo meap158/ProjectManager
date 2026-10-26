@@ -53,7 +53,28 @@ export function sectionHref(section: string): string {
 /** Explicit Home URLs win immediately, including browser back/forward and direct links. */
 export function useHomeHref(): string {
   const { pathname, search } = useLocation();
+  // A project's Board tab counts as Board: Home goes to the project itself.
+  if (projectBoardId(pathname, search) !== null) return pathname;
   return sectionOf(pathname) === '/' ? pathname + search : sectionHref('/');
+}
+
+/**
+ * A project's Board tab (/projects/N?tab=board) belongs to Board in the navigation: the Board menu
+ * is highlighted there, not Home (owner, PM-307). The project's id, else null.
+ */
+export function projectBoardId(pathname: string, search: string): number | null {
+  const match = /^\/projects\/([1-9]\d*)$/.exec(pathname);
+  return match && new URLSearchParams(search).get('tab') === 'board' ? Number(match[1]) : null;
+}
+
+/** The every-project board, as Board was last left but without a project filter or open card. */
+export function allProjectsBoardHref(): string {
+  const [path, query = ''] = sectionHref('/board').split('?');
+  const params = new URLSearchParams(query);
+  params.delete('project');
+  params.delete('card');
+  const rest = params.toString();
+  return `${path}${rest ? `?${rest}` : ''}`;
 }
 
 /** The scrolling page area (the sidebar and nav stay put; see .app-main in styles.css). */
@@ -83,7 +104,9 @@ export function useSectionMemory(): void {
     if (section) write(PATHS_KEY, { ...read(PATHS_KEY), [section]: path });
     if (section === '/' && !(pathname === '/' && lastPageRestorePending())) {
       try {
-        localStorage.setItem(HOME_KEY, sanitizeLastPage(path) ?? '/');
+        // From a project's Board tab Home remembers the project, not the board (that is Board's).
+        const home = projectBoardId(pathname, search) !== null ? pathname : path;
+        localStorage.setItem(HOME_KEY, sanitizeLastPage(home) ?? '/');
       } catch {
         // The current selection still works without persistent storage.
       }
@@ -106,5 +129,5 @@ export function useSectionMemory(): void {
     };
     restore();
     return () => cancelAnimationFrame(frame);
-  }, [path, pathname]);
+  }, [path, pathname, search]);
 }

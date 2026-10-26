@@ -2,7 +2,14 @@ import { lazy, Suspense, useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router';
 import { InboxButton } from './components/InboxButton';
 import { MobileTabBar } from './components/MobileTabBar';
-import { sectionHref, sectionOf, useHomeHref, useSectionMemory } from './sectionMemory';
+import {
+  allProjectsBoardHref,
+  projectBoardId,
+  sectionHref,
+  sectionOf,
+  useHomeHref,
+  useSectionMemory,
+} from './sectionMemory';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { ThemeSwitch } from './components/ThemeSwitch';
 import { BoardIcon, GridIcon, MonitorIcon, SettingsIcon, TerminalIcon } from './components/icons';
@@ -32,7 +39,11 @@ const SettingsPage = lazy(() =>
 
 export function App() {
   const homeHref = useHomeHref();
-  const homeActive = sectionOf(useLocation().pathname) === '/';
+  const location = useLocation();
+  // A project's Board tab is part of Board: its menu is highlighted, and it leads to every
+  // project's board from there.
+  const onProjectBoard = projectBoardId(location.pathname, location.search) !== null;
+  const homeActive = sectionOf(location.pathname) === '/' && !onProjectBoard;
   // The agent workspace takes the full width: terminals need the screen space more than the list.
   const fullWidth = ['/workspace', '/orchestrators'].includes(useLocation().pathname);
   // Phone widths: the project list is a full-screen panel opened from the bottom tab bar.
@@ -58,9 +69,9 @@ export function App() {
             <span>Home</span>
           </NavLink>
           <NavLink
-            to={sectionHref('/board')}
+            to={onProjectBoard ? allProjectsBoardHref() : sectionHref('/board')}
             aria-label="Board"
-            className={({ isActive }) => (isActive ? 'is-active' : '')}
+            className={({ isActive }) => (isActive || onProjectBoard ? 'is-active' : '')}
           >
             <BoardIcon />
             <span>Board</span>

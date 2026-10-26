@@ -48,8 +48,13 @@ it('remembers a project and its tab across sections and reloads, and remembers e
 });
 it('honors a direct project URL over the saved selection and rejects invalid saved destinations', () => {
   localStorage.setItem('pm-home-selection', '/projects/7');
+  open('/projects/9?tab=files');
+  expect(screen.getByText('Home').getAttribute('href')).toBe('/projects/9?tab=files');
+  cleanup();
+  // A project's Board tab belongs to Board (PM-307): Home leads to the project, and remembers it.
   open('/projects/9?tab=board');
-  expect(screen.getByText('Home').getAttribute('href')).toBe('/projects/9?tab=board');
+  expect(screen.getByText('Home').getAttribute('href')).toBe('/projects/9');
+  expect(localStorage.getItem('pm-home-selection')).toBe('/projects/9');
   cleanup();
   sessionStorage.clear();
   for (const invalid of ['https://example.com', '//example.com', '/settings', '/projects/nope']) {

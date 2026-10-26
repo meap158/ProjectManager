@@ -65,3 +65,21 @@ it('keeps shell navigation working when switching deferred pages', async () => {
   fireEvent.click(screen.getByRole('link', { name: 'Settings' }));
   await screen.findByRole('heading', { name: 'Settings page' });
 });
+
+it("highlights Board, not Home, on a project's Board tab, and Board leads to every project's board (PM-307)", async () => {
+  sessionStorage.setItem(
+    'pm-section-paths',
+    JSON.stringify({ '/board': '/board?project=3&show=active' }),
+  );
+  render(
+    <MemoryRouter initialEntries={['/projects/9?tab=board']}>
+      <App />
+    </MemoryRouter>,
+  );
+  await screen.findByRole('heading', { name: 'Project page?tab=board' });
+  const board = screen.getByRole('link', { name: 'Board' });
+  expect(board.classList.contains('is-active')).toBe(true);
+  expect(screen.getByRole('link', { name: 'Home' }).classList.contains('is-active')).toBe(false);
+  // The board as last left, but for every project.
+  expect(board.getAttribute('href')).toBe('/board?show=active');
+});
