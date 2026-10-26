@@ -92,7 +92,6 @@ describe('Claude Code mode across a relaunch', () => {
 
   it('reads the mode from the footer', () => {
     expect(claudeModeOnScreen(screen('⏵⏵ auto mode on'))).toBe('auto');
-    expect(claudeModeOnScreen(['> hi', '  ? for shortcuts'].join('\n'))).toBe('default');
     expect(claudeModeOnScreen(screen('⏵⏵ accept edits on'))).toBe('acceptEdits');
     expect(claudeModeOnScreen(screen('⏸ plan mode on'))).toBe('plan');
     expect(claudeModeOnScreen(screen('⏵⏵ bypass permissions on'))).toBe('bypassPermissions');

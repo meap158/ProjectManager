@@ -179,3 +179,17 @@ export function rememberMode(sessionId: number, mode: string | null): void {
 export function rememberedMode(sessionId: number): string | null {
   return seenModes.get(sessionId) ?? null;
 }
+
+/** Drops a session's remembered mode: it was cycled back to the default, which shows no footer. */
+export function forgetMode(sessionId: number): void {
+  if (!seenModes.delete(sessionId) || !modesFile || modesTimer) return;
+  modesTimer = setTimeout(() => {
+    modesTimer = null;
+    try {
+      writeFileSync(modesFile!, JSON.stringify(Object.fromEntries(seenModes)));
+    } catch {
+      // Best effort, as in rememberMode.
+    }
+  }, 2000);
+  modesTimer.unref?.();
+}
