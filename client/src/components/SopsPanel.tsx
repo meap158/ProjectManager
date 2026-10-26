@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { SopAuditor, SopInfo, SopReport, SopResult } from '../../../shared/types';
 import { api } from '../api';
 import { SopAuditSend } from './SopAuditSend';
 import { SopsEditor } from './SopsEditor';
+import { NewCardDialog } from './NewCardDialog';
 
 // Settings > SOPs (PM-316): our shared standard, what each SOP asks and why, and a grid of which
 // projects follow it. Checks are read-only; a gap becomes a card for an agent, or a waiver (a
@@ -65,6 +66,12 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
   const [editing, setEditing] = useState(false);
   const [auditAll, setAuditAll] = useState(false);
   const [sending, setSending] = useState(false);
+  // "Create card…" opens the board's own new-card dialog, prefilled from a fresh check.
+  const [cardDraft, setCardDraft] = useState<{
+    projectId: number;
+    title: string;
+    description: string;
+  } | null>(null);
 
   const fetchReport = useCallback(
     () => api.sops().then(setReport, (e: Error) => onError(e.message)),
@@ -110,8 +117,7 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
   const result = project && sop ? project.results[sop.id] : undefined;
 
   const select = (projectId: number, sopId: string) => {
-    const same = selected?.projectId === projectId && selected.sopId === sopId;
-    setSelected(same ? null : { projectId, sopId });
+    setSelected({ projectId, sopId });
     setWaiving(false);
     setSending(false);
     setReason('');
@@ -123,6 +129,7 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
     try {
       setNote(await run());
       setWaiving(false);
+      setSelected(null);
       load();
     } catch (e) {
       onError((e as Error).message);
@@ -301,39 +308,70 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
           does not apply
         </p>
 
+        {note && (
+          <p role="status" className="sop-note">
+            {note}
+          </p>
+        )}
         {project && sop && result && (
-          <div className="sop-detail" role="region" aria-label={`${sop.title} in ${project.name}`}>
-            <div className="sop-detail-head">
-              <strong>
-                {sop.title} · {project.name}
-              </strong>
+          <GapDialog
+            title={`${sop.title} · ${project.name}`}
+            onClose={() => setSelected(null)}
+            footer={
+              result.state === 'fail' && !waiving ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true);
+                    onError(null);
+                    api.sopCardDraft(project.id, sop.id).then(
+                      (draft) => {
+                        setBusy(false);
+                        setSelected(null);
+                        setCardDraft({ projectId: project.id, ...draft });
+                      },
+                      (e: Error) => {
+                        setBusy(false);
+                        onError(e.message);
+                      },
+                    );
+                  }}
+                >
+                  Create card…
+                </button>
+              ) : null
+            }
+          >
+            <p className="sop-gap-state">
               <span className={`sop-state is-${result.state}`}>{STATE_LABEL[result.state]}</span>
-            </div>
-            <p>{result.detail}</p>
+              <span>{result.detail}</span>
+            </p>
             {result.waiver && (
               <p className="faint">
                 Waived {new Date(result.waiver.createdAt).toLocaleDateString()}:{' '}
                 {result.waiver.reason}
               </p>
             )}
+            <dl className="sop-body sop-gap-body">
+              <dt>What it asks</dt>
+              <dd>{sop.summary}</dd>
+              <dt>How it is checked</dt>
+              <dd>{sop.how}</dd>
+              {result.state === 'fail' && (
+                <>
+                  <dt>How to fix</dt>
+                  <dd>{sop.fix}</dd>
+                </>
+              )}
+            </dl>
             {result.state === 'fail' && !waiving && (
               <div className="sop-actions">
                 <button
                   type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={busy}
-                  onClick={() =>
-                    void act(async () => {
-                      const card = await api.sopCard(project.id, sop.id);
-                      return `Created ${card.key} on ${project.name}'s board.`;
-                    })
-                  }
-                >
-                  Create card
-                </button>
-                <button
-                  type="button"
                   className="btn btn-sm"
+                  aria-expanded={sending}
                   disabled={busy}
                   onClick={() => setSending((v) => !v)}
                 >
@@ -364,7 +402,7 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
                   if (!reason.trim()) return;
                   void act(async () => {
                     await api.waiveSop(project.id, sop.id, reason.trim());
-                    return 'Waived. It stays visible in the grid with your reason.';
+                    return `Waived "${sop.title}" for ${project.name}. It stays in the grid with your reason.`;
                   });
                 }}
               >
@@ -394,7 +432,7 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
                   onClick={() =>
                     void act(async () => {
                       await api.unwaiveSop(project.id, sop.id);
-                      return 'Waiver removed.';
+                      return `Waiver removed: "${sop.title}" for ${project.name}.`;
                     })
                   }
                 >
@@ -402,13 +440,21 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
                 </button>
               </div>
             )}
-            {note && (
-              <p role="status" className="sop-note">
-                {note}
-              </p>
-            )}
-          </div>
+          </GapDialog>
         )}
+        <NewCardDialog
+          open={cardDraft !== null}
+          status="todo"
+          projectId={cardDraft?.projectId}
+          initial={cardDraft ?? undefined}
+          onClose={() => setCardDraft(null)}
+          onCreated={(card) => {
+            const name =
+              report.projects.find((p) => p.id === cardDraft?.projectId)?.name ?? 'the project';
+            setCardDraft(null);
+            setNote(`Created ${card.key} on ${name}'s board.`);
+          }}
+        />
       </section>
     </>
   );
@@ -436,4 +482,48 @@ function gapMessage(
     `How to fix: ${sop.fix}`,
     "Follow the project's AGENTS.md, commit with a card reference, then run the check again to confirm it passes. Waivers are my decision; if you think this one deserves one, say why instead of skipping it.",
   ].join('\n');
+}
+
+/** A cell's details, as a modal dialog (PM-322): Esc and the backdrop close it, like the others. */
+function GapDialog({
+  title,
+  onClose,
+  footer,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  footer: ReactNode;
+  children: ReactNode;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const heading = useId();
+  useEffect(() => {
+    if (!dialog.current?.open) dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="confirm-dialog sop-gap-dialog"
+      aria-labelledby={heading}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) dialog.current?.close();
+      }}
+    >
+      <div className="dialog-body">
+        <h2 id={heading}>{title}</h2>
+        {children}
+      </div>
+      <div className="dialog-footer">
+        <span />
+        <div className="actions">
+          <button type="button" className="btn" onClick={() => dialog.current?.close()}>
+            Close
+          </button>
+          {footer}
+        </div>
+      </div>
+    </dialog>
+  );
 }

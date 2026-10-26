@@ -10,11 +10,14 @@ export function NewCardDialog({
   projects,
   onClose,
   onCreated,
+  initial,
 }: {
   open: boolean;
   status: CardStatus;
   projectId?: number;
   projects?: ProjectSummary[];
+  /** Prefilled title and notes, e.g. a gap from Settings > SOPs (PM-322). */
+  initial?: { title: string; description: string };
   onClose: () => void;
   onCreated: (card: Card) => void;
 }) {
@@ -25,8 +28,8 @@ export function NewCardDialog({
             id: 0,
             projectId: projectId ?? 0,
             key: '',
-            title: '',
-            description: '',
+            title: initial?.title ?? '',
+            description: initial?.description ?? '',
             status,
             position: 0,
             createdAt: '',
@@ -35,7 +38,7 @@ export function NewCardDialog({
             linkedCommit: null,
           } satisfies Card)
         : null,
-    [open, status, projectId],
+    [open, status, projectId, initial],
   );
   return (
     <CardDialog

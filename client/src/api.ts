@@ -335,6 +335,11 @@ export const api = {
     request<void>('DELETE', `/projects/${projectId}/sops/${sopId}/waiver`),
   sopCard: (projectId: number, sopId: string) =>
     request<Card>('POST', `/projects/${projectId}/sops/${sopId}/card`, {}),
+  sopCardDraft: (projectId: number, sopId: string) =>
+    request<{ title: string; description: string }>(
+      'GET',
+      `/projects/${projectId}/sops/${sopId}/draft`,
+    ),
   sopsFile: () =>
     request<{ yaml: string; custom: boolean; path: string | null }>('GET', '/sops/file'),
   saveSopsFile: (yaml: string) => request<void>('PUT', '/sops/file', { yaml }),

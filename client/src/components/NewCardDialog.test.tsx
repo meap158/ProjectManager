@@ -143,3 +143,22 @@ it('queues a new card for the project orchestrator and ticks it (PM-142)', async
   });
   expect(onCreated).toHaveBeenCalledOnce();
 });
+
+it('starts from a prefilled title and notes, such as an SOP gap (PM-322)', async () => {
+  render(
+    <MemoryRouter>
+      <NewCardDialog
+        open
+        status="todo"
+        projectId={1}
+        initial={{ title: 'SOP: Roadmap', description: 'Found: No ROADMAP.md' }}
+        onClose={vi.fn()}
+        onCreated={vi.fn()}
+      />
+    </MemoryRouter>,
+  );
+  expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('SOP: Roadmap');
+  expect((screen.getByLabelText('Description') as HTMLTextAreaElement).value).toBe(
+    'Found: No ROADMAP.md',
+  );
+});

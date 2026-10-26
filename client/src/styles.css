@@ -7111,26 +7111,31 @@ span.path-link:hover .path-icon {
 .sop-legend .sop-cell:hover {
   outline: 0;
 }
-.sop-detail {
+/* A cell's details (PM-322): a modal like the board's card dialog. */
+.confirm-dialog.sop-gap-dialog {
+  width: min(560px, calc(100vw - 24px));
+  max-width: none;
+}
+.sop-gap-dialog .dialog-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface-2);
+  gap: 12px;
   font-size: 13px;
 }
-.sop-detail p {
+.sop-gap-dialog h2 {
   margin: 0;
 }
-.sop-detail-head {
+.sop-gap-dialog p {
+  margin: 0;
+}
+.sop-gap-state {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+}
+.sop-body.sop-gap-body {
+  padding: 0;
 }
 .sop-state {
   padding: 2px 8px;
@@ -7193,7 +7198,7 @@ span.path-link:hover .path-icon {
   border-radius: var(--radius);
   background: var(--surface-2);
 }
-.sop-detail .sop-send {
+.sop-gap-dialog .sop-send {
   margin: 0;
   background: var(--surface);
 }

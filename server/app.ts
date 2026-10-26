@@ -620,6 +620,13 @@ export function createApp(
     if (!store.removeSopWaiver(db, parseId(c), sop.id)) throw new HttpError(404, 'No waiver');
     return c.body(null, 204);
   });
+  // The text of a card for a gap, from a fresh check, for the board's new-card dialog (PM-322).
+  app.get('/projects/:id/sops/:sopId/draft', async (c) => {
+    const sop = sopFor(c);
+    const result = (await checkProject([sop], projectRoot(c)))[sop.id]!;
+    if (result.state !== 'fail') throw new HttpError(409, 'This project already meets that SOP');
+    return c.json(sopCardText(sopInfo([sop])[0]!, result.detail));
+  });
   // A card asking an agent to bring this project up to the SOP, from a fresh check.
   app.post('/projects/:id/sops/:sopId/card', async (c) => {
     const sop = sopFor(c);

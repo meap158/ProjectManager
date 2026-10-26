@@ -30,8 +30,11 @@ ships.
   kind, so an edited file can only read files and ask `git ls-files`; it never writes inside a
   project or runs its code. Paths must stay inside the project, regexes are length-capped and
   compiled on save, and a file read stops at 1 MB.
-- A **gap** becomes a card: `POST /api/projects/:id/sops/:sopId/card` re-checks the project and adds
-  a To do card with what the SOP asks, why, what was found and how to fix it.
+- Clicking a cell opens its details in a modal: what was found, what the SOP asks, how it is
+  checked and how to fix it. For a **gap**, **Create card...** re-checks the project
+  (`GET /api/projects/:id/sops/:sopId/draft`) and opens the board's own new-card dialog with the
+  project chosen and the title and notes filled in, so the card can be edited and handed to an
+  agent there like any other. **Send to session...** and **Waive...** sit in the same modal.
 - A **waiver** is a recorded, deliberate exception: the project does not follow that SOP and says
   why (ProjectManager's Owner desk data is untracked because the repository is public, for
   example). It is stored in ProjectManager's database (`sop_waivers`), never in the project, and
