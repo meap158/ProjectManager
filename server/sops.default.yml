@@ -118,10 +118,10 @@ sops:
   - id: launcher
     title: One-command launcher
     short: Launcher
-    summary: One obvious launch command, with a window title naming the project and the service.
+    summary: One obvious launch command, with a window titled with the project's name.
     why: Anyone can start the project without reading code, and a row of terminal windows stays tellable apart.
     how: A script at the project root (launch.bat, start.cmd and the like) sets a window title.
-    fix: Add launch scripts that check prerequisites, pick a free port and set a title such as "<Project> - Server".
+    fix: Add launch scripts that check prerequisites, pick a free port and title the window with the project's name.
     applies_when: [runnable]
     pass: The launcher sets a window title
     checks:

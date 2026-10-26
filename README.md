@@ -185,8 +185,8 @@ Copy `.env.example` to `.env` and change what you need:
 </details>
 
 The launcher restarts the server after an unexpected exit (at most five times in five minutes).
-Ctrl+C still stops it. Its window is titled `ProjectManager - Server` and, once running, shows the port it
-chose (for example `ProjectManager - Server :5181`), so several windows are easy to tell apart. Crash output goes to `data/server-output.log` and `data/server-crashes.log`.
+Ctrl+C still stops it. Its window is titled `ProjectManager`, and the URL it prints shows the port it
+chose. Crash output goes to `data/server-output.log` and `data/server-crashes.log`.
 
 ---
 
