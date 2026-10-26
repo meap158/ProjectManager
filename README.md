@@ -186,7 +186,8 @@ Copy `.env.example` to `.env` and change what you need:
 
 The launcher restarts the server after an unexpected exit (at most five times in five minutes).
 Ctrl+C still stops it. Its window is titled `ProjectManager`, and the URL it prints shows the port it
-chose. Crash output goes to `data/server-output.log` and `data/server-crashes.log`.
+chose. If something outside ends the launcher (PowerShell's `Stop-Process`, which leaves exit
+code -1), `launch.bat` and `launch.ps1` start it again, up to 10 times. Crash output goes to `data/server-output.log` and `data/server-crashes.log`.
 
 ---
 

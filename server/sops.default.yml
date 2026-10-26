@@ -62,6 +62,21 @@ sops:
         not_git: na
         fail: 'Tracked: {files}'
 
+  - id: process-cleanup
+    title: Safe process cleanup
+    short: Cleanup
+    summary: Agents stop only processes they started or verified as this project's, never by a loose name, command-line or port match.
+    why: Projects on one machine share tools and script names (node.exe, launch.mjs, dev servers on 3000). A cleanup that matches loosely ends other projects' launchers and servers; one ended ProjectManager (PM-332).
+    how: The project's agent instructions carry the process-cleanup rule.
+    fix: 'Add a "Process cleanup" rule to AGENTS.md: stop only processes you started (by PID) or verified by their full command line inside this project or a PID file it wrote; never by name, a loose command-line match or whatever listens on a port.'
+    pass: The rule is in the agent instructions
+    checks:
+      - file_exists: [AGENTS.md, CLAUDE.md]
+        fail: No agent instructions to carry the rule
+      - file_contains: [AGENTS.md, CLAUDE.md]
+        pattern: process cleanup
+        fail: The agent instructions have no process-cleanup rule
+
   - id: handover
     title: Agent handover
     short: Handover

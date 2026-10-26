@@ -12,13 +12,15 @@ ships.
 
 1. **Agent instructions**: AGENTS.md is canonical, CLAUDE.md points to it.
 2. **No secrets in git**: no tracked `.env` (examples excepted), SQLite database or private key.
-3. **Agent handover**: AGENT_HANDOVER.md exists and is not tracked.
-4. **Roadmap**: ROADMAP.md exists.
-5. **Owner pages**: `References/owner-pages/owner-desk.json` exists.
-6. **Writing style**: the agent instructions carry the PM-314 rule (blader/humanizer patterns).
-7. **One-command launcher**: a root script (launch.bat, start.cmd and the like) sets a window
+3. **Safe process cleanup**: the agent instructions carry the process-cleanup rule (stop only
+   your own PIDs, never by a loose name, command-line or port match; PM-332).
+4. **Agent handover**: AGENT_HANDOVER.md exists and is not tracked.
+5. **Roadmap**: ROADMAP.md exists.
+6. **Owner pages**: `References/owner-pages/owner-desk.json` exists.
+7. **Writing style**: the agent instructions carry the PM-314 rule (blader/humanizer patterns).
+8. **One-command launcher**: a root script (launch.bat, start.cmd and the like) sets a window
    title. Does not apply when nothing runs (no app manifest).
-8. **Design system**: DESIGN.md exists. Does not apply when no user interface is found.
+9. **Design system**: DESIGN.md exists. Does not apply when no user interface is found.
 
 ## How it works
 

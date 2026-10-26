@@ -156,7 +156,8 @@ export interface SopSet {
 export class SopStore {
   readonly file: string | null;
   private cache: { key: string; set: SopSet } | null = null;
-  private defaults: SopDef[] | null = null;
+  /** The shipped defaults, re-read when the file changes (an update, or an edit in development). */
+  private defaults: { mtime: number; sops: SopDef[] } | null = null;
 
   constructor(dataDir: string | null) {
     this.file = dataDir ? path.join(dataDir, 'sops.yml') : null;
@@ -167,12 +168,15 @@ export class SopStore {
   }
 
   private defaultSops(): SopDef[] {
-    return (this.defaults ??= parseSops(this.defaultSource()));
+    const mtime = statSync(defaultFile()).mtimeMs;
+    if (this.defaults?.mtime !== mtime)
+      this.defaults = { mtime, sops: parseSops(this.defaultSource()) };
+    return this.defaults.sops;
   }
 
   current(): SopSet {
     const custom = this.file !== null && existsSync(this.file);
-    const key = custom ? `${statSync(this.file!).mtimeMs}` : 'default';
+    const key = `${statSync(defaultFile()).mtimeMs}:${custom ? statSync(this.file!).mtimeMs : ''}`;
     if (this.cache?.key === key) return this.cache.set;
     let set: SopSet = { sops: this.defaultSops(), custom: false, error: null };
     if (custom) {

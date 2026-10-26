@@ -110,6 +110,13 @@ anything.
   pattern-detectable tells in a project's markdown and text, and `npm run prose:audit -- --diff`
   fails on any added line that has one. Run the `--diff` form before every commit. Existing text is
   not a failure; fix it when you touch it.
+- **Process cleanup (PM-332):** stop only processes you started (by the PID you got) or ones you
+  have verified belong to this project (their full command line points inside this project
+  folder, or a PID file this project wrote). Never stop processes by a loose name, command-line or
+  port match (`node.exe`, `*launch.mjs*`, `*dev*`, whatever listens on 3000 or 5180): other
+  projects on this machine run the same tools and the same script names, and one such cleanup in
+  another project ended ProjectManager's launcher. `launch.bat`/`launch.ps1` restart the launcher
+  when it is ended from outside, but do not rely on that.
 - Errors: API errors are `{ error: string }` with a fitting status code. The UI shows them in
   `.error-banner`. Log unexpected server errors with a `[area]` prefix.
 

@@ -29,7 +29,8 @@ describe('SOP checks (PM-316)', () => {
   it('passes a project that follows the standard', async () => {
     const root = project(
       {
-        'AGENTS.md': '# Rules\n- **Writing style:** see blader/humanizer.\n',
+        'AGENTS.md':
+          '# Rules\n- **Writing style:** see blader/humanizer.\n- **Process cleanup:** only our own PIDs.\n',
         'CLAUDE.md': '@AGENTS.md\n',
         'AGENT_HANDOVER.md': 'state',
         '.gitignore': 'AGENT_HANDOVER.md\n.env\n',
