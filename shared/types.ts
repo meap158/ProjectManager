@@ -919,3 +919,35 @@ export interface FolderInfo {
   /** More entries exist than were returned (the cap, or the walk limit). */
   truncated: boolean;
 }
+
+/** One of our SOPs (PM-316): the shared standard each project's agent instructions carry. */
+export interface SopInfo {
+  id: string;
+  title: string;
+  /** Column label in the adherence grid. */
+  short: string;
+  summary: string;
+  why: string;
+  /** How the read-only check decides. */
+  how: string;
+  fix: string;
+}
+
+/** A deliberate, recorded exception: this project does not follow the SOP, and why. */
+export interface SopWaiver {
+  reason: string;
+  createdAt: string;
+}
+
+export interface SopResult {
+  /** `waived` is a failing check with a waiver; `na` means the SOP does not apply. */
+  state: 'pass' | 'fail' | 'na' | 'waived';
+  detail: string;
+  waiver?: SopWaiver;
+}
+
+export interface SopReport {
+  sops: SopInfo[];
+  projects: { id: number; name: string; results: Record<string, SopResult> }[];
+  checkedAt: string;
+}

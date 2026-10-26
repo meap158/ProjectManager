@@ -16,6 +16,7 @@ import {
   type GitStats,
   type ProjectSummary,
   type ScanState,
+  type SopWaiver,
 } from '../shared/types.js';
 import type { Db } from './db.js';
 
@@ -534,4 +535,37 @@ export function moveFilePin(db: Db, id: number, direction: 'up' | 'down'): boole
     throw error;
   }
   return true;
+}
+
+/** Every SOP waiver (PM-316), keyed by project id, then SOP id. */
+export function listSopWaivers(db: Db): Map<number, Map<string, SopWaiver>> {
+  const rows = db
+    .prepare('SELECT project_id, sop_id, reason, created_at FROM sop_waivers')
+    .all() as unknown as {
+    project_id: number;
+    sop_id: string;
+    reason: string;
+    created_at: string;
+  }[];
+  const out = new Map<number, Map<string, SopWaiver>>();
+  for (const r of rows) {
+    const forProject = out.get(r.project_id) ?? new Map<string, SopWaiver>();
+    forProject.set(r.sop_id, { reason: r.reason, createdAt: r.created_at });
+    out.set(r.project_id, forProject);
+  }
+  return out;
+}
+
+export function setSopWaiver(db: Db, projectId: number, sopId: string, reason: string): void {
+  db.prepare(
+    `INSERT INTO sop_waivers (project_id, sop_id, reason, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(project_id, sop_id) DO UPDATE SET reason = excluded.reason`,
+  ).run(projectId, sopId, reason, new Date().toISOString());
+}
+
+export function removeSopWaiver(db: Db, projectId: number, sopId: string): boolean {
+  return (
+    db.prepare('DELETE FROM sop_waivers WHERE project_id = ? AND sop_id = ?').run(projectId, sopId)
+      .changes > 0
+  );
 }

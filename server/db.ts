@@ -229,6 +229,14 @@ export const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   CREATE UNIQUE INDEX file_pins_unique ON file_pins(COALESCE(project_id, 0), path);`,
+  // SOP waivers (PM-316): a project deliberately not following one SOP, with the reason.
+  `CREATE TABLE sop_waivers (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    sop_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, sop_id)
+  );`,
 ];
 
 export function openDb(dataDir: string): Db {

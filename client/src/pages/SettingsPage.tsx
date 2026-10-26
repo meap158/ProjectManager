@@ -30,17 +30,19 @@ import { UsageLimits } from '../components/UsageLimits';
 import { Dropdown } from '../components/Dropdown';
 import { NativeAccountsPanel } from '../components/AntigravityAccountsPanel';
 import { useViewPreference } from '../useViewPreference';
+import { SopsPanel } from '../components/SopsPanel';
 
 const TerminalView = lazy(() =>
   import('../components/TerminalView').then((m) => ({ default: m.TerminalView })),
 );
 
-const TABS = ['agents', 'access', 'boards', 'shortcuts'] as const;
+const TABS = ['agents', 'access', 'boards', 'sops', 'shortcuts'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
   agents: 'Agents',
   access: 'Access',
   boards: 'Boards',
+  sops: 'SOPs',
   shortcuts: 'Shortcuts',
 };
 
@@ -364,6 +366,16 @@ export function SettingsPage() {
       >
         <LanAccessPanel onError={setError} />
         <RemoteAccessPanel onError={setError} />
+      </div>
+
+      <div
+        className="tab-panel"
+        role="tabpanel"
+        id="settings-panel-sops"
+        aria-labelledby="settings-tab-sops"
+        hidden={tab !== 'sops'}
+      >
+        {tab === 'sops' && <SopsPanel onError={setError} />}
       </div>
 
       <div

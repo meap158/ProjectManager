@@ -15,6 +15,7 @@ import type {
   DirectoryEntry,
   DirectoryListing,
   FilePin,
+  SopReport,
   LanStatus,
   RemoteConfig,
   RemoteStatus,
@@ -34,6 +35,7 @@ import {
 } from './projectFiles.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
 import { PreviewCapture, normaliseCapture, type CaptureRequest } from './previewCapture.js';
+import { SOPS, checkProject, sopCardText, sopInfo } from './sops.js';
 import { config } from './config.js';
 import { detectLocalApps, stopLocalApp } from './localPorts.js';
 import { REMOTE_HEADER } from './remote.js';
@@ -517,6 +519,72 @@ export function createApp(
       throw new HttpError(400, (error as Error).message);
     }
   };
+  // SOPs (PM-316): our shared standard, checked read-only against every project folder. Waivers
+  // record a deliberate exception and live here, never in the project.
+  const withResults = async (id: number, name: string, root: string) => {
+    const waivers = store.listSopWaivers(db).get(id);
+    const checked = await checkProject(root);
+    const results: SopReport['projects'][number]['results'] = {};
+    for (const sop of SOPS) {
+      const result = checked[sop.id]!;
+      const waiver = waivers?.get(sop.id);
+      results[sop.id] =
+        waiver && result.state === 'fail'
+          ? { ...result, state: 'waived', waiver }
+          : waiver
+            ? { ...result, waiver }
+            : result;
+    }
+    return { id, name, results };
+  };
+  app.get('/sops', async (c) => {
+    const folders = store.listProjectFolders(db);
+    const projects: SopReport['projects'] = [];
+    // A few at a time: each check is a handful of file reads and one git call.
+    for (let i = 0; i < folders.length; i += 6) {
+      projects.push(
+        ...(await Promise.all(
+          folders.slice(i, i + 6).map((f) => {
+            const name = store.getProjectRow(db, f.id)?.name ?? f.path;
+            return withResults(f.id, name, f.path);
+          }),
+        )),
+      );
+    }
+    projects.sort((a, b) => a.name.localeCompare(b.name));
+    const report: SopReport = { sops: sopInfo(), projects, checkedAt: new Date().toISOString() };
+    return c.json(report);
+  });
+  const sopFor = (c: Context) => {
+    const sop = SOPS.find((s) => s.id === c.req.param('sopId'));
+    if (!sop) throw new HttpError(404, 'No such SOP');
+    return sop;
+  };
+  app.put('/projects/:id/sops/:sopId/waiver', async (c) => {
+    const sop = sopFor(c);
+    projectRoot(c);
+    const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(500) }));
+    store.setSopWaiver(db, parseId(c), sop.id, reason);
+    return c.body(null, 204);
+  });
+  app.delete('/projects/:id/sops/:sopId/waiver', (c) => {
+    const sop = sopFor(c);
+    if (!store.removeSopWaiver(db, parseId(c), sop.id)) throw new HttpError(404, 'No waiver');
+    return c.body(null, 204);
+  });
+  // A card asking an agent to bring this project up to the SOP, from a fresh check.
+  app.post('/projects/:id/sops/:sopId/card', async (c) => {
+    const sop = sopFor(c);
+    const root = projectRoot(c);
+    const result = (await checkProject(root))[sop.id]!;
+    if (result.state !== 'fail') throw new HttpError(409, 'This project already meets that SOP');
+    const info = sopInfo().find((s) => s.id === sop.id)!;
+    const card = store.insertCard(db, parseId(c), {
+      ...sopCardText(info, result.detail),
+      status: 'todo',
+    });
+    return c.json(card, 201);
+  });
   app.get('/projects/:id/file-pins', (c) => {
     const root = projectRoot(c);
     const pins: FilePin[] = store.listFilePinRows(db, parseId(c)).map((row) => {

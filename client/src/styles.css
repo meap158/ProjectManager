@@ -6906,3 +6906,276 @@ span.path-link:hover .path-icon {
     font-size: 16px;
   }
 }
+
+/* ---- Settings > SOPs (PM-316) ------------------------------------------------------------- */
+
+.sop-recheck {
+  margin-left: auto;
+}
+.sop-intro {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+}
+.sop-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.sop-list li + li {
+  border-top: 1px solid var(--border);
+}
+.sop summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.sop summary::-webkit-details-marker {
+  display: none;
+}
+.sop summary:hover {
+  background: var(--surface-hover);
+}
+.sop summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.sop-num {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sop-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+}
+.sop-title .faint {
+  font-size: 12.5px;
+}
+.sop-count {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.sop-count.is-complete {
+  background: var(--surface-2);
+  color: var(--good);
+}
+.sop-body {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0 12px 12px 46px;
+  font-size: 12.5px;
+}
+.sop-body dt {
+  color: var(--text-3);
+  font-weight: 550;
+}
+.sop-body dd {
+  margin: 0;
+  color: var(--text-2);
+}
+.sop-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+/* The grid scrolls sideways inside its frame on narrow screens; the project column stays put. */
+.sop-grid-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.sop-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.sop-grid th,
+.sop-grid td {
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+  white-space: nowrap;
+}
+.sop-grid tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.sop-grid thead th {
+  padding: 8px 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: 550;
+}
+.sop-grid th[scope='row'],
+.sop-grid thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding-left: 12px;
+  text-align: left;
+}
+.sop-grid th[scope='row'] {
+  background: var(--surface);
+  font-weight: 500;
+}
+.sop-grid th[scope='row'] a {
+  color: var(--text);
+  text-decoration: none;
+}
+.sop-grid th[scope='row'] a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.sop-grid tbody tr:hover > * {
+  background: var(--surface-hover);
+}
+.sop-cell {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.sop-cell.is-pass {
+  color: var(--good);
+}
+.sop-cell.is-fail {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.sop-cell.is-waived {
+  color: var(--text-2);
+}
+.sop-cell.is-na {
+  color: var(--text-3);
+}
+.sop-cell:hover {
+  outline: 1px solid var(--border-strong);
+}
+.sop-cell[aria-pressed='true'] {
+  outline: 2px solid var(--accent);
+}
+.sop-cell:focus-visible {
+  outline: 2px solid var(--focus);
+}
+.sop-empty {
+  padding: 16px !important;
+}
+.sop-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.sop-legend .sop-cell {
+  width: 22px;
+  height: 20px;
+  margin-left: 8px;
+  cursor: default;
+}
+.sop-legend .sop-cell:first-child {
+  margin-left: 0;
+}
+.sop-legend .sop-cell:hover {
+  outline: 0;
+}
+.sop-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.sop-detail p {
+  margin: 0;
+}
+.sop-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sop-state {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sop-state.is-pass {
+  color: var(--good);
+}
+.sop-state.is-fail {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.sop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sop-reason {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.sop-note {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+@media (pointer: coarse) {
+  .sop-cell {
+    width: 38px;
+    height: 36px;
+  }
+}
+@media (max-width: 600px) {
+  .sop-body {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding-left: 12px;
+  }
+  .sop-body dd + dt {
+    margin-top: 8px;
+  }
+}
