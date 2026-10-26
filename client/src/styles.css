@@ -6575,7 +6575,8 @@ span.path-link:hover .path-icon {
 .inbox {
   position: relative;
 }
-/* Outlined like the theme switch beside it (PM-300), so it reads as a button. */
+/* Outlined like the theme switch beside it (PM-300), so it reads as a button; round, as an
+   icon-only button (text buttons keep the rounded rectangle). */
 .inbox-button {
   position: relative;
   display: grid;
@@ -6583,7 +6584,7 @@ span.path-link:hover .path-icon {
   width: 30px;
   height: 30px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border-radius: 50%;
   background: var(--surface);
   color: var(--text-3);
   cursor: pointer;
