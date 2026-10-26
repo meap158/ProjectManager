@@ -6836,15 +6836,34 @@ span.path-link:hover .path-icon {
   }
 }
 @media (pointer: coarse) {
-  .inbox-button {
-    width: 44px;
-    height: 44px;
+  /* In the 48px top bar the visible outline stays 34px, so it never touches the bar's edges, and
+     an invisible ring makes the tap area 44px (as iOS and Material separate the two). */
+  .inbox-button::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
   }
-  /* The 44px touch target nearly fills the 48px top bar: tuck the badge inside it, over the bell,
-     or the bar's overflow cuts off its top. */
+  .inbox-button {
+    width: 34px;
+    height: 34px;
+  }
+  /* The badge sits on the circle's top-right edge, clear of the bell and inside the bar. */
   .inbox-count {
-    top: 3px;
-    right: 3px;
+    top: -5px;
+    right: -7px;
+  }
+  .topbar .inbox {
+    margin-right: 4px;
+  }
+  .topbar .theme-switch .dropdown-trigger {
+    position: relative;
+    min-height: 34px;
+  }
+  .topbar .theme-switch .dropdown-trigger::after {
+    content: '';
+    position: absolute;
+    inset: -5px 0;
   }
   .inbox-choices .btn,
   .inbox-reply .btn,
