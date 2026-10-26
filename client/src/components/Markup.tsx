@@ -64,6 +64,8 @@ export function paint(
     } else {
       const size = Math.max(14, Math.round(w / 55));
       ctx.font = `600 ${size}px system-ui, sans-serif`;
+      // From the top, so the text lands where its box was typed in.
+      ctx.textBaseline = 'top';
       ctx.lineWidth = Math.max(3, size / 5);
       ctx.strokeStyle = 'rgba(0,0,0,.65)';
       ctx.strokeText(s.text, s.at.x, s.at.y);
@@ -104,6 +106,14 @@ export function MarkupLayer({
   const [draft, setDraft] = useState<Shape | null>(null);
   const [typing, setTyping] = useState<{ at: Point; screen: Point } | null>(null);
   const [text, setText] = useState('');
+  /** Esc was pressed: the blur that follows closes the box without keeping the text. */
+  const cancelled = useRef(false);
+  const commit = () => {
+    if (typing && text.trim() && !cancelled.current)
+      onShapes([...shapes, { kind: 'text', color, at: typing.at, text: text.trim() }]);
+    cancelled.current = false;
+    setTyping(null);
+  };
 
   useEffect(() => {
     const c = canvas.current;
@@ -136,7 +146,11 @@ export function MarkupLayer({
           if (!drawing) return;
           const p = at(e);
           if (tool === 'text') {
+            // Keep the press from moving focus: the text box it opens would lose focus at once
+            // and close before anything could be typed (PM-329).
+            e.preventDefault();
             const r = e.currentTarget.getBoundingClientRect();
+            cancelled.current = false;
             setTyping({ at: p, screen: { x: e.clientX - r.left, y: e.clientY - r.top } });
             setText('');
             return;
@@ -182,16 +196,16 @@ export function MarkupLayer({
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              if (text.trim())
-                onShapes([...shapes, { kind: 'text', color, at: typing.at, text: text.trim() }]);
-              setTyping(null);
+              commit();
             } else if (e.key === 'Escape') {
               e.preventDefault();
               e.stopPropagation();
+              cancelled.current = true;
               setTyping(null);
             }
           }}
-          onBlur={() => setTyping(null)}
+          // Clicking away keeps what was typed (Esc is the way to drop it).
+          onBlur={commit}
         />
       )}
     </>

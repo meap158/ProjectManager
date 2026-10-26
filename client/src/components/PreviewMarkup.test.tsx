@@ -88,3 +88,45 @@ describe('marking up the live page (PM-311)', () => {
     expect(added.marks).toEqual([]);
   });
 });
+
+describe('the Text tool (PM-329)', () => {
+  it('opens a box that keeps focus, adds the text on Enter or on clicking away, and drops it on Esc', async () => {
+    const { MarkupLayer } = await import('./Markup');
+    const onShapes = vi.fn();
+    render(
+      <MarkupLayer
+        width={400}
+        height={300}
+        shapes={[]}
+        onShapes={onShapes}
+        tool="text"
+        color="#ff4d4f"
+        className="layer"
+        label="Marks"
+      />,
+    );
+    const canvas = screen.getByLabelText('Marks');
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 300 }) as DOMRect;
+    // The press must not move focus away from the box it opens.
+    const press = () => fireEvent.pointerDown(canvas, { clientX: 40, clientY: 50 });
+    expect(press()).toBe(false);
+    const box = screen.getByLabelText('Text to add');
+    expect(document.activeElement).toBe(box);
+    fireEvent.change(box, { target: { value: 'too big' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onShapes).toHaveBeenLastCalledWith([
+      { kind: 'text', color: '#ff4d4f', at: { x: 40, y: 50 }, text: 'too big' },
+    ]);
+    // Clicking away keeps it too.
+    press();
+    fireEvent.change(screen.getByLabelText('Text to add'), { target: { value: 'kept' } });
+    fireEvent.blur(screen.getByLabelText('Text to add'));
+    expect(onShapes).toHaveBeenCalledTimes(2);
+    // Esc drops it.
+    press();
+    fireEvent.change(screen.getByLabelText('Text to add'), { target: { value: 'gone' } });
+    fireEvent.keyDown(screen.getByLabelText('Text to add'), { key: 'Escape' });
+    expect(screen.queryByLabelText('Text to add')).toBeNull();
+    expect(onShapes).toHaveBeenCalledTimes(2);
+  });
+});
