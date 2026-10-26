@@ -18,6 +18,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { staticDesk } from './owner-pages-static.mjs';
 
 export const STATUSES = ['Not Started', 'In Progress', 'Blocked', 'Completed', 'Not Applicable'];
 export const PRIORITIES = ['High', 'Medium', 'Low'];
@@ -322,7 +323,10 @@ export function run(argv = process.argv.slice(2), rootDir = root, log = console.
   }
   const stamp = new Date().toISOString().slice(0, 10);
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, 'owner-desk.html'), renderDesk(data, { updated: stamp }));
+  writeFileSync(
+    join(outDir, 'owner-desk.html'),
+    staticDesk(renderDesk(data, { updated: stamp })) ?? renderDesk(data, { updated: stamp }),
+  );
   writeFileSync(join(outDir, 'index.html'), renderIndex({ updated: stamp, counts }));
   log(`Wrote ${join(outDir, 'index.html')} and owner-desk.html (${counts.total} tasks).`);
   return 0;
