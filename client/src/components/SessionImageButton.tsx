@@ -1,5 +1,5 @@
 import { useRef, useState, type MutableRefObject } from 'react';
-import { sendImageToSession } from '../sessionImages';
+import { sendImageToSession, type PasteTarget } from '../sessionImages';
 
 /**
  * "Image" button for a live session's terminal header (PM-54): opens the photo picker (camera
@@ -13,7 +13,7 @@ export function SessionImageButton({
   className = 'icon-btn',
 }: {
   sessionId: number;
-  pasteRef: MutableRefObject<((text: string) => void) | null>;
+  pasteRef: MutableRefObject<PasteTarget | null>;
   onError: (message: string) => void;
   className?: string;
 }) {
@@ -64,6 +64,12 @@ export function SessionImageButton({
           const files = Array.from(e.target.files ?? []);
           e.target.value = ''; // Picking the same photo again still fires.
           if (!files.length) return;
+          // The chat is showing: it takes the images itself (instant previews, remove, retry).
+          const target = pasteRef.current;
+          if (target?.addImages) {
+            target.addImages(files);
+            return;
+          }
           setBusy(true);
           // Process photos in order, keeping only one decoded image/upload in memory.
           // A failed photo does not prevent the remaining selections from being added.

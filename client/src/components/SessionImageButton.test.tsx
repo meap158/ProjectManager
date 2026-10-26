@@ -31,3 +31,20 @@ it('adds all selected photos in order and continues after an individual failure'
     expect(screen.getByRole('button', { name: 'Add images' }).hasAttribute('disabled')).toBe(false),
   );
 });
+
+it('hands the photos to the chat when it is showing, so they preview at once (PM-301)', () => {
+  const send = vi.mocked(sendImageToSession);
+  send.mockClear();
+  const addImages = vi.fn();
+  const paste = Object.assign(vi.fn(), { addImages });
+  const { container } = render(
+    <SessionImageButton sessionId={7} pasteRef={{ current: paste }} onError={vi.fn()} />,
+  );
+  const files = [new File(['photo'], 'shot.jpg', { type: 'image/jpeg' })];
+  fireEvent.change(container.querySelector('input')!, { target: { files } });
+  expect(addImages).toHaveBeenCalledWith(files);
+  expect(send).not.toHaveBeenCalled();
+  expect(
+    screen.getAllByRole('button', { name: 'Add images' }).at(-1)!.hasAttribute('disabled'),
+  ).toBe(false);
+});

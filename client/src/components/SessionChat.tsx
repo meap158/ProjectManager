@@ -13,7 +13,7 @@ import {
 import type { AgentSession, ChatItem, SlashCommand } from '../../../shared/types';
 import { api } from '../api';
 import { serialPoll } from '../lib/serialPoll';
-import { prepareImage } from '../sessionImages';
+import { prepareImage, type PasteTarget } from '../sessionImages';
 import './session-chat.css';
 
 // Chat view of an agent session (mobile). A terminal UI is heavy on a phone: xterm redraws a
@@ -828,7 +828,7 @@ export function SessionChat({
    * The pane's paste target (its image button pastes uploaded paths through it): while the
    * chat shows, those images join the message instead of going to the hidden terminal.
    */
-  pasteRef?: MutableRefObject<((text: string) => void) | null>;
+  pasteRef?: MutableRefObject<PasteTarget | null>;
 }) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -959,6 +959,8 @@ export function SessionChat({
   const uploading = attachments.filter((a) => a.status === 'uploading').length;
   /** The files behind attachments still uploading or failed: a failed one can be retried. */
   const pickedFiles = useRef(new Map<number, File>());
+  /** The upload queue: images are prepared and sent in order, one at a time. */
+  const uploads = useRef<Promise<void>>(Promise.resolve());
   const picker = useRef<HTMLInputElement>(null);
   /** Why the last image couldn't be added, shown beside the composer (PM-130). */
   const [imageError, setImageError] = useState('');
@@ -996,14 +998,21 @@ export function SessionChat({
       };
     });
     setAttachments((prev) => [...prev, ...added]);
-    for (const a of added) void upload(a.id, pickedFiles.current.get(a.id)!);
+    // One at a time: decoding a phone photo takes tens of MB, and several at once can make a
+    // phone browser drop the page. The previews above are already showing meanwhile.
+    for (const a of added) {
+      uploads.current = uploads.current.then(() => {
+        const file = pickedFiles.current.get(a.id);
+        return file ? upload(a.id, file) : undefined; // Removed before its turn came.
+      });
+    }
   };
   const retryAttachment = (key: number) => {
     const file = pickedFiles.current.get(key);
     if (!file) return;
     setImageError('');
     setAttachments((prev) => prev.map((a) => (a.id === key ? { ...a, status: 'uploading' } : a)));
-    void upload(key, file);
+    uploads.current = uploads.current.then(() => upload(key, file));
   };
   // Previews are object URLs: give their memory back when the chat closes.
   const previews = useRef<Attachment[]>([]);
@@ -1016,10 +1025,15 @@ export function SessionChat({
     },
     [],
   );
-  // The pane's image button uploads and pastes a path: while the chat shows, it joins here.
+  // The pane's image button: while the chat shows, its pictures come here as files (instant
+  // previews); a path pasted from elsewhere joins as an uploaded image.
+  const addImagesRef = useRef(addImages);
+  useEffect(() => {
+    addImagesRef.current = addImages;
+  });
   useEffect(() => {
     if (!pasteRef) return;
-    pasteRef.current = (path) =>
+    const target: PasteTarget = (path) =>
       setAttachments((prev) => [
         ...prev,
         {
@@ -1030,6 +1044,8 @@ export function SessionChat({
           preview: null,
         },
       ]);
+    target.addImages = (files) => addImagesRef.current(files);
+    pasteRef.current = target;
     return () => {
       pasteRef.current = null;
     };

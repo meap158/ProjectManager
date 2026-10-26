@@ -58,6 +58,12 @@ export async function prepareImage(
 }
 
 /**
+ * Where a pane's pastes go. The chat view also takes picked images itself (`addImages`), so the
+ * pane's image button shows them in the composer at once instead of uploading first (PM-301).
+ */
+export type PasteTarget = ((text: string) => void) & { addImages?: (files: File[]) => void };
+
+/**
  * Uploads an image for a session and pastes its path into the terminal (as a paste, so a CLI
  * that asked for bracketed paste sees one, which is how they recognise an image path).
  */
