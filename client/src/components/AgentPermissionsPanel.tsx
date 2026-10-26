@@ -13,6 +13,7 @@ const LEVELS: PermissionLevel[] = ['cli', 'read', 'edit', 'full'];
 
 const LEVEL_HINTS: Record<PermissionLevel, string> = {
   cli: 'Pass no permission flags: the CLI’s own config and defaults apply',
+  auto: 'Safe actions run without asking; a classifier blocks risky ones (the default)',
   read: 'The agent can look but not change anything',
   edit: 'The agent can change files in the project; risky commands still ask',
   full: 'The agent can change files and run any command without asking',
@@ -22,6 +23,7 @@ const LEVEL_HINTS: Record<PermissionLevel, string> = {
 const CLI_FLAGS: Record<string, Partial<Record<PermissionLevel, string>>> = {
   claude: {
     read: '--permission-mode plan',
+    auto: '--permission-mode auto',
     edit: '--permission-mode acceptEdits',
     full: '--permission-mode bypassPermissions',
   },
@@ -75,7 +77,8 @@ export function AgentPermissionsPanel({
   const save = (next: AgentPermissions) => {
     const before = perms;
     setPerms(next); // Optimistic; a failure restores the previous choice.
-    api.savePermissions(next).catch((e: Error) => {
+    // claudeAuto is read only: only the levels are saved.
+    api.savePermissions({ global: next.global, providers: next.providers }).catch((e: Error) => {
       setPerms(before);
       onError(e.message);
     });
@@ -126,7 +129,11 @@ export function AgentPermissionsPanel({
                   <b>{p.name}</b>
                 </span>
                 <span className="faint mono truncate permission-flags" title={flags}>
-                  {effective === 'cli' ? 'its own settings' : flags}
+                  {effective === 'cli'
+                    ? 'its own settings'
+                    : effective === 'auto' && perms.claudeAuto === false
+                      ? 'no auto mode in this version: --permission-mode acceptEdits'
+                      : flags}
                 </span>
                 <Dropdown
                   label={`Permission level for ${p.name}`}
@@ -137,6 +144,15 @@ export function AgentPermissionsPanel({
                       label: `Inherit (${PERMISSION_LEVEL_LABELS[perms.global]})`,
                       sub: 'Follows the level for all agents',
                     },
+                    // Auto mode is Claude Code's own (PM-326), offered only for it.
+                    ...(CLI_FLAGS[p.id]?.auto ? (['auto'] as const) : []).map((level) => ({
+                      value: level,
+                      label: PERMISSION_LEVEL_LABELS[level],
+                      sub:
+                        perms.claudeAuto === false
+                          ? 'This Claude Code has no auto mode yet: it starts in accept edits until updated'
+                          : `${CLI_FLAGS[p.id]?.[level]}: ${LEVEL_HINTS.auto}`,
+                    })),
                     ...LEVELS.map((level) => ({
                       value: level,
                       label: PERMISSION_LEVEL_LABELS[level],

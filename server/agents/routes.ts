@@ -26,7 +26,13 @@ import type { Db } from '../db.js';
 import { sessionUsage } from './usage.js';
 import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
-import { getPermissions, PERMISSION_PROVIDERS, setPermissions } from './permissions.js';
+import {
+  AUTO_PROVIDERS,
+  claudeOffersAuto,
+  getPermissions,
+  PERMISSION_PROVIDERS,
+  setPermissions,
+} from './permissions.js';
 import { getCpuBudget, setCpuBudget, totalThreads } from './cpuBudget.js';
 import { slashCommands, suggestFiles } from './completions.js';
 import { findTranscript, readSubagent, readTranscript, transcriptSource } from './transcript.js';
@@ -136,7 +142,10 @@ function requireProject(db: Db, c: Context): number {
 export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervisor): void {
   // ---- Providers ------------------------------------------------------------------------------
   // Global agent permissions + per-CLI overrides (Settings). Applied at each session launch.
-  app.get('/agents/permissions', (c) => c.json(getPermissions(db)));
+  // With whether the installed Claude Code offers auto mode (asked once, from its --help).
+  app.get('/agents/permissions', async (c) =>
+    c.json({ ...getPermissions(db), claudeAuto: await claudeOffersAuto('claude') }),
+  );
 
   app.put('/agents/permissions', async (c) => {
     const level = z.enum(['cli', 'read', 'edit', 'full']);
@@ -145,10 +154,16 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
       z.object({
         global: level,
         providers: z
-          .record(z.string(), z.union([level, z.literal('inherit')]))
+          .record(z.string(), z.union([level, z.literal('auto'), z.literal('inherit')]))
           .refine((r) => Object.keys(r).every((id) => PERMISSION_PROVIDERS.includes(id)), {
             message: 'Unknown agent CLI',
-          }),
+          })
+          // Auto mode is Claude Code's own: no other CLI has it.
+          .refine(
+            (r) =>
+              Object.entries(r).every(([id, v]) => v !== 'auto' || AUTO_PROVIDERS.includes(id)),
+            { message: 'Only Claude Code has an auto mode' },
+          ),
       }),
     );
     return c.json(setPermissions(db, body));

@@ -104,6 +104,7 @@ import {
 import {
   claudeModeOnScreen,
   effectiveLevel,
+  claudeOffersAuto,
   forgetMode,
   getPermissions,
   persistModes,
@@ -2638,9 +2639,22 @@ export class AgentSupervisor {
         isRelaunch && row.provider_id === 'claude'
           ? (claudeModeOnScreen(this.sessionScreen(row.id, 4000) ?? '') ?? rememberedMode(row.id))
           : null;
+      // Claude's auto mode needs a Claude Code that has it (PM-326): older ones get accept edits.
+      let level = effectiveLevel(getPermissions(this.db), row.provider_id);
+      let autoMissing = false;
+      if (
+        level === 'auto' &&
+        row.provider_id === 'claude' &&
+        !carried &&
+        connection.command[0] &&
+        (await claudeOffersAuto(connection.command[0])) === false
+      ) {
+        level = 'edit';
+        autoMissing = true;
+      }
       const permitted = withPermissions(
         row.provider_id,
-        effectiveLevel(getPermissions(this.db), row.provider_id),
+        level,
         connection.command,
         connection.env,
         carried,
@@ -2649,6 +2663,10 @@ export class AgentSupervisor {
       connection.env = permitted.env;
       const argv = connection.command;
       const log = this.outputFor(key, row.log_path);
+      if (autoMissing)
+        log.append(
+          '\r\n[supervisor] this Claude Code has no auto mode; starting it in accept edits mode (update Claude Code for auto mode)\r\n',
+        );
       if (isRelaunch) {
         // A killed TUI may leave cursor position, scroll margins and alternate-screen modes
         // active. Reset them before the next process writes into this same output stream.

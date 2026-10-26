@@ -310,12 +310,15 @@ export interface RemoteStatus {
 }
 
 /** A permission choice: one of the levels, or 'cli' = pass no flags, the CLI's own settings apply. */
-export type PermissionLevel = 'cli' | AgentAutonomy;
+/** 'auto' is Claude Code's own auto mode (PM-326): only Claude offers it. */
+export type PermissionLevel = 'cli' | 'auto' | AgentAutonomy;
 
 /** Global agent permissions, with per-CLI overrides ('inherit' follows the global level). */
 export interface AgentPermissions {
   global: PermissionLevel;
   providers: Record<string, PermissionLevel | 'inherit'>;
+  /** Read only: whether the installed Claude Code offers auto mode (null when unknown). */
+  claudeAuto?: boolean | null;
 }
 
 /** Settings → CPU budget: how many logical CPUs agent processes may use together. */
@@ -396,6 +399,7 @@ export interface MachineSensors {
 
 export const PERMISSION_LEVEL_LABELS: Record<PermissionLevel, string> = {
   cli: "CLI's own settings",
+  auto: 'Auto mode',
   ...AGENT_AUTONOMY_LABELS,
 };
 

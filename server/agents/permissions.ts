@@ -1,7 +1,9 @@
+import { execFile } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { AgentAutonomy, AgentPermissions, PermissionLevel } from '../../shared/types.js';
 import type { Db } from '../db.js';
 import { getSetting, setSetting } from '../store.js';
+import { resolveArgv } from './resolve.js';
 
 // Global agent permissions with per-CLI overrides, applied to interactive sessions at every
 // (re)launch and used as the default level for one-shot runs. Each level maps onto the CLI's own
@@ -16,15 +18,31 @@ import { getSetting, setSetting } from '../store.js';
 //
 // 'cli' passes nothing: the CLI's own config and defaults apply (the default, so nothing changes
 // until the user picks a level).
+//
+// Auto mode (PM-326, Claude only): `--permission-mode auto`. Before each action Claude Code's
+// classifier checks it: actions it judges safe run without asking, risky ones (mass deletes,
+// sending data out, running untrusted code) are blocked and Claude is steered elsewhere, and
+// repeated blocks fall back to asking. Between acceptEdits (commands always ask) and
+// bypassPermissions (nothing asks); not risk-free, so it is a Claude default, not a global level.
+// It is Claude's default here: a session started, restarted or relaunched gets it unless Settings
+// says otherwise, or the session was cycled to another mode (that mode is carried, below). A Claude
+// Code without auto mode (older versions) gets acceptEdits instead, and the session log says so.
 
 const KEY = 'agent_permissions';
 
-export const DEFAULT_PERMISSIONS: AgentPermissions = { global: 'cli', providers: {} };
+export const DEFAULT_PERMISSIONS: AgentPermissions = {
+  global: 'cli',
+  providers: { claude: 'auto' },
+};
+
+/** CLIs with an auto mode of their own. */
+export const AUTO_PROVIDERS = ['claude'];
 
 /** Interactive-session flags per CLI and level. */
-const SESSION_ARGS: Record<string, Partial<Record<AgentAutonomy, string[]>>> = {
+const SESSION_ARGS: Record<string, Partial<Record<AgentAutonomy | 'auto', string[]>>> = {
   claude: {
     read: ['--permission-mode', 'plan'],
+    auto: ['--permission-mode', 'auto'],
     edit: ['--permission-mode', 'acceptEdits'],
     full: ['--permission-mode', 'bypassPermissions'],
   },
@@ -56,7 +74,45 @@ const OPENCODE_PERMISSION: Record<AgentAutonomy, Record<string, string>> = {
 export const PERMISSION_PROVIDERS = [...Object.keys(SESSION_ARGS), 'opencode'];
 
 export function getPermissions(db: Db): AgentPermissions {
-  return { ...DEFAULT_PERMISSIONS, ...(getSetting<AgentPermissions>(db, KEY) ?? {}) };
+  const saved = getSetting<AgentPermissions>(db, KEY);
+  // A CLI's own default (Claude's auto mode) applies until that CLI is given a level of its own.
+  return {
+    global: saved?.global ?? DEFAULT_PERMISSIONS.global,
+    providers: { ...DEFAULT_PERMISSIONS.providers, ...(saved?.providers ?? {}) },
+  };
+}
+
+/** Whether a Claude Code `--help` lists auto among its permission modes. */
+export function helpOffersAuto(help: string): boolean {
+  const choices = /--permission-mode[\s\S]*?\(choices:([^)]*)\)/.exec(help)?.[1];
+  return choices ? /"auto"/.test(choices) : false;
+}
+
+const autoSupport = new Map<string, Promise<boolean | null>>();
+/**
+ * Whether this Claude Code binary offers auto mode, asked once per binary (`--help`, no request
+ * to the API). Null when it could not be asked: the launch then tries auto as configured.
+ */
+export function claudeOffersAuto(binary: string): Promise<boolean | null> {
+  let known = autoSupport.get(binary);
+  if (!known) {
+    known = (async () => {
+      // On Windows the same resolver the supervisor spawns with (a .cmd shim is unwrapped).
+      const argv =
+        process.platform === 'win32' ? await resolveArgv([binary]).catch(() => null) : [binary];
+      if (!argv) return null;
+      return new Promise<boolean | null>((resolve) =>
+        execFile(
+          argv[0]!,
+          [...argv.slice(1), '--help'],
+          { timeout: 15_000, windowsHide: true },
+          (error, stdout) => resolve(error && !stdout ? null : helpOffersAuto(String(stdout))),
+        ),
+      );
+    })();
+    autoSupport.set(binary, known);
+  }
+  return known;
 }
 
 export function setPermissions(db: Db, value: AgentPermissions): AgentPermissions {

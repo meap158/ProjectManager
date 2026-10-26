@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
 import { openDb } from '../db.js';
-import { claudeModeOnScreen, effectiveLevel, withPermissions } from './permissions.js';
+import {
+  claudeModeOnScreen,
+  effectiveLevel,
+  helpOffersAuto,
+  withPermissions,
+} from './permissions.js';
 import { buildDispatchArgv, getProvider } from './providers.js';
 
 describe('agent permissions', () => {
@@ -77,12 +82,55 @@ describe('agent permissions', () => {
         headers: { host: 'localhost', ...(body ? { 'content-type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
       });
-    expect(await (await call('GET')).json()).toEqual({ global: 'cli', providers: {} });
+    // Claude starts in its auto mode until it is given a level of its own (PM-326).
+    expect(await (await call('GET')).json()).toMatchObject({
+      global: 'cli',
+      providers: { claude: 'auto' },
+    });
     const value = { global: 'edit', providers: { codex: 'read', claude: 'inherit' } };
     expect((await call('PUT', value)).status).toBe(200);
-    expect(await (await call('GET')).json()).toEqual(value);
+    expect(await (await call('GET')).json()).toMatchObject(value);
+    expect((await call('PUT', { global: 'edit', providers: { claude: 'auto' } })).status).toBe(200);
     expect((await call('PUT', { global: 'edit', providers: { bogus: 'read' } })).status).toBe(400);
     expect((await call('PUT', { global: 'god', providers: {} })).status).toBe(400);
+    // Auto mode is Claude Code's own: not a global level, and not for other CLIs.
+    expect((await call('PUT', { global: 'auto', providers: {} })).status).toBe(400);
+    expect((await call('PUT', { global: 'cli', providers: { codex: 'auto' } })).status).toBe(400);
+  });
+});
+
+describe("Claude Code's auto mode (PM-326)", () => {
+  it('is passed as --permission-mode auto, and a mode the session was cycled to still wins', () => {
+    expect(withPermissions('claude', 'auto', ['claude', '--resume', 'x'], {}).command).toEqual([
+      'claude',
+      '--permission-mode',
+      'auto',
+      '--resume',
+      'x',
+    ]);
+    expect(withPermissions('claude', 'auto', ['claude'], {}, 'plan').command).toEqual([
+      'claude',
+      '--permission-mode',
+      'plan',
+    ]);
+    // A flag the user wrote themselves is left alone.
+    expect(
+      withPermissions('claude', 'auto', ['claude', '--permission-mode', 'acceptEdits'], {}).command,
+    ).toEqual(['claude', '--permission-mode', 'acceptEdits']);
+  });
+
+  it('knows from --help whether this Claude Code has auto mode', () => {
+    const help = (choices: string) =>
+      `Options:
+  --permission-mode <mode>   Permission mode to use for the session
+                             (choices: ${choices})
+  --resume`;
+    // The real help wraps the choices over several lines.
+    expect(helpOffersAuto(help('"acceptEdits", "auto",\n "bypassPermissions", "plan"'))).toBe(true);
+    expect(helpOffersAuto(help('"acceptEdits", "bypassPermissions", "default", "plan"'))).toBe(
+      false,
+    );
+    expect(helpOffersAuto('Usage: claude [options]')).toBe(false);
   });
 });
 
