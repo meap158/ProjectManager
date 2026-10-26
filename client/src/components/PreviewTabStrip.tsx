@@ -1,9 +1,11 @@
 import {
+  useLayoutEffect,
   useRef,
   useState,
-  type DragEvent,
+  type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent,
   type ReactNode,
 } from 'react';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
@@ -14,6 +16,11 @@ import { CloseIcon, GlobeIcon } from './icons';
 // tabs (and show them), Home and End jump, Delete closes, Alt+Left and Alt+Right reorder (the
 // keyboard way to do what dragging does), and Shift+F10 or the Menu key opens the context menu.
 // A middle click closes a tab, like a browser.
+//
+// Reordering (PM-328) works like Chrome's: the dragged tab follows the pointer inside its group
+// (pinned or not), its neighbours slide aside as it passes their middle, and on release it glides
+// into its slot before the order changes. Any reorder, from the keyboard or the menu too, animates
+// from where the tabs were. With prefers-reduced-motion the tabs simply move.
 
 export interface StripTab {
   id: string;
@@ -40,6 +47,57 @@ export type TabCommand =
   | 'move-right';
 
 type MenuItem = ContextMenuItem<TabCommand>;
+
+/** The range of positions a tab may move within: pinned tabs stay among pinned ones. */
+function groupRange(tab: StripTab, all: StripTab[]): [number, number] {
+  const pinnedCount = all.filter((t) => t.pinned).length;
+  return tab.pinned ? [0, pinnedCount - 1] : [pinnedCount, all.length - 1];
+}
+
+type Box = { left: number; right: number; width: number };
+
+/**
+ * Where a dragged tab lands and how far each tab is shifted meanwhile. `boxes` are the tabs'
+ * places when the drag began; `dx` is how far the pointer moved. Pure, so it is testable.
+ */
+export function dragLayout(
+  boxes: Box[],
+  from: number,
+  dx: number,
+  [lo, hi]: [number, number],
+): { target: number; dx: number; shift: (index: number) => number; slot: number } {
+  const me = boxes[from]!;
+  const clamped = Math.min(boxes[hi]!.right - me.right, Math.max(boxes[lo]!.left - me.left, dx));
+  // As in Chrome: a neighbour gives way once the dragged tab's leading edge passes its middle.
+  const mid = (i: number) => boxes[i]!.left + boxes[i]!.width / 2;
+  let target = from;
+  if (clamped > 0) while (target < hi && me.right + clamped > mid(target + 1)) target++;
+  else if (clamped < 0) while (target > lo && me.left + clamped < mid(target - 1)) target--;
+  const next = boxes[from + 1] ?? boxes[from - 1];
+  const gap = next
+    ? Math.max(0, next.left > me.left ? next.left - me.right : me.left - next.right)
+    : 0;
+  const step = me.width + gap;
+  const shift = (i: number) =>
+    i === from
+      ? 0
+      : target > from && i > from && i <= target
+        ? -step
+        : target < from && i >= target && i < from
+          ? step
+          : 0;
+  // Where it settles: the far edge of the slot it takes.
+  const slot =
+    target > from
+      ? boxes[target]!.right - me.right
+      : target < from
+        ? boxes[target]!.left - me.left
+        : 0;
+  return { target, dx: clamped, shift, slot };
+}
+
+const reducedMotion = () =>
+  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** The items for one tab. Pure, so the rules (what is disabled and why) are testable. */
 export function tabMenuItems(
@@ -98,9 +156,48 @@ export function PreviewTabStrip({
   onCommand: (command: TabCommand, id: string) => void;
 }) {
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [over, setOver] = useState<string | null>(null);
   const tabRefs = useRef(new Map<string, HTMLElement>());
+  const tabEls = useRef(new Map<string, HTMLElement>());
+  const strip = useRef<HTMLDivElement>(null);
+  // A drag in progress: where it began, and (once past the threshold) where the tab is now.
+  const press = useRef<{
+    id: string;
+    pointerId: number;
+    x: number;
+    scroll: number;
+    boxes: Box[];
+    moved: boolean;
+  } | null>(null);
+  const [drag, setDrag] = useState<{
+    id: string;
+    dx: number;
+    settling: boolean;
+    /** The tabs' places when the drag began. */
+    boxes: Box[];
+  } | null>(null);
+  const swallowClick = useRef(false);
+
+  // Any reorder animates from where the tabs were (the keyboard, the menu, a finished drag).
+  const lastBoxes = useRef(new Map<string, number>());
+  const order = tabs.map((t) => t.id).join('|');
+  const lastOrder = useRef(order);
+  useLayoutEffect(() => {
+    const changed = lastOrder.current !== order;
+    lastOrder.current = order;
+    const now = new Map<string, number>();
+    for (const [id, el] of tabEls.current) now.set(id, el.getBoundingClientRect().left);
+    if (changed && !reducedMotion())
+      for (const [id, left] of now) {
+        const before = lastBoxes.current.get(id);
+        const el = tabEls.current.get(id);
+        if (before === undefined || !el || Math.abs(before - left) < 0.5 || !el.animate) continue;
+        el.animate([{ transform: `translateX(${before - left}px)` }, { transform: 'none' }], {
+          duration: 160,
+          easing: 'cubic-bezier(.2,.8,.2,1)',
+        });
+      }
+    lastBoxes.current = now;
+  });
 
   const openMenu = (id: string, x: number, y: number) => setMenu({ id, x, y });
   const closeMenu = (restoreFocus: boolean) => {
@@ -132,12 +229,67 @@ export function PreviewTabStrip({
     event.preventDefault();
   };
 
-  const onDrop = (event: DragEvent, targetId: string) => {
-    event.preventDefault();
-    const index = tabs.findIndex((t) => t.id === targetId);
-    if (dragging && index >= 0) onMove(dragging, index);
-    setDragging(null);
-    setOver(null);
+  const dragIndex = drag ? tabs.findIndex((t) => t.id === drag.id) : -1;
+  const layout =
+    drag && dragIndex >= 0
+      ? dragLayout(drag.boxes, dragIndex, drag.dx, groupRange(tabs[dragIndex]!, tabs))
+      : null;
+
+  const endDrag = (commit: boolean) => {
+    const p = press.current;
+    if (!p) return;
+    press.current = null;
+    if (!p.moved || !drag || !layout) {
+      setDrag(null);
+      return;
+    }
+    swallowClick.current = true;
+    const target = commit ? layout.target : dragIndex;
+    // Glide into the slot, then change the order (no jump: everything is already in place).
+    setDrag({ ...drag, dx: commit ? layout.slot : 0, settling: true });
+    window.setTimeout(
+      () => {
+        setDrag(null);
+        if (target !== dragIndex) onMove(drag.id, target);
+      },
+      reducedMotion() ? 0 : 160,
+    );
+  };
+
+  const onPointerDown = (event: PointerEvent<HTMLElement>, tab: StripTab) => {
+    // Mouse and pen drag; a touch scrolls the strip (the menu and keyboard move tabs there).
+    if (event.button !== 0 || event.pointerType === 'touch' || drag) return;
+    if ((event.target as HTMLElement).closest('.preview-tab-close')) return;
+    const boxes = tabs.map((t) => {
+      const r = tabEls.current.get(t.id)!.getBoundingClientRect();
+      return { left: r.left, right: r.right, width: r.width };
+    });
+    press.current = {
+      id: tab.id,
+      pointerId: event.pointerId,
+      x: event.clientX,
+      scroll: strip.current?.scrollLeft ?? 0,
+      boxes,
+      moved: false,
+    };
+  };
+  const onPointerMove = (event: PointerEvent<HTMLElement>) => {
+    const p = press.current;
+    if (!p || event.pointerId !== p.pointerId) return;
+    const el = strip.current;
+    // Near an edge of an overflowing strip, scroll it along.
+    if (el && p.moved) {
+      const r = el.getBoundingClientRect();
+      if (event.clientX < r.left + 24) el.scrollLeft -= 8;
+      else if (event.clientX > r.right - 24) el.scrollLeft += 8;
+    }
+    const dx = event.clientX - p.x + ((el?.scrollLeft ?? 0) - p.scroll);
+    if (!p.moved) {
+      if (Math.abs(dx) < 5) return;
+      p.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    setDrag({ id: p.id, dx, settling: false, boxes: p.boxes });
   };
 
   const menuTab = menu ? tabs.find((t) => t.id === menu.id) : undefined;
@@ -145,32 +297,46 @@ export function PreviewTabStrip({
 
   return (
     <div className={`preview-tabstrip${tabs.length === 1 ? ' is-single' : ''}`}>
-      <div className="preview-tabs" role="tablist" aria-label="Browser tabs">
+      <div
+        ref={strip}
+        className={`preview-tabs${drag ? ' is-dragging' : ''}`}
+        role="tablist"
+        aria-label="Browser tabs"
+      >
         {tabs.map((tab, index) => {
           const active = tab.id === activeId;
+          const dragged = drag?.id === tab.id;
+          const offset = !layout
+            ? 0
+            : dragged
+              ? drag!.settling
+                ? drag!.dx
+                : layout.dx
+              : layout.shift(index);
           return (
             <div
               key={tab.id}
+              ref={(node) => {
+                if (node) tabEls.current.set(tab.id, node);
+                else tabEls.current.delete(tab.id);
+              }}
               className={`preview-tab${active ? ' is-active' : ''}${tab.pinned ? ' is-pinned' : ''}${
-                over === tab.id && dragging !== tab.id ? ' is-drop' : ''
+                dragged ? (drag!.settling ? ' is-settling' : ' is-lifted') : ''
               }`}
+              style={
+                offset ? ({ transform: `translateX(${offset}px)` } as CSSProperties) : undefined
+              }
               role="presentation"
-              draggable
-              onDragStart={(event) => {
-                setDragging(tab.id);
-                event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', tab.id);
-              }}
-              onDragOver={(event) => {
-                if (!dragging) return;
-                event.preventDefault();
-                setOver(tab.id);
-              }}
-              onDragLeave={() => setOver((o) => (o === tab.id ? null : o))}
-              onDrop={(event) => onDrop(event, tab.id)}
-              onDragEnd={() => {
-                setDragging(null);
-                setOver(null);
+              onPointerDown={(event) => onPointerDown(event, tab)}
+              onPointerMove={onPointerMove}
+              onPointerUp={() => endDrag(true)}
+              onPointerCancel={() => endDrag(false)}
+              onKeyDownCapture={(event) => {
+                // Esc while dragging puts the tab back.
+                if (event.key === 'Escape' && press.current?.moved) {
+                  event.preventDefault();
+                  endDrag(false);
+                }
               }}
               onContextMenu={(event: MouseEvent) => {
                 event.preventDefault();
@@ -201,7 +367,14 @@ export function PreviewTabStrip({
                   if (node) tabRefs.current.set(tab.id, node);
                   else tabRefs.current.delete(tab.id);
                 }}
-                onClick={() => onActivate(tab.id)}
+                onClick={() => {
+                  // The click that ends a drag is not a click on the tab.
+                  if (swallowClick.current) {
+                    swallowClick.current = false;
+                    return;
+                  }
+                  onActivate(tab.id);
+                }}
                 onKeyDown={(event) => onTabKeyDown(event, tab, index)}
               >
                 {tab.blank ? <GlobeIcon size={14} className="preview-tab-globe" /> : icon(tab)}

@@ -308,16 +308,31 @@
   min-width: 0;
   width: 38px;
 }
-/* Where a dragged tab will land. */
-.preview-tab.is-drop::before {
-  content: '';
-  position: absolute;
-  left: -2px;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--accent);
+/* Reordering (PM-328), as in Chrome: while a tab is dragged its neighbours slide aside, the dragged
+   tab follows the pointer above them, and on release it glides into its slot. */
+.preview-tabs.is-dragging .preview-tab {
+  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.preview-tabs.is-dragging .preview-tab.is-lifted {
+  z-index: 2;
+  transition: none;
+  border-color: var(--border);
+  background: var(--surface);
+  box-shadow: 0 4px 14px color-mix(in srgb, #000 28%, transparent);
+  cursor: grabbing;
+}
+.preview-tabs.is-dragging .preview-tab.is-settling {
+  z-index: 2;
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.preview-tabs.is-dragging .preview-tab-main {
+  cursor: grabbing;
+}
+@media (prefers-reduced-motion: reduce) {
+  .preview-tabs.is-dragging .preview-tab,
+  .preview-tabs.is-dragging .preview-tab.is-settling {
+    transition: none;
+  }
 }
 .preview-tab-main {
   display: flex;

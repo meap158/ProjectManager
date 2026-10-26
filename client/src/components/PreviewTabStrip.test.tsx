@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PreviewTabStrip, tabMenuItems, type StripTab, type TabCommand } from './PreviewTabStrip';
+import {
+  PreviewTabStrip,
+  dragLayout,
+  tabMenuItems,
+  type StripTab,
+  type TabCommand,
+} from './PreviewTabStrip';
 
 afterEach(cleanup);
 
@@ -139,14 +145,58 @@ describe('PreviewTabStrip', () => {
     expect(h.onActivate).not.toHaveBeenCalled();
   });
 
-  it('reorders by dragging one tab onto another', () => {
+  it('drags like Chrome: a small move is still a click, a real drag lands where it was dropped (PM-328)', async () => {
+    vi.useFakeTimers();
     const h = setup();
-    const [a, , c] = screen.getAllByRole('tab').map((t) => t.parentElement!);
-    const data = { setData: vi.fn(), effectAllowed: '' };
-    fireEvent.dragStart(a!, { dataTransfer: data });
-    fireEvent.dragOver(c!, { dataTransfer: data });
-    fireEvent.drop(c!, { dataTransfer: data });
+    const wrappers = screen.getAllByRole('tab').map((t) => t.parentElement!);
+    // Three 100px tabs with 4px between them.
+    wrappers.forEach((w, i) => {
+      w.getBoundingClientRect = () =>
+        ({
+          left: i * 104,
+          right: i * 104 + 100,
+          width: 100,
+          top: 0,
+          bottom: 32,
+          height: 32,
+        }) as DOMRect;
+      w.setPointerCapture = () => {};
+    });
+    const [a] = wrappers;
+    const tabA = screen.getAllByRole('tab')[0]!;
+    // Under the threshold: a click.
+    fireEvent.pointerDown(a!, { button: 0, pointerId: 1, clientX: 50, pointerType: 'mouse' });
+    fireEvent.pointerMove(a!, { pointerId: 1, clientX: 53 });
+    fireEvent.pointerUp(a!, { pointerId: 1, clientX: 53 });
+    fireEvent.click(tabA);
+    expect(h.onActivate).toHaveBeenCalledWith('a');
+    expect(h.onMove).not.toHaveBeenCalled();
+    // A drag past the third tab's middle: neighbours slide aside, then it lands at index 2.
+    fireEvent.pointerDown(a!, { button: 0, pointerId: 2, clientX: 50, pointerType: 'mouse' });
+    fireEvent.pointerMove(a!, { pointerId: 2, clientX: 270 });
+    expect(wrappers[1]!.style.transform).toBe('translateX(-104px)');
+    expect(a!.className).toContain('is-lifted');
+    fireEvent.pointerUp(a!, { pointerId: 2, clientX: 270 });
+    fireEvent.click(tabA); // The click that ends a drag does nothing.
+    expect(h.onActivate).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(200);
     expect(h.onMove).toHaveBeenCalledWith('a', 2);
+    vi.useRealTimers();
+  });
+
+  it('works out the landing place and the shifts, inside the tab group', () => {
+    const boxes = [0, 1, 2, 3].map((i) => ({ left: i * 104, right: i * 104 + 100, width: 100 }));
+    const right = dragLayout(boxes, 0, 160, [0, 3]);
+    expect(right.target).toBe(2);
+    expect([1, 2, 3].map(right.shift)).toEqual([-104, -104, 0]);
+    expect(right.slot).toBe(208);
+    const left = dragLayout(boxes, 3, -120, [0, 3]);
+    expect(left.target).toBe(2);
+    expect(left.shift(2)).toBe(104);
+    // Clamped to its group (pinned tabs 0-1 stay put for an unpinned tab).
+    const kept = dragLayout(boxes, 2, -500, [2, 3]);
+    expect(kept.dx).toBe(0);
+    expect(kept.target).toBe(2);
   });
 
   it('opens a context menu on right click, runs a command and closes', () => {
