@@ -104,6 +104,7 @@ import {
 import {
   claudeModeOnScreen,
   effectiveLevel,
+  forgetMode,
   getPermissions,
   persistModes,
   rememberedMode,
@@ -3755,7 +3756,13 @@ export class AgentSupervisor {
     const now = Date.now();
     if (now - (this.modeCheckedAt.get(row.id) ?? 0) < 15_000) return;
     this.modeCheckedAt.set(row.id, now);
-    rememberMode(row.id, claudeModeOnScreen(this.sessionScreen(row.id, 4000) ?? ''));
+    const screen = this.sessionScreen(row.id, 4000) ?? '';
+    const mode = claudeModeOnScreen(screen);
+    // The default mode shows only the shortcuts hint: the session was cycled back to it, so an
+    // older remembered mode no longer applies.
+    if (!mode && screen.split('\n').some((line) => line.trim() === '? for shortcuts'))
+      forgetMode(row.id);
+    else rememberMode(row.id, mode);
   }
 
   /** Provider and resume argv of a session, for its chat view's transcript (mobile). */
