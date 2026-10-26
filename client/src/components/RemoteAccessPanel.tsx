@@ -1,3 +1,4 @@
+import { RemoteAccessGuide } from './RemoteAccessGuide';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import type { RemoteConfig, RemoteStatus } from '../../../shared/types';
@@ -88,7 +89,10 @@ function LocalRemoteAccessPanel({ onError }: { onError: (message: string) => voi
   return (
     <section className="panel" aria-label="Remote access">
       <div className="panel-header">
-        <h2>Remote access</h2>
+        <h2 className="remote-guide-heading">
+          Remote access
+          <RemoteAccessGuide port={status?.port ?? null} />
+        </h2>
         <span className="meta">
           {status === null
             ? 'checking…'

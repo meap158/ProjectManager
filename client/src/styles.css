@@ -7249,3 +7249,80 @@ span.path-link:hover .path-icon {
   gap: 8px;
   margin-top: 10px;
 }
+
+/* Settings > Remote access: the (i) beside the heading and its guide (PM-327). */
+.remote-guide-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.icon-btn.remote-guide-btn {
+  width: 26px;
+  height: 26px;
+  color: var(--text-3);
+}
+.icon-btn.remote-guide-btn:hover,
+.icon-btn.remote-guide-btn:focus-visible {
+  color: var(--text);
+}
+.confirm-dialog.remote-guide {
+  width: min(600px, calc(100vw - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.remote-guide .dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.remote-guide h2,
+.remote-guide h3,
+.remote-guide p {
+  margin: 0;
+}
+.remote-guide h3 {
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.remote-guide-steps {
+  display: flex;
+  list-style: decimal;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+}
+.remote-guide-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 14px;
+  margin: 0;
+}
+.remote-guide-fields dt {
+  font-weight: 600;
+}
+.remote-guide-fields dd {
+  margin: 0;
+  color: var(--text-2);
+}
+@media (max-width: 600px) {
+  .remote-guide-fields {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .remote-guide-fields dd + dt {
+    margin-top: 8px;
+  }
+}
+@media (pointer: coarse) {
+  .icon-btn.remote-guide-btn {
+    width: 40px;
+    height: 40px;
+  }
+}

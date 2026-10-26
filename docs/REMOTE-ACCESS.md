@@ -35,6 +35,9 @@ authenticator code all exist. Changing any detail signs every session out.
 
 ## Setup (once, by you)
 
+The (i) beside the Remote access heading in Settings shows where each Cloudflare detail comes
+from, with links to the dashboard and Cloudflare's documentation (`RemoteAccessGuide`).
+
 Cloudflare side (needs your Cloudflare account; the app cannot do this for you):
 
 1. Install `cloudflared` and sign in: `cloudflared tunnel login`.
