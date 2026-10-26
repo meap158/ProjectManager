@@ -184,6 +184,8 @@ export function stateLabel(
   text: string;
   tone?: 'good' | 'bad' | 'attention';
   activity?: 'running' | 'idle' | 'input';
+  /** Why, when it is not obvious: the sentence an "Asks you" reply ends with (PM-315). */
+  why?: string;
 } {
   if (w.kind === 'session') {
     const s = w.item;
@@ -203,7 +205,8 @@ export function stateLabel(
     if (s.usageLimit) return { text: 'Usage limit', tone: 'attention' };
     const activity = sessionActivity(s, now);
     if (activity === 'input') return { text: ACTIVITY_LABEL.input, tone: 'attention', activity };
-    if (activity === 'idle' && s.question) return { text: 'Asks you', tone: 'attention', activity };
+    if (activity === 'idle' && s.question)
+      return { text: 'Asks you', tone: 'attention', activity, why: s.question };
     if (activity !== 'stopped') return { text: ACTIVITY_LABEL[activity], tone: 'good', activity };
     if (s.status === 'dead') return { text: 'crashed', tone: 'bad' };
     return { text: s.status === 'killed' ? 'stopped' : 'ended' };
@@ -383,7 +386,7 @@ export function AgentWorkList({
                   </span>
                 </span>
               ) : (
-                <span className={`work-state tone-${state.tone ?? 'idle'}`}>
+                <span className={`work-state tone-${state.tone ?? 'idle'}`} title={state.why}>
                   <span className="work-state-full">{state.text}</span>
                   <span className="work-state-compact">
                     {state.activity ? WORK_STATUS_LABELS[state.activity] : state.text}

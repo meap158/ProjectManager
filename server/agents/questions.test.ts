@@ -22,6 +22,18 @@ const ASKING: [string, RegExp][] = [
   ],
   ['Then say "rerun" and I\'ll finish the test fix.', /^Then say "rerun"/],
   ['Still waiting on your startled-pose pick (1, 2, 3 or none) and a "push".', /^Still waiting/],
+  // PM-315: from the running sessions on 2026-10-27, and edge cases.
+  [
+    "It would need an ad-unit ID that you create in AdSense. I'd build it desktop-only with reserved height, once you have the ID.\nShould I click Apply with the settings above?",
+    /^Should I click Apply with the settings above\?$/,
+  ],
+  ['Bạn có muốn mình triển khai luôn không?', /không\?$/],
+  ['どちらのデザインにしますか？', /？$/],
+  ['Two questions. Should the banner stay? And which colour do you want?', /^And which colour/],
+  [
+    'The draft is in `docs/plan.md`. Can you check the numbers in the "Costs" table?',
+    /^Can you check/,
+  ],
 ];
 
 const NOT_ASKING = [
@@ -41,6 +53,21 @@ const NOT_ASKING = [
   'Should I keep the old API? No: nothing calls it.\nRemoved it.\nAll tests pass.',
   // Code is not prose.
   'Done.\n```\nif (ok?) ask()?\n```',
+  // PM-315: status notes that point at work elsewhere are not chat questions.
+  'Still waiting on you: the xAI video credential on the Owner desk.',
+  'Everything else waiting on you: HT-2 (GitHub billing) and HT-5 (the store listing).',
+  'Blocked on you for the Apple developer account; it is on the Owner desk as HT-3.',
+  // Quoted text and inline code are not the agent asking.
+  'Next, PM-315: the detector flags status notes like "Still waiting on you: the xAI video credential…" as questions. Reading the detector.',
+  'The banner now reads "Do you want cookies?" in both languages.',
+  'Renamed `canYouSee?` to `isVisible`.',
+  // A rhetorical question the reply goes on to answer.
+  'Why did the build fail? The cache held a stale lockfile from before the upgrade, so I cleared it, reinstalled and reran every check, which all pass now.',
+  // Real endings from running sessions that wait on no one.
+  "If the thresholds look wrong, run ghost-jobs against your real data and send me what it flags, and I'll tune them.",
+  'I left the old fix/ink-throw-status branch on GitHub; it can be deleted whenever you like.',
+  '3. Reef music: say go if you want a Lyria track for the reef. Until then it keeps the lagoon music.',
+  'No response requested.',
 ];
 
 describe('askedQuestion (PM-298)', () => {

@@ -10,13 +10,17 @@ import { findTranscript, parseClaudeLine, parseCodexLine, transcriptSource } fro
 /** Lines from the end of a reply that a question may be in: questions close a reply. */
 const LAST_LINES = 2;
 
-/** Phrases that ask you to act or answer. Kept narrow: a false "needs you" costs attention. */
+/**
+ * Phrases that ask you to act or answer. Kept narrow (PM-315: precision over recall), since a false
+ * "needs you" costs attention. "Waiting on your pick" asks in the chat; "waiting on you: <task>"
+ * is a status note pointing elsewhere, so only the first counts.
+ */
 const ASKS = [
-  /\b(?:do|would|should|shall|can|could) (?:you|i|we)\b[^?]*\?/i,
-  /\?\s*$/,
+  /\b(?:do|would|should|shall|can|could) (?:you|i|we)\b[^?？]*[?？]/i,
+  /[?？]\s*$/,
   /\btell me\b/i,
   /\bneeds? (?:your )?input\b/i,
-  /\b(?:waiting|blocked) (?:on|for) (?:you|your)\b/i,
+  /\b(?:waiting|blocked) (?:on|for) your\b/i,
   /\byour (?:call|pick|decision|choice|go-ahead|approval|answer)\b/i,
   /\bsay ["“'][^"”']+["”'] (?:and|to|when)\b/i,
   /\breply (?:with|yes|no)\b/i,
@@ -25,13 +29,26 @@ const ASKS = [
 /** Offers that don't wait on you ("say X if you want Y", "let me know if…"). */
 const OFFERS = [/\bif you (?:want|like|prefer|'d like)\b/i, /\blet me know if\b/i];
 
-/** Markdown and whitespace off, for showing a line on its own. */
+/**
+ * Pointers to work tracked elsewhere (the Owner desk, its HT-n tasks): a status note, not a
+ * question for the chat, unless it asks one outright.
+ */
+const ELSEWHERE = /\bowner desk\b|\bHT-\d+\b/i;
+
+/** A statement this long after a question means the reply went on (the question was rhetorical). */
+const ANSWERED_AFTER = 100;
+
+/** Markdown and whitespace off (backticks kept, for telling code apart). */
 const plain = (line: string) =>
   line
     .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '')
-    .replace(/[*_`#>]+/g, '')
+    .replace(/[*_#>]+/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+/** What is the agent's own words: quotes and inline code are someone else's text, or code. */
+const ownWords = (sentence: string) =>
+  sentence.replace(/`[^`]*`/g, 'code').replace(/"[^"]*"|“[^”]*”/g, '"…"');
 
 /**
  * The question the end of a reply asks you, or null when it asks nothing. Only the last lines
@@ -45,12 +62,19 @@ export function askedQuestion(reply: string): string | null {
     .filter((l) => l.trim() && !/^\s*>/.test(l))
     .slice(-LAST_LINES);
   for (let i = lines.length - 1; i >= 0; i--) {
-    // The sentence that asks, not its whole paragraph: the ask usually closes a long one.
-    const sentences = plain(lines[i]!).match(/[^.!?]+(?:[.!?]+|$)/g) ?? [];
+    // The sentence that asks, not its whole paragraph: the ask usually closes a long one. Quoted
+    // text and inline code are skipped over when splitting, so a "?" inside them ends nothing.
+    const line = plain(lines[i]!);
+    const sentences = line.match(/(?:`[^`]*`|"[^"]*"|“[^”]*”|[^.!?？。])+(?:[.!?？。]+|$)/g) ?? [];
     for (let j = sentences.length - 1; j >= 0; j--) {
       const sentence = sentences[j]!.trim();
-      if (!sentence || OFFERS.some((p) => p.test(sentence))) continue;
-      if (ASKS.some((p) => p.test(sentence))) return sentence.slice(0, 280);
+      if (!sentence) continue;
+      const own = ownWords(sentence);
+      if (OFFERS.some((p) => p.test(own))) continue;
+      const asks = ASKS.some((p) => p.test(own)) && !(ELSEWHERE.test(own) && !/[?？]/.test(own));
+      if (asks) return sentence.replace(/`/g, '').slice(0, 280);
+      // A long statement after any earlier question means the reply moved on without waiting.
+      if (own.length >= ANSWERED_AFTER) return null;
     }
   }
   return null;
