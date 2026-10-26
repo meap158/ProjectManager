@@ -325,6 +325,10 @@
   z-index: 2;
   transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+/* The frame before the new order lands: nothing may animate. */
+.preview-tabs.is-frozen .preview-tab {
+  transition: none !important;
+}
 .preview-tabs.is-dragging .preview-tab-main {
   cursor: grabbing;
 }

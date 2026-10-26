@@ -172,8 +172,11 @@ export function PreviewTabStrip({
     id: string;
     dx: number;
     settling: boolean;
-    /** The tabs' places when the drag began. */
+    /** The tabs' places when the drag began, and their order then. */
     boxes: Box[];
+    order: string;
+    /** Transitions off, everything still in place: the frame before the order changes. */
+    frozen?: boolean;
   } | null>(null);
   const swallowClick = useRef(false);
 
@@ -181,12 +184,18 @@ export function PreviewTabStrip({
   const lastBoxes = useRef(new Map<string, number>());
   const order = tabs.map((t) => t.id).join('|');
   const lastOrder = useRef(order);
+  /** The order is changing because a drag ended: the tabs are already drawn in place. */
+  const settled = useRef(false);
   useLayoutEffect(() => {
     const changed = lastOrder.current !== order;
     lastOrder.current = order;
+    // A finished drag already glided into place. Animating "from where the tabs were" would
+    // replay it from positions measured when the glide began (a visible snap back).
+    const animate = changed && !settled.current;
+    if (changed) settled.current = false;
     const now = new Map<string, number>();
     for (const [id, el] of tabEls.current) now.set(id, el.getBoundingClientRect().left);
-    if (changed && !reducedMotion())
+    if (animate && !reducedMotion())
       for (const [id, left] of now) {
         const before = lastBoxes.current.get(id);
         const el = tabEls.current.get(id);
@@ -231,7 +240,9 @@ export function PreviewTabStrip({
 
   const dragIndex = drag ? tabs.findIndex((t) => t.id === drag.id) : -1;
   const layout =
-    drag && dragIndex >= 0
+    // Only while the order is the one the drag began with: once the new order lands, every tab
+    // is drawn in its final place with no offset (an offset on the new order showed a jump).
+    drag && dragIndex >= 0 && drag.order === order
       ? dragLayout(drag.boxes, dragIndex, drag.dx, groupRange(tabs[dragIndex]!, tabs))
       : null;
 
@@ -247,10 +258,23 @@ export function PreviewTabStrip({
     const target = commit ? layout.target : dragIndex;
     // Glide into the slot, then change the order (no jump: everything is already in place).
     setDrag({ ...drag, dx: commit ? layout.slot : 0, settling: true });
+    // Then, in two steps: first switch the tabs' transitions off while everything stays where it
+    // is, and only on the next frame change the order and drop the offsets. Done together, the
+    // browser started a transition from the old offset with the old duration (a snap back).
     window.setTimeout(
       () => {
-        setDrag(null);
-        if (target !== dragIndex) onMove(drag.id, target);
+        if (target === dragIndex) {
+          setDrag(null);
+          return;
+        }
+        setDrag((d) => (d ? { ...d, frozen: true } : d));
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            settled.current = true;
+            setDrag(null);
+            onMove(drag.id, target);
+          }),
+        );
       },
       reducedMotion() ? 0 : 160,
     );
@@ -289,7 +313,7 @@ export function PreviewTabStrip({
       p.moved = true;
       event.currentTarget.setPointerCapture(event.pointerId);
     }
-    setDrag({ id: p.id, dx, settling: false, boxes: p.boxes });
+    setDrag({ id: p.id, dx, settling: false, boxes: p.boxes, order });
   };
 
   const menuTab = menu ? tabs.find((t) => t.id === menu.id) : undefined;
@@ -299,7 +323,7 @@ export function PreviewTabStrip({
     <div className={`preview-tabstrip${tabs.length === 1 ? ' is-single' : ''}`}>
       <div
         ref={strip}
-        className={`preview-tabs${drag ? ' is-dragging' : ''}`}
+        className={`preview-tabs${layout ? ' is-dragging' : ''}${drag?.frozen ? ' is-frozen' : ''}`}
         role="tablist"
         aria-label="Browser tabs"
       >
