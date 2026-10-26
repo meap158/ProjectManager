@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
 import { sendMessageToSession } from '../sessionSend';
+import { AnnotatedShot } from './AnnotatedShot';
 
 // Preview's element picker, the sending half (PM-311): what the picker reported about an element,
 // shown for review, then sent as a message to a CLI session of the owner's choice.
@@ -17,7 +18,8 @@ export interface PickedElement {
   role: string | null;
   name: string;
   rect: { x: number; y: number; width: number; height: number };
-  viewport: { width: number; height: number };
+  viewport: { width: number; height: number; dark: boolean };
+  scroll: { x: number; y: number; inner: { selector: string; top: number; left: number } | null };
   styles: Record<string, string>;
   react: { component: string; props: Record<string, unknown>; owners: string[] } | null;
 }
@@ -33,6 +35,8 @@ export function parsePicked(data: unknown): PickedElement | null {
   if (!/^[a-z][a-z0-9-]*$/.test(tag)) return null;
   const rect = (d.rect ?? {}) as Record<string, unknown>;
   const viewport = (d.viewport ?? {}) as Record<string, unknown>;
+  const scroll = (d.scroll ?? {}) as Record<string, unknown>;
+  const inner = (scroll.inner ?? null) as Record<string, unknown> | null;
   const styles: Record<string, string> = {};
   if (d.styles && typeof d.styles === 'object')
     for (const [k, v] of Object.entries(d.styles).slice(0, 30))
@@ -42,7 +46,7 @@ export function parsePicked(data: unknown): PickedElement | null {
     const r = d.react as Record<string, unknown>;
     const component = str(r.component, 80);
     if (component) {
-      let props: Record<string, unknown> = {};
+      let props: Record<string, unknown>;
       try {
         const json = JSON.stringify(r.props ?? {});
         props = json.length <= 2000 ? (JSON.parse(json) as Record<string, unknown>) : {};
@@ -65,7 +69,19 @@ export function parsePicked(data: unknown): PickedElement | null {
     role: typeof d.role === 'string' ? d.role.slice(0, 40) : null,
     name: str(d.name, 170),
     rect: { x: num(rect.x), y: num(rect.y), width: num(rect.width), height: num(rect.height) },
-    viewport: { width: num(viewport.width), height: num(viewport.height) },
+    viewport: {
+      width: num(viewport.width),
+      height: num(viewport.height),
+      dark: viewport.dark === true,
+    },
+    scroll: {
+      x: num(scroll.x),
+      y: num(scroll.y),
+      inner:
+        inner && typeof inner.selector === 'string'
+          ? { selector: inner.selector.slice(0, 400), top: num(inner.top), left: num(inner.left) }
+          : null,
+    },
     styles,
     react,
   };
@@ -148,6 +164,53 @@ export function PreviewPickDialog({
   const [context, setContext] = useState(() => pickedContext(element));
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The screenshot, retaken by the server at the page's size and scroll (PM-311).
+  const [shot, setShot] = useState<string | null>(null);
+  const [shotError, setShotError] = useState<string | null>(null);
+  const [includeShot, setIncludeShot] = useState(true);
+  const exportShot = useRef<(() => string) | null>(null);
+  const where = useMemo(
+    () => /^https?:\/\/localhost:(\d+)(\/.*)?$/.exec(appUrl(element.url)),
+    [element.url],
+  );
+  useEffect(() => {
+    if (!where) return;
+    let url: string | null = null;
+    let live = true;
+    fetch('/api/preview-capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        port: Number(where[1]),
+        path: where[2] ?? '/',
+        width: element.viewport.width,
+        height: element.viewport.height,
+        scrollX: element.scroll.x,
+        scrollY: element.scroll.y,
+        inner: element.scroll.inner,
+        dark: element.viewport.dark,
+      }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? `Screenshot failed (${res.status})`);
+        }
+        return res.blob();
+      })
+      .then(
+        (blob) => {
+          if (!live) return;
+          url = URL.createObjectURL(blob);
+          setShot(url);
+        },
+        (e: Error) => live && setShotError(e.message),
+      );
+    return () => {
+      live = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [element, where]);
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -176,7 +239,17 @@ export function PreviewPickDialog({
       const text = [request.trim(), '', 'About this element in the Preview:', context.trim()]
         .filter((line, i) => i > 0 || line)
         .join('\n');
-      const queued = await sendMessageToSession(chosen, text);
+      const images: string[] = [];
+      const data = includeShot && shot ? exportShot.current?.() : '';
+      if (data) {
+        const { path } = await api.uploadSessionImage(chosen.id, {
+          name: `preview-${element.tag}.png`,
+          type: 'image/png',
+          data,
+        });
+        images.push(path);
+      }
+      const queued = await sendMessageToSession(chosen, text, images);
       setStatus(
         queued
           ? `Queued for ${chosen.name}: it is down and gets it on relaunch.`
@@ -221,6 +294,42 @@ export function PreviewPickDialog({
               autoFocus
             />
           </label>
+          <div className="preview-pick-shot">
+            <div className="preview-pick-shot-head">
+              <label className="preview-pick-include">
+                <input
+                  type="checkbox"
+                  checked={includeShot}
+                  disabled={!shot}
+                  onChange={(e) => setIncludeShot(e.target.checked)}
+                />
+                Include a screenshot
+              </label>
+              <span className="faint">
+                {!where
+                  ? 'No screenshot for this address.'
+                  : (shotError ??
+                    (shot ? 'Retaken by ProjectManager: mark it up below' : 'Taking it…'))}
+              </span>
+            </div>
+            {shot && includeShot && (
+              <AnnotatedShot
+                src={shot}
+                exportRef={exportShot}
+                initial={[
+                  {
+                    kind: 'box',
+                    color: '#4c8dff',
+                    from: { x: element.rect.x - 3, y: element.rect.y - 3 },
+                    to: {
+                      x: element.rect.x + element.rect.width + 3,
+                      y: element.rect.y + element.rect.height + 3,
+                    },
+                  },
+                ]}
+              />
+            )}
+          </div>
           <details>
             <summary>Context sent with it (editable)</summary>
             <textarea

@@ -125,7 +125,7 @@ export const PICKER_JS = String.raw`(() => {
       name: clip(nameOf(el), 160),
       focusable: el.tabIndex >= 0,
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+      viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio, dark: matchMedia('(prefers-color-scheme: dark)').matches },
       scroll: { x: scrollX, y: scrollY, inner: inner ? { selector: selectorOf(inner), top: inner.scrollTop, left: inner.scrollLeft } : null },
       styles: styles,
       react: reactOf(el),

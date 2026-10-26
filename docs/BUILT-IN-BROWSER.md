@@ -117,6 +117,20 @@ with the app's own address rather than the proxy's), and a session to send to (t
 first, then the most recently messaged). Sending types it into that session after whatever is in
 its input and presses Enter; it never clears the input.
 
+**Screenshot and annotation.** The app cannot capture a framed page of another origin, so the
+server retakes it (`server/previewCapture.ts`, `POST /api/preview-capture`): a headless Chrome, or
+Edge, opens the same address at the same viewport size, scroll and colour scheme and returns a
+PNG. It is a fresh load without the viewer's cookies or open menus, so the dialog says "Retaken by
+ProjectManager". Only a loopback dev server by port and path (the proxy's rules, never this app's
+ports); every document load that leaves the app is refused (CDP Fetch), so it cannot be pointed at
+another site. One browser, started on first use with its profile in the data folder, one capture
+at a time with a timeout, closed after three idle minutes and when the server exits; no new
+dependency (CDP over Node's WebSocket). Without Chrome or Edge the message goes without a picture.
+
+The dialog shows the screenshot with the picked element boxed, and Box, Pen and Text tools in four
+colours with Undo (`AnnotatedShot`, drawn in the image's own pixels). Sending uploads the marked-up
+PNG like a chat image and pastes its path before the message.
+
 ## Theme
 
 The viewer's surface, border and loading mark follow the selected theme. The previewed page is the

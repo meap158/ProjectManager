@@ -33,6 +33,7 @@ import {
   readRaw,
 } from './projectFiles.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
+import { PreviewCapture, normaliseCapture, type CaptureRequest } from './previewCapture.js';
 import { config } from './config.js';
 import { detectLocalApps, stopLocalApp } from './localPorts.js';
 import { REMOTE_HEADER } from './remote.js';
@@ -301,6 +302,22 @@ export function createApp(
     if (!parsed.success) throw new HttpError(400, 'Quick launches need a name and a port');
     store.setSetting(db, PREVIEW_LAUNCHES_KEY, parsed.data.launches);
     return c.json({ launches: parsed.data.launches });
+  });
+  // The element picker's screenshot (PM-311): a headless browser retakes the page the owner picked
+  // from, at the same size and scroll. Read-only like the preview, so every listener may ask.
+  const capture = new PreviewCapture(
+    options.dataDir ?? path.join(os.tmpdir(), 'projectmanager-capture'),
+  );
+  app.post('/preview-capture', async (c) => {
+    if (!capture.available) throw new PreviewError(502, 'No Chrome or Edge on this computer');
+    const body = (await c.req.json().catch(() => null)) as CaptureRequest | null;
+    if (!body || typeof body !== 'object')
+      throw new PreviewError(400, 'Expected a capture request');
+    const png = await capture.capture(normaliseCapture(body, ownPorts()));
+    return c.body(new Uint8Array(png), 200, {
+      'content-type': 'image/png',
+      'cache-control': 'no-store',
+    });
   });
   app.get('/preview/:port', previewHandler);
   app.get('/preview/:port/*', previewHandler);

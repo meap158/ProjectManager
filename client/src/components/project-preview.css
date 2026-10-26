@@ -473,8 +473,99 @@
   color: var(--text);
   font-size: 12.5px;
 }
-.preview-pick-dialog {
-  width: min(560px, calc(100vw - 24px));
+/* Wider than other confirm dialogs: the screenshot needs the room. */
+.confirm-dialog.preview-pick-dialog {
+  width: min(760px, calc(100vw - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+.preview-pick-shot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.preview-pick-shot-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  font-size: 12.5px;
+}
+.preview-pick-include {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Annotation (AnnotatedShot). */
+.shot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.shot-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.shot-tool {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.shot-tool[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.shot-tool:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.shot-colors {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 6px;
+}
+.shot-color {
+  width: 22px;
+  height: 22px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.shot-color[aria-checked='true'] {
+  border-color: var(--text);
+}
+.shot-stage {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.shot-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+.shot-skeleton {
+  height: 240px;
+}
+.shot-text {
+  position: absolute;
+  width: 200px;
+  height: 30px;
 }
 .preview-pick-dialog h2 code {
   font-size: 0.9em;
