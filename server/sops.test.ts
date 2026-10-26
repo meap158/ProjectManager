@@ -3,7 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SOPS, checkProject, sopCardText, sopInfo } from './sops.js';
+import { SopStore, checkProject, parseSops, sopCardText, sopInfo } from './sops.js';
+
+const SOPS = new SopStore(null).current().sops;
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -39,7 +41,7 @@ describe('SOP checks (PM-316)', () => {
       },
       true,
     );
-    const r = await checkProject(root);
+    const r = await checkProject(SOPS, root);
     expect(Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v.state]))).toEqual(
       Object.fromEntries(SOPS.map((s) => [s.id, 'pass'])),
     );
@@ -55,7 +57,7 @@ describe('SOP checks (PM-316)', () => {
       },
       true,
     );
-    const r = await checkProject(root);
+    const r = await checkProject(SOPS, root);
     expect(r['agent-instructions']).toEqual({
       state: 'fail',
       detail: 'Rules live in CLAUDE.md; there is no AGENTS.md',
@@ -69,22 +71,85 @@ describe('SOP checks (PM-316)', () => {
 
   it('asks a launcher to set a window title, and reports a missing folder once per SOP', async () => {
     const root = project({ 'package.json': '{}', 'launch.bat': '@echo off\nnpm start\n' });
-    expect((await checkProject(root)).launcher).toEqual({
+    expect((await checkProject(SOPS, root)).launcher).toEqual({
       state: 'fail',
-      detail: 'launch.bat sets no window title',
+      detail: 'launch.bat: no window title',
     });
-    const gone = await checkProject(path.join(os.tmpdir(), 'pm-sops-no-such-folder'));
+    const gone = await checkProject(SOPS, path.join(os.tmpdir(), 'pm-sops-no-such-folder'));
     expect(new Set(Object.values(gone).map((v) => v.detail))).toEqual(
       new Set(['Folder not found']),
     );
   });
 
   it('writes a card an agent can act on without the checks', () => {
-    const sop = sopInfo().find((s) => s.id === 'roadmap')!;
+    const sop = sopInfo(SOPS).find((s) => s.id === 'roadmap')!;
     const card = sopCardText(sop, 'No ROADMAP.md');
     expect(card.title).toBe('SOP: Roadmap');
     expect(card.description).toContain('Found: No ROADMAP.md');
     expect(card.description).toContain(`How to fix: ${sop.fix}`);
-    expect(sopInfo().every((s) => !('check' in s))).toBe(true);
+    expect(sopInfo(SOPS).every((s) => !('check' in s))).toBe(true);
+  });
+
+  it('reads the SOPs as YAML and names the line of a problem', () => {
+    const lines = (...l: string[]) => l.join('\n') + '\n';
+    const sop = (id: string, check: string) =>
+      lines(
+        `  - id: ${id}`,
+        '    title: X',
+        '    short: X',
+        '    summary: s',
+        '    why: w',
+        '    how: h',
+        '    fix: f',
+        '    checks:',
+        `      - ${check}`,
+      );
+    const file = (...sops: string[]) => lines('version: 1', 'sops:') + sops.join('');
+    expect(parseSops(file(sop('x', 'file_exists: README.md')))[0]!.checks).toEqual([
+      { file_exists: 'README.md' },
+    ]);
+    // An unknown check kind (there is no "run a command"), a path out of the project, a bad regex.
+    expect(() => parseSops(file(sop('x', 'run: rm -rf /')))).toThrow(
+      /^Line 11.*Not a check this file knows/,
+    );
+    expect(() => parseSops(file(sop('x', 'file_exists: ../secret')))).toThrow(/inside the project/);
+    expect(() => parseSops(file(sop('x', 'root_files: "(["')))).toThrow(/Not a valid regex/);
+    expect(() => parseSops(lines('version: 1', 'sops: ['))).toThrow(/^Line \d+, column \d+/);
+    expect(() => parseSops(file(sop('x', 'file_exists: a'), sop('x', 'file_exists: b')))).toThrow(
+      /Duplicate id "x"/,
+    );
+  });
+
+  it("saves the owner's copy only when it validates, falls back on a broken one, and resets", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'pm-sops-store-'));
+    dirs.push(dir);
+    const store = new SopStore(dir);
+    expect(store.current()).toMatchObject({ custom: false, error: null });
+    const edited = store.defaultSource().replace('title: Roadmap', 'title: Product roadmap');
+    store.save(edited);
+    expect(store.current().sops.find((s) => s.id === 'roadmap')!.title).toBe('Product roadmap');
+    expect(store.source()).toEqual({ yaml: edited.replace(/\r\n/g, '\n'), custom: true });
+    expect(() => store.save('version: 2\nsops: []\n')).toThrow();
+    expect(store.source().yaml).toBe(edited.replace(/\r\n/g, '\n'));
+    // Broken by hand outside the app: the defaults run, and the problem is reported.
+    writeFileSync(path.join(dir, 'sops.yml'), 'version: 1\nsops: nope\n');
+    expect(store.current()).toMatchObject({ custom: true, error: expect.stringMatching(/sops/) });
+    expect(store.current().sops.length).toBe(SOPS.length);
+    store.reset();
+    expect(store.current()).toMatchObject({ custom: false, error: null });
+  });
+
+  it('skips a disabled SOP', async () => {
+    const sops = parseSops(
+      new SopStore(null)
+        .defaultSource()
+        .replace(
+          '    pass: ROADMAP.md present',
+          '    enabled: false\n    pass: ROADMAP.md present',
+        ),
+    );
+    const root = project({ 'AGENTS.md': '' });
+    expect(Object.keys(await checkProject(sops, root))).not.toContain('roadmap');
+    expect(sopInfo(sops).map((s) => s.id)).not.toContain('roadmap');
   });
 });

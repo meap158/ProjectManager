@@ -15,6 +15,7 @@ import type {
   DirectoryEntry,
   DirectoryListing,
   FilePin,
+  SopAuditor,
   SopReport,
   LanStatus,
   RemoteConfig,
@@ -35,7 +36,7 @@ import {
 } from './projectFiles.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
 import { PreviewCapture, normaliseCapture, type CaptureRequest } from './previewCapture.js';
-import { SOPS, checkProject, sopCardText, sopInfo } from './sops.js';
+import { SopFileError, SopStore, checkProject, sopCardText, sopInfo, sopReport } from './sops.js';
 import { config } from './config.js';
 import { detectLocalApps, stopLocalApp } from './localPorts.js';
 import { REMOTE_HEADER } from './remote.js';
@@ -325,6 +326,9 @@ export function createApp(
   app.get('/preview/:port/*', previewHandler);
 
   registerAgentRoutes(app, db, supervisor);
+  // The SOPs (PM-316) are data: server/sops.default.yml, or the owner's copy in data/sops.yml.
+  // One store, shared by Settings > SOPs and the agents' audit tools.
+  const sopStore = new SopStore(options.dataDir ?? null);
   const orchestrator = new OrchestratorService(db, supervisor, options.dataDir ?? null, () =>
     store.listProjects(db, (id) => scanner.state(id)),
   );
@@ -334,13 +338,14 @@ export function createApp(
     orchestrator,
     () => store.listProjects(db, (id) => scanner.state(id)),
     options.dataDir ?? null,
+    sopStore,
   );
   registerOrchestratorRoutes(app, orchestrator, orchestratorChat);
   // Card images live beside the agent logs: <dataDir>/attachments/<cardId>/.
   const attachmentsRoot = path.join(path.dirname(logDir), 'attachments');
   registerAttachmentRoutes(app, db, attachmentsRoot);
   registerSessionImageRoutes(app, db, attachmentsRoot);
-  registerBoardMcp(app, db, attachmentsRoot, orchestratorChat);
+  registerBoardMcp(app, db, attachmentsRoot, orchestratorChat, sopStore);
 
   // ---- Projects -------------------------------------------------------------------------------
 
@@ -521,42 +526,83 @@ export function createApp(
   };
   // SOPs (PM-316): our shared standard, checked read-only against every project folder. Waivers
   // record a deliberate exception and live here, never in the project.
-  const withResults = async (id: number, name: string, root: string) => {
-    const waivers = store.listSopWaivers(db).get(id);
-    const checked = await checkProject(root);
-    const results: SopReport['projects'][number]['results'] = {};
-    for (const sop of SOPS) {
-      const result = checked[sop.id]!;
-      const waiver = waivers?.get(sop.id);
-      results[sop.id] =
-        waiver && result.state === 'fail'
-          ? { ...result, state: 'waived', waiver }
-          : waiver
-            ? { ...result, waiver }
-            : result;
-    }
-    return { id, name, results };
-  };
   app.get('/sops', async (c) => {
-    const folders = store.listProjectFolders(db);
-    const projects: SopReport['projects'] = [];
-    // A few at a time: each check is a handful of file reads and one git call.
-    for (let i = 0; i < folders.length; i += 6) {
-      projects.push(
-        ...(await Promise.all(
-          folders.slice(i, i + 6).map((f) => {
-            const name = store.getProjectRow(db, f.id)?.name ?? f.path;
-            return withResults(f.id, name, f.path);
-          }),
-        )),
-      );
-    }
-    projects.sort((a, b) => a.name.localeCompare(b.name));
-    const report: SopReport = { sops: sopInfo(), projects, checkedAt: new Date().toISOString() };
+    const report: SopReport = await sopReport(db, sopStore.current());
     return c.json(report);
   });
+  // The editable file. Saving changes the audit standard, so only this computer may change it;
+  // a file that does not validate is refused with the line of the first problem.
+  const sopsHostOnly = (c: Context) => {
+    if (c.req.header(LAN_HEADER) || c.req.header(REMOTE_HEADER))
+      throw new HttpError(403, 'SOPs can only be edited on the computer running ProjectManager');
+  };
+  app.get('/sops/file', (c) => {
+    const { yaml, custom } = sopStore.source();
+    return c.json({ yaml, custom, path: sopStore.file });
+  });
+  app.put('/sops/file', async (c) => {
+    sopsHostOnly(c);
+    const { yaml } = await parseBody(c, z.object({ yaml: z.string().max(256 * 1024) }));
+    try {
+      sopStore.save(yaml);
+    } catch (e) {
+      if (e instanceof SopFileError) throw new HttpError(400, e.message);
+      throw e;
+    }
+    return c.body(null, 204);
+  });
+  app.delete('/sops/file', (c) => {
+    sopsHostOnly(c);
+    sopStore.reset();
+    return c.body(null, 204);
+  });
+  // Who can run an audit of a project: its running sessions, and the chat of every orchestrator
+  // whose scope includes it. Without a project: every orchestrator chat (each audits its scope).
+  app.get('/sops/sessions', (c) => {
+    const raw = c.req.query('projectId');
+    const projectId = raw ? Number(raw) : null;
+    if (projectId !== null && !Number.isInteger(projectId))
+      throw new HttpError(400, 'Expected a project id');
+    const instances = new Map(orchestrator.state().instances.map((i) => [i.id, i]));
+    const sessions: SopAuditor[] = [];
+    for (const s of supervisor.listAllSessions()) {
+      if (s.status !== 'running') continue;
+      if (s.orchestratorId) {
+        const instance = instances.get(s.orchestratorId);
+        if (!instance) continue;
+        const all = instance.projectIds.length === 0;
+        if (projectId !== null && !all && !instance.projectIds.includes(projectId)) continue;
+        sessions.push({
+          id: s.id,
+          name: instance.name,
+          terminal: s.terminal,
+          kind: 'orchestrator',
+          scope: all ? 'All projects' : `${instance.projectIds.length} projects`,
+          lastInputAt: s.lastInputAt ?? null,
+        });
+      } else if (projectId !== null && s.projectId === projectId) {
+        sessions.push({
+          id: s.id,
+          name: s.name,
+          terminal: s.terminal,
+          kind: 'session',
+          scope: 'This project',
+          lastInputAt: s.lastInputAt ?? null,
+        });
+      }
+    }
+    // Orchestrators first, then the most recently messaged.
+    sessions.sort(
+      (a, b) =>
+        Number(b.kind === 'orchestrator') - Number(a.kind === 'orchestrator') ||
+        (b.lastInputAt ?? '').localeCompare(a.lastInputAt ?? ''),
+    );
+    return c.json({ sessions });
+  });
   const sopFor = (c: Context) => {
-    const sop = SOPS.find((s) => s.id === c.req.param('sopId'));
+    const sop = sopStore
+      .current()
+      .sops.find((s) => s.enabled !== false && s.id === c.req.param('sopId'));
     if (!sop) throw new HttpError(404, 'No such SOP');
     return sop;
   };
@@ -576,9 +622,9 @@ export function createApp(
   app.post('/projects/:id/sops/:sopId/card', async (c) => {
     const sop = sopFor(c);
     const root = projectRoot(c);
-    const result = (await checkProject(root))[sop.id]!;
+    const result = (await checkProject([sop], root))[sop.id]!;
     if (result.state !== 'fail') throw new HttpError(409, 'This project already meets that SOP');
-    const info = sopInfo().find((s) => s.id === sop.id)!;
+    const info = sopInfo([sop])[0]!;
     const card = store.insertCard(db, parseId(c), {
       ...sopCardText(info, result.detail),
       status: 'todo',

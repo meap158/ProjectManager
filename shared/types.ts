@@ -950,4 +950,21 @@ export interface SopReport {
   sops: SopInfo[];
   projects: { id: number; name: string; results: Record<string, SopResult> }[];
   checkedAt: string;
+  /** The owner's edited copy (data/sops.yml) is in use rather than the defaults. */
+  custom: boolean;
+  /** The edited copy does not validate, so the defaults are in use. */
+  fileError: string | null;
+  /** Waivers whose SOP no longer exists in the file, kept so none vanish silently. */
+  orphanedWaivers: { projectId: number; sopId: string }[];
+}
+
+/** A session that can run an SOP audit: a project's own session, or an orchestrator's chat. */
+export interface SopAuditor {
+  id: number;
+  name: string;
+  terminal: AgentSession['terminal'];
+  kind: 'session' | 'orchestrator';
+  /** What it can audit: "This project", "All projects" or "3 projects". */
+  scope: string;
+  lastInputAt: string | null;
 }

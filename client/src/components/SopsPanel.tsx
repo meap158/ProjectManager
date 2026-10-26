@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import type { SopReport, SopResult } from '../../../shared/types';
+import type { SopAuditor, SopInfo, SopReport, SopResult } from '../../../shared/types';
 import { api } from '../api';
+import { SopAuditSend } from './SopAuditSend';
+import { SopsEditor } from './SopsEditor';
 
 // Settings > SOPs (PM-316): our shared standard, what each SOP asks and why, and a grid of which
 // projects follow it. Checks are read-only; a gap becomes a card for an agent, or a waiver (a
@@ -60,6 +62,9 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
   const [waiving, setWaiving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [auditAll, setAuditAll] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const fetchReport = useCallback(
     () => api.sops().then(setReport, (e: Error) => onError(e.message)),
@@ -108,6 +113,7 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
     const same = selected?.projectId === projectId && selected.sopId === sopId;
     setSelected(same ? null : { projectId, sopId });
     setWaiving(false);
+    setSending(false);
     setReason('');
     setNote(null);
   };
@@ -125,6 +131,17 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
     }
   };
 
+  if (editing)
+    return (
+      <SopsEditor
+        onDone={(saved) => {
+          setEditing(false);
+          setSelected(null);
+          if (saved) load();
+        }}
+      />
+    );
+
   return (
     <>
       <section className="panel" aria-label="SOPs">
@@ -132,16 +149,41 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
           <h2>SOPs</h2>
           <span className="meta">
             {clean} of {report.projects.length} projects meet every SOP
+            {report.custom ? ' · your edited set' : ''}
           </span>
-          <button
-            type="button"
-            className="btn btn-sm sop-recheck"
-            disabled={checking}
-            onClick={load}
-          >
-            {checking ? 'Checking…' : 'Check again'}
-          </button>
+          <div className="sop-head-actions">
+            <button type="button" className="btn btn-sm" onClick={() => setAuditAll((v) => !v)}>
+              Audit with…
+            </button>
+            <button type="button" className="btn btn-sm" onClick={() => setEditing(true)}>
+              Edit SOPs
+            </button>
+            <button type="button" className="btn btn-sm" disabled={checking} onClick={load}>
+              {checking ? 'Checking…' : 'Check again'}
+            </button>
+          </div>
         </div>
+        {report.fileError && (
+          <div className="error-banner" role="alert">
+            Your SOP file has a problem, so the defaults are in use. {report.fileError}
+          </div>
+        )}
+        {report.orphanedWaivers.length > 0 && (
+          <p className="faint sop-intro">
+            {report.orphanedWaivers.length} waiver
+            {report.orphanedWaivers.length === 1 ? ' belongs' : 's belong'} to an SOP that is no
+            longer in the file (
+            {[...new Set(report.orphanedWaivers.map((w) => w.sopId))].join(', ')}
+            ). They are kept, and apply again if the SOP comes back under the same id.
+          </p>
+        )}
+        {auditAll && (
+          <SopAuditSend
+            projectId={null}
+            message={() => FULL_AUDIT}
+            onCancel={() => setAuditAll(false)}
+          />
+        )}
         <p className="faint sop-intro">
           The standard every project&apos;s agent instructions carry, most important first. Checks
           only read the project folders; a gap becomes a card for an agent to fix.
@@ -293,11 +335,26 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
                   type="button"
                   className="btn btn-sm"
                   disabled={busy}
+                  onClick={() => setSending((v) => !v)}
+                >
+                  Send to session…
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy}
                   onClick={() => setWaiving(true)}
                 >
                   Waive…
                 </button>
               </div>
+            )}
+            {result.state === 'fail' && sending && !waiving && (
+              <SopAuditSend
+                projectId={project.id}
+                message={(a) => gapMessage(a, project, sop, result.detail)}
+                onCancel={() => setSending(false)}
+              />
             )}
             {waiving && (
               <form
@@ -355,4 +412,28 @@ export function SopsPanel({ onError }: { onError: (message: string | null) => vo
       </section>
     </>
   );
+}
+
+/** A full audit, for an orchestrator's chat: its own scope, through its audit tools. */
+const FULL_AUDIT =
+  'Run an SOP audit of your projects: call the projectmanager tool sop_report. For each gap, fix it directly where that is authorized work, or create a card for it with sop_card. Waivers are my decision: do not treat a gap as acceptable yourself, but list any you think deserves one, with the reason. Finish with a short summary: what you fixed, the cards you made, and what needs me.';
+
+/** One gap in one project, worded for who will act on it. */
+function gapMessage(
+  auditor: SopAuditor,
+  project: { id: number; name: string },
+  sop: SopInfo,
+  found: string,
+): string {
+  const check =
+    auditor.kind === 'orchestrator'
+      ? `call the projectmanager tool sop_report with projectId ${project.id}`
+      : 'call the projectmanager tool sop_check';
+  return [
+    `Bring ${project.name} up to our "${sop.title}" SOP. First ${check} to see the current result.`,
+    `Found: ${found}`,
+    `What it asks: ${sop.summary}`,
+    `How to fix: ${sop.fix}`,
+    "Follow the project's AGENTS.md, commit with a card reference, then run the check again to confirm it passes. Waivers are my decision; if you think this one deserves one, say why instead of skipping it.",
+  ].join('\n');
 }

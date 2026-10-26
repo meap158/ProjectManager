@@ -1,7 +1,8 @@
 # SOPs (PM-316)
 
 Settings > SOPs lists the standard every project's agent instructions carry and shows, project by
-project, which ones it follows. The SOPs and their checks live in `server/sops.ts`; the tab is
+project, which ones it follows. The SOPs are data: `server/sops.default.yml` ships with the app, and an edited copy in
+`data/sops.yml` replaces it. The engine is `server/sops.ts`; the tab is
 `client/src/components/SopsPanel.tsx`.
 
 ## The SOPs, in order
@@ -21,19 +22,47 @@ ships.
 
 ## How it works
 
-- `GET /api/sops` runs every check against every project folder, six at a time. Checks only read
-  files and run `git ls-files`; they never write inside a project. A full scan of 28 projects takes
-  about half a second.
+- `GET /api/sops` runs every enabled SOP against every project folder, six at a time. A full scan
+  of 28 projects takes about half a second.
+- Checks come from a fixed vocabulary: `file_exists`, `file_missing`, `untracked` (nothing matching
+  is tracked by git), `file_contains` and `root_files` (a root-level file, optionally containing a
+  pattern), plus `applies_when` (`runnable`, `has_ui`, or a file). There is no "run a command"
+  kind, so an edited file can only read files and ask `git ls-files`; it never writes inside a
+  project or runs its code. Paths must stay inside the project, regexes are length-capped and
+  compiled on save, and a file read stops at 1 MB.
 - A **gap** becomes a card: `POST /api/projects/:id/sops/:sopId/card` re-checks the project and adds
-  a To do card with what the SOP asks, why, what was found and how to fix it, for an agent to pick up.
+  a To do card with what the SOP asks, why, what was found and how to fix it.
 - A **waiver** is a recorded, deliberate exception: the project does not follow that SOP and says
   why (ProjectManager's Owner desk data is untracked because the repository is public, for
-  example). It is stored in ProjectManager's database (`sop_waivers`), never in the project. A
-  waived gap shows as "Waived" with its reason, so the remaining red cells are real.
+  example). It is stored in ProjectManager's database (`sop_waivers`), never in the project, and
+  only the owner sets one from the tab. Waivers whose SOP left the file are kept and listed.
+
+## Editing the SOPs
+
+**Edit SOPs** opens the file as YAML. The comments at its top list every check kind. Saving
+validates first and refuses a file with a problem, naming its line and column; a valid file is
+saved to `data/sops.yml` (local, not in git) and used from the next check. **Reset to defaults**
+removes that copy. A copy broken by hand outside the app is ignored: the defaults run and the tab
+says what is wrong. Saving and resetting answer on this computer only (LAN and remote get 403);
+reading is open, like the rest of the tab. Keep ids stable, since waivers are stored by id, and
+set `enabled: false` to hide an SOP without deleting it.
+
+## Audits by agents
+
+- **Sessions** get `sop_check` among their board tools: this project's results, with how to fix
+  each gap. It needs no card.
+- **Orchestrator chats** get `sop_report` (their scope, or one project in it) and `sop_card` (a card
+  for one gap, from a fresh check, in a project in scope). Both refuse projects outside the scope.
+- No agent can waive. The tool descriptions say so, and ask the agent to suggest a waiver with a
+  reason in its reply instead.
+- In the tab, **Audit with...** sends a full audit to an orchestrator chat, and a gap's **Send to
+  session...** offers that project's running sessions and every orchestrator chat whose scope
+  includes it (`GET /api/sops/sessions`). The message names the audit tool, so the agent acts on a
+  fresh check rather than on what the page showed.
 
 ## Adding an SOP
 
-Add an entry to `SOPS` in `server/sops.ts` with its text (title, short column label, summary, why,
-how it is checked, how to fix) and a `check(root)` that returns `pass`, `fail` or `na` with a
-one-line detail. Keep checks fast and read-only, add a case to `server/sops.test.ts`, and add the
-rule to the shared AGENTS.md text so new projects carry it.
+Add an entry in Edit SOPs (or to `server/sops.default.yml` for everyone) with its text and checks.
+For a check the vocabulary cannot express, add a kind to the schema and `runCheck` in
+`server/sops.ts`, keeping it read-only, with a case in `server/sops.test.ts`. Then add the rule to
+the shared AGENTS.md text so new projects carry it.

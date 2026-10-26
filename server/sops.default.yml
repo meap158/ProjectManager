@@ -1,0 +1,145 @@
+# ProjectManager SOPs (PM-316): the standard every project's agent instructions carry.
+#
+# This is the default set, shipped with ProjectManager. Editing it in Settings > SOPs saves your own
+# copy (data/sops.yml), and "Reset to defaults" goes back to this file.
+#
+# Each SOP has its text (shown in the tab and on cards) and a list of read-only checks run against
+# every project folder, in order: the first that fails is the gap shown. Checks only read files and
+# ask git which files it tracks; they never write anything or run a project's code.
+#
+# Check kinds (one per item; `fail:` replaces the default message, `{files}` names what matched):
+#   file_exists:   a path, or a list where any one will do
+#   file_missing:  a path, or a list, none of which may exist
+#   untracked:     git pathspecs, none of which may be tracked; `except:` a filename regex to allow,
+#                  `not_git: na` to say "does not apply" outside a git repository (default: pass)
+#   file_contains: a path, or a list (the first that exists is read), with `pattern:` a regex
+#   root_files:    a filename regex for files at the project root; with `contains:` a regex, at
+#                  least one of them must match it
+# applies_when: when the SOP applies, any of: runnable (an app manifest at the root), has_ui (a UI
+#   framework or an index.html), or { file_exists: path }. Otherwise the cell says "does not apply".
+# enabled: false hides an SOP without deleting it. Keep ids stable: waivers are stored by id.
+
+version: 1
+sops:
+  - id: agent-instructions
+    title: Agent instructions
+    short: Agents
+    summary: AGENTS.md holds the rules every coding agent follows; CLAUDE.md only points to it.
+    why: One canonical file means Codex, Claude Code, Gemini and Cursor all work by the same rules, and a rule changed once applies everywhere.
+    how: AGENTS.md exists at the project root, and CLAUDE.md exists and refers to AGENTS.md.
+    fix: Create AGENTS.md with the architecture map, conventions, launching and definition of done. Make CLAUDE.md a short pointer that imports @AGENTS.md.
+    pass: AGENTS.md, with CLAUDE.md pointing to it
+    checks:
+      - file_exists: [AGENTS.md, CLAUDE.md]
+        fail: No AGENTS.md or CLAUDE.md
+      - file_exists: AGENTS.md
+        fail: Rules live in CLAUDE.md; there is no AGENTS.md
+      - file_exists: CLAUDE.md
+        fail: No CLAUDE.md pointer, so Claude Code will not find AGENTS.md
+      - file_contains: CLAUDE.md
+        pattern: AGENTS\.md
+        fail: CLAUDE.md does not point to AGENTS.md
+
+  - id: no-secrets
+    title: No secrets in git
+    short: Secrets
+    summary: .env files, local databases and private keys are never committed.
+    why: A committed key stays in history after it is deleted, and several projects are public.
+    how: git ls-files finds no .env file (examples excepted), no SQLite database and no private key.
+    fix: Untrack the files with git rm --cached, add them to .gitignore, and rotate any key that was committed.
+    pass: Nothing secret or local is tracked
+    checks:
+      - untracked:
+          - ':(glob)**/.env'
+          - ':(glob)**/.env.*'
+          - ':(glob)**/*.db'
+          - ':(glob)**/*.sqlite'
+          - ':(glob)**/*.sqlite3'
+          - ':(glob)**/*.pem'
+          - ':(glob)**/id_rsa'
+          - ':(glob)**/id_ed25519'
+        except: \.env\.(example|sample|template)$
+        not_git: na
+        fail: 'Tracked: {files}'
+
+  - id: handover
+    title: Agent handover
+    short: Handover
+    summary: AGENT_HANDOVER.md is a current-state snapshot, kept local and out of git.
+    why: The next agent resumes from it instead of guessing; it names local paths and accounts, so it stays private.
+    how: AGENT_HANDOVER.md exists and git does not track it.
+    fix: Write the snapshot (state, open tasks, gotchas), add it to .gitignore, and untrack it without deleting it if it was committed.
+    pass: Present and local only
+    checks:
+      - file_exists: AGENT_HANDOVER.md
+        fail: No AGENT_HANDOVER.md
+      - untracked: [AGENT_HANDOVER.md]
+        fail: AGENT_HANDOVER.md is tracked by git
+
+  - id: roadmap
+    title: Roadmap
+    short: Roadmap
+    summary: ROADMAP.md holds the vision, scope, phases with exit criteria, dependencies and risks.
+    why: Agents and the owner share one picture of where the project is going and what is out of scope.
+    how: ROADMAP.md exists at the project root.
+    fix: Write ROADMAP.md from what the owner has committed to, marked "Draft" until they confirm it.
+    pass: ROADMAP.md present
+    checks:
+      - file_exists: ROADMAP.md
+        fail: No ROADMAP.md
+
+  - id: owner-pages
+    title: Owner pages
+    short: Owner desk
+    summary: The Owner desk lists work only a person can do, built from owner-desk.json.
+    why: Accounts, credentials, approvals and real-device checks need the owner; one page keeps them from getting lost in chat.
+    how: References/owner-pages/owner-desk.json exists.
+    fix: Add the Owner Pages generator and an owner-desk.json, then build the pages. Mark tasks Completed only with evidence.
+    pass: owner-desk.json present
+    checks:
+      - file_exists: References/owner-pages/owner-desk.json
+        fail: No References/owner-pages/owner-desk.json
+
+  - id: writing-style
+    title: Writing style
+    short: Writing
+    summary: 'Prose reads like a person wrote it: no em dashes, stock phrases or chatbot residue (PM-314).'
+    why: Machine-text tells make docs and UI copy harder to trust and read. The pattern list is blader/humanizer.
+    how: The project's agent instructions carry the writing-style rule.
+    fix: Add the writing-style rule to AGENTS.md, with the prose audit (npm run prose:audit -- --diff) before each commit.
+    pass: The rule is in the agent instructions
+    checks:
+      - file_exists: [AGENTS.md, CLAUDE.md]
+        fail: No agent instructions to carry the rule
+      - file_contains: [AGENTS.md, CLAUDE.md]
+        pattern: humanizer|writing style
+        fail: The agent instructions have no writing-style rule
+
+  - id: launcher
+    title: One-command launcher
+    short: Launcher
+    summary: One obvious launch command, with a window title naming the project and the service.
+    why: Anyone can start the project without reading code, and a row of terminal windows stays tellable apart.
+    how: A script at the project root (launch.bat, start.cmd and the like) sets a window title.
+    fix: Add launch scripts that check prerequisites, pick a free port and set a title such as "<Project> - Server".
+    applies_when: [runnable]
+    pass: The launcher sets a window title
+    checks:
+      - root_files: \.(bat|cmd|ps1|sh|command)$
+        fail: No launch script at the project root
+      - root_files: \.(bat|cmd|ps1|sh|command)$
+        contains: ^\s*@?title\s+\S|WindowTitle|\]0;|^\s*start\s+"[^"]+"
+        fail: '{files}: no window title'
+
+  - id: design
+    title: Design system
+    short: Design
+    summary: DESIGN.md records the tokens, components and rules the UI follows.
+    why: Agents change the UI often; a written system keeps it consistent instead of drifting screen by screen.
+    how: Projects with a user interface have DESIGN.md at the root.
+    fix: 'Write DESIGN.md from the existing tokens and components: colours, type, spacing, states and accessibility rules.'
+    applies_when: [has_ui, { file_exists: DESIGN.md }]
+    pass: DESIGN.md present
+    checks:
+      - file_exists: DESIGN.md
+        fail: Has a user interface but no DESIGN.md

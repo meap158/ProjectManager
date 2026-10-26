@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { openDb } from '../db.js';
 import { getCard, insertCard, insertProject } from '../store.js';
+import { SopStore } from '../sops.js';
 import type { AgentSupervisor } from '../agents/supervisor.js';
 import type { AgentRun, AgentSession, ProjectSummary } from '../../shared/types.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
@@ -97,6 +98,7 @@ function setup(overrides: Partial<OrchestratorConfig> = {}) {
     service,
     () => [summary(a, 'Alpha'), summary(b, 'Beta')],
     tmp,
+    new SopStore(null),
   );
   const call = (name: string, args: Record<string, unknown> = {}) =>
     chat.call('master-1', 5, name, args);
@@ -104,6 +106,27 @@ function setup(overrides: Partial<OrchestratorConfig> = {}) {
 }
 
 describe('orchestrator chat tools (PM-89)', () => {
+  it('audits only its own projects against the SOPs, and turns a gap there into a card (PM-316)', async () => {
+    const { call, db, a, b } = setup();
+    mkdirSync(path.join(tmp, 'Alpha'), { recursive: true });
+    const report = (await call('sop_report')) as {
+      projects: { project: string; results: { sopId: string; state: string }[] }[];
+    };
+    expect(report.projects.map((p) => p.project)).toEqual(['Alpha']);
+    expect(report.projects[0]!.results.map((r) => r.sopId)).toContain('roadmap');
+    await expect(call('sop_report', { projectId: b })).rejects.toThrow(/not in this/);
+    await expect(call('sop_card', { projectId: b, sopId: 'roadmap' })).rejects.toThrow(
+      /not in this/,
+    );
+    await expect(call('sop_card', { projectId: a, sopId: 'nope' })).rejects.toThrow(/No SOP/);
+    const card = (await call('sop_card', { projectId: a, sopId: 'roadmap' })) as { id: number };
+    expect(getCard(db, card.id)).toMatchObject({
+      projectId: a,
+      title: 'SOP: Roadmap',
+      status: 'todo',
+    });
+  });
+
   it('sees only its own projects: overview, list and cards elsewhere are refused', async () => {
     const { call, mine, other, b } = setup();
     const overview = (await call('overview')) as {

@@ -10,6 +10,7 @@ import type { Db } from './db.js';
 import { getCard, getSetting, insertCard, setSetting, updateCard } from './store.js';
 import { cardAttachmentsDir, listAttachments } from './attachments.js';
 import { recordEvent } from './agents/turnState.js';
+import { type SopStore, sopReport } from './sops.js';
 
 type Owner = { kind: 'session' | 'run'; id: number; logPath: string };
 const tokenKey = (token: string) => `board-mcp:${createHash('sha256').update(token).digest('hex')}`;
@@ -52,6 +53,12 @@ export const BOARD_TOOLS = [
       },
       required: ['title'],
     },
+  },
+  {
+    name: 'sop_check',
+    description:
+      "Audit this project against our SOPs (Settings > SOPs in ProjectManager): each one's result, what was found and how to fix a gap. Read-only. Call it again after fixing to confirm. Waivers are the owner's decision only.",
+    inputSchema: object,
   },
   {
     name: 'read_image',
@@ -239,6 +246,7 @@ export function registerBoardMcp(
   db: Db,
   attachmentsRoot: string,
   orchestratorTools?: OrchestratorToolHost,
+  sops?: SopStore,
 ): void {
   app.post('/board-mcp', async (c) => {
     const token = c.req.header('authorization')?.replace(/^Bearer /, '') ?? '';
@@ -298,6 +306,31 @@ export function registerBoardMcp(
           call.name,
           call.arguments,
         );
+        return reply({ content: [{ type: 'text', text: JSON.stringify(value, null, 1) }] });
+      }
+      // SOPs (PM-316): this session's own project only; needs no card.
+      if (call.name === 'sop_check') {
+        z.object({}).strict().parse(call.arguments);
+        if (!sops) throw new Error('SOPs are not available here');
+        if (!row.project_id) throw new Error('This session belongs to no project');
+        const set = sops.current();
+        const report = await sopReport(db, set, [row.project_id]);
+        const project = report.projects[0];
+        if (!project) throw new Error('Project not found');
+        const value = {
+          project: project.name,
+          results: report.sops.map((s) => ({
+            sopId: s.id,
+            sop: s.title,
+            state: project.results[s.id]!.state,
+            detail: project.results[s.id]!.detail,
+            ...(project.results[s.id]!.state === 'fail' ? { how: s.how, fix: s.fix } : {}),
+            ...(project.results[s.id]!.waiver
+              ? { waiverReason: project.results[s.id]!.waiver!.reason }
+              : {}),
+          })),
+          ...(set.error ? { fileError: set.error } : {}),
+        };
         return reply({ content: [{ type: 'text', text: JSON.stringify(value, null, 1) }] });
       }
       const assigned = row.card_id ? getCard(db, row.card_id) : null;

@@ -6909,9 +6909,6 @@ span.path-link:hover .path-icon {
 
 /* ---- Settings > SOPs (PM-316) ------------------------------------------------------------- */
 
-.sop-recheck {
-  margin-left: auto;
-}
 .sop-intro {
   margin: 0 0 12px;
   font-size: 12.5px;
@@ -7178,4 +7175,65 @@ span.path-link:hover .path-icon {
   .sop-body dd + dt {
     margin-top: 8px;
   }
+}
+
+.sop-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+.sop-send {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.sop-detail .sop-send {
+  margin: 0;
+  background: var(--surface);
+}
+.sop-send-label {
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+.sop-send-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.sop-send-row > :first-child {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.sop-send-note {
+  margin: 0;
+  font-size: 12px;
+}
+.sop-yaml {
+  width: 100%;
+  min-height: 420px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  resize: vertical;
+}
+.sop-editor .error-banner {
+  margin-bottom: 10px;
+}
+.sop-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
 }

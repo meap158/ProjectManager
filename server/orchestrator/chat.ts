@@ -39,6 +39,7 @@ import { OrchestratorAssignments } from './assignments.js';
 import { readLimits } from '../agents/limits.js';
 import { ChatDispatchIntent } from './chatIntent.js';
 import type { OrchestratorService } from './service.js';
+import { type SopStore, checkProject, sopCardText, sopInfo, sopReport } from '../sops.js';
 
 // An orchestrator's own chat CLI (PM-89). The user talks to it like any agent terminal;
 // it knows the orchestrator's projects (a briefing file in its own folder, written at every open) and
@@ -141,6 +142,30 @@ export const ORCHESTRATOR_TOOLS = [
     },
   },
   {
+    name: 'sop_report',
+    description:
+      "Audit your projects against our SOPs (Settings > SOPs): each gap with what was found and how to fix it. Read-only. Optionally one project. Waivers are the owner's decision only: never treat a gap as acceptable yourself; suggest a waiver with a reason in your reply instead.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'integer' },
+        includePassing: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'sop_card',
+    description:
+      'Create a To do card asking for one SOP gap in one of your projects to be fixed, from a fresh check (refused when the project already meets it).',
+    inputSchema: {
+      type: 'object',
+      properties: { projectId: { type: 'integer' }, sopId: { type: 'string' } },
+      required: ['projectId', 'sopId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'dispatch_worker',
     description:
       'Start a one-time agent worker on a card. It gets the card, its board context and your instructions, works in the project folder, and its commits move the card. Respects your worker limits; finished runs wait for the user to review.',
@@ -207,6 +232,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     private service: OrchestratorService,
     private projects: () => ProjectSummary[],
     private dataDir: string | null,
+    private sops: SopStore | null = null,
   ) {}
 
   private instance(id: string): OrchestratorConfig {
@@ -541,6 +567,61 @@ export class OrchestratorChat implements OrchestratorToolHost {
       };
       setSetting(this.db, key, work);
       return work;
+    }
+
+    // SOP audits (PM-316): the same report as Settings > SOPs, limited to this scope. Read-only;
+    // waivers stay with the owner.
+    if (name === 'sop_report' || name === 'sop_card') {
+      if (!this.sops) fail('SOPs are not available here');
+      const set = this.sops!.current();
+      if (name === 'sop_report') {
+        const input = z
+          .object({
+            projectId: z.number().int().positive().optional(),
+            includePassing: z.boolean().optional(),
+          })
+          .strict()
+          .parse(args);
+        if (input.projectId !== undefined && !inScope(input.projectId))
+          fail(`Project ${input.projectId} is not in this orchestrator's scope`);
+        const ids = input.projectId !== undefined ? [input.projectId] : projects.map((p) => p.id);
+        const report = await sopReport(this.db, set, ids);
+        const byId = new Map(report.sops.map((s) => [s.id, s]));
+        return {
+          sops: report.sops.map((s) => ({ id: s.id, title: s.title, how: s.how, fix: s.fix })),
+          projects: report.projects.map((p) => ({
+            projectId: p.id,
+            project: p.name,
+            results: Object.entries(p.results)
+              .filter(([, r]) => input.includePassing || r.state === 'fail' || r.state === 'waived')
+              .map(([sopId, r]) => ({
+                sopId,
+                sop: byId.get(sopId)?.title ?? sopId,
+                state: r.state,
+                detail: r.detail,
+                ...(r.waiver ? { waiverReason: r.waiver.reason } : {}),
+              })),
+          })),
+          note: "Gaps can become cards (sop_card) or be fixed directly when authorized. Waived results are the owner's recorded exceptions.",
+          ...(set.error ? { fileError: set.error } : {}),
+        };
+      }
+      const input = z
+        .object({ projectId: z.number().int().positive(), sopId: z.string().min(1).max(60) })
+        .strict()
+        .parse(args);
+      const project = projects.find((p) => p.id === input.projectId);
+      if (!project) fail(`Project ${input.projectId} is not in this orchestrator's scope`);
+      const sop = set.sops.find((s) => s.enabled !== false && s.id === input.sopId);
+      if (!sop) fail(`No SOP "${input.sopId}"`);
+      const result = (await checkProject([sop!], project!.path))[sop!.id]!;
+      if (result.state !== 'fail') fail(`${project!.name} already meets "${sop!.title}"`);
+      const created = insertCard(this.db, project!.id, {
+        ...sopCardText(sopInfo([sop!])[0]!, result.detail),
+        status: 'todo',
+      });
+      audit(created.id, 'sop_card', input);
+      return brief(created);
     }
 
     if (name === 'overview') {
@@ -1068,6 +1149,7 @@ ${projects.map(project).join('\n') || '- (none)'}
 - \`dispatch_worker\`: start a one-time agent worker on a card, with your instructions. Supply a unique requestId for each new dispatch; reuse it with identical arguments after a lost response to recover the original run. A pending replay means wait; it is not permission to launch another worker.
 - \`worker_output\`: what a worker session or run shows now.
 - \`message_worker\`: message an idle worker session (e.g. ask for a status update).
+- \`sop_report\`, \`sop_card\`: audit your projects against our SOPs (Settings > SOPs) and turn a gap into a card. Waivers are the owner's decision; suggest one with a reason instead of treating a gap as fine.
 
 ## How to work
 

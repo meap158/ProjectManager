@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { openDb } from './db.js';
 import { insertCard, insertProject, getCard } from './store.js';
 import { boardConnection, issueBoardGrant, registerBoardMcp } from './boardMcp.js';
+import { SopStore } from './sops.js';
 
 function setup() {
   const db = openDb(':memory:');
@@ -15,7 +16,7 @@ function setup() {
   ).run(project, card.id, process.cwd());
   const token = issueBoardGrant(db, { kind: 'session', id: 1, logPath: 'test-log' });
   const app = new Hono();
-  registerBoardMcp(app, db, 'unused');
+  registerBoardMcp(app, db, 'unused', undefined, new SopStore(null));
   const call = (name: string, args: object = {}, auth = token) =>
     app.request('/board-mcp', {
       method: 'POST',
@@ -31,6 +32,17 @@ function setup() {
 }
 
 describe('card-scoped board MCP', () => {
+  it("audits the session's own project against the SOPs, card or not (PM-316)", async () => {
+    const { db, call } = setup();
+    db.prepare('UPDATE agent_sessions SET card_id = NULL WHERE id = 1').run();
+    const res = (await (await call('sop_check')).json()).result;
+    expect(res.isError).toBeUndefined();
+    const value = JSON.parse(res.content[0].text);
+    expect(value.project).toBe('Test');
+    expect(value.results.map((r: { sopId: string }) => r.sopId)).toContain('agent-instructions');
+    expect((await (await call('sop_check', { projectId: 99 })).json()).result.isError).toBe(true);
+    db.close();
+  });
   it('rejects missing capabilities and never accepts caller-selected card ids', async () => {
     const { db, other, call } = setup();
     expect((await call('get_card', {}, '')).status).toBe(403);

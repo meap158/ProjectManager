@@ -45,6 +45,7 @@ import type {
   PullRequestsResult,
   ProjectSummary,
   FilePin,
+  SopAuditor,
   SopReport,
   FilePreview,
   FolderInfo,
@@ -334,6 +335,15 @@ export const api = {
     request<void>('DELETE', `/projects/${projectId}/sops/${sopId}/waiver`),
   sopCard: (projectId: number, sopId: string) =>
     request<Card>('POST', `/projects/${projectId}/sops/${sopId}/card`, {}),
+  sopsFile: () =>
+    request<{ yaml: string; custom: boolean; path: string | null }>('GET', '/sops/file'),
+  saveSopsFile: (yaml: string) => request<void>('PUT', '/sops/file', { yaml }),
+  resetSopsFile: () => request<void>('DELETE', '/sops/file'),
+  sopAuditors: (projectId: number | null) =>
+    request<{ sessions: SopAuditor[] }>(
+      'GET',
+      projectId === null ? '/sops/sessions' : `/sops/sessions?projectId=${projectId}`,
+    ),
   filePins: (id: number) => request<{ pins: FilePin[] }>('GET', `/projects/${id}/file-pins`),
   pinFile: (id: number, path: string, scope: 'project' | 'all') =>
     request<{ id: number }>('POST', `/projects/${id}/file-pins`, { path, scope }),
