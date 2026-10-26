@@ -56,3 +56,22 @@ describe('usage limit notice (PM-58)', () => {
     expect(usageLimitShown(screen, windows, Date.parse('2026-10-10T12:01:00Z'))).toBeUndefined();
   });
 });
+
+describe('a /goal footer after the limit message scrolled away', () => {
+  const footer =
+    '› Ask Codex to do anything\n  GPT-6.1-Sol low · S:\TiemNet   Goal hit usage limits (/goal resume)';
+  const exhausted = [
+    {
+      label: '5-hour',
+      windowMinutes: 300,
+      usedPercent: 100,
+      resetsAt: new Date(Date.now() + 3600_000).toISOString(),
+    },
+  ] as never;
+  it('counts as the limit while the login is exhausted', () => {
+    expect(usageLimitShown(footer, exhausted, Date.now())).toBeDefined();
+  });
+  it('does not once the login has quota again', () => {
+    expect(usageLimitShown(footer, [], Date.now())).toBeUndefined();
+  });
+});

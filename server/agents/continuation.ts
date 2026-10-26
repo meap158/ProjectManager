@@ -19,7 +19,16 @@ export function allowanceReset(tail: string, windows: UsageWindow[], now: number
  */
 /** Whether Codex's usage-limit message is on screen (cheap: check before reading quota). */
 export function mentionsUsageLimit(screen: string): boolean {
-  return /you[’']ve hit your usage limit/i.test(screen);
+  return /you[’']ve hit your usage limit/i.test(screen) || goalPausedByLimit(screen);
+}
+
+/**
+ * The footer a /goal session keeps after the limit message has scrolled out of the screen
+ * ("Goal hit usage limits (/goal resume)"). It outlives the limit itself, so it only counts while
+ * the login's own windows are exhausted (see `usageLimitShown`).
+ */
+export function goalPausedByLimit(screen: string): boolean {
+  return /goal hit usage limits/i.test(screen);
 }
 
 export function usageLimitShown(
@@ -32,6 +41,8 @@ export function usageLimitShown(
     .filter((w) => w.usedPercent >= 99 && w.resetsAt)
     .map((w) => Date.parse(w.resetsAt!))
     .filter(Number.isFinite);
+  // A leftover goal footer on a login that has quota again is not a limit.
+  if (!resets.length && !/you[’']ve hit your usage limit/i.test(screen)) return undefined;
   if (!resets.length) return { resetsAt: null };
   const reset = Math.max(...resets);
   return reset > now ? { resetsAt: new Date(reset).toISOString() } : undefined;
