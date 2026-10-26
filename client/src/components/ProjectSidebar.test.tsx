@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LocalApp, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { ProjectSidebar, runningAppsLabel } from './ProjectSidebar';
+import { resetRunningApps } from '../runningApps';
 
 vi.mock('../api', () => ({
   api: {
@@ -20,6 +21,7 @@ vi.mock('./PlanUsage', () => ({ PlanUsage: () => null }));
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  resetRunningApps();
 });
 
 const counts = { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0 };

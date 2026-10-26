@@ -8,8 +8,10 @@ import { sessionActivity } from '../sessionActivity';
 import { applyCustomOrder, mergeVisibleOrder, moveBefore, moveBy } from '../projectOrder';
 import { PlanUsage } from './PlanUsage';
 import { navigateProjectPane } from '../projectPaneNavigation';
-import { serialPoll } from '../lib/serialPoll';
 import { GlobeIcon } from './icons';
+import { runningAppsLabel, useRunningApps } from '../runningApps';
+
+export { runningAppsLabel };
 import { useHomeHref } from '../sectionMemory';
 
 // Opened from the + button only: loaded on first use, not with every page.
@@ -150,7 +152,7 @@ export function ProjectSidebar({
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   // Web apps running on this computer, by the project they were started from (Preview's detection).
-  const [webApps, setWebApps] = useState<Map<number, LocalApp[]>>(new Map());
+  const webApps = useRunningApps();
   // Clock for running/idle badges, refreshed on every load (never read during render).
   const [now, setNow] = useState(0);
   const [query, setQuery] = useState('');
@@ -265,31 +267,6 @@ export function ProjectSidebar({
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    const stop = serialPoll(
-      () =>
-        api.localApps().then(
-          ({ apps }) => {
-            if (!active) return;
-            const byProject = new Map<number, LocalApp[]>();
-            for (const app of apps) {
-              if (!app.web || app.projectId == null) continue;
-              byProject.set(app.projectId, [...(byProject.get(app.projectId) ?? []), app]);
-            }
-            setWebApps((prev) => (sameApps(prev, byProject) ? prev : byProject));
-          },
-          () => undefined, // A convenience: the list works without it.
-        ),
-      15_000,
-      { pauseWhenHidden: true },
-    );
-    return () => {
-      active = false;
-      stop();
     };
   }, []);
 
@@ -653,22 +630,6 @@ export function ProjectSidebar({
       )}
     </aside>
   );
-}
-
-/** Same projects with the same ports: keeps the previous map so the list doesn't re-render. */
-function sameApps(a: Map<number, LocalApp[]>, b: Map<number, LocalApp[]>): boolean {
-  if (a.size !== b.size) return false;
-  for (const [id, apps] of b) {
-    const old = a.get(id);
-    if (!old || old.map((x) => x.port).join() !== apps.map((x) => x.port).join()) return false;
-  }
-  return true;
-}
-
-/** "App running: localhost:3000" — what the globe on a sidebar row says. */
-export function runningAppsLabel(apps: LocalApp[]): string {
-  const where = apps.map((a) => `localhost:${a.port}`).join(', ');
-  return apps.length === 1 ? `App running: ${where}` : `${apps.length} apps running: ${where}`;
 }
 
 function SidebarItem({

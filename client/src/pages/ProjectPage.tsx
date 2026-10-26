@@ -6,7 +6,8 @@ import { remoteWebUrl } from '../gitRemote';
 import { rememberProjectTab } from '../projectTabs';
 import { PullRequestsPanel, prefetchPullRequests } from '../components/PullRequestsPanel';
 import { AgentsPanel } from '../components/AgentsPanel';
-import { BoardIcon, FoldersIcon, GridIcon, TerminalIcon } from '../components/icons';
+import { BoardIcon, FoldersIcon, GlobeIcon, GridIcon, TerminalIcon } from '../components/icons';
+import { runningAppsLabel, useRunningApps } from '../runningApps';
 import { ProjectFiles } from '../components/ProjectFiles';
 import {
   HEAT_SCALE,
@@ -328,6 +329,7 @@ function ProjectTitle({
       >
         {project.name}
       </button>
+      <RunningAppLink projectId={project.id} />
     </h1>
   );
 }
@@ -590,5 +592,25 @@ function ExternalIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+/**
+ * The project's web app is running (PM-309): the sidebar's globe, beside the name, as a link that
+ * opens it in Preview (the first one when several run; the label names them all).
+ */
+function RunningAppLink({ projectId }: { projectId: number }) {
+  const apps = useRunningApps().get(projectId);
+  if (!apps?.length) return null;
+  const label = `${runningAppsLabel(apps)}. Open in Preview`;
+  return (
+    <Link
+      className="project-live"
+      to={`/preview?preview=${apps[0]!.port}`}
+      title={label}
+      aria-label={label}
+    >
+      <GlobeIcon size={16} />
+    </Link>
   );
 }
