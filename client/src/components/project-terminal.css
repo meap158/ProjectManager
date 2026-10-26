@@ -17,10 +17,13 @@
   flex: 1 1 140px;
   min-width: 0;
   display: flex;
-  align-items: center;
+  /* Name, project, path and status share one baseline: they differ in size and typeface, and
+     centring their boxes left each at its own height. */
+  align-items: baseline;
   gap: 4px 8px;
 }
 .project-terminal-head .pane-meta {
+  align-items: baseline;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
