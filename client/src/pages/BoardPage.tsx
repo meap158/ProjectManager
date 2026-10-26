@@ -49,12 +49,8 @@ const projectNameOf = (projects: ProjectSummary[], projectId: number): string =>
  */
 const DONE_LIMIT = 40;
 
-// View options (PM-296), saved per browser: what Linear, Jira and GitHub Projects offer on a
-// board with hundreds of cards.
+// Card density (PM-296), saved per browser: compact shows one line per card.
 const DENSITIES = ['comfortable', 'compact'] as const;
-const GROUPINGS = ['none', 'project'] as const;
-/** In progress turns amber past this many cards (0: no limit). Kanban's WIP limit. */
-const WIP_LIMITS = ['0', '3', '5', '8', '12'] as const;
 
 /** Every word of the filter appears in the card's title, key or project. */
 const matchesFilter = (card: CardWithProject, words: string[]) => {
@@ -132,9 +128,6 @@ export function BoardPage() {
   };
 
   const [density, setDensity] = useStoredChoice('pm.board.density', DENSITIES, 'comfortable');
-  const [grouping, setGrouping] = useStoredChoice('pm.board.group', GROUPINGS, 'none');
-  const [wip, setWip] = useStoredChoice('pm.board.wip', WIP_LIMITS, '0');
-  const wipLimit = Number(wip);
   const [filter, setFilter] = useState('');
   const filterRef = useRef<HTMLInputElement>(null);
   // Phones keep the filter behind a search button (the field takes a row of its own).
@@ -317,35 +310,26 @@ export function BoardPage() {
             }}
           />
           {view === 'board' && (
-            <div className="board-options">
-              <Dropdown
-                label="Density"
-                value={density}
-                options={[
-                  { value: 'comfortable', label: 'Comfortable' },
-                  { value: 'compact', label: 'Compact', title: 'One line per card' },
-                ]}
-                onChange={setDensity}
-              />
-              <Dropdown
-                label="Group"
-                value={grouping}
-                options={[
-                  { value: 'none', label: 'No grouping' },
-                  { value: 'project', label: 'Group by project' },
-                ]}
-                onChange={setGrouping}
-              />
-              <Dropdown
-                label="Work-in-progress limit"
-                value={wip}
-                options={WIP_LIMITS.map((v) => ({
-                  value: v,
-                  label: v === '0' ? 'No WIP limit' : `WIP limit ${v}`,
-                  title: 'In progress turns amber past this many cards',
-                }))}
-                onChange={setWip}
-              />
+            // Two icons, not a menu: a segmented toggle takes a fraction of the room.
+            <div className="board-density" role="radiogroup" aria-label="Card density">
+              {(
+                [
+                  ['comfortable', 'Comfortable: full cards'],
+                  ['compact', 'Compact: one line per card'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={density === value}
+                  aria-label={label}
+                  title={label}
+                  onClick={() => setDensity(value)}
+                >
+                  <DensityIcon compact={value === 'compact'} />
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -424,21 +408,7 @@ export function BoardPage() {
                         {CARD_STATUS_LABELS[status]}
                       </span>
                     </h2>
-                    {status === 'in_progress' && wipLimit > 0 ? (
-                      <span
-                        className={`num gcolumn-wip${items.length > wipLimit ? ' is-over' : ''}`}
-                        title={
-                          items.length > wipLimit
-                            ? `Over the work-in-progress limit of ${wipLimit}`
-                            : `Work-in-progress limit: ${wipLimit}`
-                        }
-                      >
-                        {items.length}/{wipLimit}
-                        {items.length > wipLimit && ' over'}
-                      </span>
-                    ) : (
-                      <span className="faint num">{items.length}</span>
-                    )}
+                    <span className="faint num">{items.length}</span>
                     <button
                       type="button"
                       className="icon-btn gcolumn-add"
@@ -451,17 +421,7 @@ export function BoardPage() {
                   </header>
                 </div>
                 <div className="gcolumn-cards">
-                  {grouping === 'project'
-                    ? groupByProject(shown).map(([name, group]) => (
-                        <div key={name} className="gcolumn-group">
-                          <h3 className="gcolumn-group-head">
-                            <span className="truncate">{name}</span>
-                            <span className="faint num">{group.length}</span>
-                          </h3>
-                          {group.map(renderCard)}
-                        </div>
-                      ))
-                    : shown.map(renderCard)}
+                  {shown.map(renderCard)}
                   {items.length > shown.length && (
                     <button
                       type="button"
@@ -525,12 +485,15 @@ export function BoardPage() {
   );
 }
 
-/** A column's cards under one heading per project, projects A–Z, newest first within each. */
-function groupByProject(cards: CardWithProject[]): [string, CardWithProject[]][] {
-  const groups = new Map<string, CardWithProject[]>();
-  for (const c of cards) {
-    const name = c.projectName || 'All projects';
-    groups.set(name, [...(groups.get(name) ?? []), c]);
-  }
-  return [...groups].sort(([a], [b]) => a.localeCompare(b));
+/** Comfortable: three spaced bars; compact: five tight lines. */
+function DensityIcon({ compact }: { compact: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+      {compact
+        ? [2, 5, 8, 11, 14].map((y) => (
+            <rect key={y} x="2" y={y - 0.75} width="12" height="1.5" rx="0.75" />
+          ))
+        : [3, 8, 13].map((y) => <rect key={y} x="2" y={y - 1.5} width="12" height="3" rx="1" />)}
+    </svg>
+  );
 }

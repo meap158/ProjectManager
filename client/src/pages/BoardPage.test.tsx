@@ -149,26 +149,17 @@ describe('BoardPage', () => {
     expect(screen.getByText('Plan the release')).toBeTruthy();
   });
 
-  it('groups by project, goes compact, and flags In progress past its WIP limit', async () => {
-    localStorage.setItem('pm.board.group', 'project');
-    localStorage.setItem('pm.board.density', 'compact');
-    localStorage.setItem('pm.board.wip', '3');
-    vi.mocked(api.listAllCards).mockResolvedValueOnce([
-      card(1, 1, 'Alpha', 'in_progress', 'A1'),
-      card(2, 2, 'Beta', 'in_progress', 'B1'),
-      card(3, 1, 'Alpha', 'in_progress', 'A2'),
-      card(4, 2, 'Beta', 'in_progress', 'B2'),
-    ]);
+  it('switches density with a two-icon toggle and remembers it', async () => {
     const { container } = renderAt('/board');
-    const column = await screen.findByRole('region', { name: 'In progress' });
-    await within(column).findByText('A1');
-    expect(
-      [...column.querySelectorAll('.gcolumn-group-head .truncate')].map((h) => h.textContent),
-    ).toEqual(['Alpha', 'Beta']);
-    expect(within(column).getByTitle('Over the work-in-progress limit of 3').textContent).toBe(
-      '4/3 over',
+    await screen.findByText('Plan the release');
+    const compact = screen.getByRole('radio', { name: /Compact/ });
+    expect(screen.getByRole('radio', { name: /Comfortable/ }).getAttribute('aria-checked')).toBe(
+      'true',
     );
+    fireEvent.click(compact);
+    expect(compact.getAttribute('aria-checked')).toBe('true');
     expect(container.querySelector('.gboard.is-compact')).toBeTruthy();
+    expect(localStorage.getItem('pm.board.density')).toBe('compact');
   });
 
   it('shows an old Done card that the filter matches, past the cap', async () => {

@@ -169,13 +169,12 @@ a populated pane.
   every 15s, paused while the tab is hidden.
 - **Board tool row (PM-296):** the Board/List tabs share their underline with a card filter
   ("Filter cards /": `/` focuses it, Esc clears it; every word must appear in the title, key or
-  project) and, on the Board view, three view options saved per browser: Comfortable/Compact
-  density (one line per card), No grouping/Group by project (a small heading per project inside
-  each column, cards drop their tag), and a WIP limit for In progress ("4/3 over" in
-  `--status-review`, the word as well as the colour). Done draws its newest 40 cards until
-  "Show N older". On phones the header keeps its two rows: the filter opens below them only
-  from a search button next to "+ New" (closing it clears the filter), and density, grouping and
-  the WIP limit are desktop-only.
+  project) and, on the Board view, a two-icon density toggle saved per browser (comfortable /
+  compact, one line per card), a segmented control rather than a menu so it costs little width.
+  Grouping and a WIP limit were tried and removed (owner: not worth the room; the Project menu
+  narrows the board). Done draws its newest 40 cards until "Show N older". On phones the header
+  keeps its two rows: the filter opens below them only from a search button next to "+ New"
+  (closing it clears the filter), and density is desktop-only.
 - **Sorter (KDP Library sorter):** modes Name / Recent commit / Lines of code, each with a
   natural direction (A–Z, newest first, most code first). Re-selecting the active mode flips
   its direction; switching modes restarts from the new mode's natural direction. The trigger

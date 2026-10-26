@@ -108,7 +108,7 @@ frames are not throttled as in a background tab; 359 frames scrolling the board 
 | Compact density             | 16.7 ms      | 16.8 ms     | 0                 |
 
 A steady 60 fps either way; the cap removes the two dropped frames. The Board also has a filter
-(`/` to focus), Compact density, Group by project and a WIP limit on In progress (PM-296).
+(`/` to focus) and a compact density toggle (PM-296).
 
 ### What changed
 
