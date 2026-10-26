@@ -45,15 +45,19 @@ import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
 import { useShortcutProps, useShortcutTitle } from '../shortcuts';
 import { AgentWorkList, mergeWork, type WorkItem, type WorkKey } from '../components/AgentWorkList';
 import { ConfirmDelete } from '../components/ConfirmDelete';
+import { SessionPaneActions } from '../components/SessionPaneActions';
 import { BatchAttentionActions } from '../components/BatchAttentionActions';
 import { BatchSessionMessage } from '../components/BatchSessionMessage';
 import { SessionToggle } from '../components/SessionToggle';
 import { SessionContinue } from '../components/SessionContinue';
 import { RunCard } from '../components/RunCard';
 import { LimitsStrip } from '../components/LimitsStrip';
-import { SessionImageButton } from '../components/SessionImageButton';
-import { SessionProgress, SessionRestartStatus } from '../components/SessionProgress';
+import { SessionRestartStatus } from '../components/SessionProgress';
 import { sendImageToSession } from '../sessionImages';
+
+/** A phone-sized window (tests and older browsers without matchMedia count as not). */
+const isPhone = () =>
+  typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 768px)').matches;
 
 // Preload TerminalView chunk as soon as workspace module loads so it is ready when panes render.
 const terminalViewPromise = import('../components/TerminalView');
@@ -719,7 +723,9 @@ interface DropTargetProps {
 function Pane({
   index,
   inList,
-  showContinue = false,
+  // Every pane offers Continue (it hides itself where it cannot apply); the docked list turns it
+  // off while it shows ended sessions only.
+  showContinue = true,
   fontSize,
   onDragStart,
   onDragEnd,
@@ -767,34 +773,12 @@ function Pane({
   const [line, setLine] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
-  const [restarting, setRestarting] = useState(false);
-  const [cardNote, setCardNote] = useState<string | null>(null);
   // Phones: the session as a chat (its CLI's transcript) or the terminal.
   const sessionView = useSessionView(s);
   // Pastes into this pane's terminal like the keyboard would (image paths, PM-54).
   const pasteRef = useRef<((text: string) => void) | null>(null);
   const sendImage = (file: File) =>
     sendImageToSession(s.id, file, pasteRef.current).catch((e: Error) => onError(e.message));
-
-  /** Hand the linked card on to Review once the work in this session looks done. */
-  async function sendCardToReview() {
-    if (!s.cardId) return;
-    try {
-      await api.updateCard(s.cardId, { status: 'review' });
-      setCardNote(`${s.cardKey} → Review`);
-      setTimeout(() => setCardNote(null), 2500);
-    } catch (e) {
-      onError((e as Error).message);
-    }
-  }
-
-  async function act(fn: () => Promise<AgentSession>) {
-    try {
-      onChanged(await fn());
-    } catch (e) {
-      onError((e as Error).message);
-    }
-  }
 
   return (
     <section
@@ -903,91 +887,16 @@ function Pane({
             ⋯
           </button>
           <div className="pane-controls-buttons">
-            {cardNote && (
-              <span className="badge badge-live" role="status">
-                {cardNote}
-              </span>
-            )}
-            {s.cardId && !cardNote && (
-              <button
-                className="icon-btn icon-btn-text"
-                title={`Move ${s.cardKey} to Review`}
-                onClick={sendCardToReview}
-              >
-                → Review
-              </button>
-            )}
-            {!inList && s.terminal === 'pty' && <SessionProgress session={s} />}
-            {/* The chat's composer has its own image button. */}
-            {running && s.terminal === 'pty' && sessionView.view !== 'chat' && (
-              <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
-            )}
-            {showContinue && sessionView.view !== 'chat' && (
-              <SessionContinue session={s} onError={onError} iconOnly />
-            )}
-            {running ? (
-              <>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  aria-label={`Restart ${s.name}`}
-                  title="Restart session (stop, then start)"
-                  disabled={restarting || (!!s.restartProgress && s.restartProgress !== 'failed')}
-                  onClick={async () => {
-                    setRestarting(true);
-                    try {
-                      await act(async () => {
-                        return api.restartSession(s.id);
-                      });
-                    } finally {
-                      setRestarting(false);
-                    }
-                  }}
-                >
-                  {restarting ? (
-                    <span className="spinner" aria-hidden="true" />
-                  ) : (
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M20 7v5h-5M20 12a8 8 0 1 0-2 6M20 7l-2 2" />
-                    </svg>
-                  )}
-                </button>
-                <button
-                  className="icon-btn"
-                  title="Stop session"
-                  disabled={restarting}
-                  onClick={() => act(() => api.stopSession(s.id))}
-                >
-                  ■
-                </button>
-              </>
-            ) : (
-              <button
-                className="icon-btn"
-                title="Start session"
-                onClick={() => act(() => api.startSession(s.id))}
-              >
-                ▶
-              </button>
-            )}
-            {!running && s.cardId && !s.supervise && onDeleted && (
-              <ConfirmDelete
-                small
-                label={`Dispose ${s.name}`}
-                heading={`Dispose task session ${s.name}?`}
-                message="This removes the ended session and its recorded output. The linked task stays on the board."
-                confirmLabel="Dispose session"
-                onConfirm={() => onDeleted(s.id)}
-              />
-            )}
+            <SessionPaneActions
+              session={s}
+              view={sessionView.view}
+              pasteRef={pasteRef}
+              showProgress={!inList}
+              showContinue={showContinue}
+              onChanged={onChanged}
+              onDeleted={onDeleted}
+              onError={onError}
+            />
           </div>
         </div>
         <button
@@ -1420,7 +1329,7 @@ function WorkList({
   // from it (batch CLI, message, delete) lives inside the menu, and hiding the menu would hide the
   // dialog too, so the menu then closes together with that dialog.
   const closeBulkMenuOnPhone = (event: MouseEvent<HTMLDivElement>) => {
-    if (!window.matchMedia('(max-width: 768px)').matches) return;
+    if (!isPhone()) return;
     const button = (event.target as HTMLElement).closest('button');
     if (!button || button.disabled) return;
     // Some dialogs open from an effect after the click (Delete's confirmation): give them a beat.
@@ -1435,7 +1344,7 @@ function WorkList({
     if (!menu) return;
     const onDialogClose = (event: Event) => {
       if (!(event.target instanceof HTMLDialogElement)) return;
-      if (!window.matchMedia('(max-width: 768px)').matches) return;
+      if (!isPhone()) return;
       if (menu.matches(':popover-open')) menu.hidePopover();
     };
     // "close" doesn't bubble: listen while it travels down.
@@ -1459,11 +1368,7 @@ function WorkList({
   const container = useRef<HTMLElement>(null);
   const dockReady = !!sessions && !!runs;
   useEffect(() => {
-    if (
-      !dockReady ||
-      !selected?.startsWith('session:') ||
-      !window.matchMedia('(max-width: 768px)').matches
-    ) {
+    if (!dockReady || !selected?.startsWith('session:') || !isPhone()) {
       return;
     }
     // Bring the terminal into view after the mobile stack has laid out.

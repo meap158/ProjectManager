@@ -20,8 +20,8 @@ import { ConfirmDelete } from './ConfirmDelete';
 import { SessionToggle } from './SessionToggle';
 import { LimitsStrip } from './LimitsStrip';
 import { sendImageToSession } from '../sessionImages';
-import { SessionImageButton } from './SessionImageButton';
-import { SessionProgress, SessionRestartStatus } from './SessionProgress';
+import { SessionPaneActions } from './SessionPaneActions';
+import { SessionRestartStatus } from './SessionProgress';
 import { SessionChat, ViewSwitch, useSessionView } from './SessionChat';
 import { RecentCache } from '../lib/recentCache';
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
@@ -85,7 +85,6 @@ export function AgentsPanel({
   );
   const [dockHeight, setDockHeight] = useState<number | null>(readDockHeight);
   const [dockMax, setDockMax] = useState(false);
-  const [restarting, setRestarting] = useState(false);
   const dockContainer = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -567,74 +566,18 @@ export function AgentsPanel({
                     ⋯
                   </button>
                   <div className={`project-terminal-actions${actionsOpen ? ' is-open' : ''}`}>
-                    {active.terminal === 'pty' && <SessionProgress session={active} />}
-                    {/* The chat's composer has its own image button. */}
-                    {active.status === 'running' &&
-                      active.terminal === 'pty' &&
-                      sessionView.view !== 'chat' && (
-                        <SessionImageButton
-                          sessionId={active.id}
-                          pasteRef={pasteRef}
-                          onError={setError}
-                          className="icon-btn"
-                        />
-                      )}
-                    {active.status === 'running' ? (
-                      <>
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          aria-label={`Restart ${active.name}`}
-                          title="Restart session (stop, then start)"
-                          disabled={
-                            restarting ||
-                            (!!active.restartProgress && active.restartProgress !== 'failed')
-                          }
-                          onClick={async () => {
-                            setRestarting(true);
-                            try {
-                              await changeSession(() => api.restartSession(active.id));
-                            } finally {
-                              setRestarting(false);
-                            }
-                          }}
-                        >
-                          {restarting ? (
-                            <span className="spinner" aria-hidden="true" />
-                          ) : (
-                            <svg
-                              width="14"
-                              height="14"
-                              viewBox="0 0 24 24"
-                              aria-hidden="true"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M20 7v5h-5M20 12a8 8 0 1 0-2 6M20 7l-2 2" />
-                            </svg>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          title="Stop session"
-                          disabled={restarting}
-                          onClick={() => changeSession(() => api.stopSession(active.id))}
-                        >
-                          ■
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        title="Start session"
-                        onClick={() => changeSession(() => api.startSession(active.id))}
-                      >
-                        ▶
-                      </button>
-                    )}
+                    {/* The same actions as the global Agents workspace (Continue, → Review…). */}
+                    <SessionPaneActions
+                      session={active}
+                      view={sessionView.view}
+                      pasteRef={pasteRef}
+                      onChanged={(next) =>
+                        setSessions(
+                          (prev) => prev?.map((x) => (x.id === next.id ? next : x)) ?? prev,
+                        )
+                      }
+                      onError={setError}
+                    />
                   </div>
                   {/* Always visible: on phones it is the way back from full screen. */}
                   <button

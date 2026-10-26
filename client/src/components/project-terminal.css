@@ -245,14 +245,35 @@
   .project-terminal-actions {
     display: none;
   }
+  /* The same overflow as the global Agents panes: a small popover under ⋯, one tidy row, instead
+     of a wrapped row below the header. */
   .project-terminal-actions.is-open {
     display: flex;
-    order: 99;
-    flex: 1 0 100%;
-    justify-content: flex-end;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 8px;
+    z-index: 10;
+    flex-wrap: nowrap;
+    align-items: center;
     gap: 4px;
-    padding: 2px 0 4px;
-    border-top: 1px solid var(--border);
+    max-width: calc(100vw - 32px);
+    padding: 6px;
+    overflow-x: auto;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-lg);
+    white-space: nowrap;
+  }
+  .project-terminal-actions.is-open .session-progress {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    margin: 0;
+  }
+  /* The name gets the room the controls leave (the desktop cap at half the width left "Co…"). */
+  .project-terminal-head > .pane-identity > .inline-rename {
+    max-width: none;
   }
 }
 
@@ -312,4 +333,14 @@
     font-size: 11.5px;
     line-height: 1.2;
   }
+}
+
+/* Text actions in the session header (→ Review): their own width, at every size. */
+.project-terminal-actions .icon-btn.icon-btn-text {
+  width: auto;
+  min-width: 0;
+  flex: 0 0 auto;
+  padding: 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
 }
