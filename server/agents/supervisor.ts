@@ -105,6 +105,9 @@ import {
   claudeModeOnScreen,
   effectiveLevel,
   getPermissions,
+  persistModes,
+  rememberedMode,
+  rememberMode,
   withPermissions,
 } from './permissions.js';
 import { forgetTurn, persistTurns, turnState } from './turnState.js';
@@ -479,6 +482,7 @@ export class AgentSupervisor {
     this.dataDir = options.dataDir ?? null;
     // Claude's idle turns survive a restart (turnState.ts).
     if (this.dataDir) persistTurns(path.join(this.dataDir, 'claude-turns.json'));
+    if (this.dataDir) persistModes(path.join(this.dataDir, 'claude-modes.json'));
     this.codexAccounts = this.dataDir ? new CodexAccounts(this.dataDir, db) : null;
     this.claudeAccounts = this.dataDir ? new ClaudeAccounts(this.dataDir, db) : null;
     this.managedRuns = options.managedRuns ?? false;
@@ -2544,7 +2548,7 @@ export class AgentSupervisor {
       // before this relaunch resets the terminal.
       const carried =
         isRelaunch && row.provider_id === 'claude'
-          ? claudeModeOnScreen(this.sessionScreen(row.id, 4000) ?? '')
+          ? (claudeModeOnScreen(this.sessionScreen(row.id, 4000) ?? '') ?? rememberedMode(row.id))
           : null;
       const permitted = withPermissions(
         row.provider_id,
@@ -3716,6 +3720,7 @@ export class AgentSupervisor {
         ? this.logTail(row.log_path)
         : this.unchangedTail(row.log_path, `${logBytes}|${lastOutputAt}`);
     const screen = tail ? tailState(tail) : null;
+    this.noteClaudeMode(row);
     if (screen === 'input') return 'input';
     const fresh = !!lastOutputAt && Date.now() - Date.parse(lastOutputAt) < FRESH_OUTPUT_MS;
     // 1. Busy CLIs rewrite only the changing bits (spinner frames, timer digits): fresh output
@@ -3740,6 +3745,17 @@ export class AgentSupervisor {
     // 4. A busy line with fresh output (first sighting, or digits ticking in place).
     if (fresh && tail && workingInTail(tail)) return 'running';
     return turnState(row.id, lastOutputAt) ?? screen;
+  }
+
+  private modeCheckedAt = new Map<number, number>();
+
+  /** Remembers a Claude session's permission mode from its footer, at most every 15 seconds. */
+  private noteClaudeMode(row: SessionRow): void {
+    if (row.provider_id !== 'claude') return;
+    const now = Date.now();
+    if (now - (this.modeCheckedAt.get(row.id) ?? 0) < 15_000) return;
+    this.modeCheckedAt.set(row.id, now);
+    rememberMode(row.id, claudeModeOnScreen(this.sessionScreen(row.id, 4000) ?? ''));
   }
 
   /** Provider and resume argv of a session, for its chat view's transcript (mobile). */

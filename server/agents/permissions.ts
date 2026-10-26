@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from 'node:fs';
 import type { AgentAutonomy, AgentPermissions, PermissionLevel } from '../../shared/types.js';
 import type { Db } from '../db.js';
 import { getSetting, setSetting } from '../store.js';
@@ -136,4 +137,45 @@ export function withPermissions(
   if (!args) return { command, env };
   if (command.includes(args[0]!)) return { command, env };
   return { command: [command[0]!, ...args, ...command.slice(1)], env };
+}
+
+/**
+ * The last permission mode seen on each Claude Code session's footer, kept across relaunches and
+ * server restarts. A relaunch used to read only the live screen, and the footer is often not on it
+ * (mid-turn, an open dialog, an empty log after a restart), which reset the session to the Settings
+ * default. A mode is only replaced by a newer one seen on screen, never by "nothing seen".
+ */
+const seenModes = new Map<number, string>();
+let modesFile: string | null = null;
+let modesTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function persistModes(file: string): void {
+  modesFile = file;
+  try {
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as Record<string, string>;
+    for (const [id, mode] of Object.entries(saved))
+      if (typeof mode === 'string' && !seenModes.has(Number(id))) seenModes.set(Number(id), mode);
+  } catch {
+    // Nothing saved yet, or unreadable: modes are learned again from the screen.
+  }
+}
+
+/** Records the mode a session's footer shows now; a null (no footer on screen) changes nothing. */
+export function rememberMode(sessionId: number, mode: string | null): void {
+  if (!mode || seenModes.get(sessionId) === mode) return;
+  seenModes.set(sessionId, mode);
+  if (!modesFile || modesTimer) return;
+  modesTimer = setTimeout(() => {
+    modesTimer = null;
+    try {
+      writeFileSync(modesFile!, JSON.stringify(Object.fromEntries(seenModes)));
+    } catch {
+      // Best effort: the next relaunch falls back to the screen, then the Settings default.
+    }
+  }, 2000);
+  modesTimer.unref?.();
+}
+
+export function rememberedMode(sessionId: number): string | null {
+  return seenModes.get(sessionId) ?? null;
 }
