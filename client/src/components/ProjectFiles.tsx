@@ -603,9 +603,42 @@ export function ProjectFiles({
     for (const path of expanded) void load(path);
   };
 
+  // Desktop, a folder open: the tree and the folder previewer fill the screen from where they start
+  // and each scrolls on its own, so the path and filters stay in view (Finder, VS Code). Measured,
+  // because the project header above can change height (a long path, a banner).
+  const paneRef = useRef<HTMLDivElement>(null);
+  const [paneHeight, setPaneHeight] = useState(0);
+  useEffect(() => {
+    const el = paneRef.current;
+    const scroller = el?.closest<HTMLElement>('.app-main');
+    if (!el || !scroller) return;
+    const measure = () => {
+      const top =
+        el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+      const bottom = parseFloat(getComputedStyle(scroller).paddingBottom) || 0;
+      // A few px short of the bottom: rounding must never leave the page a sliver of scroll.
+      setPaneHeight(
+        Math.max(320, Math.floor(scroller.clientHeight - top - Math.max(bottom, 12) - 6)),
+      );
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const header = el.closest('main')?.firstElementChild;
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroller);
+    if (header && header !== el) observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+
   const root = folders.get('');
   return (
-    <div className={`project-files${openFile || openDir !== null ? ' has-file' : ''}`}>
+    <div
+      ref={paneRef}
+      className={`project-files${openFile || openDir !== null ? ' has-file' : ''}${
+        openDir !== null && !openFile ? ' is-folder' : ''
+      }`}
+      style={paneHeight ? ({ '--files-pane-h': `${paneHeight}px` } as CSSProperties) : undefined}
+    >
       <section className="panel files-tree-panel" aria-label="Files">
         <div className="files-toolbar">
           <input

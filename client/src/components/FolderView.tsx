@@ -24,6 +24,7 @@ import {
 } from './folderRules';
 import { FileTypeIcon, iconFor } from './fileIcons';
 import { ImageViewer } from './ImageViewer';
+import { useStuckTop } from '../stuckTop';
 import './folder-view.css';
 
 // The Files tab's folder previewer (PM-286): what selecting a folder shows. Every entry with its
@@ -151,6 +152,8 @@ export function FolderView({
     setCount(PAGE);
   }
 
+  // Phones: the folder's header sticks right under the project's tab bar (--stuck-top).
+  const stuckTop = useStuckTop();
   const [sheet, setSheet] = useState(false);
   const modifiedId = useId();
   const sortId = useId();
@@ -207,7 +210,7 @@ export function FolderView({
     (view.recursive ? 1 : 0);
 
   return (
-    <div className="fv" aria-busy={loading}>
+    <div className="fv" aria-busy={loading} ref={stuckTop}>
       <div className="files-view-head fv-head">
         <button type="button" className="btn btn-sm files-back" onClick={onClose}>
           ← Files
@@ -234,7 +237,15 @@ export function FolderView({
         </nav>
         <button
           type="button"
-          className="btn btn-sm"
+          className="btn btn-sm fv-filters-button"
+          aria-expanded={sheet}
+          onClick={() => setSheet((v) => !v)}
+        >
+          Filters{active ? ` (${active})` : ''}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm fv-refresh"
           title="Read this folder again"
           onClick={() => {
             setLoading(true);
@@ -273,14 +284,6 @@ export function FolderView({
       )}
 
       <div className="fv-toolbar">
-        <button
-          type="button"
-          className="btn btn-sm fv-filters-button"
-          aria-expanded={sheet}
-          onClick={() => setSheet((v) => !v)}
-        >
-          Filters{active ? ` (${active})` : ''}
-        </button>
         {seenAt !== null && changed > 0 && (
           <span className="fv-changed">
             <b>{changed}</b> new or changed since you last looked
@@ -425,7 +428,7 @@ export function FolderView({
           {data.items.length === 0 ? 'This folder is empty.' : 'Nothing matches these filters.'}
         </p>
       ) : (
-        <div className={loading ? 'fv-stale' : undefined} onKeyDown={gridKeys}>
+        <div className={`fv-results${loading ? ' fv-stale' : ''}`} onKeyDown={gridKeys}>
           {view.view === 'grid' ? (
             <ul className="fv-grid" role="list">
               {shown.slice(0, count).map((item) => (

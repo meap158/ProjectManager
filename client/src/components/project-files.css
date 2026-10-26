@@ -360,6 +360,35 @@
   max-height: calc(100dvh - 260px);
 }
 
+/* Desktop with a folder open: two panes of a measured height (ProjectFiles sets --files-pane-h),
+   each scrolling on its own; the folder's path and filters stay put while its results scroll. */
+@media (min-width: 769px) {
+  .project-files.is-folder .files-tree-panel,
+  .project-files.is-folder .files-preview-panel {
+    position: static;
+    height: var(--files-pane-h, calc(100dvh - 180px));
+    max-height: none;
+    min-height: 0;
+  }
+  .project-files.is-folder .files-preview-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .project-files.is-folder .fv {
+    flex: 1;
+    min-height: 0;
+  }
+  .project-files.is-folder .fv-results {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    /* Room for focus rings and the cells' shadows at the edges. */
+    margin: 0 -6px;
+    padding: 2px 6px 6px;
+  }
+}
+
 /* Phones: one column. The tree until a file opens, then its preview with a way back. */
 @media (max-width: 768px) {
   .project-files {

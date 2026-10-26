@@ -2,8 +2,14 @@
 .fv {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+}
+/* Nothing in the toolbar on a wide screen (its Filters button is for phones): no empty row. */
+@media (min-width: 641px) and (pointer: fine) {
+  .fv-toolbar:not(:has(.fv-changed)) {
+    display: none;
+  }
 }
 .fv-crumb {
   padding: 0;
@@ -54,8 +60,8 @@
 .fv-controls {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -67,7 +73,7 @@
   gap: 8px 10px;
 }
 .fv-line-b {
-  align-items: flex-end;
+  align-items: center;
 }
 .fv-controls .input,
 .fv-controls .dropdown-trigger,
@@ -127,10 +133,12 @@
   color: var(--accent);
   font-weight: 600;
 }
+/* The label beside its menu, not above it: the second line stays one control tall. */
 .fv-field {
-  display: grid;
-  gap: 4px;
-  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   line-height: 1.2;
   color: var(--text-3);
 }
@@ -373,6 +381,37 @@ button.fv-row:hover {
 }
 
 /* A phone: the filters become a bottom sheet, targets are 44px, the grid is two or three columns. */
+/* Phones (and tablets in a column): one compact header row (back, path, Filters, Grid/List)
+   that stays under the project's tab bar while the results scroll; the folder's own Refresh
+   gives the path the room (the tree's Refresh remains). */
+@media (max-width: 768px) {
+  .fv-head {
+    position: sticky;
+    top: var(--stuck-top, 0px);
+    z-index: 4;
+    flex-wrap: nowrap;
+    /* Edge to edge in its panel (the panel's padding is 12px at this width). */
+    margin: -12px -12px 0;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--surface);
+  }
+  .fv-head .files-crumbs {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .fv-head .fv-refresh {
+    display: none;
+  }
+  .fv-head > * {
+    flex: none;
+  }
+  .fv-head > .files-crumbs {
+    flex: 1 1 auto;
+  }
+}
+
 @media (max-width: 640px), (pointer: coarse) {
   .fv-grid {
     grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
