@@ -987,6 +987,7 @@ export function PreviewWorkspace() {
         {markup && (
           <PreviewPickDialog
             page={markup.page}
+            snapshot={markup.snapshot}
             element={markup.element}
             marks={markup.marks}
             projectId={pickedApp?.projectId ?? null}

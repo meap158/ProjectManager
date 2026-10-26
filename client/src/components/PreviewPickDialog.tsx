@@ -199,6 +199,7 @@ export function rankSessions(sessions: AgentSession[], projectId: number | null)
 
 export function PreviewPickDialog({
   page,
+  snapshot = null,
   element,
   marks,
   projectId,
@@ -207,6 +208,8 @@ export function PreviewPickDialog({
 }: {
   /** The page as it was when the owner pressed Add to chat (its scroll is what the capture uses). */
   page: PickedPage;
+  /** The page as it looked when Add to chat was pressed; null retakes it from a fresh load. */
+  snapshot?: string | null;
   /** The picked element, if any: marks alone are fine too. */
   element: PickedElement | null;
   /** Marks drawn on the live page, in its CSS pixels. */
@@ -262,6 +265,7 @@ export function PreviewPickDialog({
         inner: page.scroll.inner,
         dark: page.viewport.dark,
         selector: element?.selector ?? null,
+        html: snapshot,
       }),
     })
       .then(async (res) => {
@@ -292,7 +296,7 @@ export function PreviewPickDialog({
       live = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [page, element, where]);
+  }, [page, element, where, snapshot]);
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -419,7 +423,12 @@ export function PreviewPickDialog({
               <span className="faint">
                 {!where
                   ? 'Not available for this address'
-                  : (shotError ?? (shot ? 'Retaken by ProjectManager' : 'Taking it…'))}
+                  : (shotError ??
+                    (!shot
+                      ? 'Taking it…'
+                      : snapshot
+                        ? 'As you saw it'
+                        : 'Retaken by ProjectManager'))}
               </span>
             </div>
             {includeShot && where && (

@@ -11,6 +11,8 @@ import { parsePage, parsePicked, type PickedElement, type PickedPage } from './P
 
 export interface Markup {
   page: PickedPage;
+  /** The page as it looked when Add to chat was pressed (static HTML), for the screenshot. */
+  snapshot: string | null;
   element: PickedElement | null;
   marks: Shape[];
 }
@@ -33,7 +35,9 @@ export function PreviewMarkup({
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [element, setElement] = useState<PickedElement | null>(null);
   const [adding, setAdding] = useState(false);
-  const pendingState = useRef<((page: PickedPage | null) => void) | null>(null);
+  const pendingState = useRef<((page: PickedPage | null, snapshot: string | null) => void) | null>(
+    null,
+  );
 
   const tell = (type: 'start' | 'pause' | 'stop' | 'clear' | 'state') =>
     frame()?.contentWindow?.postMessage({ pmPicker: true, type }, '*');
@@ -76,7 +80,14 @@ export function PreviewMarkup({
         if (picked) setElement(picked);
         else onError('The page sent something that is not an element.');
       } else if (data.type === 'state') {
-        pendingState.current?.(parsePage(data.page));
+        const html =
+          typeof (data as { snapshot?: unknown }).snapshot === 'string'
+            ? ((data as { snapshot: string }).snapshot as string)
+            : null;
+        pendingState.current?.(
+          parsePage(data.page),
+          html && html.length <= 8_388_608 ? html : null,
+        );
         pendingState.current = null;
       }
     };
@@ -85,25 +96,29 @@ export function PreviewMarkup({
   }, [frame, onClose, onError]);
 
   /** Where the page is now (its scroll, for the screenshot); the element's page if it does not answer. */
+  /**
+   * The page now: its scroll (for the screenshot) and a snapshot of what it shows, taken at this
+   * moment, before the dialog opens. The element's page, without a snapshot, if it does not answer.
+   */
   const currentPage = () =>
-    new Promise<PickedPage | null>((resolve) => {
-      const timer = setTimeout(() => resolve(element), 1500);
-      pendingState.current = (page) => {
+    new Promise<{ page: PickedPage | null; snapshot: string | null }>((resolve) => {
+      const timer = setTimeout(() => resolve({ page: element, snapshot: null }), 3000);
+      pendingState.current = (page, snapshot) => {
         clearTimeout(timer);
-        resolve(page ?? element);
+        resolve({ page: page ?? element, snapshot });
       };
       tell('state');
     });
 
   const add = async () => {
     setAdding(true);
-    const page = await currentPage();
+    const { page, snapshot } = await currentPage();
     setAdding(false);
     if (!page) {
       onError('The page did not answer. Reload it in the Preview and try again.');
       return;
     }
-    onAdd({ page, element, marks: shapes });
+    onAdd({ page, snapshot, element, marks: shapes });
   };
 
   return (

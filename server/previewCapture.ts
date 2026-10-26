@@ -51,7 +51,16 @@ export interface CaptureRequest {
   dark?: boolean;
   /** The picked element, measured again in the capture so its box lands where it really is. */
   selector?: string | null;
+  /**
+   * The page as it looked when the owner pressed Add to chat (static HTML from the in-page
+   * picker, scripts left out). Rendered with JavaScript off instead of a fresh load, so the shot
+   * shows what was on screen: typed text, open menus, loaded data.
+   */
+  html?: string | null;
 }
+
+/** The largest page snapshot accepted (the picker sends nothing bigger). */
+export const MAX_SNAPSHOT = 8 * 1024 * 1024;
 
 /** Where the picked element is in the captured image, in CSS pixels (null when not found). */
 export type CapturedRect = { x: number; y: number; width: number; height: number } | null;
@@ -85,6 +94,7 @@ export function normaliseCapture(
     dark: body.dark === true,
     selector:
       typeof body.selector === 'string' && body.selector.length <= 400 ? body.selector : null,
+    html: typeof body.html === 'string' && body.html.length <= MAX_SNAPSHOT ? body.html : null,
   };
 }
 
@@ -278,6 +288,24 @@ export class PreviewCapture {
       });
       await cdp.send('Page.navigate', { url: `http://127.0.0.1:${request.port}${request.path}` });
       await loaded;
+      if (request.html) {
+        // What the owner saw: the snapshot replaces the fresh page, on the app's own origin (its
+        // styles and images load as before), with JavaScript off so nothing re-renders it. The
+        // snapshot is the page's own content and is treated as such: scripts never run, and the
+        // document-load rule above still holds.
+        await cdp.send('Emulation.setScriptExecutionDisabled', { value: true });
+        const tree = await cdp.send('Page.getFrameTree');
+        const frameId = (tree.frameTree as { frame?: { id?: string } } | undefined)?.frame?.id;
+        // JavaScript stays off for the rest of this capture: inline handlers in the snapshot never
+        // run either (scrolling and measuring below go through DevTools, which still works).
+        // The picker wrote the page's own address as the base, which is the preview proxy's;
+        // styles and images load from the app itself instead.
+        const html = request.html.replace(
+          /<base href="[^"]*">/,
+          `<base href="http://127.0.0.1:${request.port}${request.path.replace(/"/g, '%22')}">`,
+        );
+        if (frameId) await cdp.send('Page.setDocumentContent', { frameId, html });
+      }
       await new Promise((r) => setTimeout(r, 600)); // Fonts and the first effects settle.
       // The resting page at the viewer's scroll: smooth scrolling, transitions and animations are
       // switched off so a scroll lands at once and scroll-reveal effects show their end state
@@ -292,6 +320,11 @@ export class PreviewCapture {
           document.documentElement.append(still);
           window.scrollTo({ left: ${request.scrollX}, top: ${request.scrollY}, behavior: 'instant' });
           ${inner}
+          for (const el of document.querySelectorAll('[data-pm-scroll]')) {
+            const [top, left] = String(el.getAttribute('data-pm-scroll')).split(',').map(Number);
+            el.scrollTop = top || 0;
+            el.scrollLeft = left || 0;
+          }
         })()`,
       });
       await new Promise((r) => setTimeout(r, 450)); // Scroll-triggered effects run and settle.

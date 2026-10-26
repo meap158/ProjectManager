@@ -111,6 +111,70 @@ export const PICKER_JS = String.raw`(() => {
     return null;
   }
 
+  // The page as it looks right now, as static HTML (for the screenshot to show what was on screen,
+  // not a fresh load): form values, canvases, scroll positions and script-added styles are written
+  // into a copy; scripts and this picker's outlines are left out. Read-only: the live page is
+  // untouched. Null when it would be too large to send.
+  var MAX_SNAPSHOT = 8 * 1024 * 1024;
+  function snapshot() {
+    // Both lists start below <html> (document.querySelectorAll would include it), then pair up.
+    var live = Array.prototype.slice.call(document.documentElement.querySelectorAll('*'));
+    var copy = document.documentElement.cloneNode(true);
+    var copies = Array.prototype.slice.call(copy.querySelectorAll('*'));
+    copies.unshift(copy);
+    live.unshift(document.documentElement);
+    var drop = [];
+    for (var i = 0; i < live.length && i < copies.length; i++) {
+      var a = live[i], b = copies[i], tag = a.tagName;
+      if (a.hasAttribute && a.hasAttribute('data-pm-picker')) { drop.push(b); continue; }
+      if (tag === 'SCRIPT' || tag === 'NOSCRIPT') { drop.push(b); continue; }
+      if (tag === 'INPUT') {
+        if (a.type === 'checkbox' || a.type === 'radio') { if (a.checked) b.setAttribute('checked', ''); else b.removeAttribute('checked'); }
+        else if (a.type !== 'password' && a.type !== 'file') b.setAttribute('value', a.value);
+      } else if (tag === 'TEXTAREA') b.textContent = a.value;
+      else if (tag === 'SELECT') {
+        Array.prototype.forEach.call(b.options, function (o, k) { if (a.options[k] && a.options[k].selected) o.setAttribute('selected', ''); else o.removeAttribute('selected'); });
+      } else if (tag === 'CANVAS') {
+        try {
+          var img = document.createElement('img');
+          img.src = a.toDataURL();
+          img.setAttribute('style', (a.getAttribute('style') || '') + ';width:' + a.clientWidth + 'px;height:' + a.clientHeight + 'px');
+          img.className = a.className;
+          b.replaceWith(img);
+        } catch (err) { /* A tainted canvas stays blank. */ }
+      } else if (tag === 'IFRAME') {
+        b.removeAttribute('src');
+        b.removeAttribute('srcdoc');
+      }
+      if (a.scrollTop || a.scrollLeft) b.setAttribute('data-pm-scroll', a.scrollTop + ',' + a.scrollLeft);
+      if (tag === 'DETAILS' && a.open) b.setAttribute('open', '');
+    }
+    drop.forEach(function (n) { n.remove(); });
+    // Styles a script added through the CSSOM (CSS-in-JS) are not in the markup: write them in.
+    var head = copy.querySelector('head') || copy;
+    var extra = '';
+    Array.prototype.forEach.call(document.styleSheets, function (sheet) {
+      try {
+        var owner = sheet.ownerNode;
+        if (owner && owner.tagName === 'STYLE' && !owner.textContent.trim() && sheet.cssRules.length)
+          extra += Array.prototype.map.call(sheet.cssRules, function (rule) { return rule.cssText; }).join('\n');
+      } catch (err) { /* Another origin's sheet: it loads by its link anyway. */ }
+    });
+    (document.adoptedStyleSheets || []).forEach(function (sheet) {
+      try { extra += Array.prototype.map.call(sheet.cssRules, function (rule) { return rule.cssText; }).join('\n'); } catch (err) {}
+    });
+    if (extra) {
+      var style = document.createElement('style');
+      style.textContent = extra;
+      head.appendChild(style);
+    }
+    var base = document.createElement('base');
+    base.href = location.href;
+    head.insertBefore(base, head.firstChild);
+    var html = '<!doctype html>' + copy.outerHTML;
+    return html.length > MAX_SNAPSHOT ? null : html;
+  }
+
   // Where the page is: what a screenshot needs to show the same view.
   function pageOf(el) {
     var inner = el ? scrollParent(el) : null;
@@ -254,7 +318,11 @@ export const PICKER_JS = String.raw`(() => {
     else if (e.data.type === 'pause') stop();
     else if (e.data.type === 'stop') { stop(); clearPicked(); }
     else if (e.data.type === 'clear') clearPicked();
-    else if (e.data.type === 'state') send({ type: 'state', page: pageOf(picked) });
+    else if (e.data.type === 'state') {
+      var html = null, why = null;
+      try { html = snapshot(); if (!html) why = 'too large'; } catch (err) { why = String(err && err.message || err).slice(0, 200); }
+      send({ type: 'state', page: pageOf(picked), snapshot: html, snapshotError: why });
+    }
   });
   send({ type: 'ready' });
 })();`;

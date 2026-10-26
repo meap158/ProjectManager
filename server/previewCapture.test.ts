@@ -26,7 +26,18 @@ describe('preview capture (PM-311)', () => {
       inner: { selector: 'main', top: 40, left: 0 },
       dark: true,
       selector: null,
+      html: null,
     });
+    // The page as the owner saw it: kept up to the snapshot cap, dropped beyond it.
+    expect(
+      normaliseCapture({ port: 3000, path: '/', html: '<p>seen</p>' } as never, new Set()).html,
+    ).toBe('<p>seen</p>');
+    expect(
+      normaliseCapture(
+        { port: 3000, path: '/', html: 'x'.repeat(8 * 1024 * 1024 + 1) } as never,
+        new Set(),
+      ).html,
+    ).toBeNull();
     // The picked element, measured again in the capture so its box lands where it really is.
     expect(
       normaliseCapture({ port: 3000, path: '/', selector: 'main > h2' } as never, new Set())

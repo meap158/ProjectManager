@@ -134,8 +134,17 @@ server retakes it (`server/previewCapture.ts`, `POST /api/preview-capture`): a h
 Edge, opens the same address at the same viewport size, scroll and colour scheme and returns a
 PNG. Smooth scrolling, transitions and animations are switched off in that copy, so the scroll lands
 at once and scroll-reveal effects show their end state, and the picked element is measured again
-there (`x-pm-element`), so its box lands where it really is. It is a fresh load without the
-viewer's cookies or open menus, so the dialog says "Retaken by ProjectManager". Only a loopback dev server by port and path (the proxy's rules, never this app's
+there (`x-pm-element`), so its box lands where it really is.
+
+**As you saw it.** When Add to chat is pressed, before the dialog opens, the picker takes a
+snapshot of the page as it is: a copy of its DOM with the current form values, canvases (as
+images), scroll positions, open `<details>` and script-added styles written in, and scripts, this
+picker's outlines and nested frames left out (the live page is untouched). The capture renders
+that snapshot on the app's own origin with JavaScript off for the whole capture, so nothing
+re-renders it and no handler in it runs, restores the recorded scrolls and shoots it; the dialog
+says "As you saw it". Snapshots are capped at 8 MB. When there is none (too large, or a page the
+picker cannot read), it falls back to a fresh load, without the viewer's cookies or open menus, and
+says "Retaken by ProjectManager". Only a loopback dev server by port and path (the proxy's rules, never this app's
 ports); every document load that leaves the app is refused (CDP Fetch), so it cannot be pointed at
 another site. One browser, started on first use with its profile in the data folder, one capture
 at a time with a timeout, closed after three idle minutes and when the server exits; no new
