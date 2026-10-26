@@ -181,6 +181,11 @@ describe('PreviewTabStrip', () => {
     expect(h.onActivate).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(200);
     expect(h.onMove).toHaveBeenCalledWith('a', 2);
+    // The next real click on a tab is not swallowed (the release's own click may land on the tab
+    // rather than its button, and must not leave the guard set).
+    await vi.advanceTimersByTimeAsync(400);
+    fireEvent.click(screen.getAllByRole('tab')[1]!);
+    expect(h.onActivate).toHaveBeenLastCalledWith('b');
     vi.useRealTimers();
   });
 

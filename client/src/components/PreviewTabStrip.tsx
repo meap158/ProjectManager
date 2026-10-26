@@ -254,7 +254,11 @@ export function PreviewTabStrip({
       setDrag(null);
       return;
     }
+    // Ignore the click this release may produce, and only that one. The pointer was captured by
+    // the tab, so that click often lands on the tab itself rather than its button and never
+    // clears the flag; left set, it swallowed the next real click on a tab.
     swallowClick.current = true;
+    window.setTimeout(() => (swallowClick.current = false), 300);
     const target = commit ? layout.target : dragIndex;
     // Glide into the slot, then change the order (no jump: everything is already in place).
     setDrag({ ...drag, dx: commit ? layout.slot : 0, settling: true });
@@ -281,6 +285,7 @@ export function PreviewTabStrip({
   };
 
   const onPointerDown = (event: PointerEvent<HTMLElement>, tab: StripTab) => {
+    swallowClick.current = false; // A new press is never the end of the last drag.
     // Mouse and pen drag; a touch scrolls the strip (the menu and keyboard move tabs there).
     if (event.button !== 0 || event.pointerType === 'touch' || drag) return;
     if ((event.target as HTMLElement).closest('.preview-tab-close')) return;
