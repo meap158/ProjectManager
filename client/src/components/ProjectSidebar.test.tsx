@@ -52,7 +52,7 @@ describe('running app indicator', () => {
     vi.mocked(api.listProjects).mockResolvedValue([project(1, 'Probe'), project(2, 'Quiet')]);
     vi.mocked(api.localApps).mockResolvedValue({ apps: [] });
     render(
-      <MemoryRouter initialEntries={['/board']}>
+      <MemoryRouter initialEntries={['/workspace']}>
         <ProjectSidebar />
       </MemoryRouter>,
     );
@@ -63,6 +63,33 @@ describe('running app indicator', () => {
       false,
     );
   });
+  it('selects All projects on Board, which shows every project, or the project it is filtered to (PM-307)', async () => {
+    localStorage.setItem('pm-home-selection', '/projects/2?tab=files');
+    vi.mocked(api.listProjects).mockResolvedValue([project(1, 'Probe'), project(2, 'Quiet')]);
+    vi.mocked(api.localApps).mockResolvedValue({ apps: [] });
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/board']}>
+        <ProjectSidebar />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('link', { name: /Quiet/ });
+    expect(screen.getByRole('link', { name: /All projects/ }).classList.contains('is-active')).toBe(
+      true,
+    );
+    expect(screen.getByRole('link', { name: /Quiet/ }).classList.contains('is-active')).toBe(false);
+    unmount();
+    render(
+      <MemoryRouter initialEntries={['/board?project=1']}>
+        <ProjectSidebar />
+      </MemoryRouter>,
+    );
+    expect(
+      (await screen.findByRole('link', { name: /Probe/ })).classList.contains('is-active'),
+    ).toBe(true);
+    // Home's own choice is untouched, for when the owner goes back there.
+    expect(localStorage.getItem('pm-home-selection')).toBe('/projects/2?tab=files');
+  });
+
   it("marks a project whose web app is running, and only with that project's web ports", async () => {
     vi.mocked(api.listProjects).mockResolvedValue([project(1, 'Probe'), project(2, 'Quiet')]);
     vi.mocked(api.localApps).mockResolvedValue({

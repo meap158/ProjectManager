@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router';
 import type { AgentSession, LocalApp, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { formatCompact, formatRelative } from '../format';
@@ -125,7 +125,15 @@ export function ProjectSidebar({
   onNavigate,
 }: { panelOpen?: boolean; onNavigate?: () => void } = {}) {
   const navigate = useNavigate();
-  const selectedHome = useHomeHref().split('?')[0];
+  // The highlighted item: Home's remembered choice (PM-306), except on Board, which shows every
+  // project, so All projects is selected there unless the board is filtered to one (PM-307).
+  const homeChoice = useHomeHref().split('?')[0];
+  const { pathname, search } = useLocation();
+  const boardProject = pathname.startsWith('/board')
+    ? Number(new URLSearchParams(search).get('project')) || 0
+    : null;
+  const selectedHome =
+    boardProject === null ? homeChoice : boardProject ? `/projects/${boardProject}` : '/';
   const projectHref = useProjectHref();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
