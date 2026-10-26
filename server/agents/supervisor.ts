@@ -416,6 +416,7 @@ export class AgentSupervisor {
    */
   private codexRotationTried = new Map<string, number>();
   private switchingCodexSession = new Set<number>();
+  private waitingCodexRuns = new Set<number>();
   private tailCache = new Map<string, { version: string; tail: string | null }>();
   /** What idle sessions' last replies ask you (PM-298), read in the background. */
   private questions = new QuestionCache((id) => {
@@ -544,8 +545,13 @@ export class AgentSupervisor {
 
   setActiveCodexAccount(
     id: string | null,
-    options: { keepRotation?: boolean; activeOnly?: boolean } = {},
+    options: { keepRotation?: boolean; activeOnly?: boolean; automatic?: boolean } = {},
   ): CodexAccountsState {
+    if (options.automatic && !this.codexRotationReady())
+      throw new AgentError(
+        409,
+        'Automatic switch is waiting for Codex work and pending input to finish.',
+      );
     const running = this.db
       .prepare("SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'")
       .all() as unknown as SessionRow[];
@@ -555,6 +561,7 @@ export class AgentSupervisor {
     if (!options.keepRotation) this.codexRotationTried.clear();
     this.applyCodexAccountToSessions(id === null || id === 'default' ? 'default' : id, {
       activeOnly: options.activeOnly,
+      automatic: options.automatic,
     });
     return state;
   }
@@ -567,7 +574,7 @@ export class AgentSupervisor {
    */
   private applyCodexAccountToSessions(
     targetKey: string,
-    options: { exceptId?: number; activeOnly?: boolean } = {},
+    options: { exceptId?: number; activeOnly?: boolean; automatic?: boolean } = {},
   ): void {
     const profileId = targetKey === 'default' ? null : targetKey;
     const rows = this.db
@@ -586,8 +593,9 @@ export class AgentSupervisor {
         row.status === 'running';
       if (willRestart) this.switchingCodexSession.add(row.id);
       void this.switchSessionCodexAccount(row.id, profileId, {
-        continuePrompt: false,
+        continuePrompt: !!options.automatic && this.usageLimits.has(row.id),
         setGlobal: false,
+        automatic: options.automatic,
       }).catch((error: Error) => {
         this.switchingCodexSession.delete(row.id);
         console.error('[agents] codex account switch:', error);
@@ -661,6 +669,11 @@ export class AgentSupervisor {
       throw new AgentError(409, 'Restart already in progress');
     if (options.automatic && (row.status !== 'running' || row.desired_state !== 'running'))
       throw new AgentError(409, 'Session ended before automatic account switching.');
+    if (options.automatic && options.setGlobal !== false && !this.codexRotationReady())
+      throw new AgentError(
+        409,
+        'Automatic switch is waiting for Codex work and pending input to finish.',
+      );
     const targetKey = profileId === null || profileId === 'default' ? 'default' : profileId;
     const target = this.withCodexAccounts((accounts) => accounts.profile(targetKey));
     // The login stored on this session, not the Settings selection. Reading the selection after
@@ -702,7 +715,11 @@ export class AgentSupervisor {
         accounts.setActive(target.id === 'default' ? null : target.id),
       );
       if (!options.keepRotation) this.codexRotationTried.clear();
-      this.applyCodexAccountToSessions(target.id, { exceptId: id, activeOnly: options.automatic });
+      this.applyCodexAccountToSessions(target.id, {
+        exceptId: id,
+        activeOnly: options.automatic,
+        automatic: options.automatic,
+      });
     }
 
     const nextResume = carriedId
@@ -1563,6 +1580,54 @@ export class AgentSupervisor {
     setSetting(this.db, key, { ...state, resumesAt, message: 'Waiting for allowance reset' });
   }
 
+  /** The shared login must not restart a turn still finishing after a reported 100%. */
+  private codexRotationReady(): boolean {
+    if (this.switchingCodexSession.size || this.starting.size) return false;
+    for (const [id, progress] of this.restarting)
+      if (progress.phase !== 'failed' && this.getSessionRow(id)?.provider_id === 'codex')
+        return false;
+    const sessions = this.db
+      .prepare("SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'")
+      .all() as unknown as SessionRow[];
+    for (const row of sessions) {
+      if (this.restarting.get(row.id)?.phase && this.restarting.get(row.id)?.phase !== 'failed')
+        return false;
+      if (
+        !this.live.has(`session:${row.id}`) ||
+        row.desired_state !== 'running' ||
+        this.queuedInputBytes(row.id)
+      )
+        return false;
+      if (this.sessionActivity(row, this.fileModifiedAt(row.log_path)) !== 'idle') return false;
+      if (!emptyCodexPrompt(this.sessionScreen(row.id, 4000) ?? '')) return false;
+    }
+    const runs = this.db
+      .prepare("SELECT id FROM agent_runs WHERE provider_id = 'codex' AND status = 'running'")
+      .all() as { id: number }[];
+    return runs.every((row) => this.waitingCodexRuns.has(row.id));
+  }
+
+  /** A failed run can wait for sibling grace work without spending attempts on an exhausted login. */
+  private async waitForCodexRotation(run: RunRow, currentKey: string): Promise<boolean> {
+    for (;;) {
+      if (
+        this.closed ||
+        !this.codexAccounts?.autoSwitchEnabled() ||
+        this.codexAccounts.selectedId() !== currentKey
+      )
+        return false;
+      const latest = this.db
+        .prepare('SELECT status, log_path FROM agent_runs WHERE id = ?')
+        .get(run.id) as { status: string; log_path: string } | undefined;
+      if (!latest || latest.status !== 'running' || latest.log_path !== run.log_path) return false;
+      if (this.codexRotationReady()) return true;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 1000);
+        timer.unref();
+      });
+    }
+  }
+
   /** The rotation's tried accounts plus the current one, minus any whose quota is back. */
   private codexTried(currentKey: string): string[] {
     for (const id of this.codexAccounts?.recoveredAccounts(this.codexRotationTried) ?? [])
@@ -1593,28 +1658,28 @@ export class AgentSupervisor {
     };
     for (const row of rows) {
       const shown = this.noTurnSinceStart.has(row.id) ? null : this.usageLimitOnScreen(row);
-      if (shown) {
-        this.usageLimits.set(row.id, shown);
-        if (!this.switchingCodexSession.has(row.id) && !this.restarting.has(row.id)) {
-          if (this.switchingCodexSession.size > 0) continue;
-          const choice = switchDecision();
-          if (!choice) continue;
-          const { currentKey, next } = choice;
-          const tail = this.logTail(row.log_path) ?? '';
-          if (next && next.id !== currentKey && emptyCodexPrompt(tail)) {
-            this.codexRotationTried.set(currentKey, Date.now());
-            void this.switchSessionCodexAccount(row.id, next.id, {
-              continuePrompt: true,
-              setGlobal: true,
-              keepRotation: true,
-              automatic: true,
-            }).catch(() => undefined);
-            continue;
-          }
-        }
-      } else {
-        this.usageLimits.delete(row.id);
-      }
+      if (shown) this.usageLimits.set(row.id, shown);
+      else this.usageLimits.delete(row.id);
+    }
+    // Refresh/evaluate once, even without a CLI error. A reported 100% only authorizes a switch
+    // at a safe idle point for every affected process, never while a grace turn is running.
+    const choice = rows.length ? switchDecision() : null;
+    if (
+      !this.waitingCodexRuns.size &&
+      choice?.next &&
+      choice.next.id !== choice.currentKey &&
+      this.codexRotationReady()
+    ) {
+      const trigger = rows.find((row) => this.usageLimits.has(row.id)) ?? rows[0]!;
+      const leaving = choice.currentKey;
+      void this.switchSessionCodexAccount(trigger.id, choice.next.id, {
+        continuePrompt: this.usageLimits.has(trigger.id),
+        setGlobal: true,
+        keepRotation: true,
+        automatic: true,
+      })
+        .then(() => this.codexRotationTried.set(leaving, Date.now()))
+        .catch(() => undefined);
     }
     for (const row of rows) {
       if (this.switchingCodexSession.has(row.id)) continue;
@@ -3001,53 +3066,87 @@ export class AgentSupervisor {
           this.codexAccounts?.autoSwitchEnabled() &&
           this.runHitUsageLimit(row.log_path, codexProfile.home)
         ) {
-          const tried = [...new Set([...(storedCmd.triedCodexAccounts ?? []), codexProfile.id])];
+          this.waitingCodexRuns.add(row.id);
           try {
-            await this.codexAccounts.refreshUsage();
-          } catch {
-            // Selection fails closed unless existing identity-verified readings are still fresh.
-          }
-          if (this.closed) return;
-          // Stop/delete can happen while quota requests are pending; never revive ended work.
-          const latest = this.db
-            .prepare('SELECT status, log_path FROM agent_runs WHERE id = ?')
-            .get(row.id) as { status: string; log_path: string } | undefined;
-          if (!latest || latest.status !== 'running' || latest.log_path !== row.log_path) return;
-          const next =
-            !live.stoppedByUser && this.codexAccounts.autoSwitchEnabled()
-              ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now())
-              : null;
-          if (next && next.id !== codexProfile.id) {
-            this.codexRotationTried.set(codexProfile.id, Date.now());
+            const tried = [...new Set([...(storedCmd.triedCodexAccounts ?? []), codexProfile.id])];
             try {
-              this.setActiveCodexAccount(next.id === 'default' ? null : next.id, {
-                keepRotation: true,
-                activeOnly: true,
+              await this.codexAccounts.refreshUsage();
+            } catch {
+              // Selection fails closed unless existing identity-verified readings are still fresh.
+            }
+            if (this.closed) return;
+            // Stop/delete can happen while quota requests are pending; never revive ended work.
+            const latest = this.db
+              .prepare('SELECT status, log_path FROM agent_runs WHERE id = ?')
+              .get(row.id) as { status: string; log_path: string } | undefined;
+            if (!latest || latest.status !== 'running' || latest.log_path !== row.log_path) return;
+            let next =
+              !live.stoppedByUser && this.codexAccounts.autoSwitchEnabled()
+                ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now())
+                : null;
+            if (next && !this.codexRotationReady()) {
+              log.append(
+                '\n[supervisor] account switch waiting for Codex work and pending input to finish\n',
+              );
+              const ready = await this.waitForCodexRotation(row, codexProfile.id);
+              if (this.closed) return;
+              const still = this.db
+                .prepare('SELECT status, log_path FROM agent_runs WHERE id = ?')
+                .get(row.id) as { status: string; log_path: string } | undefined;
+              if (!still || still.status !== 'running' || still.log_path !== row.log_path) return;
+              if (ready) {
+                await this.codexAccounts.refreshUsage().catch(() => undefined);
+                if (this.closed) return;
+                const refreshed = this.db
+                  .prepare('SELECT status, log_path FROM agent_runs WHERE id = ?')
+                  .get(row.id) as { status: string; log_path: string } | undefined;
+                if (
+                  !refreshed ||
+                  refreshed.status !== 'running' ||
+                  refreshed.log_path !== row.log_path
+                )
+                  return;
+                next =
+                  this.codexAccounts.autoSwitchEnabled() && !live.stoppedByUser
+                    ? this.codexAccounts.nextUnused(codexProfile.id, tried, Date.now())
+                    : null;
+              } else next = null;
+            }
+            if (next && next.id !== codexProfile.id) {
+              this.codexRotationTried.set(codexProfile.id, Date.now());
+              try {
+                this.setActiveCodexAccount(next.id === 'default' ? null : next.id, {
+                  keepRotation: true,
+                  activeOnly: true,
+                  automatic: true,
+                });
+              } catch (error) {
+                const message = `Account rotation cancelled: ${(error as Error).message}`;
+                log.append(`\n[supervisor] ${message}\n`);
+                this.finishRun(row, 'failed', code, message);
+                return;
+              }
+              const nextCmdJson = JSON.stringify({
+                ...storedCmd,
+                codexAccountId: next.id,
+                triedCodexAccounts: tried,
               });
-            } catch (error) {
-              const message = `Account rotation cancelled: ${(error as Error).message}`;
-              log.append(`\n[supervisor] ${message}\n`);
-              this.finishRun(row, 'failed', code, message);
+              this.db
+                .prepare(
+                  `UPDATE agent_runs SET command_json = ?, status = 'queued', attempts = ? WHERE id = ? AND log_path = ?`,
+                )
+                .run(nextCmdJson, Math.max(0, attempts - 1), row.id, row.log_path);
+              log.append(
+                `\n[supervisor] usage limit reached on ${codexProfile.name} — switching to ${next.name} and retrying run\n`,
+              );
+              const updated = this.db
+                .prepare(`SELECT * FROM agent_runs WHERE id = ?`)
+                .get(row.id) as unknown as RunRow | undefined;
+              if (updated) void this.spawnRun(updated, true);
               return;
             }
-            const nextCmdJson = JSON.stringify({
-              ...storedCmd,
-              codexAccountId: next.id,
-              triedCodexAccounts: tried,
-            });
-            this.db
-              .prepare(
-                `UPDATE agent_runs SET command_json = ?, status = 'queued', attempts = ? WHERE id = ? AND log_path = ?`,
-              )
-              .run(nextCmdJson, Math.max(0, attempts - 1), row.id, row.log_path);
-            log.append(
-              `\n[supervisor] usage limit reached on ${codexProfile.name} — switching to ${next.name} and retrying run\n`,
-            );
-            const updated = this.db
-              .prepare(`SELECT * FROM agent_runs WHERE id = ?`)
-              .get(row.id) as unknown as RunRow | undefined;
-            if (updated) void this.spawnRun(updated, true);
-            return;
+          } finally {
+            this.waitingCodexRuns.delete(row.id);
           }
         }
         const changes = before ? diffSince(cwd, before).catch(() => null) : Promise.resolve(null);

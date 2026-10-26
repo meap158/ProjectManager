@@ -76,3 +76,6 @@ data stay on your computer, and it works from a phone too.
 Everything only the owner can do is on the **Owner desk** (`npm run owner:pages`, then open
 `References/owner-pages/index.html`): the Cloudflare setup, and real-phone checks of the CLI, chat,
 Preview, Files menu and Inbox.
+
+PM-305 refines existing Codex rotation: fresh exhaustion, 5-hour/weekly/saved-order ranking,
+and global safe idle checks preserve grace work. Browser and live-account acceptance remain pending.

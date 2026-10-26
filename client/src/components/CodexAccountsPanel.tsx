@@ -333,20 +333,25 @@ export function CodexAccountsPanel({
           <h2>How auto-switch works</h2>
           <ul style={{ paddingLeft: 18, margin: '0 0 8px' }}>
             <li>
-              It switches only once {cliTitle} itself says the usage limit is hit and the session is
-              idle, so a turn still finishing after 100% is never cut off.
+              Fresh usage must confirm that the current account has reached a limit. It waits until
+              all affected sessions are idle with empty prompts, no pending input, and no Codex run
+              still working. A turn still finishing at 100% is allowed to finish.
             </li>
             <li>
-              It picks the account with the most usable quota: the lower of its 5-hour and weekly
-              left, since either one stops it. A tie goes to more weekly left, then to the account
-              higher in the list (Reorder accounts).
+              It picks the account with the most 5-hour quota left. A tie goes to more weekly quota
+              left, then to the account higher in the list (Reorder accounts).
             </li>
             <li>
               It skips accounts with Auto-switch off, any limit at 100%, or usage it couldn&apos;t
-              check in the last minute. An account it left comes back once its limit resets.
+              check in the last minute. Reset-due readings must be checked again. An account it left
+              becomes eligible again only after fresh usage confirms quota has returned.
             </li>
             <li>If no account qualifies, it stays on the current one and waits for the reset.</li>
-            <li>Running sessions move with it and continue; runs retry on the new account.</li>
+            <li>
+              Sessions resume their exact conversations. Only sessions blocked by a limit receive
+              Continue; completed idle work is not prompted again. Ended sessions stay ended. A
+              blocked run waits for active work to finish before retrying.
+            </li>
           </ul>
         </div>
         <div className="dialog-footer">
@@ -384,7 +389,7 @@ export function CodexAccountsPanel({
               <button
                 type="button"
                 className="icon-btn info-btn"
-                title="How auto-switch works"
+                title="When usage confirms exhaustion, wait for active work to finish. Prefer most 5-hour quota, then weekly, then saved order. Click for details."
                 aria-label="How auto-switch works"
                 aria-haspopup="dialog"
                 onClick={() => switchHelpRef.current?.showModal()}

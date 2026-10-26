@@ -145,3 +145,7 @@ anything.
 - **Deviation from the shared standard:** the desk's data is not tracked. This repository is public, and the desk names the owner's own accounts, devices and infrastructure steps, so only the generator, its schema and its tests are in git. QA scorecard and Feature parity pages are not built: they grade offerings based on existing products, and ProjectManager has none.
 - `ROADMAP.md` (tracked, project root) holds the vision, scope boundaries, phases with exit criteria, dependencies and risks. Update it when a phase changes status or the scope changes, and never invent scope the owner has not committed to.
 - Launcher windows carry descriptive titles that name the project and the service: `launch.bat`, `launch.ps1` and `launch.sh` set `ProjectManager - Server`, and `scripts/launch.mjs` adds the port it chose (`ProjectManager - Server :5181`) when stdout is a terminal. Keep the titles, the single obvious launch command and the automatic port fallback working when you change startup.
+
+- PM-305: preserve fresh identity-bound exhaustion, 5-hour/weekly/saved-order ranking and the global
+  idle/input/run guard for Codex rotation. Recheck stop/delete and selection after asynchronous usage
+  reads. Only limit-blocked work receives Continue. See `docs/ACCOUNT-SWITCHER-AUDIT.md`.

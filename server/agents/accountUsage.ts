@@ -22,15 +22,25 @@ export function parseAccountLimits(result: unknown, now = Date.now()): ProviderL
   const windows: UsageWindow[] = [];
   for (const key of ['primary', 'secondary'] as const) {
     const w = (bucket as Record<string, unknown>)[key] as Record<string, unknown> | null;
+    if (w == null) continue;
     if (
       !w ||
       typeof w.usedPercent !== 'number' ||
       !Number.isFinite(w.usedPercent) ||
+      w.usedPercent < 0 ||
+      w.usedPercent > 100 ||
       typeof w.windowDurationMins !== 'number' ||
       !Number.isFinite(w.windowDurationMins) ||
       w.windowDurationMins <= 0
     )
-      continue;
+      return null;
+    if (
+      w.resetsAt != null &&
+      (typeof w.resetsAt !== 'number' ||
+        !Number.isFinite(w.resetsAt) ||
+        !Number.isFinite(new Date(w.resetsAt * 1000).getTime()))
+    )
+      return null;
     const reset =
       typeof w.resetsAt === 'number' && Number.isFinite(w.resetsAt)
         ? new Date(w.resetsAt * 1000)
@@ -38,7 +48,7 @@ export function parseAccountLimits(result: unknown, now = Date.now()): ProviderL
     windows.push({
       label: windowLabel(w.windowDurationMins),
       windowMinutes: w.windowDurationMins,
-      usedPercent: Math.max(0, Math.min(100, w.usedPercent)),
+      usedPercent: w.usedPercent,
       resetsAt: reset && Number.isFinite(reset.getTime()) ? reset.toISOString() : null,
     });
   }

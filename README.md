@@ -466,3 +466,7 @@ stand, local only).
 </div>
 
 <!-- Topics: ai-coding-agents, claude-code, codex, kanban, project-management, local-first, terminal, mcp, developer-tools -->
+
+Codex automatic account switching waits for safe idle prompts so grace work can finish. Accounts
+are ranked by remaining 5-hour quota, weekly quota, then saved order, with fresh positive quota
+required in every reported window. See [the account audit](docs/ACCOUNT-SWITCHER-AUDIT.md).

@@ -36,25 +36,30 @@ export function verifiedRemainingQuota(
 }
 
 /**
- * How auto-switch orders accounts that still have quota: most usable quota first (the lowest
- * remaining window, since an account stops at whichever window runs out), then most weekly
- * quota left, then the saved list order (the caller's order; the sort is stable). Compared in
- * whole percents, as Settings shows them, so readings that look equal tie. Null = unverified.
+ * Eligibility requires positive quota in every window. Preference is 5-hour remaining first,
+ * then weekly remaining, then saved order (stable sort). A service that reports a different
+ * set of windows falls back to its verified limiting window rather than inventing quota.
+ * Compare whole percents, as Settings shows them, so readings that look equal tie. Null = unverified.
  */
 export function switchQuota(
   reading: Parameters<typeof verifiedRemainingQuota>[0],
   now = Date.now(),
-): { usable: number; weekly: number } | null {
+): { usable: number; fiveHour: number; weekly: number } | null {
   const usable = verifiedRemainingQuota(reading, now);
   if (usable === null || usable <= 0) return null;
   const windows = reading!.limits!.windows;
-  const longest = windows.reduce((a, b) => (b.windowMinutes > a.windowMinutes ? b : a));
-  return { usable: Math.round(usable), weekly: Math.round(100 - longest.usedPercent) };
+  const fiveHour = windows.find((w) => w.windowMinutes === 300);
+  const weekly = windows.find((w) => w.windowMinutes === 10080);
+  return {
+    usable: Math.round(usable),
+    fiveHour: Math.round(fiveHour ? 100 - fiveHour.usedPercent : usable),
+    weekly: Math.round(weekly ? 100 - weekly.usedPercent : usable),
+  };
 }
 
 export function bySwitchQuota(
-  a: { usable: number; weekly: number },
-  b: { usable: number; weekly: number },
+  a: { fiveHour: number; weekly: number },
+  b: { fiveHour: number; weekly: number },
 ): number {
-  return b.usable - a.usable || b.weekly - a.weekly;
+  return b.fiveHour - a.fiveHour || b.weekly - a.weekly;
 }

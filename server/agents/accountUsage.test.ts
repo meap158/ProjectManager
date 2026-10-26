@@ -41,6 +41,38 @@ it('parses current account windows and never turns missing or malformed data int
   };
   expect(parseAccountLimits(response, now)?.windows.map((w) => w.usedPercent)).toEqual([25, 70]);
   expect(parseAccountLimits(response, now)?.asOf).toBe('2026-10-18T00:00:00.000Z');
+  for (const resetsAt of ['tomorrow', NaN, Infinity, 1e100]) {
+    expect(
+      parseAccountLimits(
+        { rateLimits: { primary: { usedPercent: 25, windowDurationMins: 300, resetsAt } } },
+        now,
+      ),
+    ).toBeNull();
+  }
+  for (const usedPercent of [-1, 101, NaN, Infinity]) {
+    expect(
+      parseAccountLimits(
+        {
+          rateLimits: {
+            primary: { usedPercent, windowDurationMins: 300 },
+            secondary: response.rateLimitsByLimitId.codex.secondary,
+          },
+        },
+        now,
+      ),
+    ).toBeNull();
+  }
+  expect(
+    parseAccountLimits(
+      {
+        rateLimits: {
+          primary: response.rateLimitsByLimitId.codex.primary,
+          secondary: { usedPercent: 100 },
+        },
+      },
+      now,
+    ),
+  ).toBeNull();
 });
 
 it('uses an isolated profile for only initialize/account reads, then terminates the helper', async () => {

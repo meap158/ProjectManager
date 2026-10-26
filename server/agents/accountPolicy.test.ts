@@ -58,17 +58,17 @@ it('rejects stale, future, unavailable, malformed and reset-due readings', () =>
   expect(usageIsFresh('broken', now)).toBe(false);
 });
 
-it('orders switch candidates by usable quota, then weekly, in whole percents', () => {
+it('orders eligible candidates by 5-hour quota, then weekly, then stable saved order', () => {
   const quota = (fiveHour: number, weekly: number) => {
     const r = reading();
     r.limits.windows[0]!.usedPercent = 100 - fiveHour;
     r.limits.windows[1]!.usedPercent = 100 - weekly;
     return switchQuota(r, now);
   };
-  // Usable is the lowest window: a full 5-hour window with 10% weekly can only do 10%.
-  expect(quota(90, 10)).toEqual({ usable: 10, weekly: 10 });
-  expect(bySwitchQuota(quota(70, 80)!, quota(90, 10)!)).toBeLessThan(0);
-  // Same usable quota: more weekly left wins.
+  // Both windows must have quota, but preference follows the owner's 5-hour-first rule.
+  expect(quota(90, 10)).toEqual({ usable: 10, fiveHour: 90, weekly: 10 });
+  expect(bySwitchQuota(quota(90, 10)!, quota(70, 80)!)).toBeLessThan(0);
+  // Same 5-hour quota: more weekly left wins.
   expect(bySwitchQuota(quota(40, 90)!, quota(40, 60)!)).toBeLessThan(0);
   // Readings that show the same percents tie, leaving the saved list order.
   expect(bySwitchQuota(quota(40.2, 70.4)!, quota(39.8, 69.6)!)).toBe(0);
@@ -76,4 +76,7 @@ it('orders switch candidates by usable quota, then weekly, in whole percents', (
   expect(quota(100, 0)).toBeNull();
   expect(quota(0, 100)).toBeNull();
   expect(switchQuota(null, now)).toBeNull();
+  const weeklyOnly = reading();
+  weeklyOnly.limits.windows.shift();
+  expect(switchQuota(weeklyOnly, now)).toEqual({ usable: 25, fiveHour: 25, weekly: 25 });
 });

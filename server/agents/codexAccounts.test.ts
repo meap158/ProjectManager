@@ -868,7 +868,7 @@ describe('CodexAccounts (PM-164)', () => {
     expect(reader).toHaveBeenCalledWith(defaultCodexHome);
   });
 
-  it('requires verified exhaustion and ranks fresh candidates by their limiting window', async () => {
+  it('requires verified exhaustion and ranks fresh candidates by 5-hour quota first', async () => {
     writeFileSync(
       path.join(defaultCodexHome, 'auth.json'),
       JSON.stringify({ OPENAI_API_KEY: 'current' }),
@@ -906,10 +906,10 @@ describe('CodexAccounts (PM-164)', () => {
     await read(99);
     expect(accounts.nextUnused('default', ['default'], now)).toBeNull();
     await read(100);
-    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(b.id);
-    accounts.setAutoSwitchEligible(b.id, false);
     expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(a.id);
-    expect(accounts.nextUnused('default', ['default', a.id], now)).toBeNull();
+    accounts.setAutoSwitchEligible(a.id, false);
+    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(b.id);
+    expect(accounts.nextUnused('default', ['default', b.id], now)).toBeNull();
     await read(100, 'unavailable');
     expect(accounts.nextUnused('default', ['default'], now)).toBeNull();
     await read(100, 'fresh', 120000);
@@ -958,6 +958,8 @@ describe('CodexAccounts (PM-164)', () => {
         };
       });
     await read({ [a!.id]: [40, 60], [b!.id]: [40, 90], [c!.id]: [100, 5] });
+    expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(c!.id);
+    await read({ [a!.id]: [40, 60], [b!.id]: [40, 90], [c!.id]: [40, 5] });
     expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(b!.id);
     await read({ [a!.id]: [40, 60], [b!.id]: [40.3, 59.8], [c!.id]: [0, 100] });
     expect(accounts.nextUnused('default', ['default'], now)?.id).toBe(a!.id);

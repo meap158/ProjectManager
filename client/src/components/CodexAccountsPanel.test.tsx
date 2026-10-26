@@ -140,7 +140,7 @@ describe('CodexAccountsPanel (PM-164)', () => {
     render(<CodexAccountsPanel onError={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'How auto-switch works' }));
     expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalled();
-    expect(screen.getByText(/most usable quota/)).toBeDefined();
+    expect(screen.getByText(/most 5-hour quota left/)).toBeDefined();
     expect(screen.getByText(/stays on the current one/)).toBeDefined();
   });
   it('renders default and saved Codex accounts and switches active account', async () => {

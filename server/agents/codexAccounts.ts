@@ -592,7 +592,7 @@ export class CodexAccounts {
 
   /**
    * Requires verified current-account exhaustion, then picks the untried account with the most
-   * quota (`bySwitchQuota`: usable, then weekly, then list order). Unknown, stale or reset-due
+   * quota (`bySwitchQuota`: 5-hour, then weekly, then list order). Unknown, stale or reset-due
    * readings never authorize a switch, and with no candidate left it stays put.
    */
   nextUnused(
@@ -628,7 +628,7 @@ export class CodexAccounts {
           candidate,
         ): candidate is {
           account: (typeof accounts)[number];
-          quota: { usable: number; weekly: number };
+          quota: NonNullable<ReturnType<typeof switchQuota>>;
         } => candidate.quota !== null,
       )
       .sort((a, b) => bySwitchQuota(a.quota, b.quota));
