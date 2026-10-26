@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type MouseEvent,
   type ReactNode,
 } from 'react';
 import { ProviderIcon } from '../components/icons';
@@ -1415,6 +1416,33 @@ function WorkList({
     menu.style.setProperty('--bulk-right', `${Math.max(8, window.innerWidth - rect.right)}px`);
   }, []);
 
+  // Phones: picking an action closes the menu (desktop keeps it open, as before). A dialog opened
+  // from it (batch CLI, message, delete) lives inside the menu, and hiding the menu would hide the
+  // dialog too, so the menu then closes together with that dialog.
+  const closeBulkMenuOnPhone = (event: MouseEvent<HTMLDivElement>) => {
+    if (!window.matchMedia('(max-width: 768px)').matches) return;
+    const button = (event.target as HTMLElement).closest('button');
+    if (!button || button.disabled) return;
+    // Some dialogs open from an effect after the click (Delete's confirmation): give them a beat.
+    setTimeout(() => {
+      const menu = bulkMenu.current;
+      if (!menu?.matches(':popover-open') || menu.querySelector('dialog[open]')) return;
+      menu.hidePopover();
+    }, 150);
+  };
+  useEffect(() => {
+    const menu = bulkMenu.current;
+    if (!menu) return;
+    const onDialogClose = (event: Event) => {
+      if (!(event.target instanceof HTMLDialogElement)) return;
+      if (!window.matchMedia('(max-width: 768px)').matches) return;
+      if (menu.matches(':popover-open')) menu.hidePopover();
+    };
+    // "close" doesn't bubble: listen while it travels down.
+    menu.addEventListener('close', onDialogClose, true);
+    return () => menu.removeEventListener('close', onDialogClose, true);
+  });
+
   useEffect(() => {
     const onReposition = () => {
       if (bulkMenu.current?.matches?.(':popover-open')) {
@@ -1591,6 +1619,7 @@ function WorkList({
               popover="auto"
               className="work-bulk-menu"
               onToggle={positionBulkMenu}
+              onClick={closeBulkMenuOnPhone}
             >
               <span className="faint">
                 {visibleSessions.length} sessions matching current filters
