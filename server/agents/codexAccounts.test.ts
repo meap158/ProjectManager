@@ -602,6 +602,52 @@ describe('CodexAccounts (PM-164)', () => {
     }
   });
 
+  it('one running session with no findable conversation does not block the account switch', async () => {
+    const supervisor = new AgentSupervisor(db, path.join(tmpDir, 'logs'), { dataDir: tmpDir });
+    try {
+      await supervisor.ready;
+      writeFileSync(path.join(defaultCodexHome, 'auth.json'), '{"OPENAI_API_KEY":"sk-default"}\n');
+      const accountId = supervisor.importCodexAccount(
+        'Genzy',
+        JSON.stringify({ OPENAI_API_KEY: 'sk-genzy' }),
+      ).accounts[0]!.id;
+      const projectId = insertProject(db, 'lost', path.join(tmpDir, 'proj'));
+      // Begun under a saved login: its rollout is in no home the switch looks in.
+      const sessionId = Number(
+        db
+          .prepare(
+            `INSERT INTO agent_sessions
+               (project_id, name, provider_id, command_json, resume_json, cwd, status,
+                desired_state, supervise, created_at, started_at, log_path)
+             VALUES (?, 'Codex', 'codex', ?, ?, ?, 'running', 'running', 0, ?, ?, ?)`,
+          )
+          .run(
+            projectId,
+            JSON.stringify({
+              command: ['codex'],
+              env: { CODEX_HOME: defaultCodexHome },
+              codexAccountId: 'default',
+            }),
+            JSON.stringify(['codex', 'resume', '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b19']),
+            path.join(tmpDir, 'proj'),
+            '2026-10-18T00:00:00.000Z',
+            '2026-10-18T00:00:00.000Z',
+            path.join(tmpDir, 'logs', 'lost.log'),
+          ).lastInsertRowid,
+      );
+      expect(supervisor.setActiveCodexAccount(accountId).activeProfileId).toBe(accountId);
+      expect(readFileSync(path.join(defaultCodexHome, 'auth.json'), 'utf8')).toContain('sk-genzy');
+      // Left exactly as it was, so a restart cannot lose its conversation.
+      const row = db
+        .prepare('SELECT command_json, status FROM agent_sessions WHERE id = ?')
+        .get(sessionId) as { command_json: string; status: string };
+      expect(row.command_json).toContain('"codexAccountId":"default"');
+      expect(row.status).toBe('running');
+    } finally {
+      await supervisor.shutdown();
+    }
+  });
+
   it('applies the selected Codex account to every Codex session, not just the one switched', async () => {
     const supervisor = new AgentSupervisor(db, path.join(tmpDir, 'logs'), { dataDir: tmpDir });
     try {

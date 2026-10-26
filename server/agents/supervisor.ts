@@ -552,18 +552,44 @@ export class AgentSupervisor {
         409,
         'Automatic switch is waiting for Codex work and pending input to finish.',
       );
-    const running = this.db
-      .prepare("SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'")
-      .all() as unknown as SessionRow[];
-    for (const row of running) this.pinCodexForRestart(row);
+    const unpinned = this.pinRunningCodexSessions();
     const state = this.withCodexAccounts((accounts) => accounts.setActive(id));
     // A choice in Settings starts a fresh rotation. Auto-switch keeps the accounts it already tried.
     if (!options.keepRotation) this.codexRotationTried.clear();
     this.applyCodexAccountToSessions(id === null || id === 'default' ? 'default' : id, {
       activeOnly: options.activeOnly,
       automatic: options.automatic,
+      skipIds: unpinned,
     });
     return state;
+  }
+
+  /**
+   * Pins every running Codex session to its exact conversation before a login change restarts it.
+   * A session whose conversation file cannot be found is set aside, not allowed to cancel the
+   * switch for all the others: it keeps running as it is (a restart would lose its conversation)
+   * and says so in its own log. Returns the ids set aside.
+   */
+  private pinRunningCodexSessions(): Set<number> {
+    const unpinned = new Set<number>();
+    const running = this.db
+      .prepare("SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'")
+      .all() as unknown as SessionRow[];
+    for (const row of running) {
+      try {
+        this.pinCodexForRestart(row);
+      } catch (error) {
+        if (!(error instanceof AgentError)) throw error;
+        unpinned.add(row.id);
+        console.warn(
+          `[agents] codex session ${row.id} kept on its current login: ${error.message}`,
+        );
+        this.outputFor(`session:${row.id}`, row.log_path).append(
+          '\r\n[supervisor] the Codex account changed, but this session was left as it is: its saved conversation could not be found, so a restart would lose it\r\n',
+        );
+      }
+    }
+    return unpinned;
   }
 
   /**
@@ -574,7 +600,12 @@ export class AgentSupervisor {
    */
   private applyCodexAccountToSessions(
     targetKey: string,
-    options: { exceptId?: number; activeOnly?: boolean; automatic?: boolean } = {},
+    options: {
+      exceptId?: number;
+      activeOnly?: boolean;
+      automatic?: boolean;
+      skipIds?: ReadonlySet<number>;
+    } = {},
   ): void {
     const profileId = targetKey === 'default' ? null : targetKey;
     const rows = this.db
@@ -582,6 +613,7 @@ export class AgentSupervisor {
       .all() as unknown as SessionRow[];
     for (const row of rows) {
       if (row.id === options.exceptId || this.switchingCodexSession.has(row.id)) continue;
+      if (options.skipIds?.has(row.id)) continue;
       if (options.activeOnly && (row.status !== 'running' || row.desired_state !== 'running'))
         continue;
       const storedKey = this.storedCodexProfile(row)?.id ?? null;
@@ -707,10 +739,7 @@ export class AgentSupervisor {
       );
     }
     if (options.setGlobal !== false) {
-      const running = this.db
-        .prepare("SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'")
-        .all() as unknown as SessionRow[];
-      for (const session of running) this.pinCodexForRestart(session);
+      const unpinned = this.pinRunningCodexSessions();
       this.withCodexAccounts((accounts) =>
         accounts.setActive(target.id === 'default' ? null : target.id),
       );
@@ -719,6 +748,7 @@ export class AgentSupervisor {
         exceptId: id,
         activeOnly: options.automatic,
         automatic: options.automatic,
+        skipIds: unpinned,
       });
     }
 
