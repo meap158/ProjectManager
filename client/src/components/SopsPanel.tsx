@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { Link } from 'react-router';
 import type { SopAuditor, SopInfo, SopReport, SopResult } from '../../../shared/types';
 import { api } from '../api';
+import { useViewPreference } from '../useViewPreference';
 import { SopAuditSend } from './SopAuditSend';
 import { SopsEditor } from './SopsEditor';
 import { NewCardDialog } from './NewCardDialog';
@@ -57,7 +58,12 @@ function StateIcon({ state }: { state: SopResult['state'] }) {
 export function SopsPanel({ onError }: { onError: (message: string | null) => void }) {
   const [report, setReport] = useState<SopReport | null>(null);
   const [checking, setChecking] = useState(false);
-  const [onlyGaps, setOnlyGaps] = useState(false);
+  // Remembered in this browser (PM-334), like the app's other view preferences.
+  const [onlyGaps, setOnlyGaps] = useViewPreference(
+    'pm.sops.onlyGaps',
+    false,
+    (v): v is boolean => typeof v === 'boolean',
+  );
   const [selected, setSelected] = useState<{ projectId: number; sopId: string } | null>(null);
   const [reason, setReason] = useState('');
   const [waiving, setWaiving] = useState(false);
