@@ -763,36 +763,10 @@ export class CodexAccounts {
    */
   carryConversation(fromHome: string, toHome: string, id: string): boolean {
     // Same folder (a login change in ~/.codex): resumable when the conversation is there.
-    if (normalPath(fromHome) === normalPath(toHome))
-      return this.findRollout(fromHome, id) !== null || this.adoptProfileRollout(id, toHome);
+    if (normalPath(fromHome) === normalPath(toHome)) return this.findRollout(fromHome, id) !== null;
     const source = this.findRollout(fromHome, id);
     if (!source) return false;
     const carried = this.carryRollout(source, fromHome, toHome);
-    this.saveCopyState();
-    return carried;
-  }
-
-  /**
-   * A conversation begun under a saved login before every login shared ~/.codex (PM-243) has its
-   * rollout only in that profile's folder, so a switch could not identify it and was cancelled.
-   * Brings the largest copy (the most complete one) into `toHome`; false when no profile has it.
-   */
-  private adoptProfileRollout(id: string, toHome: string): boolean {
-    let best: { file: string; home: string; size: number } | null = null;
-    for (const account of this.readRegistry().accounts) {
-      const home = this.home(account.id);
-      if (normalPath(home) === normalPath(toHome)) continue;
-      const file = this.findRollout(home, id);
-      if (!file) continue;
-      try {
-        const size = statSync(file).size;
-        if (!best || size > best.size) best = { file, home, size };
-      } catch {
-        /* Vanished while scanning: ignore this copy. */
-      }
-    }
-    if (!best) return false;
-    const carried = this.carryRollout(best.file, best.home, toHome);
     this.saveCopyState();
     return carried;
   }
