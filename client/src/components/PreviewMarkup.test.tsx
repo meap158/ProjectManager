@@ -1,0 +1,90 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { scaleShapes, type Shape } from './Markup';
+import { PreviewMarkup } from './PreviewMarkup';
+import { captureSize, pageContext } from './PreviewPickDialog';
+
+beforeAll(() => {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  HTMLCanvasElement.prototype.getContext = (() => null) as never;
+});
+afterEach(cleanup);
+
+const page = {
+  url: 'http://p3000.localhost:5180/reports',
+  title: 'OmniProbe',
+  viewport: { width: 1000, height: 700, dark: false },
+  scroll: { x: 0, y: 420, inner: null },
+};
+
+describe('marking up the live page (PM-311)', () => {
+  it('scales marks from page pixels into the screenshot, and words a marks-only message', () => {
+    const marks: Shape[] = [
+      { kind: 'box', color: 'red', from: { x: 10, y: 20 }, to: { x: 30, y: 40 } },
+      { kind: 'text', color: 'red', at: { x: 5, y: 5 }, text: 'here' },
+    ];
+    expect(scaleShapes(marks, 2)[0]).toMatchObject({
+      from: { x: 20, y: 40 },
+      to: { x: 60, y: 80 },
+    });
+    expect(scaleShapes(marks, 1)).toBe(marks);
+    // The capture renders at least 320 wide, so a narrow page scales up into it.
+    expect(captureSize({ ...page, viewport: { width: 300, height: 600, dark: false } })).toEqual({
+      width: 320,
+      height: 600,
+    });
+    expect(pageContext(page, 2)).toBe(
+      'Page: OmniProbe · http://localhost:3000/reports\nViewport: 1000×700, scrolled to 0,420\nThe screenshot shows my 2 marks on the page.',
+    );
+  });
+
+  it('starts the page picker, shows the picked element, and adds it with the page as it is now', async () => {
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    const sent: unknown[] = [];
+    vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((m: unknown) => {
+      sent.push(m);
+    });
+    const onAdd = vi.fn();
+    render(
+      <PreviewMarkup frame={() => frame} onAdd={onAdd} onClose={() => {}} onError={() => {}} />,
+    );
+    expect(sent).toContainEqual({ pmPicker: true, type: 'start' });
+    const fromPage = (data: object) =>
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: { pmPicker: true, ...data },
+            source: frame.contentWindow,
+          }),
+        );
+      });
+    // Only the shown frame counts.
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', { data: { pmPicker: true, type: 'picked' } }),
+      );
+    });
+    expect(screen.getByRole('button', { name: 'Add to chat' })).toHaveProperty('disabled', true);
+    await fromPage({
+      type: 'picked',
+      element: { ...page, tag: 'h2', selector: 'main > h2', rect: {}, styles: {} },
+    });
+    expect(screen.getByText('<h2>')).toBeTruthy();
+    // Drawing hands the pointer back from the page.
+    fireEvent.click(screen.getByRole('button', { name: 'Draw' }));
+    expect(sent).toContainEqual({ pmPicker: true, type: 'pause' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add to chat' }));
+    expect(sent).toContainEqual({ pmPicker: true, type: 'state' });
+    await fromPage({ type: 'state', page: { ...page, scroll: { x: 0, y: 900, inner: null } } });
+    await vi.waitFor(() => expect(onAdd).toHaveBeenCalled());
+    const added = onAdd.mock.calls[0]![0];
+    expect(added.page.scroll.y).toBe(900);
+    expect(added.element.selector).toBe('main > h2');
+    expect(added.marks).toEqual([]);
+  });
+});

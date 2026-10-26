@@ -1,62 +1,18 @@
-import { useEffect, useRef, useState, type MutableRefObject, type PointerEvent } from 'react';
+import { useEffect, useState, type MutableRefObject } from 'react';
+import {
+  MARK_COLORS,
+  MarkupLayer,
+  MarkupToolbar,
+  paint,
+  type MarkupTool,
+  type Shape,
+} from './Markup';
 
-// The element picker's screenshot, with annotations (PM-311): the picked element boxed, plus a box,
-// pen and text tool in a few colours, and undo. Shapes are kept in the image's own pixels, so the
-// exported PNG matches what was drawn however large the dialog shows it.
+// The element picker's screenshot, with annotations (PM-311): the picked element boxed and any
+// marks drawn on the live page, plus the same tools to add more. Shapes are kept in the image's own
+// pixels, so the exported PNG matches what was drawn however large the dialog shows it.
 
-type Point = { x: number; y: number };
-export type Shape =
-  | { kind: 'box'; color: string; from: Point; to: Point }
-  | { kind: 'pen'; color: string; points: Point[] }
-  | { kind: 'text'; color: string; at: Point; text: string };
-type Tool = 'box' | 'pen' | 'text';
-
-const COLORS = ['#ff4d4f', '#ffb020', '#4c8dff', '#2ecc71'] as const;
-const COLOR_NAMES: Record<string, string> = {
-  '#ff4d4f': 'Red',
-  '#ffb020': 'Amber',
-  '#4c8dff': 'Blue',
-  '#2ecc71': 'Green',
-};
-
-/** Draws the image and the shapes at the image's own size (for the screen and for export). */
-export function paint(
-  ctx: CanvasRenderingContext2D,
-  image: CanvasImageSource,
-  shapes: Shape[],
-  w: number,
-  h: number,
-) {
-  ctx.clearRect(0, 0, w, h);
-  ctx.drawImage(image, 0, 0, w, h);
-  const line = Math.max(2, Math.round(w / 400));
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  for (const s of shapes) {
-    ctx.strokeStyle = s.color;
-    ctx.fillStyle = s.color;
-    ctx.lineWidth = line;
-    if (s.kind === 'box') {
-      ctx.strokeRect(
-        Math.min(s.from.x, s.to.x),
-        Math.min(s.from.y, s.to.y),
-        Math.abs(s.to.x - s.from.x),
-        Math.abs(s.to.y - s.from.y),
-      );
-    } else if (s.kind === 'pen') {
-      ctx.beginPath();
-      s.points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-      ctx.stroke();
-    } else {
-      const size = Math.max(14, Math.round(w / 55));
-      ctx.font = `600 ${size}px system-ui, sans-serif`;
-      ctx.lineWidth = Math.max(3, size / 5);
-      ctx.strokeStyle = 'rgba(0,0,0,.65)';
-      ctx.strokeText(s.text, s.at.x, s.at.y);
-      ctx.fillText(s.text, s.at.x, s.at.y);
-    }
-  }
-}
+export type { Shape } from './Markup';
 
 export function AnnotatedShot({
   src,
@@ -64,35 +20,21 @@ export function AnnotatedShot({
   exportRef,
 }: {
   src: string;
-  /** Drawn first: the picked element's box. */
+  /** Drawn first: the picked element's box and the live page's marks, in image pixels. */
   initial: Shape[];
   /** Filled with a function returning the annotated image as base64 PNG. */
   exportRef: MutableRefObject<(() => string) | null>;
 }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [shapes, setShapes] = useState<Shape[]>(initial);
-  const [tool, setTool] = useState<Tool>('pen');
-  const [color, setColor] = useState<string>(COLORS[0]);
-  const [draft, setDraft] = useState<Shape | null>(null);
-  const [typing, setTyping] = useState<{ at: Point; screen: Point } | null>(null);
-  const [text, setText] = useState('');
+  const [tool, setTool] = useState<MarkupTool>('pen');
+  const [color, setColor] = useState<string>(MARK_COLORS[0]);
 
   useEffect(() => {
     const img = new Image();
     img.onload = () => setImage(img);
     img.src = src;
   }, [src]);
-
-  const all = draft ? [...shapes, draft] : shapes;
-  useEffect(() => {
-    const c = canvas.current;
-    if (!c || !image) return;
-    c.width = image.naturalWidth;
-    c.height = image.naturalHeight;
-    const ctx = c.getContext('2d');
-    if (ctx) paint(ctx, image, all, c.width, c.height);
-  });
 
   useEffect(() => {
     exportRef.current = () => {
@@ -107,181 +49,32 @@ export function AnnotatedShot({
     };
   });
 
-  const toImage = (e: PointerEvent<HTMLCanvasElement>): Point => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const c = e.currentTarget;
-    return {
-      x: Math.round(((e.clientX - r.left) / r.width) * c.width),
-      y: Math.round(((e.clientY - r.top) / r.height) * c.height),
-    };
-  };
-
   return (
-    <div className="shot">
-      <div className="shot-stage">
-        {!image && <div className="skeleton shot-skeleton" />}
-        <canvas
-          ref={canvas}
+    <div className={`shot${image ? ' is-ready' : ''}`}>
+      {image && (
+        <MarkupLayer
+          width={image.naturalWidth}
+          height={image.naturalHeight}
+          image={image}
+          shapes={shapes}
+          onShapes={setShapes}
+          tool={tool}
+          color={color}
           className="shot-canvas"
-          hidden={!image}
-          aria-label="Screenshot of the page with your marks"
-          onPointerDown={(e) => {
-            const p = toImage(e);
-            if (tool === 'text') {
-              const r = e.currentTarget.getBoundingClientRect();
-              setTyping({ at: p, screen: { x: e.clientX - r.left, y: e.clientY - r.top } });
-              setText('');
-              return;
-            }
-            e.currentTarget.setPointerCapture(e.pointerId);
-            setDraft(
-              tool === 'box'
-                ? { kind: 'box', color, from: p, to: p }
-                : { kind: 'pen', color, points: [p] },
-            );
-          }}
-          onPointerMove={(e) => {
-            if (!draft) return;
-            const p = toImage(e);
-            setDraft(
-              draft.kind === 'box'
-                ? { ...draft, to: p }
-                : draft.kind === 'pen'
-                  ? { ...draft, points: [...draft.points, p] }
-                  : draft,
-            );
-          }}
-          onPointerUp={() => {
-            if (!draft) return;
-            const tiny =
-              draft.kind === 'box' &&
-              Math.abs(draft.to.x - draft.from.x) < 4 &&
-              Math.abs(draft.to.y - draft.from.y) < 4;
-            if (!tiny) setShapes((s) => [...s, draft]);
-            setDraft(null);
-          }}
+          label="Screenshot of the page with your marks"
         />
-        {typing && (
-          <input
-            className="input shot-text"
-            style={{ left: typing.screen.x, top: typing.screen.y }}
-            value={text}
-            autoFocus
-            maxLength={80}
-            placeholder="Type, then Enter"
-            aria-label="Text to add"
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                if (text.trim())
-                  setShapes((s) => [
-                    ...s,
-                    { kind: 'text', color, at: typing.at, text: text.trim() },
-                  ]);
-                setTyping(null);
-              } else if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                setTyping(null);
-              }
-            }}
-            onBlur={() => setTyping(null)}
-          />
-        )}
-        {image && (
-          <div className="shot-tools" role="toolbar" aria-label="Mark up the screenshot">
-            {(
-              [
-                ['pen', 'Draw', PenIcon],
-                ['box', 'Box', BoxIcon],
-                ['text', 'Text', TextIcon],
-              ] as const
-            ).map(([t, label, Icon]) => (
-              <button
-                key={t}
-                type="button"
-                className="shot-tool"
-                aria-pressed={tool === t}
-                aria-label={label}
-                title={label}
-                onClick={() => setTool(t)}
-              >
-                <Icon />
-              </button>
-            ))}
-            <span className="shot-sep" aria-hidden="true" />
-            <span className="shot-colors" role="radiogroup" aria-label="Colour">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  role="radio"
-                  aria-checked={color === c}
-                  aria-label={COLOR_NAMES[c]}
-                  title={COLOR_NAMES[c]}
-                  className="shot-color"
-                  onClick={() => setColor(c)}
-                >
-                  <span style={{ background: c }} />
-                </button>
-              ))}
-            </span>
-            <span className="shot-sep" aria-hidden="true" />
-            <button
-              type="button"
-              className="shot-tool"
-              aria-label="Undo"
-              title="Undo"
-              disabled={shapes.length === 0}
-              onClick={() => setShapes((s) => s.slice(0, -1))}
-            >
-              <UndoIcon />
-            </button>
-          </div>
-        )}
-      </div>
+      )}
+      {image && (
+        <MarkupToolbar
+          tool={tool}
+          onTool={setTool}
+          color={color}
+          onColor={setColor}
+          canUndo={shapes.length > 0}
+          onUndo={() => setShapes((s) => s.slice(0, -1))}
+          label="Mark up the screenshot"
+        />
+      )}
     </div>
-  );
-}
-
-const icon = {
-  width: 15,
-  height: 15,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 2,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round',
-  'aria-hidden': true,
-} as const;
-function PenIcon() {
-  return (
-    <svg {...icon}>
-      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-    </svg>
-  );
-}
-function BoxIcon() {
-  return (
-    <svg {...icon}>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-    </svg>
-  );
-}
-function TextIcon() {
-  return (
-    <svg {...icon}>
-      <path d="M4 7V4h16v3M9 20h6M12 4v16" />
-    </svg>
-  );
-}
-function UndoIcon() {
-  return (
-    <svg {...icon}>
-      <path d="M9 14 4 9l5-5" />
-      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
-    </svg>
   );
 }

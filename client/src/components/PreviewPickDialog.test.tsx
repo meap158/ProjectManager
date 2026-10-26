@@ -80,7 +80,7 @@ describe('the picked element (PM-311)', () => {
     );
     expect(appUrl('https://example.com/')).toBe('https://example.com/');
     const text = pickedContext(parsePicked(raw)!);
-    expect(text).toContain('Page: OmniProbe — http://localhost:3000/reports?x=1');
+    expect(text).toContain('Page: OmniProbe · http://localhost:3000/reports?x=1');
     expect(text).toContain('React component: SectionTitle (inside AtlasPage)');
     expect(text).toContain('Accessibility: heading, "Largest"');
   });
@@ -103,7 +103,9 @@ describe('the picked element (PM-311)', () => {
     vi.mocked(api.listAllSessions).mockResolvedValue([session(3, 7, { name: 'Builder' })]);
     render(
       <PreviewPickDialog
+        page={parsePicked(raw)!}
         element={parsePicked(raw)!}
+        marks={[]}
         projectId={7}
         projectNames={new Map([[7, 'OmniProbe']])}
         onClose={() => {}}
@@ -122,7 +124,7 @@ describe('the picked element (PM-311)', () => {
     expect(paste!.startsWith('\x1b[200~Make it smaller on phones\n\nAbout this element')).toBe(
       true,
     );
-    expect(paste).toContain('Page: OmniProbe — http://localhost:3000/reports?x=1');
+    expect(paste).toContain('Page: OmniProbe · http://localhost:3000/reports?x=1');
     expect(paste!.endsWith('\x1b[201~')).toBe(true);
     expect(enter).toBe('\r');
     expect(await screen.findByText('Sent to Builder.')).toBeTruthy();

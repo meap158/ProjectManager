@@ -24,7 +24,8 @@ import {
   MoreVerticalIcon,
 } from './icons';
 import { LoadingMark } from './LoadingMark';
-import { PreviewPickDialog, parsePicked, type PickedElement } from './PreviewPickDialog';
+import { PreviewPickDialog } from './PreviewPickDialog';
+import { PreviewMarkup, type Markup } from './PreviewMarkup';
 import { PreviewTabStrip, type StripTab, type TabCommand } from './PreviewTabStrip';
 import {
   MAX_TABS,
@@ -551,45 +552,29 @@ export function PreviewWorkspace() {
 
   const frame = target ? previewFrame(target) : null;
 
-  // Element picker (PM-311): the page's injected picker reports one element, which the dialog
-  // sends to a session. Messages count only from the shown tab's frame and only while picking.
-  // A pick belongs to the tab and page it began on: switching either ends it.
+  // Element picker and markup (PM-311): while on, a toolbar floats over the page (PreviewMarkup):
+  // pick an element with the page's injected picker, draw marks over the page, then Add to chat
+  // opens the dialog that sends them to a session. A markup belongs to the tab and page it began
+  // on: switching either ends it.
   const pickKey = `${active.id}|${target?.port}|${target?.path}`;
   const [pickingFor, setPickingFor] = useState<string | null>(null);
   const picking = pickingFor === pickKey;
   const setPicking = (on: boolean) => setPickingFor(on ? pickKey : null);
-  const [picked, setPicked] = useState<PickedElement | null>(null);
-  const activeFrame = () =>
-    document.getElementById(`preview-panel-${active.id}`) as HTMLIFrameElement | null;
-  const tellPicker = (type: 'start' | 'stop') =>
-    activeFrame()?.contentWindow?.postMessage({ pmPicker: true, type }, '*');
+  const [markup, setMarkup] = useState<Markup | null>(null);
+  const activeId = active.id;
+  const activeFrame = useCallback(
+    () => document.getElementById(`preview-panel-${activeId}`) as HTMLIFrameElement | null,
+    [activeId],
+  );
+  const stopPicking = useCallback(() => setPickingFor(null), []);
   useEffect(() => {
     if (!picking) return;
-    const onMessage = (event: globalThis.MessageEvent) => {
-      if (event.source !== activeFrame()?.contentWindow) return;
-      const data = event.data as { pmPicker?: unknown; type?: unknown; element?: unknown } | null;
-      if (!data || data.pmPicker !== true) return;
-      if (data.type === 'cancelled') setPicking(false);
-      if (data.type !== 'picked') return;
-      setPicking(false);
-      const element = parsePicked(data.element);
-      if (element) setPicked(element);
-      else setError('The page sent something that is not an element.');
-    };
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      tellPicker('stop');
-      setPicking(false);
+      if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement)) stopPicking();
     };
-    window.addEventListener('message', onMessage);
     window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('message', onMessage);
-      window.removeEventListener('keydown', onKey);
-    };
-    // The frame is looked up when a message arrives; the shown tab is part of the key.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [picking, active.id]);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [picking, stopPicking]);
   const pickedApp = target ? (apps.find((a) => a.port === target.port) ?? null) : null;
 
   /** A click opens in the active tab; Ctrl, ⌘ or a middle click opens a new tab, like a link. */
@@ -913,16 +898,15 @@ export function PreviewWorkspace() {
           <button
             type="button"
             className={`preview-tool${picking ? ' is-on' : ''}`}
-            aria-label={picking ? 'Stop selecting' : 'Select an element to send to a session'}
+            aria-label={picking ? 'Stop marking up' : 'Select an element or draw on the page'}
             aria-pressed={picking}
             title={
               picking
-                ? 'Click an element in the page (Esc to stop)'
-                : 'Select an element and send it to a session'
+                ? 'Stop marking up (Esc)'
+                : 'Select an element or draw on the page, then add it to a chat'
             }
             disabled={!target}
             onClick={() => {
-              tellPicker(picking ? 'stop' : 'start');
               setPicking(!picking);
             }}
           >
@@ -958,12 +942,14 @@ export function PreviewWorkspace() {
             {error}
           </div>
         )}
-        {picked && (
+        {markup && (
           <PreviewPickDialog
-            element={picked}
+            page={markup.page}
+            element={markup.element}
+            marks={markup.marks}
             projectId={pickedApp?.projectId ?? null}
             projectNames={projects}
-            onClose={() => setPicked(null)}
+            onClose={() => setMarkup(null)}
           />
         )}
         <div className="preview-stage">
@@ -989,22 +975,15 @@ export function PreviewWorkspace() {
             );
           })}
           {picking && (
-            <div className="preview-picking" role="status">
-              <span>Click an element</span>
-              <kbd>Esc</kbd>
-              <button
-                type="button"
-                className="preview-picking-close"
-                aria-label="Stop selecting"
-                title="Stop selecting"
-                onClick={() => {
-                  tellPicker('stop');
-                  setPicking(false);
-                }}
-              >
-                ×
-              </button>
-            </div>
+            <PreviewMarkup
+              frame={activeFrame}
+              onAdd={(m) => {
+                setPicking(false);
+                setMarkup(m);
+              }}
+              onClose={stopPicking}
+              onError={setError}
+            />
           )}
           {target && frame && active.loading && (
             <div className="preview-loading" role="status">

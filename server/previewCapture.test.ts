@@ -25,7 +25,17 @@ describe('preview capture (PM-311)', () => {
       scrollY: 1201,
       inner: { selector: 'main', top: 40, left: 0 },
       dark: true,
+      selector: null,
     });
+    // The picked element, measured again in the capture so its box lands where it really is.
+    expect(
+      normaliseCapture({ port: 3000, path: '/', selector: 'main > h2' } as never, new Set())
+        .selector,
+    ).toBe('main > h2');
+    expect(
+      normaliseCapture({ port: 3000, path: '/', selector: 'x'.repeat(401) } as never, new Set())
+        .selector,
+    ).toBeNull();
     expect(
       normaliseCapture({ port: 3000, path: 'http://evil.example/' } as never, new Set()).path,
     ).toBe('/');

@@ -460,51 +460,77 @@
 .preview-back {
   display: none;
 }
-/* Picking an element (PM-311): a small floating pill at the foot of the page, as the Claude app's
-   toolbar, instead of a bar pushing the page down. */
-.preview-picking {
+/* Marking up the page (PM-311): a transparent layer over the frame, with the toolbar floating at
+   its foot as in the Claude app. With Select, the layer lets the pointer through to the page. */
+.preview-markup {
   position: absolute;
-  left: 50%;
-  bottom: 14px;
+  inset: 0;
   z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 6px 5px 14px;
-  transform: translateX(-50%);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface-raised, var(--surface));
-  box-shadow: 0 6px 20px color-mix(in srgb, #000 30%, transparent);
-  color: var(--text);
-  font-size: 12.5px;
+  pointer-events: none;
+}
+.preview-markup-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.preview-markup .shot-text {
+  pointer-events: auto;
+}
+.shot-tools.preview-markup-tools {
+  /* Centred without the half-width limit that left: 50% puts on wrapping. */
+  right: 0;
+  left: 0;
+  bottom: 14px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  margin: 0 auto;
+  transform: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  pointer-events: auto;
+}
+.preview-markup-hint {
+  padding: 0 6px;
+  color: var(--text-3);
+  font-size: 12px;
   white-space: nowrap;
 }
-.preview-picking kbd {
-  padding: 1px 6px;
+.preview-markup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 200px;
+  height: 26px;
+  padding: 0 2px 0 8px;
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  color: var(--text-2);
-  font:
-    11px ui-monospace,
-    Consolas,
-    monospace;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 12px;
 }
-.preview-picking-close {
+.preview-markup-chip code {
+  overflow: hidden;
+  color: var(--accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-markup-chip button {
   display: grid;
+  flex: none;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border: 0;
-  border-radius: 50%;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-2);
-  font-size: 16px;
   cursor: pointer;
 }
-.preview-picking-close:hover {
+.preview-markup-chip button:hover {
   background: var(--surface-hover);
-  color: var(--text);
+}
+.preview-markup-add {
+  margin-left: 4px;
 }
 /* Wider than other confirm dialogs: the screenshot needs the room. */
 .confirm-dialog.preview-pick-dialog {
@@ -564,9 +590,33 @@
   gap: 12px;
   font-size: 12.5px;
 }
-.pick-shot-skeleton {
-  height: 180px;
+/* The screenshot's place is kept at the page's shape from the moment the dialog opens, so the
+   dialog never changes size when the picture arrives; the picture fades in. */
+.pick-shot-frame {
+  --shot-h: min(52vh, 520px);
+  position: relative;
+  width: min(100%, calc(var(--shot-h) * var(--ratio)));
+  aspect-ratio: var(--ratio);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.pick-shot-skeleton {
+  position: absolute;
+  inset: 0;
+}
+.pick-shot-error {
+  display: grid;
+  position: absolute;
+  inset: 0;
+  place-items: center;
+  margin: 0;
+  padding: 16px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-align: center;
 }
 .pick-note {
   font-size: 12px;
@@ -586,20 +636,19 @@
   margin: 0;
 }
 /* Annotation (AnnotatedShot): the screenshot, and a floating toolbar of icons at its foot. */
-.shot-stage {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+.shot {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+.shot.is-ready {
+  opacity: 1;
 }
 .shot-canvas {
   display: block;
-  width: auto;
-  max-width: 100%;
-  height: auto;
-  /* Tall pages stay inside the dialog, so Session and Send remain in view. */
-  max-height: min(52vh, 520px);
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
   cursor: crosshair;
   touch-action: none;
 }
@@ -838,9 +887,6 @@
     height: 40px;
     font-size: 16px;
   }
-}
-.shot-skeleton {
-  height: 240px;
 }
 /* The screenshot checkbox: the Files view's box (folder-view.css loads only with that view). */
 .pick-check {

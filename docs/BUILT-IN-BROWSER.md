@@ -97,22 +97,34 @@ port>/` is a different origin from `localhost`. Add those names to the Host allo
 
 ## Element picker (PM-311)
 
-The Preview toolbar's **Select element** button lets you point at something in the page and send
-it to a CLI session. Both proxies add one script to HTML pages for this
+The Preview toolbar's **Select element** button lets you point at something in the page, draw on
+it, and send both to a CLI session. Both proxies add one script to HTML pages for this
 (`server/previewPicker.ts`): inline in the path mode (whose responses carry no page CSP), and as
 `/__pm-picker.js` from the page's own origin in the own-origin mode (allowed by a CSP's `'self'`; a
 page whose CSP forbids it simply can't be picked). The own-origin proxy asks the app for page loads
 uncompressed so it can add the tag after `<head>` as the page streams.
 
 The script does nothing until the framing ProjectManager window posts `start`. Then hovering
-outlines an element with its tag and size, and a click or tap reports: the page address and title,
+outlines an element with its tag, size and (on a React development build) component; ↑ and ↓ move
+to the parent and back, Enter picks, as the keyboard alternative. A click or tap reports: the page
+address and title,
 a CSS selector, trimmed `outerHTML` and text, the accessible role and name, its box and the
 viewport, a few computed styles, and, on a React development build, the nearest component, its
-plain props and the components around it. Esc stops it. It runs only in the top-level previewed
-page, never in nested frames, and never sends requests.
+plain props and the components around it. The picked element stays outlined, following the page
+as it scrolls. `pause` stops hovering (while drawing), `clear` drops the pick, `stop` ends both, and
+`state` asks for the page's address, size and scroll. Esc ends it. It runs only in the top-level
+previewed page, never in nested frames, never sends requests and changes nothing in the page
+beyond its own outlines.
+
+**Marking up the live page** (`PreviewMarkup`), as in the Claude app: while on, a toolbar floats at
+the foot of the Preview with Select, Draw, Box and Text, four colours, Undo, the picked element
+(with a button to clear it) and **Add to chat**. Select hands the pointer to the page's picker;
+the drawing tools put a transparent layer over the page, which covers it exactly, so marks are in
+the page's CSS pixels. Add to chat asks the page where it is now and opens the dialog with the
+element, if any, and the marks; marks alone, without an element, are fine too.
 
 The app accepts the message only from the shown tab's frame while picking, keeps known fields of
-bounded size (`parsePicked`), and opens a dialog: "What should change?", the context (editable,
+bounded size (`parsePicked`, `parsePage`), and the dialog shows "What should change?", the context (editable,
 with the app's own address rather than the proxy's), and a session to send to (the app's project
 first, then the most recently messaged). Sending types it into that session after whatever is in
 its input and presses Enter; it never clears the input.
@@ -120,16 +132,20 @@ its input and presses Enter; it never clears the input.
 **Screenshot and annotation.** The app cannot capture a framed page of another origin, so the
 server retakes it (`server/previewCapture.ts`, `POST /api/preview-capture`): a headless Chrome, or
 Edge, opens the same address at the same viewport size, scroll and colour scheme and returns a
-PNG. It is a fresh load without the viewer's cookies or open menus, so the dialog says "Retaken by
-ProjectManager". Only a loopback dev server by port and path (the proxy's rules, never this app's
+PNG. Smooth scrolling, transitions and animations are switched off in that copy, so the scroll lands
+at once and scroll-reveal effects show their end state, and the picked element is measured again
+there (`x-pm-element`), so its box lands where it really is. It is a fresh load without the
+viewer's cookies or open menus, so the dialog says "Retaken by ProjectManager". Only a loopback dev server by port and path (the proxy's rules, never this app's
 ports); every document load that leaves the app is refused (CDP Fetch), so it cannot be pointed at
 another site. One browser, started on first use with its profile in the data folder, one capture
 at a time with a timeout, closed after three idle minutes and when the server exits; no new
 dependency (CDP over Node's WebSocket). Without Chrome or Edge the message goes without a picture.
 
-The dialog shows the screenshot with the picked element boxed, and Box, Pen and Text tools in four
-colours with Undo (`AnnotatedShot`, drawn in the image's own pixels). Sending uploads the marked-up
-PNG like a chat image and pastes its path before the message.
+The dialog keeps the screenshot's place at the page's shape from the moment it opens, so it never
+changes size when the picture arrives. It shows the screenshot with the picked element boxed and the
+live page's marks scaled in, and the same tools to add more (`AnnotatedShot` on the shared
+`Markup` layer, drawn in the image's own pixels). Sending uploads the marked-up PNG like a chat
+image and pastes its path before the message.
 
 ## Theme
 

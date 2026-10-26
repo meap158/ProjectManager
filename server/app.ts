@@ -316,10 +316,12 @@ export function createApp(
     const body = (await c.req.json().catch(() => null)) as CaptureRequest | null;
     if (!body || typeof body !== 'object')
       throw new PreviewError(400, 'Expected a capture request');
-    const png = await capture.capture(normaliseCapture(body, ownPorts()));
+    const { png, element } = await capture.capture(normaliseCapture(body, ownPorts()));
     return c.body(new Uint8Array(png), 200, {
       'content-type': 'image/png',
       'cache-control': 'no-store',
+      // Where the picked element is in this image (measured in the capture), for its box.
+      ...(element ? { 'x-pm-element': JSON.stringify(element) } : {}),
     });
   });
   app.get('/preview/:port', previewHandler);

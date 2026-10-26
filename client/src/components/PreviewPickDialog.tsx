@@ -1,17 +1,24 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
 import { sendMessageToSession } from '../sessionSend';
 import { AnnotatedShot } from './AnnotatedShot';
+import { scaleShapes, type Shape } from './Markup';
 import { Dropdown } from './Dropdown';
 
 // Preview's element picker, the sending half (PM-311): what the picker reported about an element,
 // shown for review, then sent as a message to a CLI session of the owner's choice.
 
-/** An element as the page's picker reports it (untrusted: parsed and capped by `parsePicked`). */
-export interface PickedElement {
+/** The page as its picker reports it: where it is, its size and how far it was scrolled. */
+export interface PickedPage {
   url: string;
   title: string;
+  viewport: { width: number; height: number; dark: boolean };
+  scroll: { x: number; y: number; inner: { selector: string; top: number; left: number } | null };
+}
+
+/** An element as the page's picker reports it (untrusted: parsed and capped by `parsePicked`). */
+export interface PickedElement extends PickedPage {
   tag: string;
   selector: string;
   html: string;
@@ -19,8 +26,6 @@ export interface PickedElement {
   role: string | null;
   name: string;
   rect: { x: number; y: number; width: number; height: number };
-  viewport: { width: number; height: number; dark: boolean };
-  scroll: { x: number; y: number; inner: { selector: string; top: number; left: number } | null };
   styles: Record<string, string>;
   react: { component: string; props: Record<string, unknown>; owners: string[] } | null;
 }
@@ -88,6 +93,52 @@ export function parsePicked(data: unknown): PickedElement | null {
   };
 }
 
+/** The page fields of a picker message (also sent alone, for marks without an element). */
+export function parsePage(data: unknown): PickedPage | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  const viewport = (d.viewport ?? {}) as Record<string, unknown>;
+  const scroll = (d.scroll ?? {}) as Record<string, unknown>;
+  const inner = (scroll.inner ?? null) as Record<string, unknown> | null;
+  if (typeof d.url !== 'string') return null;
+  return {
+    url: str(d.url, 500),
+    title: str(d.title, 200),
+    viewport: {
+      width: num(viewport.width),
+      height: num(viewport.height),
+      dark: viewport.dark === true,
+    },
+    scroll: {
+      x: num(scroll.x),
+      y: num(scroll.y),
+      inner:
+        inner && typeof inner.selector === 'string'
+          ? { selector: inner.selector.slice(0, 400), top: num(inner.top), left: num(inner.left) }
+          : null,
+    },
+  };
+}
+
+/** What the CLI gets when only marks were made: the page, and that the picture shows the marks. */
+export function pageContext(page: PickedPage, marks: number): string {
+  return [
+    `Page: ${page.title ? `${page.title} · ` : ''}${appUrl(page.url)}`,
+    `Viewport: ${page.viewport.width}×${page.viewport.height}, scrolled to ${page.scroll.x},${page.scroll.y}`,
+    marks ? `The screenshot shows my ${marks === 1 ? 'mark' : `${marks} marks`} on the page.` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** The size the capture renders at (it clamps the viewport), so marks scale into its pixels. */
+export function captureSize(page: PickedPage): { width: number; height: number } {
+  return {
+    width: Math.min(2560, Math.max(320, page.viewport.width || 320)),
+    height: Math.min(2560, Math.max(240, page.viewport.height || 240)),
+  };
+}
+
 const KEY_STYLES = [
   'display',
   'width',
@@ -115,7 +166,7 @@ export function appUrl(url: string): string {
 
 /** The context block the CLI gets: enough to find the element in the code and see what it is. */
 export function pickedContext(el: PickedElement): string {
-  const lines = [`Page: ${el.title ? `${el.title} — ` : ''}${appUrl(el.url)}`];
+  const lines = [`Page: ${el.title ? `${el.title} · ` : ''}${appUrl(el.url)}`];
   lines.push(`Element: <${el.tag}> ${el.selector}`);
   if (el.react) {
     const owners = el.react.owners.length ? ` (inside ${el.react.owners.join(' › ')})` : '';
@@ -146,12 +197,19 @@ export function rankSessions(sessions: AgentSession[], projectId: number | null)
 }
 
 export function PreviewPickDialog({
+  page,
   element,
+  marks,
   projectId,
   projectNames,
   onClose,
 }: {
-  element: PickedElement;
+  /** The page as it was when the owner pressed Add to chat (its scroll is what the capture uses). */
+  page: PickedPage;
+  /** The picked element, if any: marks alone are fine too. */
+  element: PickedElement | null;
+  /** Marks drawn on the live page, in its CSS pixels. */
+  marks: Shape[];
   /** The project the previewed app belongs to, if known: its sessions come first. */
   projectId: number | null;
   projectNames: ReadonlyMap<number, string>;
@@ -164,17 +222,27 @@ export function PreviewPickDialog({
   const [sessions, setSessions] = useState<AgentSession[] | null>(null);
   const [target, setTarget] = useState<number | null>(null);
   const [request, setRequest] = useState('');
-  const [context, setContext] = useState(() => pickedContext(element));
+  const [context, setContext] = useState(() =>
+    element
+      ? pickedContext(element) +
+        (marks.length
+          ? `\nThe screenshot also shows my ${marks.length === 1 ? 'mark' : `${marks.length} marks`}.`
+          : '')
+      : pageContext(page, marks.length),
+  );
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // The screenshot, retaken by the server at the page's size and scroll (PM-311).
   const [shot, setShot] = useState<string | null>(null);
   const [shotError, setShotError] = useState<string | null>(null);
   const [includeShot, setIncludeShot] = useState(true);
+  // Where the capture found the element (CSS pixels of the captured page); null: not found.
+  const [found, setFound] = useState<PickedElement['rect'] | null>(null);
   const exportShot = useRef<(() => string) | null>(null);
+  const size = captureSize(page);
   const where = useMemo(
-    () => /^https?:\/\/localhost:(\d+)(\/.*)?$/.exec(appUrl(element.url)),
-    [element.url],
+    () => /^https?:\/\/localhost:(\d+)(\/.*)?$/.exec(appUrl(page.url)),
+    [page.url],
   );
   useEffect(() => {
     if (!where) return;
@@ -186,18 +254,28 @@ export function PreviewPickDialog({
       body: JSON.stringify({
         port: Number(where[1]),
         path: where[2] ?? '/',
-        width: element.viewport.width,
-        height: element.viewport.height,
-        scrollX: element.scroll.x,
-        scrollY: element.scroll.y,
-        inner: element.scroll.inner,
-        dark: element.viewport.dark,
+        width: page.viewport.width,
+        height: page.viewport.height,
+        scrollX: page.scroll.x,
+        scrollY: page.scroll.y,
+        inner: page.scroll.inner,
+        dark: page.viewport.dark,
+        selector: element?.selector ?? null,
       }),
     })
       .then(async (res) => {
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
           throw new Error(body?.error ?? `Screenshot failed (${res.status})`);
+        }
+        const measured = res.headers.get('x-pm-element');
+        if (measured && live) {
+          try {
+            const r = JSON.parse(measured) as PickedElement['rect'];
+            setFound({ x: r.x, y: r.y, width: r.width, height: r.height });
+          } catch {
+            /* no box: the element is named in the text all the same */
+          }
         }
         return res.blob();
       })
@@ -213,7 +291,7 @@ export function PreviewPickDialog({
       live = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [element, where]);
+  }, [page, element, where]);
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -239,14 +317,17 @@ export function PreviewPickDialog({
     setBusy(true);
     setStatus(null);
     try {
-      const text = [request.trim(), '', 'About this element in the Preview:', context.trim()]
+      const about = element
+        ? 'About this element in the Preview:'
+        : 'About this page in the Preview:';
+      const text = [request.trim(), '', about, context.trim()]
         .filter((line, i) => i > 0 || line)
         .join('\n');
       const images: string[] = [];
       const data = includeShot && shot ? exportShot.current?.() : '';
       if (data) {
         const { path } = await api.uploadSessionImage(chosen.id, {
-          name: `preview-${element.tag}.png`,
+          name: `preview-${element?.tag ?? 'page'}.png`,
           type: 'image/png',
           data,
         });
@@ -282,11 +363,19 @@ export function PreviewPickDialog({
         <div className="dialog-body">
           <header className="pick-head">
             <h2 id={heading}>Send to a session</h2>
-            <p className="pick-element" title={element.selector}>
-              <code>{`<${element.tag}>`}</code>
-              {element.react && <span className="pick-component">{element.react.component}</span>}
-              <span className="pick-selector">{element.selector}</span>
-            </p>
+            {element ? (
+              <p className="pick-element" title={element.selector}>
+                <code>{`<${element.tag}>`}</code>
+                {element.react && <span className="pick-component">{element.react.component}</span>}
+                <span className="pick-selector">{element.selector}</span>
+              </p>
+            ) : (
+              <p className="pick-element">
+                <span className="pick-selector">
+                  {appUrl(page.url)} · {marks.length} {marks.length === 1 ? 'mark' : 'marks'}
+                </span>
+              </p>
+            )}
           </header>
 
           <div className="field">
@@ -332,25 +421,35 @@ export function PreviewPickDialog({
                   : (shotError ?? (shot ? 'Retaken by ProjectManager' : 'Taking it…'))}
               </span>
             </div>
-            {includeShot && shot && (
-              <AnnotatedShot
-                src={shot}
-                exportRef={exportShot}
-                initial={[
-                  {
-                    kind: 'box',
-                    color: '#4c8dff',
-                    from: { x: element.rect.x - 3, y: element.rect.y - 3 },
-                    to: {
-                      x: element.rect.x + element.rect.width + 3,
-                      y: element.rect.y + element.rect.height + 3,
-                    },
-                  },
-                ]}
-              />
-            )}
-            {includeShot && !shot && where && !shotError && (
-              <div className="skeleton pick-shot-skeleton" />
+            {includeShot && where && (
+              <div
+                className="pick-shot-frame"
+                style={{ '--ratio': size.width / size.height } as CSSProperties}
+              >
+                {shot ? (
+                  <AnnotatedShot
+                    src={shot}
+                    exportRef={exportShot}
+                    initial={[
+                      ...(found
+                        ? [
+                            {
+                              kind: 'box' as const,
+                              color: '#4c8dff',
+                              from: { x: found.x - 3, y: found.y - 3 },
+                              to: { x: found.x + found.width + 3, y: found.y + found.height + 3 },
+                            },
+                          ]
+                        : []),
+                      ...scaleShapes(marks, size.width / (page.viewport.width || size.width)),
+                    ]}
+                  />
+                ) : shotError ? (
+                  <p className="pick-shot-error">{shotError}</p>
+                ) : (
+                  <div className="skeleton pick-shot-skeleton" />
+                )}
+              </div>
             )}
           </section>
 

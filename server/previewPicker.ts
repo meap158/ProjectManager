@@ -1,8 +1,10 @@
 // Preview's element picker (PM-311): a small script the preview proxies add to HTML pages. It is
 // inert until the ProjectManager window that frames the page asks it to start; then hovering
-// outlines an element and a click (or tap) reports that element's details to the app with
-// postMessage, and picking stops. It never runs in a nested frame, never touches the page's own
-// handlers while idle, and reports only what the page itself shows (the app treats it as
+// outlines an element (↑ and ↓ move to its parent and back, Enter picks it) and a click (or tap)
+// reports that element's details to the app with postMessage. The picked element stays outlined,
+// following the page as it scrolls, while the owner draws marks over it or picks another. It never
+// runs in a nested frame, never touches the page's own handlers while idle, never changes the page
+// beyond its own outline, and reports only what the page itself shows (the app treats it as
 // untrusted data).
 
 /** Where the own-origin proxy serves the script (a path no dev server uses). */
@@ -12,7 +14,8 @@ export const PICKER_JS = String.raw`(() => {
   if (window.parent === window || window.parent !== window.top || window.__pmPicker) return;
   window.__pmPicker = true;
   var MAX_HTML = 2000, MAX_TEXT = 300;
-  var box = null, label = null, current = null, active = false;
+  var box = null, label = null, current = null, active = false, trail = [];
+  var picked = null, pickedBox = null;
   var STYLE_KEYS = ['display', 'position', 'width', 'height', 'margin', 'padding', 'color',
     'background-color', 'font-family', 'font-size', 'font-weight', 'line-height', 'border',
     'border-radius', 'gap', 'flex-direction', 'justify-content', 'align-items'];
@@ -108,15 +111,26 @@ export const PICKER_JS = String.raw`(() => {
     return null;
   }
 
+  // Where the page is: what a screenshot needs to show the same view.
+  function pageOf(el) {
+    var inner = el ? scrollParent(el) : null;
+    return {
+      url: location.href,
+      title: document.title,
+      viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio, dark: matchMedia('(prefers-color-scheme: dark)').matches },
+      scroll: { x: scrollX, y: scrollY, inner: inner ? { selector: selectorOf(inner), top: inner.scrollTop, left: inner.scrollLeft } : null },
+    };
+  }
+
   function describe(el) {
     var rect = el.getBoundingClientRect();
     var computed = getComputedStyle(el);
     var styles = {};
     STYLE_KEYS.forEach(function (k) { styles[k] = computed.getPropertyValue(k); });
-    var inner = scrollParent(el);
+    var page = pageOf(el);
     return {
-      url: location.href,
-      title: document.title,
+      url: page.url,
+      title: page.title,
       tag: el.tagName.toLowerCase(),
       selector: selectorOf(el),
       html: clip(el.outerHTML, MAX_HTML),
@@ -125,43 +139,82 @@ export const PICKER_JS = String.raw`(() => {
       name: clip(nameOf(el), 160),
       focusable: el.tabIndex >= 0,
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio, dark: matchMedia('(prefers-color-scheme: dark)').matches },
-      scroll: { x: scrollX, y: scrollY, inner: inner ? { selector: selectorOf(inner), top: inner.scrollTop, left: inner.scrollLeft } : null },
+      viewport: page.viewport,
+      scroll: page.scroll,
       styles: styles,
       react: reactOf(el),
     };
   }
 
-  function show(el) {
+  function place(target, el) {
     var r = el.getBoundingClientRect();
-    box.style.transform = 'translate(' + r.x + 'px,' + r.y + 'px)';
-    box.style.width = r.width + 'px';
-    box.style.height = r.height + 'px';
+    target.style.transform = 'translate(' + r.x + 'px,' + r.y + 'px)';
+    target.style.width = r.width + 'px';
+    target.style.height = r.height + 'px';
+    return r;
+  }
+  function show(el) {
+    var r = place(box, el);
     var id = el.id ? '#' + el.id : el.classList.length ? '.' + el.classList[0] : '';
-    label.textContent = el.tagName.toLowerCase() + id + '  ' + Math.round(r.width) + ' × ' + Math.round(r.height);
+    var react = reactOf(el);
+    label.textContent = (react ? '<' + react.component + '> ' : '') + el.tagName.toLowerCase() + id + '  ' + Math.round(r.width) + ' × ' + Math.round(r.height);
     label.style.transform = 'translate(' + Math.max(0, r.x) + 'px,' + Math.max(0, r.y - 22) + 'px)';
   }
+  function ours(el) { return el && el.hasAttribute && el.hasAttribute('data-pm-picker'); }
 
   function onMove(e) {
     var el = document.elementFromPoint(e.clientX, e.clientY);
-    if (!el || el === box || el === label || el === current) return;
+    if (!el || ours(el) || el === current) return;
     current = el;
+    trail = [];
     show(el);
+  }
+  function pick(el) {
+    picked = el;
+    if (!pickedBox) {
+      pickedBox = document.createElement('div');
+      pickedBox.setAttribute('data-pm-picker', '');
+      pickedBox.style.cssText = 'position:fixed;left:0;top:0;z-index:2147483646;pointer-events:none;outline:2px solid #4c8dff;outline-offset:2px;border-radius:2px';
+      document.documentElement.append(pickedBox);
+      addEventListener('scroll', follow, true);
+      addEventListener('resize', follow);
+    }
+    place(pickedBox, el);
+    send({ type: 'picked', element: describe(el) });
+  }
+  function follow() { if (picked && pickedBox) place(pickedBox, picked); }
+  function clearPicked() {
+    picked = null;
+    if (pickedBox) pickedBox.remove();
+    pickedBox = null;
+    removeEventListener('scroll', follow, true);
+    removeEventListener('resize', follow);
   }
   function onPick(e) {
     e.preventDefault();
     e.stopPropagation();
-    var el = document.elementFromPoint(e.clientX, e.clientY) || current;
-    if (!el) return;
-    var data = describe(el);
-    stop();
-    send({ type: 'picked', element: data });
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    if (ours(el)) el = current;
+    if (el) pick(el);
   }
+  // The keyboard alternative: ↑ widens to the parent, ↓ goes back, Enter picks.
   function onKey(e) {
-    if (e.key !== 'Escape') return;
-    e.preventDefault();
-    stop();
-    send({ type: 'cancelled' });
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      send({ type: 'cancelled' });
+    } else if (e.key === 'ArrowUp' && current && current.parentElement && current !== document.body) {
+      e.preventDefault();
+      trail.push(current);
+      current = current.parentElement;
+      show(current);
+    } else if (e.key === 'ArrowDown' && trail.length) {
+      e.preventDefault();
+      current = trail.pop();
+      show(current);
+    } else if (e.key === 'Enter' && current) {
+      e.preventDefault();
+      pick(current);
+    }
   }
   function swallow(e) { e.preventDefault(); e.stopPropagation(); }
 
@@ -185,6 +238,7 @@ export const PICKER_JS = String.raw`(() => {
     if (!active) return;
     active = false;
     current = null;
+    trail = [];
     if (box) box.remove();
     if (label) label.remove();
     document.removeEventListener('pointermove', onMove, true);
@@ -197,7 +251,10 @@ export const PICKER_JS = String.raw`(() => {
   window.addEventListener('message', function (e) {
     if (e.source !== window.parent || !e.data || e.data.pmPicker !== true) return;
     if (e.data.type === 'start') start();
-    else if (e.data.type === 'stop') stop();
+    else if (e.data.type === 'pause') stop();
+    else if (e.data.type === 'stop') { stop(); clearPicked(); }
+    else if (e.data.type === 'clear') clearPicked();
+    else if (e.data.type === 'state') send({ type: 'state', page: pageOf(picked) });
   });
   send({ type: 'ready' });
 })();`;

@@ -49,7 +49,12 @@ export interface CaptureRequest {
   inner?: { selector: string; top: number; left: number } | null;
   /** The colour scheme the viewer's page was in (the preview follows the app's theme). */
   dark?: boolean;
+  /** The picked element, measured again in the capture so its box lands where it really is. */
+  selector?: string | null;
 }
+
+/** Where the picked element is in the captured image, in CSS pixels (null when not found). */
+export type CapturedRect = { x: number; y: number; width: number; height: number } | null;
 
 /** A capture request with every number clamped and the path kept on the app. */
 export function normaliseCapture(
@@ -78,6 +83,8 @@ export function normaliseCapture(
     scrollY: clamp(body.scrollY, 0, 1e6),
     inner,
     dark: body.dark === true,
+    selector:
+      typeof body.selector === 'string' && body.selector.length <= 400 ? body.selector : null,
   };
 }
 
@@ -171,7 +178,7 @@ export class PreviewCapture {
   }
 
   /** One capture at a time: later ones wait their turn. */
-  capture(request: CaptureRequest): Promise<Buffer> {
+  capture(request: CaptureRequest): Promise<{ png: Buffer; element: CapturedRect }> {
     const run = this.queue.then(() => this.take(request));
     this.queue = run.catch(() => undefined);
     return run;
@@ -227,7 +234,7 @@ export class PreviewCapture {
     return http;
   }
 
-  private async take(request: CaptureRequest): Promise<Buffer> {
+  private async take(request: CaptureRequest): Promise<{ png: Buffer; element: CapturedRect }> {
     if (this.idle) clearTimeout(this.idle);
     const http = await this.start();
     const target = (await fetch(`${http}/json/new?about:blank`, { method: 'PUT' }).then((r) =>
@@ -272,15 +279,37 @@ export class PreviewCapture {
       await cdp.send('Page.navigate', { url: `http://127.0.0.1:${request.port}${request.path}` });
       await loaded;
       await new Promise((r) => setTimeout(r, 600)); // Fonts and the first effects settle.
+      // The resting page at the viewer's scroll: smooth scrolling, transitions and animations are
+      // switched off so a scroll lands at once and scroll-reveal effects show their end state
+      // (otherwise the shot catches the page mid-way, and the element's box lands elsewhere).
       const inner = request.inner
-        ? `const el = document.querySelector(${JSON.stringify(request.inner.selector)}); if (el) { el.scrollTop = ${request.inner.top}; el.scrollLeft = ${request.inner.left}; }`
+        ? `const box = document.querySelector(${JSON.stringify(request.inner.selector)}); if (box) { box.scrollTop = ${request.inner.top}; box.scrollLeft = ${request.inner.left}; }`
         : '';
       await cdp.send('Runtime.evaluate', {
-        expression: `window.scrollTo(${request.scrollX}, ${request.scrollY}); ${inner}`,
+        expression: `(() => {
+          const still = document.createElement('style');
+          still.textContent = '*,*::before,*::after{transition:none!important;animation-duration:0s!important;animation-delay:0s!important;scroll-behavior:auto!important}';
+          document.documentElement.append(still);
+          window.scrollTo({ left: ${request.scrollX}, top: ${request.scrollY}, behavior: 'instant' });
+          ${inner}
+        })()`,
       });
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 450)); // Scroll-triggered effects run and settle.
+      let element: CapturedRect = null;
+      if (request.selector) {
+        const measured = await cdp.send('Runtime.evaluate', {
+          expression: `(() => { const el = document.querySelector(${JSON.stringify(request.selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return JSON.stringify({ x: r.x, y: r.y, width: r.width, height: r.height }); })()`,
+          returnByValue: true,
+        });
+        const value = (measured.result as { value?: unknown } | undefined)?.value;
+        if (typeof value === 'string') {
+          const r = JSON.parse(value) as { x: number; y: number; width: number; height: number };
+          if ([r.x, r.y, r.width, r.height].every(Number.isFinite) && r.width > 0 && r.height > 0)
+            element = r;
+        }
+      }
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
-      return Buffer.from(String(shot.data), 'base64');
+      return { png: Buffer.from(String(shot.data), 'base64'), element };
     } finally {
       clearTimeout(timeout);
       cdp.close();
