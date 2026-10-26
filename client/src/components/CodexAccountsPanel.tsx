@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CodexAccount, CodexAccountsState } from '../../../shared/types';
+import type {
+  AccountSwitchForecast,
+  CodexAccount,
+  CodexAccountsState,
+} from '../../../shared/types';
 import { api } from '../api';
-import { formatDate, formatRelative } from '../format';
+import { formatDate, formatRelative, formatReset } from '../format';
 import { InfoIcon, ProviderIcon } from './icons';
 import './project-agents.css';
 import { UsageLimits } from './UsageLimits';
@@ -570,6 +574,7 @@ export function CodexAccountsPanel({
                 {state.defaultAccount && (
                   <AccountUsage account={state.defaultAccount} loading={loadingUsage} now={now} />
                 )}
+                {state.forecast && <SwitchForecast forecast={state.forecast} now={now} />}
               </span>
               <span className="actions codex-account-actions">
                 <button
@@ -885,4 +890,39 @@ function usageLabel(
     default:
       return 'Usage not refreshed';
   }
+}
+
+/**
+ * What automatic switching will do next for the account in use, from the latest readings and the
+ * switcher's own ranking (server: switchForecast). Shown only once it is near or at its limit.
+ */
+function SwitchForecast({ forecast: f, now }: { forecast: AccountSwitchForecast; now: number }) {
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (f.kind !== 'wait') return;
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [f.kind]);
+  const time = Math.max(now, clock);
+  let text: string;
+  if (f.kind === 'off') text = 'At its limit, and automatic switching is off.';
+  else if (f.kind === 'next')
+    text = `${f.atLimit ? 'At its limit' : `${f.left}% left`}. Next auto-switch: ${f.name} (5-hour ${f.fiveHour}% left, weekly ${f.weekly}% left), when a session hits the limit.`;
+  else if (Date.parse(f.at) <= time)
+    text = f.current
+      ? 'Its limit has reset: sessions waiting at the limit continue here once usage is checked again.'
+      : `${f.name} has reset: sessions waiting at the limit move to it once its usage is checked again.`;
+  else
+    text = f.current
+      ? `No account has quota now. This account comes back first, ${formatReset(f.at, time)}, and sessions waiting at the limit continue here then.`
+      : `No account has quota now. ${f.name} comes back first, ${formatReset(f.at, time)}, and sessions waiting at the limit move to it then.`;
+  return (
+    <span
+      className={`account-forecast${f.kind === 'next' ? '' : ' is-waiting'}`}
+      role="status"
+      title="A forecast from the latest usage readings; the switch itself checks fresh usage first."
+    >
+      {text}
+    </span>
+  );
 }

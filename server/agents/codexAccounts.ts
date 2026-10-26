@@ -26,6 +26,7 @@ import { readCodexAccountUsage, type AccountUsageResult } from './accountUsage.j
 import {
   ACCOUNT_USAGE_MAX_AGE_MS,
   bySwitchQuota,
+  switchForecast,
   switchQuota,
   usageIsFresh,
   verifiedRemainingQuota,
@@ -277,12 +278,28 @@ export class CodexAccounts {
         ...this.usageState(home, now, sources.get(home)),
       };
     });
+    // What automatic switching would do next, as nextUnused ranks it: the account in use against
+    // the other eligible logins (the default login only while it is not a saved profile).
+    const label = (a: { name: string; email?: string | null }) => a.name || a.email || 'account';
+    const inUse = activeProfileId ? accounts.find((a) => a.id === activeProfileId) : undefined;
+    const current = inUse
+      ? { name: label(inUse), limits: inUse.limits }
+      : { name: defaultAccount.email ?? 'Default Codex account', limits: defaultAccount.limits };
+    const forecast = switchForecast(
+      current,
+      accounts
+        .filter((a) => a.id !== activeProfileId && a.autoSwitchEligible !== false)
+        .map((a) => ({ name: label(a), limits: a.limits })),
+      autoSwitch,
+      now,
+    );
     return {
       accounts,
       activeProfileId,
       autoSwitch,
       defaultAccount,
       usageRefreshing: this.refreshingUsage !== null,
+      forecast,
     };
   }
 

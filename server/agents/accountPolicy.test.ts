@@ -1,6 +1,7 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   bySwitchQuota,
+  switchForecast,
   switchQuota,
   usageIsFresh,
   verifiedRemainingQuota,
@@ -79,4 +80,89 @@ it('orders eligible candidates by 5-hour quota, then weekly, then stable saved o
   const weeklyOnly = reading();
   weeklyOnly.limits.windows.shift();
   expect(switchQuota(weeklyOnly, now)).toEqual({ usable: 25, fiveHour: 25, weekly: 25 });
+});
+
+describe('switchForecast (what auto-switch does next)', () => {
+  const now = Date.parse('2026-10-27T17:00:00Z');
+  const at = (minutes: number) => new Date(now + minutes * 60_000).toISOString();
+  const limits = (
+    fiveHourUsed: number,
+    fiveHourReset: number,
+    weeklyUsed = 30,
+    weeklyReset = 3000,
+  ) => ({
+    providerId: 'codex',
+    asOf: new Date(now).toISOString(),
+    source: 'test',
+    windows: [
+      {
+        label: '5-hour',
+        windowMinutes: 300,
+        usedPercent: fiveHourUsed,
+        resetsAt: at(fiveHourReset),
+      },
+      { label: 'Weekly', windowMinutes: 10080, usedPercent: weeklyUsed, resetsAt: at(weeklyReset) },
+    ],
+  });
+
+  it('says nothing while the account in use has plenty left', () => {
+    expect(switchForecast({ name: 'me', limits: limits(40, 100) }, [], true, now)).toBeNull();
+  });
+
+  it('names the next account by 5-hour, then weekly quota left', () => {
+    const f = switchForecast(
+      { name: 'me', limits: limits(100, 230) },
+      [
+        { name: 'a', limits: limits(60, 100) },
+        { name: 'b', limits: limits(20, 100, 50) },
+        { name: 'c', limits: limits(20, 100, 10) },
+      ],
+      true,
+      now,
+    );
+    expect(f).toEqual({
+      kind: 'next',
+      name: 'c',
+      left: 80,
+      fiveHour: 80,
+      weekly: 90,
+      atLimit: true,
+    });
+  });
+
+  it('when none has quota, names whichever comes back first, a spent weekly counted', () => {
+    const f = switchForecast(
+      { name: 'me', limits: limits(100, 230) },
+      [
+        { name: 'soon', limits: limits(100, 3) },
+        { name: 'weekly-spent', limits: limits(100, 1, 100, 900) },
+      ],
+      true,
+      now,
+    );
+    expect(f).toEqual({ kind: 'wait', name: 'soon', at: at(3), current: false });
+    // The account in use wins a tie: staying put is no switch at all.
+    expect(
+      switchForecast(
+        { name: 'me', limits: limits(100, 3) },
+        [{ name: 'x', limits: limits(100, 3) }],
+        true,
+        now,
+      ),
+    ).toMatchObject({ kind: 'wait', current: true });
+  });
+
+  it('says so when switching is off, and ignores accounts without readings', () => {
+    expect(switchForecast({ name: 'me', limits: limits(100, 10) }, [], false, now)).toEqual({
+      kind: 'off',
+    });
+    expect(
+      switchForecast(
+        { name: 'me', limits: limits(95, 10) },
+        [{ name: 'n', limits: null }],
+        true,
+        now,
+      ),
+    ).toBeNull();
+  });
 });

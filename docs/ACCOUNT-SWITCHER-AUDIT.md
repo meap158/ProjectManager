@@ -20,3 +20,14 @@ Validation uses temporary homes, in-memory databases, injected provider response
 Exhaustion (2026-10-27): the meter must still read zero left. When a session or run also prints the CLI's own usage-limit message, a fresh verified reading with 5% or less left is enough, and usage is re-read after 15 seconds instead of 60. An unknown, stale or errored reading authorizes nothing, and a candidate needs at least 1% left.
 
 Claude Code rotation (2026-10-27) is opt-in under Settings > Agent CLIs. It uses each login's status-line reading (for a saved login, a lower bound, since nothing spends it while unselected) and the CLI's own limit message. It switches the login, restarts idle sessions with their conversation resumed, and sends Continue to the ones that were blocked. A busy session is left alone, a login left is skipped for five hours, and a restarted session's old limit message is ignored until it has taken a turn. See `server/agents/claudeRotation.ts`.
+
+## What the next switch will be (forecast)
+
+Settings shows, under the account in use, what automatic switching will do next once that account
+is at or below 10% left (`switchForecast` in `server/agents/accountPolicy.ts`, returned as
+`forecast` with the accounts state). It uses the switcher's own ranking: an eligible account with
+quota left now, best 5-hour then weekly then list order, named as the next switch. When no
+account has quota it names the one whose quota comes back first (the later of its spent windows'
+resets, so a spent weekly counts), and when that is the account in use, sessions simply continue
+there. It reads the latest readings without the one-minute freshness rule, so it is labelled a
+forecast; the switch itself still requires fresh, verified readings.

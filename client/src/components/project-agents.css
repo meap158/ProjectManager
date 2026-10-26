@@ -213,3 +213,20 @@
     min-height: 44px;
   }
 }
+
+/* What automatic switching will do next for the account in use (switchForecast). */
+.account-forecast {
+  display: block;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--accent-soft);
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.account-forecast.is-waiting {
+  border-left-color: var(--series-4);
+  background: color-mix(in srgb, var(--series-4) 12%, transparent);
+}

@@ -467,6 +467,8 @@ export interface CodexAccountsState {
   autoSwitch: boolean;
   /** Usage is being re-read in the background (PM-173); poll until false. */
   usageRefreshing?: boolean;
+  /** What automatic switching will do next for the account in use, from the latest readings. */
+  forecast?: AccountSwitchForecast | null;
   /** Non-secret metadata for the default CODEX_HOME login, if auth.json exists there. */
   defaultAccount?: {
     usageStatus?: AccountUsageStatus;
@@ -975,3 +977,15 @@ export interface SopAuditor {
   scope: string;
   lastInputAt: string | null;
 }
+
+/**
+ * What automatic account switching will do next (shown on the account in use), from the latest
+ * usage readings and the switcher's own ranking. The switch itself still requires fresh readings.
+ *  - next: the account in use is at (or near) its limit; this account has quota and is next.
+ *  - wait: no account has quota now; this one comes back first, at `at` (it may be the one in use).
+ *  - off: the account in use is at its limit and automatic switching is off.
+ */
+export type AccountSwitchForecast =
+  | { kind: 'next'; name: string; left: number; fiveHour: number; weekly: number; atLimit: boolean }
+  | { kind: 'wait'; name: string; at: string; current: boolean }
+  | { kind: 'off' };
