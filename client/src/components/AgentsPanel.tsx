@@ -858,10 +858,12 @@ function SessionsInfoButton() {
           <h2>Sessions and runs</h2>
           <p>
             Sessions run on this machine as your user, rooted in the project folder by default.
-            Access is limited to this machine and devices you explicitly pair through LAN access.
-            Sessions keep running when ProjectManager restarts, relaunch after crashes and reboots,
-            and are only removed when you stop or delete them; input typed while one is down waits
-            in a durable queue.
+            Access is limited to this machine, devices you pair through LAN access, and, if you turn
+            it on, Remote access from anywhere (through your Cloudflare Tunnel, with Cloudflare
+            Access sign-in and an authenticator code). Both are off by default and set up in
+            Settings. Sessions keep running when ProjectManager restarts, relaunch after crashes and
+            reboots, and are only removed when you stop or delete them; input typed while one is
+            down waits in a durable queue.
           </p>
         </div>
         <div className="dialog-footer">
