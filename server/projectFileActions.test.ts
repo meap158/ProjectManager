@@ -183,6 +183,16 @@ describe('routes', () => {
     expect(lan.status).toBe(403);
     const remote = await call('open', { path: 'README.md', mode: 'open' }, { 'x-pm-remote': '1' });
     expect(remote.status).toBe(403);
+    // Run in terminal answers a remote session (it reaches the launcher check: README.md is not
+    // a .bat, so 400, not 403), but never a LAN device.
+    const remoteRun = await call(
+      'open',
+      { path: 'README.md', mode: 'run' },
+      { 'x-pm-remote': '1', 'x-pm-lan': '1' },
+    );
+    expect(remoteRun.status).toBe(400);
+    const lanRun = await call('open', { path: 'README.md', mode: 'run' }, { 'x-pm-lan': '1' });
+    expect(lanRun.status).toBe(403);
     expect(existsSync(path.join(root, 'README.md'))).toBe(true);
 
     const ok = await call('rename', { path: 'README.md', name: 'GUIDE.md' });

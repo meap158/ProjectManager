@@ -24,6 +24,12 @@ Every request, every time, must pass all four:
 Settings, enrolment and the authenticator secret are only answered on this computer. Requests
 that arrive through the tunnel are refused those routes.
 
+The Files tab's **Run in terminal** (a Windows .bat or .cmd launcher in the project) does work
+remotely, since a remote session is already signed in and can run commands in its agent
+terminals. The launcher opens in a console window on the computer running ProjectManager; follow
+it from the Preview tab or an agent terminal. Renaming, opening in the system app and revealing in
+the file manager stay on this computer, and LAN devices can't run launchers.
+
 It will not switch on until team, AUD tag, hostname, at least one email and a confirmed
 authenticator code all exist. Changing any detail signs every session out.
 

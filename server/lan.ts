@@ -29,6 +29,12 @@ const SETTINGS_KEY = 'lan_access';
 const COOKIE = 'pm_lan';
 const PAIR_PATH = '/__pm/sign-in';
 export const LAN_HEADER = 'x-pm-lan';
+/**
+ * The remote listener's marker (remote.ts re-exports it; defined here because remote.ts imports
+ * this module). Requests through the tunnel carry both markers. The LAN listener strips it too: a
+ * paired LAN device has no authenticator code, so it must never pass as a remote session.
+ */
+export const REMOTE_HEADER = 'x-pm-remote';
 
 /** No 0/O, 1/I/L: easy to read aloud and type on a phone. */
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -486,7 +492,9 @@ export class LanAccess {
   /** One listen attempt: the server on success, null when the port is taken. */
   private async listen(port: number, host: string): Promise<Server | null> {
     const server = createServer((req, res) => {
-      setHeader(req, LAN_HEADER, null); // Never trust a client-sent marker.
+      // Never trust a client-sent marker, the remote one included.
+      setHeader(req, LAN_HEADER, null);
+      setHeader(req, REMOTE_HEADER, null);
       this.gate(req, res).catch((e: Error) => {
         console.error('[lan]', e.message);
         if (!res.headersSent) res.writeHead(500).end();

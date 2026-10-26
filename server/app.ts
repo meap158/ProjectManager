@@ -473,12 +473,15 @@ export function createApp(
     return c.json({ path: await fileErrors(() => renameEntry(root, rel, name)) });
   });
   app.post('/projects/:id/files/open', async (c) => {
-    hostOnly(c);
-    const root = projectRoot(c);
     const { path: rel, mode } = await parseBody(
       c,
       z.object({ path: z.string().max(4096), mode: z.enum(['open', 'reveal', 'run']) }),
     );
+    // "Run in terminal" also answers a remote session (owner's decision): it is signed in through
+    // Cloudflare Access and an authenticator code, and can already run commands in its agent
+    // terminals. Never a LAN device, and opening or revealing stays on this computer.
+    if (!(mode === 'run' && c.req.header(REMOTE_HEADER))) hostOnly(c);
+    const root = projectRoot(c);
     await fileErrors(() => openEntry(root, rel, mode));
     return c.body(null, 204);
   });

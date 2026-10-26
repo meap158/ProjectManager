@@ -82,7 +82,11 @@ anything.
   single plain name, never overwriting, never `.git`, never through a link out of the project, the
   project root excluded) and **open or reveal** an entry on the host (argument arrays only; files the
   system would run, like .bat or .exe, are never opened). Both answer on this computer only: the LAN
-  and remote listeners get 403. Keep every one of those checks. Preview's **Stop process** (PM-270,
+  and remote listeners get 403. The one exception is **Run in terminal** for a Windows .bat/.cmd
+  launcher, which also answers the remote listener (the owner's decision: that session is signed in
+  through Cloudflare Access and an authenticator code, and can already run commands in its agent
+  terminals); never a LAN device, whose requests are stripped of the remote marker. Keep every one
+  of those checks. Preview's **Stop process** (PM-270,
   `stopLocalApp` in `server/localPorts.ts`) ends a program listening on a listed loopback port: only
   the pid a fresh detection still sees on that port, never this server or its launcher, this app's
   ports or system services, after the user confirms, and on this computer only (LAN and remote get

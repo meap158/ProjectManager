@@ -4,7 +4,7 @@ import { getRequestListener } from '@hono/node-server';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { openDb } from './db.js';
-import { LAN_HEADER, LanAccess, lanAddresses, normaliseCode } from './lan.js';
+import { LAN_HEADER, LanAccess, REMOTE_HEADER, lanAddresses, normaliseCode } from './lan.js';
 
 // LAN access: devices sign in with the short code shown in Settings (device-flow style), then
 // carry their own device cookie. Loopback binding in tests: no OS firewall prompt; the gate still
@@ -38,13 +38,18 @@ afterEach(async () => {
 
 async function setup(port: number) {
   const db = openDb(':memory:');
-  const seen: { host?: string; lan?: string; url?: string }[] = [];
+  const seen: { host?: string; lan?: string; remote?: string; url?: string }[] = [];
   let app: ReturnType<typeof createApp> | null = null;
   const lan = new LanAccess(
     db,
     (req, res) => {
       if (app) return getRequestListener(app.fetch)(req, res);
-      seen.push({ host: req.headers.host, lan: req.headers[LAN_HEADER] as string, url: req.url });
+      seen.push({
+        host: req.headers.host,
+        lan: req.headers[LAN_HEADER] as string,
+        remote: req.headers[REMOTE_HEADER] as string | undefined,
+        url: req.url,
+      });
       res.writeHead(200).end('ok');
     },
     () => 'http://localhost:5180',
@@ -99,6 +104,9 @@ describe.skipIf(!ip)('LAN access', () => {
 
     expect((await send(port, 'GET', '/board', { host, cookie })).status).toBe(200);
     expect(seen.at(-1)).toEqual({ host: 'localhost:5180', lan: '1', url: '/board' });
+    // A device can't pass as a remote session (which may run launchers) by sending its marker.
+    await send(port, 'GET', '/board', { host, cookie, [REMOTE_HEADER]: '1' });
+    expect(seen.at(-1)!.remote).toBeUndefined();
     expect(lan.status().devices).toHaveLength(1);
 
     // Signing the device out from Settings ends its session.

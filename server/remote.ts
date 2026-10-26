@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { RemoteConfig, RemoteSession, RemoteStatus } from '../shared/types.js';
 import { AUD_TAG, AccessVerifier, TEAM_NAME } from './cfAccess.js';
 import type { Db } from './db.js';
-import { LAN_HEADER } from './lan.js';
+import { LAN_HEADER, REMOTE_HEADER } from './lan.js';
 import { getSetting, setSetting } from './store.js';
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js';
 
@@ -22,7 +22,7 @@ import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js';
 // the LAN marker (so the API refuses LAN-style settings) and a remote marker of their own.
 
 const SETTINGS_KEY = 'remote_access';
-export const REMOTE_HEADER = 'x-pm-remote';
+export { REMOTE_HEADER };
 const COOKIE = '__Host-pm_remote';
 const TOTP_PATH = '/__pm/code';
 const SESSION_TTL_MS = 12 * 3_600_000;
