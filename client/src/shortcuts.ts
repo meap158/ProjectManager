@@ -75,6 +75,13 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     default: 'Alt+Shift+D',
     scope: SELECTED_WORK,
   },
+  {
+    // Ctrl+Shift+\ as in the Claude app (Shift makes the key "|" on a US keyboard).
+    id: 'preview.expand',
+    label: 'Expand the Preview browser to fill the window, or restore it',
+    group: 'Preview',
+    default: 'Ctrl+|',
+  },
 ];
 
 const ACTION = new Map(SHORTCUT_ACTIONS.map((a) => [a.id, a]));

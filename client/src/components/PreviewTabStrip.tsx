@@ -143,6 +143,7 @@ export function PreviewTabStrip({
   onNew,
   onMove,
   onCommand,
+  trailing,
 }: {
   tabs: StripTab[];
   activeId: string;
@@ -154,6 +155,8 @@ export function PreviewTabStrip({
   /** Move a tab to the position another tab holds. */
   onMove: (id: string, toIndex: number) => void;
   onCommand: (command: TabCommand, id: string) => void;
+  /** Buttons at the strip's right end (the Expand toggle), as in the Claude app's browser. */
+  trailing?: ReactNode;
 }) {
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const tabRefs = useRef(new Map<string, HTMLElement>());
@@ -435,6 +438,7 @@ export function PreviewTabStrip({
       >
         +
       </button>
+      {trailing && <div className="preview-tabstrip-trailing">{trailing}</div>}
       {menu && menuTab && (
         <ContextMenu
           label="Tab actions"

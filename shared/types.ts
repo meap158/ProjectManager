@@ -821,6 +821,7 @@ export const SHORTCUT_IDS = [
   'session.restart',
   'session.toggle',
   'session.delete',
+  'preview.expand',
 ] as const;
 export type ShortcutId = (typeof SHORTCUT_IDS)[number];
 /** A combo ("Alt+Shift+C"), or null for an action left without one. */

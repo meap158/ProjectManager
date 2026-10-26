@@ -147,6 +147,12 @@ live page's marks scaled in, and the same tools to add more (`AnnotatedShot` on 
 `Markup` layer, drawn in the image's own pixels). Sending uploads the marked-up PNG like a chat
 image and pastes its path before the message.
 
+**Expand** (as in the Claude app's browser): the button at the right end of the tab strip, or
+Ctrl+Shift+\ (`preview.expand`, reassignable in Settings > Keyboard shortcuts), makes the browser
+fill the whole window, over the top bar, the sidebar and the apps list; the same button or key
+restores the layout. Esc is left to the previewed page. A key pressed while the page itself has
+focus goes to the page (its frame is another origin), so click the toolbar first.
+
 ## Theme
 
 The viewer's surface, border and loading mark follow the selected theme. The previewed page is the

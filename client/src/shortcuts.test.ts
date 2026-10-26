@@ -18,6 +18,7 @@ const {
   setShortcut,
   resetAllShortcuts,
   validCombo,
+  SHORTCUT_ACTIONS,
 } = await import('./shortcuts');
 
 // Keyboard shortcuts (PM-244): how a key press becomes a combo, how combos read, and when the
@@ -116,5 +117,19 @@ describe('handler', () => {
     expect(getBindings()['session.delete']).toBeNull();
     await setShortcut('session.restart', undefined);
     expect(getBindings()['session.restart']).toBe('Alt+Shift+R');
+  });
+});
+
+describe('Preview Expand (as in the Claude app)', () => {
+  it('answers Ctrl+Shift+\ (the key reads "|" with Shift on a US keyboard)', () => {
+    const combo = comboFromEvent({
+      key: '|',
+      code: 'Backslash',
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: true,
+      metaKey: false,
+    });
+    expect(combo).toBe(SHORTCUT_ACTIONS.find((a) => a.id === 'preview.expand')!.default);
   });
 });

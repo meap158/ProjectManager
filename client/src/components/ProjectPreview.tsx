@@ -25,6 +25,7 @@ import {
 } from './icons';
 import { LoadingMark } from './LoadingMark';
 import { PreviewPickDialog } from './PreviewPickDialog';
+import { useShortcut, useShortcutProps, useShortcutTitle } from '../shortcuts';
 import { PreviewMarkup, type Markup } from './PreviewMarkup';
 import { PreviewTabStrip, type StripTab, type TabCommand } from './PreviewTabStrip';
 import {
@@ -575,6 +576,18 @@ export function PreviewWorkspace() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [picking, stopPicking]);
+  // Expand (as in the Claude app's browser, Ctrl+Shift+\): the browser fills the whole window,
+  // over the top bar, sidebar and apps list, until the same button or key restores the layout.
+  const [expanded, setExpanded] = useState(false);
+  useShortcut('preview.expand', () => {
+    setExpanded((v) => !v);
+    return true;
+  });
+  const expandKeys = useShortcutProps('preview.expand');
+  const expandTitle = useShortcutTitle(
+    'preview.expand',
+    expanded ? 'Restore the layout' : 'Expand to fill the window',
+  );
   const pickedApp = target ? (apps.find((a) => a.port === target.port) ?? null) : null;
 
   /** A click opens in the active tab; Ctrl, ⌘ or a middle click opens a new tab, like a link. */
@@ -632,7 +645,7 @@ export function PreviewWorkspace() {
     <div
       className={`project-preview${target && !listing ? ' has-target' : ''}${
         target && listing ? ' is-listing' : ''
-      }`}
+      }${expanded ? ' is-expanded' : ''}`}
     >
       <section className="panel preview-list-panel" aria-label="Local apps">
         <div className="preview-list-tools">
@@ -841,6 +854,35 @@ export function PreviewWorkspace() {
           onNew={() => newTab()}
           onMove={(id, to) => dispatch({ type: 'move', id, to })}
           onCommand={runCommand}
+          trailing={
+            <button
+              type="button"
+              className={`preview-tool preview-expand${expanded ? ' is-on' : ''}`}
+              aria-label={expanded ? 'Restore the layout' : 'Expand'}
+              aria-pressed={expanded}
+              title={expandTitle}
+              {...expandKeys}
+              onClick={() => setExpanded((v) => !v)}
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                {expanded ? (
+                  <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+                ) : (
+                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                )}
+              </svg>
+            </button>
+          }
         />
         <form className="preview-toolbar" onSubmit={go}>
           <button
