@@ -525,9 +525,26 @@
 }
 
 @media (max-width: 768px) {
+  /* Full width: the grid's align-items:start, kept in a column, shrank the list to its content
+     (half the screen) and let the toolbar run off the right edge. */
   .project-preview {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+  }
+  /* The address bar as on a phone browser: with no page open the tools do nothing, so the field
+     takes the row; with one open, Forward shows only when there is somewhere to go. */
+  .project-preview:not(.has-target) .preview-tool {
+    display: none;
+  }
+  .preview-forward:disabled {
+    display: none;
+  }
+  .preview-toolbar {
+    gap: 4px;
+  }
+  .preview-address {
+    margin: 0;
   }
   .preview-list-panel {
     position: static;
@@ -553,7 +570,8 @@
   .project-preview:not(.has-target) .preview-stage {
     display: none;
   }
-  .project-preview.has-target .preview-back {
+  .project-preview.has-target .preview-back,
+  .project-preview.is-listing .preview-back {
     display: inline-flex;
     flex: none;
     margin-right: 2px;

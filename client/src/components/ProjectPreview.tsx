@@ -335,6 +335,12 @@ export function PreviewWorkspace() {
   const [draft, setDraft] = useState<{ id: string; text: string } | null>(null);
   const text = draft?.id === active.id ? draft.text : target ? targetText(target) : '';
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Phones show the list or the page, one at a time. "Apps" shows the list while the page stays
+   * loaded behind it (it used to empty the tab, losing its place); opening something, or "Page",
+   * shows the page again. Desktop always shows both, so this never applies there.
+   */
+  const [listing, setListing] = useState(false);
   const [apps, setApps] = useState<LocalApp[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -430,6 +436,7 @@ export function PreviewWorkspace() {
   const open = (next: PreviewTarget, inNewTab = false) => {
     setDraft(null);
     setError(null);
+    setListing(false);
     if (inNewTab) dispatch({ type: 'new', target: next });
     else dispatch({ type: 'navigate', id: active.id, target: next });
   };
@@ -595,7 +602,11 @@ export function PreviewWorkspace() {
   });
 
   return (
-    <div className={`project-preview${target ? ' has-target' : ''}`}>
+    <div
+      className={`project-preview${target && !listing ? ' has-target' : ''}${
+        target && listing ? ' is-listing' : ''
+      }`}
+    >
       <section className="panel preview-list-panel" aria-label="Local apps">
         <div className="preview-list-tools">
           <Dropdown
@@ -796,7 +807,10 @@ export function PreviewWorkspace() {
               <GlobeIcon size={14} className="preview-tab-globe" />
             );
           }}
-          onActivate={(id) => dispatch({ type: 'activate', id })}
+          onActivate={(id) => {
+            setListing(false);
+            dispatch({ type: 'activate', id });
+          }}
           onNew={() => newTab()}
           onMove={(id, to) => dispatch({ type: 'move', id, to })}
           onCommand={runCommand}
@@ -805,9 +819,11 @@ export function PreviewWorkspace() {
           <button
             type="button"
             className="btn btn-sm preview-back"
-            onClick={() => dispatch({ type: 'clear', id: active.id })}
+            aria-pressed={listing}
+            title={listing ? 'Back to the page, as you left it' : 'Your apps (the page stays open)'}
+            onClick={() => setListing((on) => !on)}
           >
-            Apps
+            {listing ? 'Page' : 'Apps'}
           </button>
           <button
             type="button"
@@ -821,7 +837,7 @@ export function PreviewWorkspace() {
           </button>
           <button
             type="button"
-            className="preview-tool"
+            className="preview-tool preview-forward"
             aria-label="Forward"
             title="Forward"
             disabled={active.trail.index >= active.trail.stack.length - 1}
