@@ -130,3 +130,54 @@ describe('the Text tool (PM-329)', () => {
     expect(onShapes).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('moving and editing text (PM-329)', () => {
+  it('drags an existing text mark to a new place, and a click on it edits it in place', async () => {
+    const { MarkupLayer } = await import('./Markup');
+    const onShapes = vi.fn();
+    const shapes = [
+      { kind: 'text' as const, color: '#4c8dff', at: { x: 100, y: 100 }, text: 'Hello' },
+    ];
+    const { rerender } = render(
+      <MarkupLayer
+        width={400}
+        height={300}
+        shapes={shapes}
+        onShapes={onShapes}
+        tool="text"
+        color="#ff4d4f"
+        className="layer"
+        label="Marks"
+      />,
+    );
+    const canvas = screen.getByLabelText('Marks');
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 300 }) as DOMRect;
+    canvas.setPointerCapture = () => {};
+    // A drag on the text moves it.
+    fireEvent.pointerDown(canvas, { clientX: 105, clientY: 105, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 165, clientY: 145, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 165, clientY: 145, pointerId: 1 });
+    expect(onShapes).toHaveBeenLastCalledWith([{ ...shapes[0], at: { x: 160, y: 140 } }]);
+    // A click on it opens it for editing, in its own colour, and emptying it removes the mark.
+    rerender(
+      <MarkupLayer
+        width={400}
+        height={300}
+        shapes={shapes}
+        onShapes={onShapes}
+        tool="text"
+        color="#ff4d4f"
+        className="layer"
+        label="Marks"
+      />,
+    );
+    fireEvent.pointerDown(canvas, { clientX: 105, clientY: 105, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 105, clientY: 105, pointerId: 2 });
+    const box = screen.getByLabelText('Edit the text') as HTMLInputElement;
+    expect(box.value).toBe('Hello');
+    expect(box.placeholder).toBe('');
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onShapes).toHaveBeenLastCalledWith([]);
+  });
+});

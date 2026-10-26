@@ -743,10 +743,31 @@
     0 0 0 2px var(--surface),
     0 0 0 4px var(--text);
 }
+/* The text box (PM-329): just an outline and the caret, the text in the mark's own colour, weight
+   and size (set inline), so what is typed looks like what will be drawn. */
 .shot-text {
   position: absolute;
-  width: 200px;
-  height: 30px;
+  z-index: 2;
+  min-width: 2ch;
+  max-width: calc(100% - 8px);
+  height: auto;
+  margin: -3px 0 0 -4px;
+  padding: 1px 3px;
+  border: 1px dashed currentColor;
+  border-radius: 3px;
+  outline: none;
+  background: transparent;
+  font-family: system-ui, sans-serif;
+  font-weight: 600;
+  line-height: 1.25;
+  /* The drawn text's dark edge, so it reads on light and dark pages alike. */
+  text-shadow:
+    0 0 2px rgb(0 0 0 / 65%),
+    0 0 1px rgb(0 0 0 / 65%);
+  caret-color: currentColor;
+}
+.shot-text:focus-visible {
+  border-style: solid;
 }
 @media (pointer: coarse) {
   .shot-tool,

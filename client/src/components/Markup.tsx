@@ -62,8 +62,8 @@ export function paint(
       s.points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
       ctx.stroke();
     } else {
-      const size = Math.max(14, Math.round(w / 55));
-      ctx.font = `600 ${size}px system-ui, sans-serif`;
+      const size = textSize(w);
+      ctx.font = textFont(size);
       // From the top, so the text lands where its box was typed in.
       ctx.textBaseline = 'top';
       ctx.lineWidth = Math.max(3, size / 5);
@@ -72,6 +72,24 @@ export function paint(
       ctx.fillText(s.text, s.at.x, s.at.y);
     }
   }
+}
+
+/** Text marks' size in layer units: readable on a small page, in step with a large one. */
+export const textSize = (w: number) => Math.max(14, Math.round(w / 55));
+const textFont = (size: number) => `600 ${size}px system-ui, sans-serif`;
+
+let measurer: CanvasRenderingContext2D | null | undefined;
+/** Where a text mark sits, in layer units (for picking it up to move or edit). */
+export function textBounds(s: Extract<Shape, { kind: 'text' }>, w: number) {
+  const size = textSize(w);
+  measurer ??=
+    typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
+  let width = s.text.length * size * 0.6;
+  if (measurer) {
+    measurer.font = textFont(size);
+    width = measurer.measureText(s.text).width;
+  }
+  return { x: s.at.x, y: s.at.y, width, height: size * 1.25 };
 }
 
 /**
@@ -104,15 +122,54 @@ export function MarkupLayer({
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [draft, setDraft] = useState<Shape | null>(null);
-  const [typing, setTyping] = useState<{ at: Point; screen: Point } | null>(null);
+  // The text box: a new mark, or an existing one (index) being edited in place. `scale` is screen
+  // pixels per layer unit, so the box shows the text at the size it will be drawn.
+  const [typing, setTyping] = useState<{
+    at: Point;
+    screen: Point;
+    scale: number;
+    color: string;
+    index: number | null;
+  } | null>(null);
   const [text, setText] = useState('');
   /** Esc was pressed: the blur that follows closes the box without keeping the text. */
   const cancelled = useRef(false);
+  // A press on an existing text mark: a drag moves it, a plain click edits it.
+  const [moving, setMoving] = useState<{
+    index: number;
+    from: Point;
+    origin: Point;
+    at: Point;
+    moved: boolean;
+  } | null>(null);
+  const [overText, setOverText] = useState(false);
   const commit = () => {
-    if (typing && text.trim() && !cancelled.current)
-      onShapes([...shapes, { kind: 'text', color, at: typing.at, text: text.trim() }]);
+    if (typing && !cancelled.current) {
+      const value = text.trim();
+      if (typing.index !== null) {
+        // Editing: the new words, or the mark removed when they were all deleted.
+        onShapes(
+          value
+            ? shapes.map((sh, i) => (i === typing.index ? ({ ...sh, text: value } as Shape) : sh))
+            : shapes.filter((_, i) => i !== typing.index),
+        );
+      } else if (value) {
+        onShapes([...shapes, { kind: 'text', color: typing.color, at: typing.at, text: value }]);
+      }
+    }
     cancelled.current = false;
     setTyping(null);
+  };
+  /** The text mark under a point, topmost first. */
+  const textAt = (p: Point) => {
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      const sh = shapes[i]!;
+      if (sh.kind !== 'text') continue;
+      const b = textBounds(sh, width);
+      if (p.x >= b.x - 4 && p.x <= b.x + b.width + 4 && p.y >= b.y - 4 && p.y <= b.y + b.height + 4)
+        return i;
+    }
+    return -1;
   };
 
   useEffect(() => {
@@ -123,7 +180,13 @@ export function MarkupLayer({
     const ctx = c.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    paint(ctx, image, draft ? [...shapes, draft] : shapes, width, height);
+    // A mark being edited is shown by its box instead; one being moved, where it is now.
+    const shown = shapes
+      .map((sh, i) =>
+        moving && i === moving.index && sh.kind === 'text' ? { ...sh, at: moving.at } : sh,
+      )
+      .filter((_, i) => !(typing && typing.index === i));
+    paint(ctx, image, draft ? [...shown, draft] : shown, width, height);
   });
 
   const at = (e: PointerEvent<HTMLCanvasElement>): Point => {
@@ -141,7 +204,16 @@ export function MarkupLayer({
         ref={canvas}
         className={className}
         aria-label={label}
-        style={{ pointerEvents: drawing ? 'auto' : 'none', cursor: drawing ? 'crosshair' : '' }}
+        style={{
+          pointerEvents: drawing ? 'auto' : 'none',
+          cursor: !drawing
+            ? ''
+            : tool !== 'text'
+              ? 'crosshair'
+              : moving || overText
+                ? 'move'
+                : 'text',
+        }}
         onPointerDown={(e) => {
           if (!drawing) return;
           const p = at(e);
@@ -149,9 +221,22 @@ export function MarkupLayer({
             // Keep the press from moving focus: the text box it opens would lose focus at once
             // and close before anything could be typed (PM-329).
             e.preventDefault();
+            const hit = textAt(p);
+            if (hit >= 0) {
+              const sh = shapes[hit] as Extract<Shape, { kind: 'text' }>;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setMoving({ index: hit, from: p, origin: sh.at, at: sh.at, moved: false });
+              return;
+            }
             const r = e.currentTarget.getBoundingClientRect();
             cancelled.current = false;
-            setTyping({ at: p, screen: { x: e.clientX - r.left, y: e.clientY - r.top } });
+            setTyping({
+              at: p,
+              screen: { x: e.clientX - r.left, y: e.clientY - r.top },
+              scale: r.width / width,
+              color,
+              index: null,
+            });
             setText('');
             return;
           }
@@ -163,6 +248,19 @@ export function MarkupLayer({
           );
         }}
         onPointerMove={(e) => {
+          if (tool === 'text' && !moving) setOverText(textAt(at(e)) >= 0);
+          if (moving) {
+            const p = at(e);
+            const dx = p.x - moving.from.x;
+            const dy = p.y - moving.from.y;
+            const moved = moving.moved || Math.abs(dx) > 3 || Math.abs(dy) > 3;
+            setMoving({
+              ...moving,
+              moved,
+              at: moved ? { x: moving.origin.x + dx, y: moving.origin.y + dy } : moving.origin,
+            });
+            return;
+          }
           if (!draft) return;
           const p = at(e);
           setDraft(
@@ -173,7 +271,31 @@ export function MarkupLayer({
                 : draft,
           );
         }}
-        onPointerUp={() => {
+        onPointerUp={(e) => {
+          if (moving) {
+            const m = moving;
+            setMoving(null);
+            if (m.moved) {
+              onShapes(
+                shapes.map((sh, i) => (i === m.index ? ({ ...sh, at: m.at } as Shape) : sh)),
+              );
+              return;
+            }
+            // A click on a text mark edits it in place.
+            const sh = shapes[m.index] as Extract<Shape, { kind: 'text' }>;
+            const r = e.currentTarget.getBoundingClientRect();
+            const scale = r.width / width;
+            cancelled.current = false;
+            setTyping({
+              at: sh.at,
+              screen: { x: sh.at.x * scale, y: sh.at.y * scale },
+              scale,
+              color: sh.color,
+              index: m.index,
+            });
+            setText(sh.text);
+            return;
+          }
           if (!draft) return;
           const tiny =
             draft.kind === 'box' &&
@@ -185,13 +307,19 @@ export function MarkupLayer({
       />
       {typing && (
         <input
-          className="input shot-text"
-          style={{ left: typing.screen.x, top: typing.screen.y }}
+          className="shot-text"
+          style={{
+            left: typing.screen.x,
+            top: typing.screen.y,
+            color: typing.color,
+            fontSize: textSize(width) * typing.scale,
+            // Grows with what is typed; an empty box is just the outline and the caret.
+            width: `${Math.max(2, text.length + 1)}ch`,
+          }}
           value={text}
           autoFocus
           maxLength={80}
-          placeholder="Type, then Enter"
-          aria-label="Text to add"
+          aria-label={typing.index === null ? 'Text to add' : 'Edit the text'}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
