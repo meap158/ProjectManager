@@ -167,6 +167,32 @@ describe('CodexAccounts (PM-164)', () => {
     expect(readFileSync(copy, 'utf8')).toBe('{"n":9}\n{"n":2}\n{"n":3}\n');
   });
 
+  it('finds a conversation that only a saved profile folder holds and brings it to the run home', () => {
+    const accounts = new CodexAccounts(tmpDir, db);
+    const profile = accounts.profile(
+      accounts.importAccount('Old', JSON.stringify({ access_token: 'test-token' })).accounts[0]!.id,
+    );
+    const id = '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b17';
+    const name = `rollout-2026-10-10-${id}.jsonl`;
+    const held = path.join(profile.home, 'sessions', '2026', '10', '10', name);
+    mkdirSync(path.dirname(held), { recursive: true });
+    writeFileSync(held, '{"n":1}\n{"n":2}\n');
+    // Begun under that login before every login shared the default home: only the profile has it.
+    expect(accounts.findRollout(defaultCodexHome, id)).toBeNull();
+    expect(accounts.carryConversation(defaultCodexHome, defaultCodexHome, id)).toBe(true);
+    expect(readFileSync(accounts.findRollout(defaultCodexHome, id)!, 'utf8')).toBe(
+      '{"n":1}\n{"n":2}\n',
+    );
+    // A conversation no home holds still fails closed, so a restart is never done blind.
+    expect(
+      accounts.carryConversation(
+        defaultCodexHome,
+        defaultCodexHome,
+        '019ef8dc-a4c1-7ae2-841a-e0f17c1e9b18',
+      ),
+    ).toBe(false);
+  });
+
   it('switching to Default never copies a profile smaller copy over the original', () => {
     const accounts = new CodexAccounts(tmpDir, db);
     const profile = accounts.profile(
