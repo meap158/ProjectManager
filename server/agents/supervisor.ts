@@ -1644,7 +1644,13 @@ export class AgentSupervisor {
         this.queuedInputBytes(row.id)
       )
         return false;
-      if (this.sessionActivity(row, this.fileModifiedAt(row.log_path)) !== 'idle') return false;
+      // A session stopped at the CLI's own limit message waits on the prompt and is the one to
+      // move, so its 'input' state is no reason to wait. Any other 'input' may be an approval.
+      // 'running' is detected positively (animation, timer, busy line); an unreadable screen with
+      // an empty prompt (null) is not a turn in progress.
+      const activity = this.sessionActivity(row, this.fileModifiedAt(row.log_path));
+      if (activity === 'running') return false;
+      if (activity === 'input' && !this.usageLimits.has(row.id)) return false;
       if (!emptyCodexPrompt(this.sessionScreen(row.id, 4000) ?? '')) return false;
     }
     const runs = this.db

@@ -128,6 +128,15 @@ it('continues a limit-blocked session after a safe switch', async () => {
     expect.objectContaining({ automatic: true, continuePrompt: true }),
   );
 });
+it('treats a session stopped at the limit message, or an unreadable idle screen, as safe to move', async () => {
+  const h = await setup();
+  h.add();
+  await h.quota();
+  vi.mocked(h.inside.sessionScreen).mockReturnValue('> ');
+  vi.mocked(h.inside.sessionActivity).mockReturnValue(null as never);
+  h.inside.tickContinuation();
+  expect(h.switchAccount).toHaveBeenCalledOnce();
+});
 it('defers for a draft, approval prompt, pending input, or an active run', async () => {
   const h = await setup();
   const id = h.add();
