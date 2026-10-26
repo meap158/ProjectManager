@@ -148,8 +148,9 @@ export function detectAttentionOverlay(
 ): DetectedAttentionOverlay | null {
   if (!screen.trim()) return null;
   const lines = screen.split(/\r?\n/);
-  // Long menus (an option per line plus a description line each) need more than one screenful.
-  const tailLines = lines.slice(-40);
+  // Long menus (an option per line plus a description line each) need more than one screenful,
+  // and on a narrow terminal every description wraps over several lines.
+  const tailLines = lines.slice(-120);
 
   let firstChoiceIdx = -1;
   let firstChoiceHasCursor = false;
@@ -170,6 +171,24 @@ export function detectAttentionOverlay(
         firstChoiceIdx = i;
         startNum = Number(scrolled[1]);
         break;
+      }
+    }
+  }
+  // Cut off at the top (PM-304): a CLI draws only what fits its terminal, so a menu taller than
+  // a phone-sized one starts mid-list with nothing marking it ("2. …" on the top line, its
+  // question and option 1 never drawn). With the menu's own hint on screen, the first numbered
+  // line followed by the next number is where the visible part starts.
+  let clipped = false;
+  if (firstChoiceIdx < 0 && CHOICE_HINT_RE.test(tailLines.slice(-6).join('\n'))) {
+    search: for (let i = 0; i < tailLines.length; i++) {
+      for (let num = 2; num <= 9; num++) {
+        if (!parseNumberedLine(tailLines[i]!, num)) continue;
+        if (tailLines.slice(i + 1).some((line) => parseNumberedLine(line, num + 1))) {
+          firstChoiceIdx = i;
+          startNum = num;
+          clipped = true;
+          break search;
+        }
       }
     }
   }
@@ -216,7 +235,9 @@ export function detectAttentionOverlay(
         CHOICE_HINT_RE.test(afterText));
 
     if (isMenu) {
-      title = extractOverlayTitle(tailLines, firstChoiceIdx);
+      title = clipped
+        ? `${startNum === 2 ? 'Option 1 is' : `Options 1–${startNum - 1} are`} above what the terminal shows: open it to see the question`
+        : extractOverlayTitle(tailLines, firstChoiceIdx);
       for (const choice of parsedChoices) {
         const key = normalizeChoiceKey(choice.num, choice.label);
         options.push({

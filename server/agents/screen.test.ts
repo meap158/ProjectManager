@@ -14,6 +14,21 @@ describe('renderScreen (PM-129)', () => {
     expect(lines.join('\n')).not.toMatch(/Roosting.*Roosting/);
   });
 
+  it('keeps lines scrolled off a small screen as scrollback, until a full clear', () => {
+    const menu = 'Pick one?\r\n1. Shop card\r\n2. Campaign table\r\n3. Both\r\nEnter to select';
+    // Three rows: the question and option 1 scroll off the top.
+    expect(renderScreen(menu, 20, 3)).toEqual(['2. Campaign table', '3. Both', 'Enter to select']);
+    expect(renderScreen(menu, 20, 3, false, 50)).toEqual([
+      'Pick one?',
+      '1. Shop card',
+      '2. Campaign table',
+      '3. Both',
+      'Enter to select',
+    ]);
+    // A full clear starts a new frame: the old overflow is gone.
+    expect(renderScreen(`${menu}\x1b[2J\x1b[Hnew`, 20, 3, false, 50)).toEqual(['new', '', '']);
+  });
+
   it('consumes CSI sequences with a private prefix ("ESC [ < u") instead of drawing them', () => {
     expect(renderScreen('❯ \x1b[<u\x1b[<u', 10, 1)).toEqual(['❯']);
   });

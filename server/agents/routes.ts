@@ -584,7 +584,9 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   app.get('/agent-sessions/:id/screen', (c) => {
     const id = parseId(c);
     if (!supervisor.getSession(id)) throw new AgentError(404, 'Session not found');
-    return c.json({ text: supervisor.sessionScreen(id, 1600) ?? '' });
+    // The whole screen (bounded by the terminal's size): a menu with wrapped descriptions on a
+    // narrow terminal ran past 1,600 characters, cutting off its question and first option.
+    return c.json({ text: supervisor.sessionScreen(id, 12_000) ?? '' });
   });
 
   app.patch('/agent-sessions/:id', async (c) => {

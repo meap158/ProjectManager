@@ -333,6 +333,8 @@ interface RunRow {
  * replays in a few milliseconds.
  */
 const SCREEN_TAIL_BYTES = 256 * 1024;
+/** Lines kept above the screen: a prompt taller than a phone-sized terminal starts up there. */
+const SCREEN_SCROLLBACK = 200;
 /** What auto-continue and "Try again" send a Codex session after its usage limit (PM-58). */
 const CONTINUE_PROMPT = '\x1b[200~Continue the interrupted task from where you stopped.\x1b[201~\r';
 /** How far back a log is searched for its last recorded size. */
@@ -3647,7 +3649,7 @@ export class AgentSupervisor {
     // output is shown stripped, as before.
     const lines =
       size && size.cols >= 20 && size.cols <= 500 && size.rows >= 1 && size.rows <= 500
-        ? renderScreen(tail, size.cols, size.rows, true)
+        ? renderScreen(tail, size.cols, size.rows, true, SCREEN_SCROLLBACK)
         : stripTerminal(tail.slice(-4096))
             .split('\n')
             .map((line) => line.replace(/\s+$/, ''));

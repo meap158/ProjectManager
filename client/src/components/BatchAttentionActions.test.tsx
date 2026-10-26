@@ -65,6 +65,46 @@ const CLAUDE_LIMIT_MENU_SCREEN = [
   '   Enter to confirm · Esc to cancel',
 ].join('\n');
 
+describe('a menu cut off at the top (PM-304)', () => {
+  it('offers the visible options of a menu whose question and option 1 are out of view', () => {
+    // Session 19 (ShopPilot), Oct 2026: a 40x17 terminal; Claude drew from option 2 down.
+    const screen = [
+      '2. Campaign table',
+      '     Restyle the current first image',
+      '     (campaign spend/ROAS table) in',
+      "     Shopee's orange style instead.",
+      '  3. Both',
+      '     Shop card in the live-monitor style',
+      '     first, campaign table restyled.',
+      '  4. Type something.',
+      '────────────────────────────────────────',
+      '  5. Chat about this',
+      '',
+      'Enter to select · ↑/↓ to navigate · Esc',
+      'to cancel',
+    ].join('\n');
+    const overlay = detectAttentionOverlay(screen, {
+      providerId: 'claude',
+      terminal: 'pty',
+      usageLimit: null,
+    });
+    expect(overlay?.title).toBe(
+      'Option 1 is above what the terminal shows: open it to see the question',
+    );
+    expect(overlay?.options.map((o) => o.label)).toEqual([
+      '2. Campaign table',
+      '3. Both',
+      '4. Type something.',
+      '5. Chat about this',
+    ]);
+    expect(overlay?.options[1]!.command).toEqual({ kind: 'key', data: '3' });
+  });
+
+  it('does not take numbered prose for a menu without a menu hint', () => {
+    expect(detectAttentionOverlay('Steps:\n2. Build it\n3. Ship it\n❯ ', undefined)).toBeNull();
+  });
+});
+
 describe('detectAttentionOverlay (PM-165)', () => {
   it('parses Codex Resume paused goal? TUI overlay even when drawn over background text', () => {
     const parsed = detectAttentionOverlay(CODEX_GOAL_POPUP_SCREEN);

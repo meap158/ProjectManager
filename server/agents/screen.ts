@@ -30,11 +30,23 @@ function wide(code: number): boolean {
 
 /**
  * Replays terminal output on a `cols` × `rows` screen and returns its lines (trailing spaces
- * trimmed). Output that scrolls off the top is dropped, as on a real screen.
+ * trimmed). Output that scrolls off the top is dropped, as on a real screen, unless `scrollback`
+ * keeps up to that many of those lines above the screen, like a terminal's history: a prompt
+ * taller than a small terminal (a menu with wrapped descriptions on a phone-sized one) has its
+ * question and first options up there. A full clear ("ESC [2J" / "[3J", which Claude Code sends
+ * before drawing a frame taller than the terminal) empties it, so only the latest frame's overflow
+ * is kept.
  */
-export function renderScreen(data: string, cols: number, rows: number, sliced = false): string[] {
+export function renderScreen(
+  data: string,
+  cols: number,
+  rows: number,
+  sliced = false,
+  scrollback = 0,
+): string[] {
   const blank = () => Array<string>(cols).fill(' ');
   const grid = Array.from({ length: rows }, blank);
+  const history: string[][] = [];
   let row = 0;
   let col = 0;
   let saved = { row: 0, col: 0 };
@@ -47,7 +59,11 @@ export function renderScreen(data: string, cols: number, rows: number, sliced = 
   const lineFeed = () => {
     if (row < rows - 1) row++;
     else {
-      grid.shift();
+      const gone = grid.shift()!;
+      if (scrollback > 0) {
+        history.push(gone);
+        if (history.length > scrollback) history.shift();
+      }
       grid.push(blank());
     }
   };
@@ -116,8 +132,10 @@ export function renderScreen(data: string, cols: number, rows: number, sliced = 
           }
           case 'J': {
             const mode = Number.isFinite(params[0]) ? params[0] : 0;
-            if (mode === 2 || mode === 3) grid.forEach((line) => line.fill(' '));
-            else if (mode === 1) {
+            if (mode === 2 || mode === 3) {
+              grid.forEach((line) => line.fill(' '));
+              history.length = 0;
+            } else if (mode === 1) {
               for (let r = 0; r < row; r++) grid[r]!.fill(' ');
               grid[row]!.fill(' ', 0, col + 1);
             } else {
@@ -216,5 +234,5 @@ export function renderScreen(data: string, cols: number, rows: number, sliced = 
       wrapNext = true;
     }
   }
-  return grid.map((line) => line.join('').replace(/\s+$/, ''));
+  return [...history, ...grid].map((line) => line.join('').replace(/\s+$/, ''));
 }
