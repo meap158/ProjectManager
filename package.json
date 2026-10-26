@@ -13,6 +13,7 @@
   "scripts": {
     "launch": "node scripts/launch.mjs",
     "owner:pages": "node scripts/owner-pages.mjs",
+    "prose:audit": "node scripts/prose-audit.mjs",
     "dev": "node scripts/launch.mjs",
     "build": "node scripts/build.mjs",
     "start": "node scripts/launch.mjs --prod",

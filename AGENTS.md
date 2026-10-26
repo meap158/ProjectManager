@@ -97,6 +97,14 @@ anything.
 - **UI:** follow `DESIGN.md`. Use token variables, not raw hex. Every drag interaction needs a
   keyboard alternative. Use `ConfirmDelete` for destructive actions, never `window.confirm`.
 - **Rare UI attribution** (licence requirement): keep the README credit (a visible link to rareui.com).
+- **Writing style (PM-314):** write prose, UI text, docs and commit messages like a person writing for
+  one reader. No em dashes (use a period, comma, colon or parentheses), no stock phrases ("at its
+  core", "let's dive in"), no overused words ("delve", "testament", "pivotal"), no "not X but Y"
+  framing, no chatbot residue, no emoji in headings. The full pattern list is
+  [blader/humanizer](https://github.com/blader/humanizer); it edits prose only, never code, data or
+  link targets. `npm run prose:audit` counts the pattern-detectable tells in a project's markdown
+  and text, and `npm run prose:audit -- --diff` fails on any added line that has one. Run the
+  `--diff` form before every commit. Existing text is not a failure; fix it when you touch it.
 - Errors: API errors are `{ error: string }` with a fitting status code. The UI shows them in
   `.error-banner`. Log unexpected server errors with a `[area]` prefix.
 
