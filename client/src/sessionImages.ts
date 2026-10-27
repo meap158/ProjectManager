@@ -58,6 +58,26 @@ export async function prepareImage(
 }
 
 /**
+ * The image on this device's clipboard, read by the browser (Alt+V away from the computer).
+ * 'none' when the clipboard holds no image, 'unavailable' when the browser cannot read it here
+ * (plain-http LAN pages are not a secure context, or the permission was refused).
+ */
+export async function clipboardImage(): Promise<File | 'none' | 'unavailable'> {
+  if (!navigator.clipboard?.read) return 'unavailable';
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find((t) => t.startsWith('image/'));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      return new File([blob], `image.${type.slice(6).replace('jpeg', 'jpg')}`, { type });
+    }
+    return 'none';
+  } catch {
+    return 'unavailable';
+  }
+}
+
+/**
  * Where a pane's pastes go. The chat view also takes picked images itself (`addImages`), so the
  * pane's image button shows them in the composer at once instead of uploading first (PM-301).
  */

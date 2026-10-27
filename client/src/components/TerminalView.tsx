@@ -5,6 +5,8 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import type { AgentOutput } from '../../../shared/types';
+import { isRemoteClient } from '../remote';
+import { clipboardImage } from '../sessionImages';
 
 /**
  * Max history bytes to replay on initial mount. 512 KB covers ~5,000 lines of scrollback (xterm's max limit).
@@ -97,6 +99,13 @@ export function TerminalView({
   const [extraKeys, setExtraKeys] = useState(false);
 
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  /** A short note about an Alt+V that found no image to send (away from the computer). */
+  const [pasteNotice, setPasteNotice] = useState('');
+  useEffect(() => {
+    if (!pasteNotice) return;
+    const timer = setTimeout(() => setPasteNotice(''), 4000);
+    return () => clearTimeout(timer);
+  }, [pasteNotice]);
   const keysRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const strip = keysRef.current?.querySelector<HTMLElement>('.terminal-key-scroll');
@@ -438,6 +447,32 @@ export function TerminalView({
           !e.altKey &&
           (e.key === 'ArrowDown' || e.key === 'ArrowUp')
         ) {
+          return false;
+        }
+        // Alt+V is the CLIs' own "paste image": they read the clipboard of the computer they run
+        // on. Opened from another device (remote or LAN access), that is not the clipboard the
+        // person copied to, so the CLI pasted whatever text the computer held. There the image is
+        // read from this device's clipboard instead and sent like a Ctrl+V image.
+        if (
+          e.type === 'keydown' &&
+          e.altKey &&
+          !e.ctrlKey &&
+          !e.shiftKey &&
+          !e.metaKey &&
+          e.code === 'KeyV' &&
+          callbacks.current.onImage &&
+          isRemoteClient()
+        ) {
+          e.preventDefault();
+          void clipboardImage().then((image) => {
+            if (image instanceof File) callbacks.current.onImage?.(image);
+            else
+              setPasteNotice(
+                image === 'none'
+                  ? 'No image on this device’s clipboard'
+                  : 'This browser can’t read the clipboard here: paste with Ctrl+V or use the image button',
+              );
+          });
           return false;
         }
         if (
@@ -926,6 +961,11 @@ export function TerminalView({
       className={`terminal-shell${stopped ? ' is-stopped' : ''}${interactive ? ' is-interactive' : ''}`}
       style={{ height }}
     >
+      {pasteNotice && (
+        <div className="terminal-notice" role="status">
+          {pasteNotice}
+        </div>
+      )}
       {connection !== 'ready' && (
         <div className={`terminal-notice${cliShown ? '' : ' is-centered'}`} role="status">
           {connection === 'loading'

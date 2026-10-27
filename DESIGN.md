@@ -828,7 +828,11 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   The browser re-encodes big photos (long edge 2000px, JPEG) and uploads to
   `<dataDir>/attachments/sessions/<id>/` (8 MB cap, newest 50 kept, removed with the session),
   then pastes the absolute path through xterm's paste (bracketed when the CLI asked), which
-  Claude Code shows as `[Image #1]` (verified live). Alt+V and Ctrl+V for text are unchanged.
+  Claude Code shows as `[Image #1]` (verified live). Ctrl+V for text is unchanged. Alt+V is
+  unchanged on this computer; opened from another device (remote or LAN access) the CLI would read
+  the computer's clipboard, so there the terminal reads the device's clipboard in the browser and
+  sends its image the same way, or shows a short notice when it holds no image or the browser
+  cannot read it (plain-http LAN pages are not a secure context).
 - **Filters (PM-53):** the search box flexes 120-220px to share the filter row; below 1200px the
   session count steps aside for it; on phones it is a short "Search…" box beside the three
   pickers that takes the whole row while in use.
