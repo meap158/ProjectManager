@@ -27,6 +27,7 @@ export { OutputLog, MAX_LOG_BYTES } from './outputLog.js';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { open } from 'node:fs/promises';
 import {
   appendFileSync,
   mkdirSync,
@@ -344,7 +345,9 @@ const SCREEN_SCROLLBACK = 200;
 /** What auto-continue and "Try again" send a Codex session after its usage limit (PM-58). */
 const CONTINUE_PROMPT = '\x1b[200~Continue the interrupted task from where you stopped.\x1b[201~\r';
 /** How far back a log is searched for its last recorded size. */
-const RECORDED_SIZE_SCAN_BYTES = 64 * 1024 * 1024;
+// Searched in the background (PM-332): the synchronous 64 MB search of every session's log after
+// each restart froze the server for seconds and spiked memory.
+const RECORDED_SIZE_SCAN_BYTES = 16 * 1024 * 1024;
 
 /** The last size marker (`OSC 777;pm-size;cols;rows`) in some log text, if a sane one. */
 function lastRecordedSize(text: string): { cols: number; rows: number } | null {
@@ -369,6 +372,8 @@ const seenTitleKey = (id: number) => `session-cli-title:${id}`;
 export class AgentSupervisor {
   private live = new Map<string, LiveProc>();
   private sessionSizes = new Map<number, { cols: number; rows: number }>();
+  /** The last rendered screen per session, by log size and terminal size (sessionScreen). */
+  private screenCache = new Map<number, { key: string; text: string }>();
   /** Sizes read back from session logs, for screens no viewer has sized yet (PM-129). */
   private recordedSizes = new Map<number, { cols: number; rows: number }>();
   private sizeSearched = new Set<number>();
@@ -3898,7 +3903,21 @@ export class AgentSupervisor {
    */
   sessionScreen(id: number, maxChars = 500): string | null {
     const row = this.getSessionRow(id);
-    const tail = row ? this.logTail(row.log_path, SCREEN_TAIL_BYTES) : null;
+    if (!row) return null;
+    // Several background checks ask for the same screen every few seconds: while the log has not
+    // grown and the size is the same, the last rendering answers (PM-332: rendering 256 KB of
+    // terminal output per call, per session, per check, added up to seconds).
+    let logSize = -1;
+    try {
+      logSize = this.fileSize(row.log_path);
+    } catch {
+      // Unreadable: read below, which fails the same way.
+    }
+    const knownSize = this.sessionSizes.get(id) ?? this.recordedSizes.get(id);
+    const cacheKey = `${logSize}:${knownSize ? `${knownSize.cols}x${knownSize.rows}` : '-'}`;
+    const cached = this.screenCache.get(id);
+    if (logSize >= 0 && cached?.key === cacheKey) return cached.text.slice(-maxChars) || null;
+    const tail = this.logTail(row.log_path, SCREEN_TAIL_BYTES);
     if (!tail) return null;
     // Before a viewer reports a size (e.g. after a restart, with only chat views open), the
     // latest size the log records: in the tail, else further back (cached once found).
@@ -3920,45 +3939,48 @@ export class AgentSupervisor {
       .filter((line, i, all) => line || (i > 0 && all[i - 1]))
       .join('\n')
       .trim();
+    // Kept under the size the rendering used (a size found meanwhile renders afresh next time).
+    const usedSize = size ? `${size.cols}x${size.rows}` : '-';
+    if (logSize >= 0) this.screenCache.set(id, { key: `${logSize}:${usedSize}`, text });
     return text.slice(-maxChars) || null;
   }
 
   /**
-   * The last size a session log records, reading back from the end in chunks (a long session
-   * can go many megabytes between resizes). Null when there is none; remembered once found.
+   * The latest terminal size recorded further back in a session's log, searched once per session
+   * in the background (async reads, a few MB at a time): null now, and the size is used from the
+   * next call. Meanwhile the screen falls back to stripped text, as with no size at all.
    */
   private findRecordedSize(id: number, file: string): { cols: number; rows: number } | null {
-    // Searched once per session: any later size is recorded in the tail, which is read anyway.
     if (this.sizeSearched.has(id)) return null;
     this.sizeSearched.add(id);
-    const CHUNK = 1024 * 1024;
-    const OVERLAP = 64; // A marker split across two chunks is still found whole.
-    try {
-      const fd = openSync(file, 'r');
+    void (async () => {
+      const CHUNK = 1024 * 1024;
+      const OVERLAP = 64; // A marker split across two chunks is still found whole.
+      let handle: import('node:fs/promises').FileHandle | undefined;
       try {
-        let end = fstatSync(fd).size;
+        handle = await open(file, 'r');
+        let end = (await handle.stat()).size;
         const buf = Buffer.allocUnsafe(CHUNK + OVERLAP);
         for (let read = 0; end > 0 && read < RECORDED_SIZE_SCAN_BYTES; read += CHUNK) {
           const start = Math.max(0, end - CHUNK);
-          const len = Math.min(CHUNK + OVERLAP, fstatSync(fd).size - start);
-          const n = readSync(fd, buf, 0, len, start);
-          const size = lastRecordedSize(buf.subarray(0, n).toString('latin1'));
+          const len = Math.min(CHUNK + OVERLAP, (await handle.stat()).size - start);
+          const { bytesRead } = await handle.read(buf, 0, len, start);
+          const size = lastRecordedSize(buf.subarray(0, bytesRead).toString('latin1'));
           if (size) {
-            this.recordedSizes.set(id, size);
-            return size;
+            if (!this.recordedSizes.has(id)) this.recordedSizes.set(id, size);
+            return;
           }
           end = start;
         }
+      } catch {
+        // Unreadable log: the screen stays stripped text.
       } finally {
-        closeSync(fd);
+        await handle?.close().catch(() => undefined);
       }
-    } catch {
-      // Unreadable log: the caller falls back to stripped text.
-    }
+    })();
     return null;
   }
 
-  /** The end of a session log: by default 4 KB (the latest output and a little before it). */
   /**
    * `logTail` for a log whose size and modified time the caller has just read: an unchanged log
    * (most sessions sit idle) is not opened again. The session lists are polled every couple of
@@ -3973,6 +3995,7 @@ export class AgentSupervisor {
     return tail;
   }
 
+  /** The end of a session log: by default 4 KB (the latest output and a little before it). */
   private logTail(file: string, bytes = 4096): string | null {
     try {
       const fd = openSync(file, 'r');

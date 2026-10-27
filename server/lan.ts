@@ -64,6 +64,18 @@ const PRIVATE = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
  * adapters (Hyper-V, WSL, Docker, VPNs) skipped, home networks (192.168.x) first.
  */
 export function lanAddresses(): string[] {
+  // Reading the adapters is a slow synchronous call on Windows, and the status poll, the rebind
+  // check and sign-ins all ask: answer from a copy a few seconds old (PM-332's profile showed it).
+  const now = Date.now();
+  if (addressCache && now - addressCache.at < ADDRESSES_TTL_MS) return [...addressCache.ips];
+  const ips = readLanAddresses();
+  addressCache = { ips, at: now };
+  return [...ips];
+}
+const ADDRESSES_TTL_MS = 3_000;
+let addressCache: { ips: string[]; at: number } | null = null;
+
+function readLanAddresses(): string[] {
   const rank = (ip: string) => (ip.startsWith('192.168.') ? 0 : ip.startsWith('10.') ? 1 : 2);
   return Object.entries(os.networkInterfaces())
     .filter(([name]) => !VIRTUAL.test(name))
