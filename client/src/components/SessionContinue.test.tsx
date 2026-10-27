@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
-import { SessionContinue } from './SessionContinue';
+import { RESULT_MS, SessionContinue } from './SessionContinue';
 vi.mock('../api', () => ({ api: { sendSessionInput: vi.fn() } }));
 afterEach(() => {
   cleanup();
@@ -65,4 +65,18 @@ it('uses newline for pipe sessions and hides the shortcut for shells and ended s
   expect(screen.queryByRole('button')).toBeNull();
   view.rerender(<SessionContinue session={{ ...session, status: 'exited' }} onError={vi.fn()} />);
   expect(screen.queryByRole('button')).toBeNull();
+});
+
+it('shows Sent for a moment, then reads Continue again', async () => {
+  vi.mocked(api.sendSessionInput).mockResolvedValue({ session, queued: false });
+  render(<SessionContinue session={session} onError={vi.fn()} />);
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  fireEvent.click(screen.getByRole('button', { name: 'Continue Worker' }));
+  await screen.findByText('Sent');
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(RESULT_MS);
+  });
+  expect(screen.getByText('Continue')).toBeTruthy();
+  expect(screen.queryByText('Sent')).toBeNull();
+  vi.useRealTimers();
 });

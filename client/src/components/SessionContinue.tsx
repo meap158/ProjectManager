@@ -1,7 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
 import { useShortcutProps, useShortcutTitle, type ShortcutId } from '../shortcuts';
+
+/** How long the button shows Sent or Queued before it reads Continue again. */
+export const RESULT_MS = 2500;
 
 /** Explicitly submit a short nudge to this CLI, without restarting its conversation. */
 export function SessionContinue({
@@ -21,6 +24,12 @@ export function SessionContinue({
   const [result, setResult] = useState('');
   const keys = useShortcutProps(shortcut);
   const title = useShortcutTitle(shortcut, 'Send “continue” to this session');
+  // The tick says it went; then the button is Continue again, ready for the next nudge.
+  useEffect(() => {
+    if (!result) return;
+    const timer = setTimeout(() => setResult(''), RESULT_MS);
+    return () => clearTimeout(timer);
+  }, [result]);
   if (
     !['codex', 'claude', 'opencode', 'grok', 'antigravity'].includes(session.providerId) ||
     session.status !== 'running'
