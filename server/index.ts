@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { recentRequests, traceRequests } from './activityTrail.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getRequestListener } from '@hono/node-server';
@@ -174,6 +175,8 @@ async function main() {
     server.on('close', () => void vite.close());
   }
 
+  handle = traceRequests(handle);
+
   server.on('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE') {
       releaseInstance(config.dataDir, process.pid);
@@ -240,8 +243,12 @@ async function main() {
     loopDelay.reset();
     if (worstMs >= 1000) {
       const memory = process.memoryUsage();
+      const scanning = api.scanner.scanningProjectIds();
+      const around = recentRequests(worstMs + 5000);
       console.warn(
-        `${new Date().toISOString()} [perf] event loop was blocked for ${worstMs} ms; rss=${Math.round(memory.rss / 1048576)}MB heap=${Math.round(memory.heapUsed / 1048576)}MB`,
+        `${new Date().toISOString()} [perf] event loop was blocked for ${worstMs} ms; rss=${Math.round(memory.rss / 1048576)}MB heap=${Math.round(memory.heapUsed / 1048576)}MB` +
+          (scanning.length ? `; scanning projects ${scanning.join(',')}` : '') +
+          (around.length ? `; requests around it: ${around.join(' | ')}` : ''),
       );
     }
   }, 5000).unref();

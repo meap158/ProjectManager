@@ -55,6 +55,11 @@ export class Scanner {
     return this.states.get(projectId) ?? IDLE;
   }
 
+  /** Ids of projects being scanned right now (named in the event-loop block log). */
+  scanningProjectIds(): number[] {
+    return [...this.states].filter(([, s]) => s.status === 'scanning').map(([id]) => id);
+  }
+
   forget(projectId: number): void {
     this.states.delete(projectId);
   }
