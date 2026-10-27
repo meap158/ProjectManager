@@ -2,7 +2,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { proxyPreview } from './preview.js';
-import { PICKER_INLINE, PICKER_JS, injectPicker } from './previewPicker.js';
+import { PICKER_INLINE, PICKER_JS, injectPicker, pickerCsp, pickerTag } from './previewPicker.js';
 
 describe('injectPicker (PM-311)', () => {
   it('goes right after <head>, else after <html>, else first', () => {
@@ -36,5 +36,31 @@ describe('injectPicker (PM-311)', () => {
     } finally {
       await new Promise((resolve) => app.close(resolve));
     }
+  });
+});
+
+describe('the picker under a strict page policy (Next.js nonces)', () => {
+  const fresh = () => 'OURS1234';
+  it("reuses the page's nonce where 'strict-dynamic' would block 'self'", () => {
+    const csp = "default-src 'self'; script-src 'self' 'nonce-PAGE5678' 'strict-dynamic'";
+    expect(pickerCsp(csp, fresh)).toEqual({ csp, nonce: 'PAGE5678' });
+    expect(pickerTag('PAGE5678')).toBe(
+      '<script src="/__pm-picker.js" nonce="PAGE5678" data-pm-picker></script>',
+    );
+  });
+  it('adds a nonce of its own when the policy has none (hashes only), and leaves easy policies alone', () => {
+    expect(pickerCsp("script-src 'sha256-abc' 'strict-dynamic'", fresh)).toEqual({
+      csp: "script-src 'sha256-abc' 'strict-dynamic' 'nonce-OURS1234'",
+      nonce: 'OURS1234',
+    });
+    expect(pickerCsp("default-src 'self' 'strict-dynamic'", fresh).csp).toBe(
+      "default-src 'self' 'strict-dynamic'; script-src 'self' 'strict-dynamic' 'nonce-OURS1234'",
+    );
+    expect(pickerCsp("default-src 'self'", fresh)).toEqual({
+      csp: "default-src 'self'",
+      nonce: null,
+    });
+    // A nonce that could break out of the attribute is never written.
+    expect(pickerTag('x" onload="evil')).not.toContain('onload');
   });
 });

@@ -344,3 +344,36 @@ export function injectPicker(html: string, tag: string): string {
 export const PICKER_INLINE = `<script data-pm-picker>${PICKER_JS}</script>`;
 /** The external form, for the own-origin mode (allowed by a page CSP's 'self'). */
 export const PICKER_EXTERNAL = `<script src="${PICKER_PATH}" data-pm-picker></script>`;
+
+/** The external form carrying a CSP nonce, for pages whose policy runs nonce'd scripts only. */
+export const pickerTag = (nonce: string | null) =>
+  nonce && /^[A-Za-z0-9+/=_-]{8,200}$/.test(nonce)
+    ? `<script src="${PICKER_PATH}" nonce="${nonce}" data-pm-picker></script>`
+    : PICKER_EXTERNAL;
+
+/**
+ * Lets the picker run under a page's Content Security Policy (PM-311). A policy with
+ * 'strict-dynamic' ignores 'self', so only scripts with its nonce run (Next.js apps set one):
+ * the picker reuses the page's own nonce when the policy has one, or else gets a nonce of its own
+ * added to script-src. Returns the policy to send and the nonce for the tag (null: none needed).
+ */
+export function pickerCsp(
+  csp: string,
+  freshNonce: () => string,
+): { csp: string; nonce: string | null } {
+  const parts = csp
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const scriptIndex = parts.findIndex((part) => /^script-src(\s|$)/i.test(part));
+  const defaultIndex = parts.findIndex((part) => /^default-src(\s|$)/i.test(part));
+  const governing =
+    scriptIndex >= 0 ? parts[scriptIndex]! : defaultIndex >= 0 ? parts[defaultIndex]! : '';
+  if (!/'strict-dynamic'/i.test(governing)) return { csp, nonce: null };
+  const pageNonce = /'nonce-([^']+)'/i.exec(governing)?.[1] ?? null;
+  if (pageNonce) return { csp, nonce: pageNonce };
+  const nonce = freshNonce();
+  if (scriptIndex >= 0) parts[scriptIndex] = `${parts[scriptIndex]} 'nonce-${nonce}'`;
+  else parts.push(`script-src ${governing.replace(/^default-src/i, '').trim()} 'nonce-${nonce}'`);
+  return { csp: parts.join('; '), nonce };
+}

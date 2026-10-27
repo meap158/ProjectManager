@@ -311,6 +311,11 @@ export function createApp(
   const capture = new PreviewCapture(
     options.dataDir ?? path.join(os.tmpdir(), 'projectmanager-capture'),
   );
+  // Starting to mark up a page warms the capture browser, so the screenshot is quick (PM-311).
+  app.post('/preview-capture/warm', (c) => {
+    capture.warm();
+    return c.body(null, 204);
+  });
   app.post('/preview-capture', async (c) => {
     if (!capture.available) throw new PreviewError(502, 'No Chrome or Edge on this computer');
     const body = (await c.req.json().catch(() => null)) as CaptureRequest | null;

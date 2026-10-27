@@ -22,8 +22,14 @@ export function PreviewMarkup({
   onAdd,
   onClose,
   onError,
+  fallbackPage,
 }: {
   frame: () => HTMLIFrameElement | null;
+  /**
+   * The page as the Preview knows it (address, frame size), for a page whose picker cannot
+   * answer (a strict policy, a page that is not HTML): marks still go to the dialog.
+   */
+  fallbackPage: () => PickedPage | null;
   onAdd: (markup: Markup) => void;
   onClose: () => void;
   onError: (message: string) => void;
@@ -41,6 +47,15 @@ export function PreviewMarkup({
 
   const tell = (type: 'start' | 'pause' | 'stop' | 'clear' | 'state') =>
     frame()?.contentWindow?.postMessage({ pmPicker: true, type }, '*');
+
+  // Warm the screenshot browser now, so Add to chat does not wait for it to start.
+  useEffect(() => {
+    void fetch('/api/preview-capture/warm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).catch(() => undefined);
+  }, []);
 
   // The layer follows the page's size (the Preview's stage), for a sharp, exact canvas.
   useEffect(() => {
@@ -114,11 +129,13 @@ export function PreviewMarkup({
     setAdding(true);
     const { page, snapshot } = await currentPage();
     setAdding(false);
-    if (!page) {
+    // A page whose picker cannot answer still gets its marks sent, over a fresh capture.
+    const known = page ?? fallbackPage();
+    if (!known) {
       onError('The page did not answer. Reload it in the Preview and try again.');
       return;
     }
-    onAdd({ page, snapshot, element, marks: shapes });
+    onAdd({ page: known, snapshot, element, marks: shapes });
   };
 
   return (

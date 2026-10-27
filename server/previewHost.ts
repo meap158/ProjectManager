@@ -5,7 +5,8 @@ import http, {
 } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { PreviewError, parsePreviewPort } from './preview.js';
-import { PICKER_EXTERNAL, PICKER_JS, PICKER_PATH, injectPicker } from './previewPicker.js';
+import { PICKER_JS, PICKER_PATH, injectPicker, pickerCsp, pickerTag } from './previewPicker.js';
+import { randomBytes } from 'node:crypto';
 
 // Built-in browser, phase 2 (docs/BUILT-IN-BROWSER.md): a previewed dev server gets its OWN origin,
 // `http://p<port>.localhost:<our port>`, so it behaves like it does on its own port: root-absolute
@@ -171,17 +172,22 @@ export function proxyPreviewHost(
         }
         headers.location = rewritten;
       }
-      headers['content-security-policy'] = withFrameAncestors(
-        appRes.headers['content-security-policy'] as string | undefined,
-        parentOrigins(hostHeader),
-      );
       const html =
         pageLoad &&
         /^text\/html\b/i.test(String(appRes.headers['content-type'] ?? '')) &&
         !appRes.headers['content-encoding'];
+      // The page's policy, with only this app as framer, and room for the picker's tag where a
+      // strict policy would block it (its own nonce, or ours added).
+      let csp = withFrameAncestors(
+        appRes.headers['content-security-policy'] as string | undefined,
+        parentOrigins(hostHeader),
+      );
+      let nonce: string | null = null;
+      if (html) ({ csp, nonce } = pickerCsp(csp, () => randomBytes(18).toString('base64url')));
+      headers['content-security-policy'] = csp;
       if (html) delete headers['content-length'];
       res.writeHead(appRes.statusCode ?? 502, appRes.statusMessage, headers);
-      if (html) streamWithPicker(appRes, res);
+      if (html) streamWithPicker(appRes, res, pickerTag(nonce));
       else appRes.pipe(res);
       appRes.on('error', () => res.destroy());
     },
@@ -291,7 +297,7 @@ export function handlePreviewUpgrade(
  * Streams an HTML page through, adding the picker tag right after `<head>`: the start is held
  * until the tag (or 64 KB) has gone by, then the rest flows unchanged.
  */
-function streamWithPicker(appRes: IncomingMessage, res: ServerResponse): void {
+function streamWithPicker(appRes: IncomingMessage, res: ServerResponse, tag: string): void {
   let head = '';
   let done = false;
   appRes.setEncoding('utf8');
@@ -303,11 +309,11 @@ function streamWithPicker(appRes: IncomingMessage, res: ServerResponse): void {
     head += chunk;
     if (/<head(\s[^>]*)?>/i.test(head) || head.length > 65_536) {
       done = true;
-      res.write(injectPicker(head, PICKER_EXTERNAL));
+      res.write(injectPicker(head, tag));
     }
   });
   appRes.on('end', () => {
-    if (!done) res.write(injectPicker(head, PICKER_EXTERNAL));
+    if (!done) res.write(injectPicker(head, tag));
     res.end();
   });
 }

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { PreviewError, parsePreviewPort } from './preview.js';
 
@@ -188,6 +188,24 @@ export class PreviewCapture {
   }
 
   /** One capture at a time: later ones wait their turn. */
+  /**
+   * Starts the browser ahead of a capture (when the owner starts marking up a page), so the first
+   * screenshot does not wait for it. Closed again after the usual idle time if nothing follows.
+   */
+  warm(): void {
+    if (!this.browserPath) return;
+    void this.queue.then(async () => {
+      try {
+        await this.start();
+      } catch {
+        return; // A capture will report the problem.
+      }
+      if (this.idle) clearTimeout(this.idle);
+      this.idle = setTimeout(() => this.close(), IDLE_MS);
+      this.idle.unref?.();
+    });
+  }
+
   capture(request: CaptureRequest): Promise<{ png: Buffer; element: CapturedRect }> {
     const run = this.queue.then(() => this.take(request));
     this.queue = run.catch(() => undefined);
@@ -204,8 +222,21 @@ export class PreviewCapture {
   private async start(): Promise<string> {
     if (this.http && this.browser && this.browser.exitCode === null) return this.http;
     if (!this.browserPath) throw new PreviewError(502, 'No Chrome or Edge on this computer');
-    const profile = path.join(this.dataDir, 'capture-browser');
+    // A profile per server process: a restart that ended this process without cleanup (the dev
+    // watcher does) leaves its browser holding its own folder, and a shared one made the next
+    // browser exit at once ("The browser exited"). Folders of processes that are gone go.
+    const root = path.join(this.dataDir, 'capture-browser');
+    const profile = path.join(root, `p${process.pid}`);
     mkdirSync(profile, { recursive: true });
+    for (const name of readdirSync(root)) {
+      const pid = /^p(\d+)$/.exec(name)?.[1];
+      if (!pid || Number(pid) === process.pid || alive(Number(pid))) continue;
+      try {
+        rmSync(path.join(root, name), { recursive: true, force: true, maxRetries: 0 });
+      } catch {
+        // Still held by a browser left over: tried again next start.
+      }
+    }
     const child = spawn(
       this.browserPath,
       [
@@ -254,10 +285,34 @@ export class PreviewCapture {
     const timeout = setTimeout(() => cdp.close(), CAPTURE_TIMEOUT_MS);
     try {
       // Every document load is checked: the app's own pages pass, anything else is refused.
+      // A snapshot is served as the page itself (its first document request is answered with
+      // it), so the capture never waits for the app to build and load the page afresh. The
+      // picker wrote the page's address as the base, which is the preview proxy's: styles and
+      // images load from the app itself instead.
+      let snapshot = request.html
+        ? request.html.replace(
+            /<base href="[^"]*">/,
+            `<base href="http://127.0.0.1:${request.port}${request.path.replace(/"/g, '%22')}">`,
+          )
+        : null;
+      if (snapshot) await cdp.send('Emulation.setScriptExecutionDisabled', { value: true });
       await cdp.send('Fetch.enable', { patterns: [{ resourceType: 'Document' }] });
       cdp.on((method, params) => {
         if (method !== 'Fetch.requestPaused') return;
         const url = String((params.request as { url?: string } | undefined)?.url ?? '');
+        if (snapshot && onTheApp(url, request.port)) {
+          const body = Buffer.from(snapshot).toString('base64');
+          snapshot = null; // Only the first load: anything after it is the app's own.
+          void cdp
+            .send('Fetch.fulfillRequest', {
+              requestId: params.requestId,
+              responseCode: 200,
+              responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }],
+              body,
+            })
+            .catch(() => undefined);
+          return;
+        }
         void cdp
           .send(
             onTheApp(url, request.port) ? 'Fetch.continueRequest' : 'Fetch.failRequest',
@@ -288,25 +343,18 @@ export class PreviewCapture {
       });
       await cdp.send('Page.navigate', { url: `http://127.0.0.1:${request.port}${request.path}` });
       await loaded;
-      if (request.html) {
-        // What the owner saw: the snapshot replaces the fresh page, on the app's own origin (its
-        // styles and images load as before), with JavaScript off so nothing re-renders it. The
-        // snapshot is the page's own content and is treated as such: scripts never run, and the
-        // document-load rule above still holds.
-        await cdp.send('Emulation.setScriptExecutionDisabled', { value: true });
-        const tree = await cdp.send('Page.getFrameTree');
-        const frameId = (tree.frameTree as { frame?: { id?: string } } | undefined)?.frame?.id;
-        // JavaScript stays off for the rest of this capture: inline handlers in the snapshot never
-        // run either (scrolling and measuring below go through DevTools, which still works).
-        // The picker wrote the page's own address as the base, which is the preview proxy's;
-        // styles and images load from the app itself instead.
-        const html = request.html.replace(
-          /<base href="[^"]*">/,
-          `<base href="http://127.0.0.1:${request.port}${request.path.replace(/"/g, '%22')}">`,
-        );
-        if (frameId) await cdp.send('Page.setDocumentContent', { frameId, html });
-      }
-      await new Promise((r) => setTimeout(r, 600)); // Fonts and the first effects settle.
+      // Fonts and the first effects settle: until the fonts are in, at most a second (a snapshot has
+      // no scripts, so its fonts and images are all that is left to arrive).
+      await Promise.race([
+        cdp
+          .send('Runtime.evaluate', {
+            expression: 'document.fonts.ready.then(() => 1)',
+            awaitPromise: true,
+          })
+          .catch(() => undefined),
+        new Promise((r) => setTimeout(r, 1000)),
+      ]);
+      if (!request.html) await new Promise((r) => setTimeout(r, 400)); // A live page's first effects.
       // The resting page at the viewer's scroll: smooth scrolling, transitions and animations are
       // switched off so a scroll lands at once and scroll-reveal effects show their end state
       // (otherwise the shot catches the page mid-way, and the element's box lands elsewhere).
@@ -327,7 +375,8 @@ export class PreviewCapture {
           }
         })()`,
       });
-      await new Promise((r) => setTimeout(r, 450)); // Scroll-triggered effects run and settle.
+      // Scroll-triggered effects run and settle (a snapshot has none).
+      await new Promise((r) => setTimeout(r, request.html ? 100 : 450));
       let element: CapturedRect = null;
       if (request.selector) {
         const measured = await cdp.send('Runtime.evaluate', {
@@ -350,5 +399,15 @@ export class PreviewCapture {
       this.idle = setTimeout(() => this.close(), IDLE_MS);
       this.idle.unref?.();
     }
+  }
+}
+
+/** Whether a process id is still running (signal 0 only checks; works on Windows too). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 }

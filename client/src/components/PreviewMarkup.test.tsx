@@ -51,7 +51,13 @@ describe('marking up the live page (PM-311)', () => {
     });
     const onAdd = vi.fn();
     render(
-      <PreviewMarkup frame={() => frame} onAdd={onAdd} onClose={() => {}} onError={() => {}} />,
+      <PreviewMarkup
+        frame={() => frame}
+        fallbackPage={() => page}
+        onAdd={onAdd}
+        onClose={() => {}}
+        onError={() => {}}
+      />,
     );
     expect(sent).toContainEqual({ pmPicker: true, type: 'start' });
     const fromPage = (data: object) =>
@@ -179,5 +185,48 @@ describe('moving and editing text (PM-329)', () => {
     fireEvent.change(box, { target: { value: '' } });
     fireEvent.keyDown(box, { key: 'Enter' });
     expect(onShapes).toHaveBeenLastCalledWith([]);
+  });
+});
+
+describe('a page whose picker cannot answer (PM-311)', () => {
+  it('still opens the dialog with the marks, from the page the Preview knows', async () => {
+    vi.useFakeTimers();
+    globalThis.fetch = vi.fn(async () => new Response(null, { status: 204 })) as never;
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(() => {});
+    const onAdd = vi.fn();
+    const onError = vi.fn();
+    render(
+      <PreviewMarkup
+        frame={() => frame}
+        fallbackPage={() => page}
+        onAdd={onAdd}
+        onClose={() => {}}
+        onError={onError}
+      />,
+    );
+    // A stroke drawn (nothing picked), then Add to chat: the page never answers.
+    fireEvent.click(screen.getByRole('button', { name: 'Draw' }));
+    const layer = document.querySelector('.preview-markup-canvas') as HTMLCanvasElement;
+    layer.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 300 }) as DOMRect;
+    layer.setPointerCapture = () => {};
+    fireEvent.pointerDown(layer, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(layer, { clientX: 90, clientY: 60, pointerId: 1 });
+    fireEvent.pointerUp(layer, { clientX: 90, clientY: 60, pointerId: 1 });
+    fireEvent.click(screen.getByRole('button', { name: 'Add to chat' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3500);
+    });
+    expect(onError).not.toHaveBeenCalled();
+    expect(onAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page,
+        snapshot: null,
+        element: null,
+        marks: [expect.objectContaining({ kind: 'pen' })],
+      }),
+    );
+    vi.useRealTimers();
   });
 });

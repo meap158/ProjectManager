@@ -1020,6 +1020,20 @@ export function PreviewWorkspace() {
           {picking && (
             <PreviewMarkup
               frame={activeFrame}
+              fallbackPage={() => {
+                const f = activeFrame();
+                if (!target || !f) return null;
+                return {
+                  url: `http://localhost:${target.port}${target.path}`,
+                  title: active.title ?? '',
+                  viewport: {
+                    width: f.clientWidth,
+                    height: f.clientHeight,
+                    dark: matchMedia('(prefers-color-scheme: dark)').matches,
+                  },
+                  scroll: { x: 0, y: 0, inner: null },
+                };
+              }}
               onAdd={(m) => {
                 setPicking(false);
                 setMarkup(m);

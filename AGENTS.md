@@ -78,6 +78,9 @@ anything.
   framing app sends "start", never in nested frames, reporting only to `window.parent`; the app
   accepts its messages only from the shown frame while picking and treats them as untrusted (parsed,
   capped, shown as text). It must stay read-only: it never sends requests or changes the page.
+  Under a strict page policy (`'strict-dynamic'`, as Next.js sets) the own-origin proxy gives the
+  picker's tag the page's own nonce, or adds one nonce of its own to `script-src` when the page has
+  none (`pickerCsp` in `server/previewPicker.ts`); it never loosens the policy otherwise.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
   the user explicitly starts may change project files. The one other exception is a pull request
   action the user confirms in the Pull requests tab: it may delete the PR's _local_ branch, and only

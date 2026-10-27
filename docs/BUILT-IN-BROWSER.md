@@ -101,7 +101,11 @@ The Preview toolbar's **Select element** button lets you point at something in t
 it, and send both to a CLI session. Both proxies add one script to HTML pages for this
 (`server/previewPicker.ts`): inline in the path mode (whose responses carry no page CSP), and as
 `/__pm-picker.js` from the page's own origin in the own-origin mode (allowed by a CSP's `'self'`; a
-page whose CSP forbids it simply can't be picked). The own-origin proxy asks the app for page loads
+page with a strict policy, `script-src 'nonce-…' 'strict-dynamic'` as Next.js apps send, would
+block it, since `'strict-dynamic'` ignores `'self'`: the proxy gives the tag the page's own nonce,
+or adds a nonce of its own to `script-src` when the page has none; `pickerCsp`). When a page still
+cannot answer (not HTML, or blocked another way), Add to chat opens the dialog anyway with the
+marks and the address and size the Preview knows, over a fresh capture. The own-origin proxy asks the app for page loads
 uncompressed so it can add the tag after `<head>` as the page streams.
 
 The script does nothing until the framing ProjectManager window posts `start`. Then hovering
@@ -139,14 +143,18 @@ there (`x-pm-element`), so its box lands where it really is.
 **As you saw it.** When Add to chat is pressed, before the dialog opens, the picker takes a
 snapshot of the page as it is: a copy of its DOM with the current form values, canvases (as
 images), scroll positions, open `<details>` and script-added styles written in, and scripts, this
-picker's outlines and nested frames left out (the live page is untouched). The capture renders
-that snapshot on the app's own origin with JavaScript off for the whole capture, so nothing
-re-renders it and no handler in it runs, restores the recorded scrolls and shoots it; the dialog
-says "As you saw it". Snapshots are capped at 8 MB. When there is none (too large, or a page the
+picker's outlines and nested frames left out (the live page is untouched). The capture serves
+that snapshot as the page itself, on the app's own origin (its first document request is answered
+with it, so the app never builds the page afresh), with JavaScript off for the whole capture, so
+nothing re-renders it and no handler in it runs; it waits for the fonts (a second at most),
+restores the recorded scrolls and shoots it, about 1.5 s in all; the dialog says "As you saw it".
+The capture browser is started when the markup toolbar opens, so the first screenshot does not wait
+for it, and each server process uses its own browser profile folder, so a browser left over from a
+restart cannot block the next one. Snapshots are capped at 8 MB. When there is none (too large, or a page the
 picker cannot read), it falls back to a fresh load, without the viewer's cookies or open menus, and
 says "Retaken by ProjectManager". Only a loopback dev server by port and path (the proxy's rules, never this app's
 ports); every document load that leaves the app is refused (CDP Fetch), so it cannot be pointed at
-another site. One browser, started on first use with its profile in the data folder, one capture
+another site. One browser, started when markup begins or on first use, with its profile in the data folder, one capture
 at a time with a timeout, closed after three idle minutes and when the server exits; no new
 dependency (CDP over Node's WebSocket). Without Chrome or Edge the message goes without a picture.
 
