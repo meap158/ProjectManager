@@ -214,7 +214,7 @@ const open = (t) => OPEN.includes(t.status);
 let ticks = {};
 try { ticks = JSON.parse(localStorage.getItem(TICKS_KEY) || '{}') || {}; } catch (e) { ticks = {}; }
 const saveTicks = () => { try { localStorage.setItem(TICKS_KEY, JSON.stringify(ticks)); } catch (e) {} };
-function fill(id, values) { const el = $(id); [...new Set(values)].forEach((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v; el.appendChild(o); }); }
+function fill(id, values) { const el = $(id); [...new Set(values)].filter((v) => ![...el.options].some((o) => o.value === v)).forEach((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v; el.appendChild(o); }); }
 fill('fs', TASKS.map((t) => t.status)); fill('fp', TASKS.map((t) => t.priority)); fill('fc', TASKS.map((t) => t.category));
 function draw() {
   const fs = $('fs').value, fp = $('fp').value, fc = $('fc').value, q = $('q').value.trim().toLowerCase();
@@ -306,7 +306,9 @@ export function run(argv = process.argv.slice(2), rootDir = root, log = console.
     return 1;
   }
   if (!existsSync(join(rootDir, 'ROADMAP.md'))) {
-    log('ROADMAP.md is missing from the project root. The roadmap is part of the owner pages (standard, PM-289).');
+    log(
+      'ROADMAP.md is missing from the project root. The roadmap is part of the owner pages (standard, PM-289).',
+    );
     return 1;
   }
   const problems = validateDesk(data);

@@ -58,9 +58,32 @@ export function staticDesk(html) {
         })
         .join('')
     : '<p class="empty">Nothing needs you right now.</p>';
-  return html
-    .replace(/(<div class="tiles" id="tiles"[^>]*>)<\/div>/, `$1${tiles}</div>`)
-    .replace('<div id="list"></div>', `<div id="list">${list}</div>`);
+  // The filter menus are filled by the page's script too. Fill them here so they list their
+  // values in a viewer that does not run it, and make the script skip values already present.
+  const options = (id, key) => {
+    const values = [...new Set(tasks.map((t) => t[key]))];
+    return (page) =>
+      page.replace(
+        new RegExp(`(<select id="${id}"><option value="">All</option>)(</select>)`),
+        `$1${values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}$2`,
+      );
+  };
+  const idempotent = (page) =>
+    page.replace(
+      '[...new Set(values)].forEach((v) => {',
+      '[...new Set(values)].filter((v) => ![...el.options].some((o) => o.value === v)).forEach((v) => {',
+    );
+  return [
+    options('fs', 'status'),
+    options('fp', 'priority'),
+    options('fc', 'category'),
+    idempotent,
+  ].reduce(
+    (page, step) => step(page),
+    html
+      .replace(/(<div class="tiles" id="tiles"[^>]*>)<\/div>/, `$1${tiles}</div>`)
+      .replace('<div id="list"></div>', `<div id="list">${list}</div>`),
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
