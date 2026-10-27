@@ -37,24 +37,26 @@
   --status-review: var(--series-4);
   --status-done: var(--good);
 
-  --bg: #f5f5f3;
-  --surface: #fcfcfb;
-  /* Dialogs, menus: same as surface in light, a lighter step in dark (elevation by lightness). */
-  --surface-raised: #fcfcfb;
-  --surface-2: #f0efec;
-  --surface-hover: #ebeae6;
-  --border: #e2e1dc;
-  --border-strong: #cfcdc6;
+  /* Toned down from near-white (owner's call, 2026-10-27): a warm grey page, panels a step
+     lighter, so long sessions are easier on the eyes. */
+  --bg: #e9e8e3;
+  --surface: #f3f2ee;
+  /* Dialogs, menus: a step above surface in both themes (elevation by lightness). */
+  --surface-raised: #f7f6f3;
+  --surface-2: #eae9e4;
+  --surface-hover: #e3e2dc;
+  --border: #d8d6cf;
+  --border-strong: #c4c2ba;
   --text: #0b0b0b;
-  --text-2: #52514e;
-  --text-3: #7a7974;
+  --text-2: #4d4c49;
+  --text-3: #6e6d68;
   --accent: #2a78d6;
   --accent-hover: #256abf;
   --accent-text: #ffffff;
-  --accent-soft: #e6f0fc;
+  --accent-soft: #dde8f7;
   --danger: #d03b3b;
   --danger-text: #ffffff;
-  --danger-soft: #fbeaea;
+  --danger-soft: #f5e1e0;
   --good: #0ca30c;
   --focus: #2a78d6;
 
@@ -69,7 +71,7 @@
   --series-other: #a3a29c;
 
   /* Sequential blue ramp for the commit heatmap: 0 = empty, 1..4 = intensity. */
-  --heat-0: #ebeae6;
+  --heat-0: #e0dfd9;
   --heat-1: #b7d3f6;
   --heat-2: #6da7ec;
   --heat-3: #2a78d6;

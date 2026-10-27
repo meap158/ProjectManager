@@ -252,6 +252,10 @@ The home page is the master dashboard for all tracked folders, top to bottom:
 All colours are CSS custom properties on `:root` in `client/src/styles.css`. Dark values live in one block,
 `:root[data-theme='dark']`, with no media query.
 
+- Light is a soft warm grey, not white: the page is `--bg` (#e9e8e3), panels and controls a step
+  lighter (`--surface` #f3f2ee), dialogs and menus one more (`--surface-raised`). Keep new light
+  surfaces in that range; pure white is only for things that need it, like the LAN QR code.
+
 - `<html data-theme>` is always `light` or `dark`. An inline script in `index.html` sets it
   before first paint, so the page never flashes the wrong theme.
 - `client/src/theme.ts` keeps it in sync with the top-bar switch (Match system / Light / Dark,

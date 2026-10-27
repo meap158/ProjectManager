@@ -87,11 +87,11 @@ const TOKENS = `
   color-scheme: light;
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
-  --bg: #f5f5f3; --surface: #fcfcfb; --surface-2: #f0efec; --surface-hover: #ebeae6;
-  --border: #e2e1dc; --border-strong: #cfcdc6;
-  --text: #0b0b0b; --text-2: #52514e; --text-3: #7a7974;
-  --accent: #2a78d6; --accent-text: #ffffff; --accent-soft: #e6f0fc;
-  --danger: #d03b3b; --danger-soft: #fbeaea; --good: #0ca30c; --warn: #eda100; --focus: #2a78d6;
+  --bg: #e9e8e3; --surface: #f3f2ee; --surface-2: #eae9e4; --surface-hover: #e3e2dc;
+  --border: #d8d6cf; --border-strong: #c4c2ba;
+  --text: #0b0b0b; --text-2: #4d4c49; --text-3: #6e6d68;
+  --accent: #2a78d6; --accent-text: #ffffff; --accent-soft: #dde8f7;
+  --danger: #d03b3b; --danger-soft: #f5e1e0; --good: #0ca30c; --warn: #eda100; --focus: #2a78d6;
   --radius-sm: 4px; --radius: 8px; --radius-lg: 12px;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 1px 3px rgb(0 0 0 / 0.06);
 }
