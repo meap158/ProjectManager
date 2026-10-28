@@ -1669,39 +1669,41 @@ export class AgentSupervisor {
 
   /** The same guard drives both enforcement and the Settings explanation. */
   private codexRotationWaitReason(): string | null {
+    const sessionLabel = (id: number) => {
+      const row = this.getSessionRow(id);
+      return `Codex session ${row?.name ? `"${row.name}" ` : ''}(#${id})`;
+    };
     if (this.switchingCodexSession.size) return 'An account switch is in progress.';
     // Starting runs remain in this set until they exit. The run guard below distinguishes
     // active Codex runs from limit-blocked ones; unrelated providers never block Codex.
     for (const key of this.starting) {
       const match = /^session:(\d+)$/.exec(key);
       if (match && this.getSessionRow(Number(match[1]))?.provider_id === 'codex')
-        return 'A Codex session is starting.';
+        return `${sessionLabel(Number(match[1]))} is starting.`;
     }
     for (const [id, progress] of this.restarting)
       if (progress.phase !== 'failed' && this.getSessionRow(id)?.provider_id === 'codex')
-        return `Codex session ${id} is restarting.`;
+        return `${sessionLabel(id)} is restarting.`;
     const sessions = this.db
       .prepare("SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'")
       .all() as unknown as SessionRow[];
     for (const row of sessions) {
       if (this.restarting.get(row.id)?.phase && this.restarting.get(row.id)?.phase !== 'failed')
-        return `Codex session ${row.id} is restarting.`;
+        return `${sessionLabel(row.id)} is restarting.`;
       if (
         !this.live.has(`session:${row.id}`) ||
         row.desired_state !== 'running' ||
         this.queuedInputBytes(row.id)
       )
-        return `Codex session ${row.id} is reconnecting or has queued input.`;
+        return `${sessionLabel(row.id)} is reconnecting or has queued input.`;
       // A session stopped at the CLI's own limit message waits on the prompt and is the one to
       // move, so its 'input' state is no reason to wait. Any other 'input' may be an approval.
-      // 'running' is detected positively (animation, timer, busy line); an unreadable screen with
-      // an empty prompt (null) is not a turn in progress.
+      // Draft text and unreadable prompts do not veto rotation. Activity and queued input
+      // remain the guards for work that must finish before changing the shared login.
       const activity = this.sessionActivity(row, this.fileModifiedAt(row.log_path));
-      if (activity === 'running') return `Codex session ${row.id} is still working.`;
+      if (activity === 'running') return `${sessionLabel(row.id)} is still working.`;
       if (activity === 'input' && !this.usageLimits.has(row.id))
-        return `Codex session ${row.id} is waiting for your input.`;
-      if (!emptyCodexPrompt(this.sessionScreen(row.id, 4000) ?? ''))
-        return `Codex session ${row.id} has a draft or no readable empty prompt.`;
+        return `${sessionLabel(row.id)} is waiting for your input.`;
     }
     const runs = this.db
       .prepare("SELECT id FROM agent_runs WHERE provider_id = 'codex' AND status = 'running'")

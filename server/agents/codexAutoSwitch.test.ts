@@ -117,6 +117,18 @@ it('defers at 100% while any grace turn is working, then switches at idle withou
     expect.objectContaining({ automatic: true, continuePrompt: false }),
   );
 });
+it.each(['> unsent draft', '', 'unreadable terminal'])(
+  'allows rotation with prompt text %j at idle',
+  async (screen) => {
+    const h = await setup();
+    h.add();
+    await h.quota();
+    vi.mocked(h.inside.sessionScreen).mockReturnValue(screen);
+    h.inside.tickContinuation();
+    expect(h.switchAccount).toHaveBeenCalledOnce();
+  },
+);
+
 it('continues a limit-blocked session after a safe switch', async () => {
   const h = await setup();
   const id = h.add();
@@ -138,13 +150,10 @@ it('treats a session stopped at the limit message, or an unreadable idle screen,
   h.inside.tickContinuation();
   expect(h.switchAccount).toHaveBeenCalledOnce();
 });
-it('defers for a draft, approval prompt, pending input, or an active run', async () => {
+it('defers for an approval prompt, pending input, or an active run', async () => {
   const h = await setup();
   const id = h.add();
   await h.quota();
-  vi.mocked(h.inside.sessionScreen).mockReturnValue('> unsent draft');
-  h.inside.tickContinuation();
-  expect(h.switchAccount).not.toHaveBeenCalled();
   vi.mocked(h.inside.sessionScreen).mockReturnValue('> ');
   vi.mocked(h.inside.sessionActivity).mockReturnValue('input');
   h.inside.tickContinuation();
@@ -243,7 +252,7 @@ it('reports the same busy guard in Settings and exposes failed attempts for retr
   await h.quota();
   vi.mocked(h.inside.sessionActivity).mockReturnValue('running');
   expect(h.supervisor.codexAccountsState().rotation).toMatchObject({
-    waiting: `Codex session ${id} is still working.`,
+    waiting: `Codex session "fixture" (#${id}) is still working.`,
     error: null,
   });
   expect(Date.parse(h.supervisor.codexAccountsState().rotation!.nextCheckAt)).toBeGreaterThan(
