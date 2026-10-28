@@ -85,7 +85,7 @@ account during the audit); with none at a limit the tick is a few milliseconds.
 | Board (292 cards)            | 104 ms      | 411 ms  | no long tasks (>50 ms) while rendering; 2,430 DOM nodes |
 | Project, Files tab           | 128 ms      | ~200 ms | root tree in 59 ms (35 rows)                            |
 | Orchestrators                | 164 ms      | ~550 ms | overview 80 ms in the browser (61 KB)                   |
-| Server restart (`tsx watch`) | –           | 1.3 s   | API answering again, Vite included; first list in 31 ms |
+| Server restart (`tsx watch`) | n/a         | 1.3 s   | API answering again, Vite included; first list in 31 ms |
 
 **Board: Done is capped at its newest 40 cards** ("Show 191 older" draws the rest; the column
 count still shows them all). Done grows without end, while the working columns always show every
