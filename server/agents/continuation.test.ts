@@ -59,7 +59,7 @@ describe('usage limit notice (PM-58)', () => {
 
 describe('a /goal footer after the limit message scrolled away', () => {
   const footer =
-    '› Ask Codex to do anything\n  GPT-6.1-Sol low · S:\TiemNet   Goal hit usage limits (/goal resume)';
+    '› Ask Codex to do anything\n  GPT-6.1-Sol low · S:\\TiemNet   Goal hit usage limits (/goal resume)';
   const exhausted = [
     {
       label: '5-hour',

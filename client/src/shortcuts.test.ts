@@ -121,7 +121,7 @@ describe('handler', () => {
 });
 
 describe('Preview Expand (as in the Claude app)', () => {
-  it('answers Ctrl+Shift+\ (the key reads "|" with Shift on a US keyboard)', () => {
+  it('answers Ctrl+Shift+ (the key reads "|" with Shift on a US keyboard)', () => {
     const combo = comboFromEvent({
       key: '|',
       code: 'Backslash',

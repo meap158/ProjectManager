@@ -1025,7 +1025,7 @@ export function PreviewWorkspace() {
                 if (!target || !f) return null;
                 return {
                   url: `http://localhost:${target.port}${target.path}`,
-                  title: active.title ?? '',
+                  title: `Preview of localhost:${target.port}`,
                   viewport: {
                     width: f.clientWidth,
                     height: f.clientHeight,
