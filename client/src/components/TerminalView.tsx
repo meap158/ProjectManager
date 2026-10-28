@@ -322,6 +322,9 @@ export function TerminalView({
         host.removeAttribute('aria-busy');
         term.options.smoothScrollDuration = scrollDuration;
         term.refresh(0, term.rows - 1);
+        // History may have been replayed at a recorded size: snap back to the
+        // viewer so live output matches the PTY (no-op for stopped terminals).
+        refit();
         markConnection(receivedOutput ? 'ready' : 'empty');
         if (interactive && !callbacks.current.paused) term.focus();
       });
@@ -344,7 +347,10 @@ export function TerminalView({
       if (!match) return false;
       const cols = Number(match[1]);
       const rows = Number(match[2]);
-      if (stopped && cols >= 20 && cols <= 500 && rows >= 1 && rows <= 500) {
+      // Honour recorded geometry while replaying history so absolute-positioned
+      // rows land where the CLI drew them; refit snaps back to the viewer after
+      // the reveal. Live output keeps following the viewer, never the log.
+      if ((stopped || restoring) && cols >= 20 && cols <= 500 && rows >= 1 && rows <= 500) {
         term.resize(cols, rows);
       }
       return true;
@@ -713,12 +719,23 @@ export function TerminalView({
         term.resize(terminalSize.cols, terminalSize.rows);
       offsetRef.current = nextOffset;
 
-      // When tailing a large log, discard the partial leading line fragment before the first newline
+      // When tailing a large log, the byte cut can land mid-line, mid-escape-sequence
+      // (a full-screen paint is one very long line) or inside a multi-byte character.
+      // A partial leading line is always corrupt, so drop it — but a paint's rows only
+      // end with EL, not newlines, so the next newline can be hundreds of kilobytes away
+      // (measured 184KB and 504KB in live 31–33MB CLI logs). Starting there replays a
+      // corrupt partial paint as garbage text. Prefer a full repaint boundary instead:
+      // conpty redraws from home, so nothing before it is needed for the current screen.
       let cleanData = data;
       if (initialOffset > 0 && start === initialOffset && cleanData) {
         const firstNl = cleanData.indexOf('\n');
         if (firstNl !== -1 && firstNl < 1000) {
           cleanData = cleanData.slice(firstNl + 1);
+        } else {
+          // Matching recorded repaint escapes is intentional.
+          // eslint-disable-next-line no-control-regex
+          const repaint = cleanData.search(/\x1b\[H|\x1b\[2J|\x1bc/);
+          if (repaint > 0) cleanData = cleanData.slice(repaint);
         }
       }
 

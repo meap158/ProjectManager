@@ -427,6 +427,65 @@ describe('TerminalView', () => {
     term.geometryHandler!('pm-size;180;42');
     expect([term.cols, term.rows]).toEqual([80, 24]);
   });
+
+  it('starts a tail cut inside a full-screen paint at the next repaint, not mid-escape', async () => {
+    // A 512KB tail of a TUI log starts mid-paint: rows end with EL, not newlines,
+    // so the next newline can be hundreds of kilobytes away and the old code kept
+    // the corrupt partial paint (stray "[2" text in the viewer).
+    render(
+      <TerminalView fetchOutput={noFetch} streamUrl={() => '/stream'} historyBytes={600000} />,
+    );
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const term = terms.at(-1)!;
+    const fragment = `m${'x'.repeat(1500)}`;
+    FakeEventSource.last!.emit('output', {
+      data: `${fragment}\x1b[Hrepainted`,
+      nextOffset: 80000,
+    });
+    term.pendingWrites.shift()!();
+    expect(term.written.startsWith('\x1b[Hrepainted')).toBe(true);
+  });
+
+  it('keeps the short leading fragment cut for ordinary logs with early newlines', async () => {
+    render(
+      <TerminalView fetchOutput={noFetch} streamUrl={() => '/stream'} historyBytes={600000} />,
+    );
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const term = terms.at(-1)!;
+    FakeEventSource.last!.emit('output', {
+      data: 'partial line\nrestored rows',
+      nextOffset: 80000,
+    });
+    term.pendingWrites.shift()!();
+    expect(term.written).toBe('restored rows');
+  });
+
+  it('replays history at recorded geometry, then snaps back to the viewer', async () => {
+    const onResize = vi.fn();
+    render(
+      <TerminalView
+        fetchOutput={noFetch}
+        streamUrl={() => '/stream'}
+        historyBytes={600000}
+        onResize={onResize}
+      />,
+    );
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const term = terms.at(-1)!;
+    // Markers in the replayed tail describe the geometry the CLI drew for.
+    term.geometryHandler!('pm-size;180;42');
+    expect([term.cols, term.rows]).toEqual([180, 42]);
+    // Finishing the replay reveals the terminal and refits to the viewer.
+    FakeEventSource.last!.emit('output', { data: 'prompt', nextOffset: 600000 });
+    term.pendingWrites.shift()!();
+    await waitFor(() =>
+      expect(screen.getByRole('log', { hidden: true }).style.visibility).toBe(''),
+    );
+    expect(onResize).toHaveBeenCalledWith(180, 42);
+    // Afterwards the live viewer drives geometry again, not the log.
+    term.geometryHandler!('pm-size;100;20');
+    expect([term.cols, term.rows]).toEqual([180, 42]);
+  });
   it('stays where you scrolled while output streams in, and follows again at the bottom (PM-96)', async () => {
     const { container } = render(
       <TerminalView fetchOutput={noFetch} streamUrl={() => '/s'} onInput={() => {}} />,
