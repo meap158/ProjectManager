@@ -22,7 +22,7 @@ import {
   type ModifiedRange,
   type SortKey,
 } from './folderRules';
-import { FileTypeIcon, iconFor } from './fileIcons';
+import { FileTypeIcon, iconFor, type FileIconSpec } from './fileIcons';
 import { ImageViewer } from './ImageViewer';
 import { useStuckTop } from '../stuckTop';
 import './folder-view.css';
@@ -49,6 +49,16 @@ const SORTS: DropdownOption<SortKey>[] = [
   { value: 'size', label: 'Size' },
   { value: 'type', label: 'Type' },
 ];
+const GROUP_ICONS: Record<(typeof FILE_GROUPS)[number]['id'], FileIconSpec> = {
+  image: { glyph: 'image', tone: 'media' },
+  video: { glyph: 'video', tone: 'media' },
+  audio: { glyph: 'audio', tone: 'media' },
+  document: { glyph: 'markdown', tone: 'doc' },
+  code: { glyph: 'code', tone: 'code' },
+  data: { glyph: 'data', tone: 'data' },
+  archive: { glyph: 'archive', tone: 'data' },
+  other: { glyph: 'file', tone: 'plain' },
+};
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
 
@@ -341,7 +351,8 @@ export function FolderView({
                     })
                   }
                 >
-                  {group.label}
+                  <FileTypeIcon spec={GROUP_ICONS[group.id]} size={14} />
+                  <span>{group.label}</span>
                 </button>
               );
             })}
@@ -360,31 +371,33 @@ export function FolderView({
           </div>
           <div className="fv-field">
             <label htmlFor={sortId}>Sort by</label>
-            <Dropdown
-              id={sortId}
-              label="Sort by"
-              value={view.sort}
-              options={SORTS}
-              onChange={(sort) => change({ sort, descending: defaultDescending(sort) })}
-            />
+            <div className="fv-sort-control">
+              <Dropdown
+                id={sortId}
+                label="Sort by"
+                value={view.sort}
+                options={SORTS}
+                onChange={(sort) => change({ sort, descending: defaultDescending(sort) })}
+              />
+              <button
+                type="button"
+                className="btn btn-icon fv-order"
+                title={
+                  view.descending
+                    ? 'Sorted high to low · switch to low to high'
+                    : 'Sorted low to high · switch to high to low'
+                }
+                aria-label={
+                  view.descending
+                    ? 'Sorted high to low; switch to low to high'
+                    : 'Sorted low to high; switch to high to low'
+                }
+                onClick={() => change({ descending: !view.descending })}
+              >
+                {view.descending ? '↓' : '↑'}
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            className="btn btn-icon fv-order"
-            title={
-              view.descending
-                ? 'Sorted high to low · switch to low to high'
-                : 'Sorted low to high · switch to high to low'
-            }
-            aria-label={
-              view.descending
-                ? 'Sorted high to low; switch to low to high'
-                : 'Sorted low to high; switch to high to low'
-            }
-            onClick={() => change({ descending: !view.descending })}
-          >
-            {view.descending ? '↓' : '↑'}
-          </button>
           <label className={`fv-check${view.recursive ? ' is-checked' : ''}`}>
             <input
               type="checkbox"
