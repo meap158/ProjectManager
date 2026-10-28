@@ -135,8 +135,7 @@
     border-color 120ms,
     color 120ms;
 }
-.fv-chip .fi {
-  display: inline-flex;
+.fv-chip > svg {
   flex: none;
 }
 .fv-chip > span:last-child {
@@ -468,8 +467,11 @@ button.fv-row:hover {
     left: 0;
     z-index: 61;
     display: none;
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    align-content: start;
+    height: max-content;
+    box-sizing: border-box;
     max-height: 78dvh;
     padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
     overflow: auto;
@@ -477,16 +479,23 @@ button.fv-row:hover {
     box-shadow: 0 -8px 24px color-mix(in srgb, #000 35%, transparent);
   }
   .fv-controls.is-open {
-    display: flex;
+    display: grid;
   }
-  .fv-line,
-  .fv-line-b {
-    flex-direction: column;
+  .fv-line {
+    /* Content-sized rows keep the sheet's spare height out of the gaps between controls. */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    align-content: start;
     align-items: stretch;
+    min-height: 0;
   }
   .fv-chips {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    grid-auto-rows: 44px;
+    align-content: start;
+    align-items: start;
     gap: 6px;
   }
   .fv-chip {
@@ -542,6 +551,8 @@ button.fv-row:hover {
     padding-inline: 8px;
     gap: 6px;
     font-size: 13px;
+    line-height: 1.2;
+    white-space: normal;
   }
   .fv-reset {
     justify-self: end;

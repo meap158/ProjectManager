@@ -22,7 +22,8 @@ import {
   type ModifiedRange,
   type SortKey,
 } from './folderRules';
-import { FileTypeIcon, iconFor, type FileIconSpec } from './fileIcons';
+import { FileTypeIcon, iconFor } from './fileIcons';
+import { FolderTypeIcon } from './FolderTypeIcon';
 import { ImageViewer } from './ImageViewer';
 import { useStuckTop } from '../stuckTop';
 import './folder-view.css';
@@ -49,16 +50,6 @@ const SORTS: DropdownOption<SortKey>[] = [
   { value: 'size', label: 'Size' },
   { value: 'type', label: 'Type' },
 ];
-const GROUP_ICONS: Record<(typeof FILE_GROUPS)[number]['id'], FileIconSpec> = {
-  image: { glyph: 'image', tone: 'media' },
-  video: { glyph: 'video', tone: 'media' },
-  audio: { glyph: 'audio', tone: 'media' },
-  document: { glyph: 'markdown', tone: 'doc' },
-  code: { glyph: 'code', tone: 'code' },
-  data: { glyph: 'data', tone: 'data' },
-  archive: { glyph: 'archive', tone: 'data' },
-  other: { glyph: 'file', tone: 'plain' },
-};
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
 
@@ -351,7 +342,7 @@ export function FolderView({
                     })
                   }
                 >
-                  <FileTypeIcon spec={GROUP_ICONS[group.id]} size={14} />
+                  <FolderTypeIcon type={group.id} />
                   <span>{group.label}</span>
                 </button>
               );

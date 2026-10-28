@@ -341,6 +341,8 @@ adjacent-pair CVD separation in both modes).
   caption, filmstrip, zoom and pan, an info card; the dark around the picture or Escape closes it. On a phone the
   filters are a bottom sheet and every target is 44px. The name field stays 44px tall as its row stacks; each type
   filter has an icon beside its label, and Modified and Sort by share two columns with direction beside Sort by.
+  Sheet rows fit their content with 6–8px gaps. Category icons show a photo, filmstrip, music notes, document,
+  code brackets, database, archive box or more dots, inheriting the button's text color.
   Lists and the pane keep their size while loading and the tree
   scrolls only itself, so picking something never moves the page.
 - **Context menu (`ContextMenu`, shared by the Preview tabs and the Files tree):** a real
