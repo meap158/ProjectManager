@@ -398,3 +398,42 @@ it('shows saved-account eligibility only while automatic switching is enabled', 
   await screen.findByText(baseState.accounts[0]!.name);
   expect(screen.queryByRole('checkbox', { name: /Include .* in automatic switching/ })).toBeNull();
 });
+
+it('ticks the supervisor check countdown and shows its guard and last failure', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(api.getCodexAccounts).mockResolvedValue({
+      ...baseState,
+      forecast: {
+        kind: 'next',
+        name: 'Work Pro',
+        left: 80,
+        fiveHour: 80,
+        weekly: 90,
+        atLimit: true,
+      },
+      rotation: {
+        nextCheckAt: new Date(Date.now() + 10_000).toISOString(),
+        waiting: 'Codex session 12 is still working.',
+        error: 'Conversation could not be carried',
+      },
+    });
+    const { unmount } = render(<CodexAccountsPanel onError={vi.fn()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText(/Next check in 10s/).textContent).toContain(
+      'Codex session 12 is still working.',
+    );
+    expect(screen.getByText(/Last switch failed/).textContent).toContain(
+      'Conversation could not be carried',
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(screen.getByText(/Next check in 9s/)).toBeDefined();
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});

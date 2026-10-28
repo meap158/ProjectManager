@@ -28,6 +28,7 @@ async function setup() {
     codexAccounts: CodexAccounts;
     live: Map<string, unknown>;
     waitingCodexRuns: Set<number>;
+    starting: Set<string>;
     tickContinuation(): void;
     codexRotationReady(): boolean;
     waitForCodexRotation(
@@ -213,4 +214,53 @@ it('cancels a waiting rotation when its run is stopped and leaves the account un
   expect(await waiting).toBe(false);
   expect(h.accounts.selectedId()).toBe(selected);
   expect(h.switchAccount).not.toHaveBeenCalled();
+});
+
+it('does not let another provider or a limit-blocked starting run veto rotation', async () => {
+  const h = await setup();
+  h.add();
+  await h.quota();
+  const run = Number(
+    h.db
+      .prepare(
+        `INSERT INTO agent_runs(project_id,name,provider_id,command_json,status,created_at,log_path) VALUES (?,'waiting','codex','{}','running',?,?)`,
+      )
+      .run(h.project, new Date().toISOString(), path.join(h.root, 'blocked.log')).lastInsertRowid,
+  );
+  h.inside.starting.add(`run:${run}`);
+  h.inside.waitingCodexRuns.add(run);
+  h.inside.starting.add('session:99999');
+  expect(h.inside.codexRotationReady()).toBe(true);
+  h.inside.tickContinuation();
+  expect(h.switchAccount).not.toHaveBeenCalled(); // The waiting run owns the switch.
+  h.inside.waitingCodexRuns.delete(run);
+  expect(h.inside.codexRotationReady()).toBe(false);
+});
+
+it('reports the same busy guard in Settings and exposes failed attempts for retry', async () => {
+  const h = await setup();
+  const id = h.add();
+  await h.quota();
+  vi.mocked(h.inside.sessionActivity).mockReturnValue('running');
+  expect(h.supervisor.codexAccountsState().rotation).toMatchObject({
+    waiting: `Codex session ${id} is still working.`,
+    error: null,
+  });
+  expect(Date.parse(h.supervisor.codexAccountsState().rotation!.nextCheckAt)).toBeGreaterThan(
+    Date.now(),
+  );
+  vi.mocked(h.inside.sessionActivity).mockReturnValue('idle');
+  h.switchAccount.mockRejectedValueOnce(new Error('Conversation could not be carried'));
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  h.inside.tickContinuation();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(h.supervisor.codexAccountsState().rotation?.error).toBe(
+    'Conversation could not be carried',
+  );
+  h.inside.tickContinuation();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(h.switchAccount).toHaveBeenCalledTimes(2);
+  expect(h.supervisor.codexAccountsState().rotation?.error).toBeNull();
 });

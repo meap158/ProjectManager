@@ -469,6 +469,8 @@ export interface CodexAccountsState {
   usageRefreshing?: boolean;
   /** What automatic switching will do next for the account in use, from the latest readings. */
   forecast?: AccountSwitchForecast | null;
+  /** Live supervisor decision, separate from the advisory quota forecast. */
+  rotation?: { nextCheckAt: string; waiting: string | null; error: string | null };
   /** Non-secret metadata for the default CODEX_HOME login, if auth.json exists there. */
   defaultAccount?: {
     usageStatus?: AccountUsageStatus;

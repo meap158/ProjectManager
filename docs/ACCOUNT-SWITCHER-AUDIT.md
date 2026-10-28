@@ -31,3 +31,14 @@ account has quota it names the one whose quota comes back first (the later of it
 resets, so a spent weekly counts), and when that is the account in use, sessions simply continue
 there. It reads the latest readings without the one-minute freshness rule, so it is labelled a
 forecast; the switch itself still requires fresh, verified readings.
+
+Settings also shows the supervisor's live waiting reason and a countdown to its next 10-second
+check while a switch forecast is visible. This is a check countdown, since working sessions,
+queued input, drafts, approvals, active runs or unverified quota can defer the switch. The panel
+follows this state every five seconds and ticks the countdown each second. Failed automatic
+session switches appear here and in the server log, and the next supervisor tick retries after
+rechecking quota and the same safety guards.
+
+The starting-process guard only covers starting Codex sessions. A run remains in the starting
+set until it exits, so treating that whole set as busy prevented a limit-blocked run from
+switching. Active Codex runs still defer rotation; runs already waiting for quota do not.

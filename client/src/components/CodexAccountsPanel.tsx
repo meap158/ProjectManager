@@ -127,8 +127,10 @@ export function CodexAccountsPanel({
 
   // While the server re-reads usage in the background, follow it until it is done.
   const backgroundRefresh = !!state?.usageRefreshing;
+  const followRotation =
+    !!state?.rotation && state.autoSwitch && !!(state.forecast || state.rotation.error);
   useEffect(() => {
-    if (!backgroundRefresh || isClaude) return;
+    if ((!backgroundRefresh && !followRotation) || isClaude) return;
     let active = true;
     const stop = serialPoll(
       async () => {
@@ -143,14 +145,14 @@ export function CodexAccountsPanel({
           () => {},
         );
       },
-      2500,
+      backgroundRefresh ? 2500 : 5000,
       { pauseWhenHidden: true },
     );
     return () => {
       active = false;
       stop();
     };
-  }, [backgroundRefresh, isClaude]);
+  }, [backgroundRefresh, followRotation, isClaude]);
   const loadingUsage = refreshingUsage || backgroundRefresh;
 
   // Auto-switch breaks a tie by this order, so the server keeps it (Codex only: Claude accounts
@@ -575,6 +577,9 @@ export function CodexAccountsPanel({
                   <AccountUsage account={state.defaultAccount} loading={loadingUsage} now={now} />
                 )}
                 {state.forecast && <SwitchForecast forecast={state.forecast} now={now} />}
+                {!isClaude && followRotation && state.rotation && (
+                  <RotationStatus rotation={state.rotation} />
+                )}
               </span>
               <span className="actions codex-account-actions">
                 <button
@@ -892,10 +897,31 @@ function usageLabel(
   }
 }
 
-/**
- * What automatic switching will do next for the account in use, from the latest readings and the
- * switcher's own ranking (server: switchForecast). Shown only once it is near or at its limit.
- */
+/** The supervisor's actual guard and next scheduled check, independent of the quota forecast. */
+function RotationStatus({ rotation }: { rotation: NonNullable<CodexAccountsState['rotation']> }) {
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = () => {
+      if (!document.hidden) setClock(Date.now());
+    };
+    const timer = window.setInterval(tick, 1000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, []);
+  const seconds = Math.max(0, Math.ceil((Date.parse(rotation.nextCheckAt) - clock) / 1000));
+  return (
+    <span className="account-forecast is-waiting" role="status">
+      {rotation.error ? `Last switch failed: ${rotation.error}. ` : ''}
+      {rotation.waiting ?? 'Ready to switch after the next quota and safety check.'}{' '}
+      {seconds > 0 ? `Next check in ${seconds}s.` : 'Checking again shortly.'}
+    </span>
+  );
+}
+
+/** Advisory quota ranking; the supervisor status explains whether a switch can run. */
 function SwitchForecast({ forecast: f, now }: { forecast: AccountSwitchForecast; now: number }) {
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
@@ -907,7 +933,7 @@ function SwitchForecast({ forecast: f, now }: { forecast: AccountSwitchForecast;
   let text: string;
   if (f.kind === 'off') text = 'At its limit, and automatic switching is off.';
   else if (f.kind === 'next')
-    text = `${f.atLimit ? 'At its limit' : `${f.left}% left`}. Next auto-switch: ${f.name} (5-hour ${f.fiveHour}% left, weekly ${f.weekly}% left), when a session hits the limit.`;
+    text = `${f.atLimit ? 'At its limit' : `${f.left}% left`}. Next account forecast: ${f.name} (5-hour ${f.fiveHour}% left, weekly ${f.weekly}% left). Switching requires fresh quota and all Codex work to reach a safe idle point.`;
   else if (Date.parse(f.at) <= time)
     text = f.current
       ? 'Its limit has reset: sessions waiting at the limit continue here once usage is checked again.'

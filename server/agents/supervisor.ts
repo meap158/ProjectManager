@@ -426,6 +426,8 @@ export class AgentSupervisor {
    * One list for every Codex CLI. An account drops out once its quota is back (`codexTried`).
    */
   private codexRotationTried = new Map<string, number>();
+  private codexNextCheckAt = Date.now() + 10_000;
+  private codexRotationError: { account: string; message: string } | null = null;
   private switchingCodexSession = new Set<number>();
   private waitingCodexRuns = new Set<number>();
   private tailCache = new Map<string, { version: string; tail: string | null }>();
@@ -513,6 +515,7 @@ export class AgentSupervisor {
       console.error('[agents] reconcile failed:', e);
     });
     this.continuationTimer = setInterval(() => {
+      this.codexNextCheckAt = Date.now() + 10_000;
       if (!this.closed) {
         try {
           this.tickContinuation();
@@ -544,7 +547,35 @@ export class AgentSupervisor {
   codexAccountsState(refreshStale = false): CodexAccountsState {
     return this.withCodexAccounts((accounts) => {
       if (refreshStale) accounts.refreshUsageIfStale();
-      return accounts.state();
+      const state = accounts.state();
+      const current = accounts.selectedId();
+      const hasWork = this.db
+        .prepare(
+          "SELECT id FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running' UNION ALL SELECT id FROM agent_runs WHERE provider_id = 'codex' AND status = 'running' LIMIT 1",
+        )
+        .get();
+      const candidate = accounts.nextUnused(
+        current,
+        this.codexTried(current),
+        Date.now(),
+        this.usageLimits.size > 0,
+      );
+      return {
+        ...state,
+        rotation: {
+          nextCheckAt: new Date(this.codexNextCheckAt).toISOString(),
+          waiting: !state.autoSwitch
+            ? 'Automatic switching is off.'
+            : !hasWork
+              ? 'No running Codex work to switch.'
+              : (this.codexRotationWaitReason() ??
+                (!candidate
+                  ? 'Waiting for fresh verified exhaustion and an eligible account with quota.'
+                  : null)),
+          error:
+            this.codexRotationError?.account === current ? this.codexRotationError.message : null,
+        },
+      };
     });
   }
 
@@ -1633,35 +1664,50 @@ export class AgentSupervisor {
 
   /** The shared login must not restart a turn still finishing after a reported 100%. */
   private codexRotationReady(): boolean {
-    if (this.switchingCodexSession.size || this.starting.size) return false;
+    return this.codexRotationWaitReason() === null;
+  }
+
+  /** The same guard drives both enforcement and the Settings explanation. */
+  private codexRotationWaitReason(): string | null {
+    if (this.switchingCodexSession.size) return 'An account switch is in progress.';
+    // Starting runs remain in this set until they exit. The run guard below distinguishes
+    // active Codex runs from limit-blocked ones; unrelated providers never block Codex.
+    for (const key of this.starting) {
+      const match = /^session:(\d+)$/.exec(key);
+      if (match && this.getSessionRow(Number(match[1]))?.provider_id === 'codex')
+        return 'A Codex session is starting.';
+    }
     for (const [id, progress] of this.restarting)
       if (progress.phase !== 'failed' && this.getSessionRow(id)?.provider_id === 'codex')
-        return false;
+        return `Codex session ${id} is restarting.`;
     const sessions = this.db
       .prepare("SELECT * FROM agent_sessions WHERE provider_id = 'codex' AND status = 'running'")
       .all() as unknown as SessionRow[];
     for (const row of sessions) {
       if (this.restarting.get(row.id)?.phase && this.restarting.get(row.id)?.phase !== 'failed')
-        return false;
+        return `Codex session ${row.id} is restarting.`;
       if (
         !this.live.has(`session:${row.id}`) ||
         row.desired_state !== 'running' ||
         this.queuedInputBytes(row.id)
       )
-        return false;
+        return `Codex session ${row.id} is reconnecting or has queued input.`;
       // A session stopped at the CLI's own limit message waits on the prompt and is the one to
       // move, so its 'input' state is no reason to wait. Any other 'input' may be an approval.
       // 'running' is detected positively (animation, timer, busy line); an unreadable screen with
       // an empty prompt (null) is not a turn in progress.
       const activity = this.sessionActivity(row, this.fileModifiedAt(row.log_path));
-      if (activity === 'running') return false;
-      if (activity === 'input' && !this.usageLimits.has(row.id)) return false;
-      if (!emptyCodexPrompt(this.sessionScreen(row.id, 4000) ?? '')) return false;
+      if (activity === 'running') return `Codex session ${row.id} is still working.`;
+      if (activity === 'input' && !this.usageLimits.has(row.id))
+        return `Codex session ${row.id} is waiting for your input.`;
+      if (!emptyCodexPrompt(this.sessionScreen(row.id, 4000) ?? ''))
+        return `Codex session ${row.id} has a draft or no readable empty prompt.`;
     }
     const runs = this.db
       .prepare("SELECT id FROM agent_runs WHERE provider_id = 'codex' AND status = 'running'")
       .all() as { id: number }[];
-    return runs.every((row) => this.waitingCodexRuns.has(row.id));
+    const active = runs.find((row) => !this.waitingCodexRuns.has(row.id));
+    return active ? `Codex run ${active.id} is still working.` : null;
   }
 
   /** A failed run can wait for sibling grace work without spending attempts on an exhausted login. */
@@ -1812,8 +1858,15 @@ export class AgentSupervisor {
         keepRotation: true,
         automatic: true,
       })
-        .then(() => this.codexRotationTried.set(leaving, Date.now()))
-        .catch(() => undefined);
+        .then(() => {
+          this.codexRotationTried.set(leaving, Date.now());
+          this.codexRotationError = null;
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : 'Account switch failed';
+          this.codexRotationError = { account: leaving, message };
+          console.error('[agents] automatic Codex account switch:', message);
+        });
     }
     for (const row of rows) {
       if (this.switchingCodexSession.has(row.id)) continue;
