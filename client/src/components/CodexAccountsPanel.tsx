@@ -129,9 +129,25 @@ export function CodexAccountsPanel({
   const backgroundRefresh = !!state?.usageRefreshing;
   const followRotation =
     !!state?.rotation && state.autoSwitch && !!(state.forecast || state.rotation.error);
+  // A forecast 'wait' with a reset far in the future means nothing can change until
+  // then: back the follow poll off instead of asking every few seconds. A 2 h wait
+  // polls about a dozen times, not ~1,400. A failed switch keeps the fast poll.
+  const resetAt =
+    !isClaude && state?.forecast?.kind === 'wait' && !state?.rotation?.error
+      ? state.forecast.at
+      : null;
   useEffect(() => {
     if ((!backgroundRefresh && !followRotation) || isClaude) return;
     let active = true;
+    const resetMs = resetAt ? Date.parse(resetAt) : NaN;
+    const interval = (() => {
+      if (backgroundRefresh) return 2500;
+      if (Number.isFinite(resetMs)) {
+        const remaining = resetMs - Date.now();
+        if (remaining > 0) return Math.min(300_000, Math.max(30_000, Math.floor(remaining / 12)));
+      }
+      return 5000;
+    })();
     const stop = serialPoll(
       async () => {
         if (acting.current) return;
@@ -145,14 +161,14 @@ export function CodexAccountsPanel({
           () => {},
         );
       },
-      backgroundRefresh ? 2500 : 5000,
+      interval,
       { pauseWhenHidden: true },
     );
     return () => {
       active = false;
       stop();
     };
-  }, [backgroundRefresh, followRotation, isClaude]);
+  }, [backgroundRefresh, followRotation, isClaude, resetAt]);
   const loadingUsage = refreshingUsage || backgroundRefresh;
 
   // Auto-switch breaks a tie by this order, so the server keeps it (Codex only: Claude accounts
@@ -578,7 +594,7 @@ export function CodexAccountsPanel({
                 )}
                 {state.forecast && <SwitchForecast forecast={state.forecast} now={now} />}
                 {!isClaude && followRotation && state.rotation && (
-                  <RotationStatus rotation={state.rotation} />
+                  <RotationStatus rotation={state.rotation} resetAt={resetAt} />
                 )}
               </span>
               <span className="actions codex-account-actions">
@@ -898,7 +914,15 @@ function usageLabel(
 }
 
 /** The supervisor's actual guard and next scheduled check, independent of the quota forecast. */
-function RotationStatus({ rotation }: { rotation: NonNullable<CodexAccountsState['rotation']> }) {
+function RotationStatus({
+  rotation,
+  resetAt,
+}: {
+  rotation: NonNullable<CodexAccountsState['rotation']>;
+  /** The forecast reset the panel is waiting on, if any: a far reset means the per-second
+      countdown below would be theatre, so the status names the reset instead. */
+  resetAt: string | null;
+}) {
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
     const tick = () => {
@@ -912,11 +936,17 @@ function RotationStatus({ rotation }: { rotation: NonNullable<CodexAccountsState
     };
   }, []);
   const seconds = Math.max(0, Math.ceil((Date.parse(rotation.nextCheckAt) - clock) / 1000));
+  const resetMs = resetAt ? Date.parse(resetAt) : NaN;
+  const waitingOnQuota = rotation.waiting != null && Number.isFinite(resetMs) && resetMs > clock;
   return (
     <span className="account-forecast is-waiting" role="status">
       {rotation.error ? `Last switch failed: ${rotation.error}. ` : ''}
       {rotation.waiting ?? 'Ready to switch after the next quota and safety check.'}{' '}
-      {seconds > 0 ? `Next check in ${seconds}s.` : 'Checking again shortly.'}
+      {waitingOnQuota
+        ? `Next quota reset ${formatReset(resetAt as string, clock)}, checking back automatically.`
+        : seconds > 0
+          ? `Next check in ${seconds}s.`
+          : 'Checking again shortly.'}
     </span>
   );
 }

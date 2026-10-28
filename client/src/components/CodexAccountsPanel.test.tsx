@@ -437,3 +437,66 @@ it('ticks the supervisor check countdown and shows its guard and last failure', 
     vi.useRealTimers();
   }
 });
+
+it('backs the rotation follow poll off while the next quota reset is far away', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(api.getCodexAccounts).mockResolvedValue({
+      ...baseState,
+      forecast: {
+        kind: 'wait',
+        name: 'meap158@gmail.com',
+        at: new Date(Date.now() + 2 * 3600_000).toISOString(),
+        current: false,
+      },
+      rotation: {
+        nextCheckAt: new Date(Date.now() + 10_000).toISOString(),
+        waiting: 'Waiting for fresh verified exhaustion and an eligible account with quota.',
+        error: null,
+      },
+    });
+    const { unmount } = render(<CodexAccountsPanel onError={vi.fn()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // A 2 h wait backs off to a 5 min cadence instead of every 5 s.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(310_000);
+    });
+    const calls = vi.mocked(api.getCodexAccounts).mock.calls.length;
+    expect(calls).toBeGreaterThanOrEqual(2);
+    expect(calls).toBeLessThanOrEqual(12);
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('names the quota reset instead of a per-second countdown while waiting on it', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(api.getCodexAccounts).mockResolvedValue({
+      ...baseState,
+      forecast: {
+        kind: 'wait',
+        name: 'meap158@gmail.com',
+        at: new Date(Date.now() + 2 * 3600_000).toISOString(),
+        current: false,
+      },
+      rotation: {
+        nextCheckAt: new Date(Date.now() + 10_000).toISOString(),
+        waiting: 'Waiting for fresh verified exhaustion and an eligible account with quota.',
+        error: null,
+      },
+    });
+    const { unmount } = render(<CodexAccountsPanel onError={vi.fn()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText(/Next quota reset in/)).toBeDefined();
+    expect(screen.queryByText(/Next check in/)).toBeNull();
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});
