@@ -196,6 +196,7 @@ export function renderIndex({ updated = '', counts } = {}) {
     body: `<h1>Owner pages</h1>
 <p class="lede">What ProjectManager needs from you, in one place. Local only: this folder is git-ignored.${updated ? ` Built ${esc(updated)}.` : ''}</p>
 <a class="card" href="owner-desk.html"><b>Owner desk</b><br>Every action only you can take, with exact steps and what done looks like.${esc(open)}</a>
+<a class="card" href="../../README.md"><b>Readme</b><br>What this project is, how to run it, and where things live (README.md in the project root).</a>
 <a class="card" href="../../ROADMAP.md"><b>Roadmap</b><br>Vision, scope, phases with exit criteria, and risks (ROADMAP.md in the project root).</a>
 <p class="na">QA scorecard and Feature parity are not built: they grade offerings based on existing products, and ProjectManager has none yet.</p>
 <p class="note">Rebuild with <code>npm run owner:pages</code>. The agent edits <code>owner-desk.json</code>; ticks you make on the desk are kept in this browser only.</p>`,

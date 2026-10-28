@@ -103,11 +103,14 @@ describe('rendering', () => {
     const html = renderDesk({ tasks: [] });
     expect(html).not.toMatch(/https?:\/\/(?!\S*example)\S*\.(css|js)/);
     expect(html).not.toMatch(/<link\b/);
-    expect(html).toContain('--bg: #f5f5f3');
+    expect(html).toContain('--bg: #e9e8e3');
     expect(html).toContain(":root[data-theme='dark']");
     expect(html).toContain('--bg: #121211');
     expect(html).toContain('pm.owner-desk.ticks');
     expect(renderIndex({ counts: summary([task()]) })).toContain('1 pending');
+    const index = renderIndex({ counts: summary([task()]) });
+    expect(index).toContain('href="../../README.md"');
+    expect(index).toContain('href="../../ROADMAP.md"');
   });
 });
 
