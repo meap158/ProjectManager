@@ -1,4 +1,5 @@
 import { GrokAccountError } from './agents/grokAccounts.js';
+import { createCardIssue, GitHubIssueError } from './githubIssues.js';
 import { jsonEtag } from './jsonEtag.js';
 import { OrchestratorService } from './orchestrator/service.js';
 import { registerOrchestratorRoutes } from './orchestrator/routes.js';
@@ -843,6 +844,25 @@ export function createApp(
     // A deleted card's images go with it (no orphaned files in the data folder).
     removeAttachments(attachmentsRoot, id);
     return c.body(null, 204);
+  });
+
+  // Create the card's GitHub issue in its project's repository and link it back.
+  // Outward-facing on purpose: the only caller is the explicit per-card action in the UI.
+  app.post('/cards/:id/github-issue', async (c) => {
+    const id = parseId(c);
+    const card = store.getCard(db, id);
+    if (!card) throw new HttpError(404, 'Card not found');
+    if (!card.projectId) throw new HttpError(400, 'Card has no project, so no repository');
+    if (card.issueUrl) throw new HttpError(409, 'Card already links an issue');
+    const project = store.getProjectRow(db, card.projectId);
+    if (!project) throw new HttpError(404, 'Project not found');
+    try {
+      const { url } = await createCardIssue(project.path, card, ghAccountOverride(project.id));
+      return c.json(store.updateCard(db, id, { issueUrl: url }), 201);
+    } catch (error) {
+      if (error instanceof GitHubIssueError) return c.json({ error: error.message }, error.status);
+      throw error;
+    }
   });
 
   // ---- LAN access (opt-in; server/lan.ts) --------------------------------------------------------

@@ -279,6 +279,8 @@ export const api = {
     >,
   ) => request<Card>('PATCH', `/cards/${id}`, patch),
   deleteCard: (id: number) => request<void>('DELETE', `/cards/${id}`),
+  /** Create the card's GitHub issue in its project's repo and link it back. */
+  createCardIssue: (id: number) => request<Card>('POST', `/cards/${id}/github-issue`, {}),
 
   /** Opt-in LAN access (Settings); only answers on this computer. */
   lanStatus: () => request<LanStatus>('GET', '/lan'),

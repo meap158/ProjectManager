@@ -457,6 +457,24 @@ export function CardDialog({
     }
   }
 
+  const [creatingIssue, setCreatingIssue] = useState(false);
+  /** Create the card's GitHub issue in its project's repo and link it back. */
+  async function createIssue() {
+    if (!card || creating) return;
+    setCreatingIssue(true);
+    setError(null);
+    try {
+      const saved = await ensureCard();
+      const updated = await api.createCardIssue(saved.id);
+      setIssueUrl(updated.issueUrl ?? '');
+      onSaved(updated);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCreatingIssue(false);
+    }
+  }
+
   return (
     <dialog
       ref={dialogRef}
@@ -563,6 +581,19 @@ export function CardDialog({
                 Link the issue once. Commits and pull requests referencing it can move this card
                 through implementation and review.
               </p>
+              {!creating && !issueUrl.trim() && effectiveProjectId > 0 && (
+                <p style={{ margin: '8px 0 0' }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={creatingIssue || saving}
+                    onClick={() => void createIssue()}
+                    title="Create a GitHub issue in this project's repository and link it here"
+                  >
+                    {creatingIssue ? 'Creating issue…' : 'Create GitHub issue'}
+                  </button>
+                </p>
+              )}
               {card.issueUrl && (
                 <a href={card.issueUrl} target="_blank" rel="noreferrer">
                   Open linked issue

@@ -3,6 +3,13 @@ import type { RefEvent } from './cardRefs.js';
 
 const ISSUE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/([1-9]\d*)$/i;
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function parseGitHubIssueUrl(
+  url: string,
+): { owner: string; repo: string; number: number } | null {
+  const match = url.match(ISSUE);
+  if (!match) return null;
+  return { owner: match[1]!, repo: match[2]!, number: Number(match[3]) };
+}
 export function githubRepository(remote: string | null): string | null {
   const match = remote?.match(
     /(?:https:\/\/github\.com\/|git@github\.com:)([^/]+\/[^/]+?)(?:\.git)?\/?$/i,

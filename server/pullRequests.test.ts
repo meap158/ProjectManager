@@ -6,9 +6,11 @@ import {
   pullRequestAction,
   pullRequestActionBody,
   PullRequestActionError,
+  pullRequestEvents,
   pullRequests,
   summarizeChecks,
 } from './pullRequests.js';
+import { computeMoves } from './analysis/cardRefs.js';
 import { githubRepoOf, isLoggedIn, parseStatusText, resetGhAccountCache } from './ghAccount.js';
 import type { PullRequestRepoSettings } from '../shared/types.js';
 vi.mock('./analysis/exec.js', () => ({ run: vi.fn() }));
@@ -608,5 +610,52 @@ describe('gh account override validation', () => {
       .mocked(run)
       .mock.calls.filter(([, args]) => args[0] === 'auth' && args[1] === 'status').length;
     expect(statusReads).toBe(2); // cached for the first two, refreshed once for the miss
+  });
+});
+
+describe('board events from pull requests', () => {
+  const listJson = (pr: object) => JSON.stringify([pr]);
+  const openPr = (extra: object) => ({
+    number: 9,
+    title: 'Cleanup',
+    body: 'tidy only',
+    headRefName: 'cleanup',
+    state: 'OPEN',
+    createdAt: '2026-10-28T00:00:00.000Z',
+    mergedAt: null,
+    closingIssuesReferences: [],
+    ...extra,
+  });
+
+  it("matches a card key carried only by the branch's commits", async () => {
+    twoAccounts('https://github.com/meap158/TiemNet.git', (args) =>
+      args[0] === 'pr' && args[1] === 'list'
+        ? {
+            stdout: listJson(
+              openPr({
+                commits: [{ messageHeadline: 'Polish (Refs PM-12)', messageBody: 'details' }],
+              }),
+            ),
+          }
+        : undefined,
+    );
+    const events = (await pullRequestEvents('folder')) ?? [];
+    expect(events).toHaveLength(1);
+    expect(events[0]!.text).toContain('Refs PM-12');
+    expect(
+      computeMoves(
+        [{ id: 12, key: 'PM-12', status: 'todo', createdAt: '2026-10-01T00:00:00.000Z' }],
+        events,
+      ),
+    ).toEqual([{ cardId: 12, key: 'PM-12', from: 'todo', to: 'review', commit: 'PR #9' }]);
+  });
+
+  it('still lists PRs whose gh answer carries no commits field (older gh)', async () => {
+    twoAccounts('https://github.com/meap158/TiemNet.git', (args) =>
+      args[0] === 'pr' && args[1] === 'list' ? { stdout: listJson(openPr({})) } : undefined,
+    );
+    const events = (await pullRequestEvents('folder')) ?? [];
+    expect(events).toHaveLength(1);
+    expect(events[0]!.text).toContain('Cleanup');
   });
 });

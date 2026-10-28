@@ -667,13 +667,21 @@ const refRows = z.array(
     createdAt: z.string(),
     mergedAt: z.string().nullable().optional(),
     closingIssuesReferences: z.array(z.object({ url: z.string() })).optional(),
+    commits: z
+      .array(
+        z.object({
+          messageHeadline: z.string(),
+          messageBody: z.string().nullable().optional(),
+        }),
+      )
+      .nullish(),
   }),
 );
 
 /**
  * Recent pull requests (open, merged and closed) as board events: an open PR referencing a card
- * (title, description or branch name) and, once merged, the merge. Null when gh is missing, not
- * signed in, or the project has no GitHub remote.
+ * (title, description, branch name or one of its commits) and, once merged, the merge. Null when
+ * gh is missing, not signed in, or the project has no GitHub remote.
  */
 export async function pullRequestEvents(
   cwd: string,
@@ -691,12 +699,18 @@ export async function pullRequestEvents(
         '--limit',
         '50',
         '--json',
-        'number,title,body,headRefName,state,createdAt,mergedAt,closingIssuesReferences',
+        'number,title,body,headRefName,state,createdAt,mergedAt,closingIssuesReferences,commits',
       ],
       20_000,
     );
     return refRows.parse(JSON.parse(stdout)).flatMap((pr): RefEvent[] => {
-      const text = `${pr.title}\n${pr.body ?? ''}\n${pr.headRefName}\n${(pr.closingIssuesReferences ?? []).map((issue) => `Closes ${issue.url}`).join('\n')}`;
+      // A merge whose title, body and branch name no key: the branch's own commits
+      // still carry the card keys they were written with, so match those too.
+      const commitText = (pr.commits ?? [])
+        .map((commit) => `${commit.messageHeadline}\n${commit.messageBody ?? ''}`.trim())
+        .filter((line) => line.length > 0)
+        .join('\n');
+      const text = `${pr.title}\n${pr.body ?? ''}\n${pr.headRefName}\n${commitText}\n${(pr.closingIssuesReferences ?? []).map((issue) => `Closes ${issue.url}`).join('\n')}`;
       const source = `PR #${pr.number}`;
       const opened: RefEvent = {
         id: `pr:${pr.number}:open`,
