@@ -1249,7 +1249,7 @@ export class ClaudeAccounts {
       available: existsSync(sourceCredsFile),
       email: defMeta.email,
       plan: defMeta.plan,
-      ...this.accountUsage(sourceCredsFile, now),
+      ...this.accountUsage('default', sourceCredsFile, now),
     };
     const accounts: CodexAccount[] = registry.accounts.map((account) => {
       const home = this.home(account.id);
@@ -1264,6 +1264,7 @@ export class ClaudeAccounts {
         email: meta.email,
         plan: meta.plan,
         ...this.accountUsage(
+          account.id,
           account.id === activeProfileId ? liveCredsFile : path.join(home, '.credentials.json'),
           now,
         ),
@@ -1272,7 +1273,34 @@ export class ClaudeAccounts {
     return { accounts, activeProfileId, autoSwitch, defaultAccount };
   }
 
+  /**
+   * Marks the usage a session will report under `identity` (the hash of the access token it was
+   * started with) as the active account's. Called when a Claude session starts: Claude rotates
+   * its access token every few hours, so the token an account holds now is rarely the one its
+   * running sessions report under, and matching on it alone left the active account with no usage
+   * ("Usage not refreshed") while its sessions reported it all along.
+   */
+  claimUsage(identity: string): void {
+    if (!/^[a-f0-9]{64}$/.test(identity)) return;
+    const account = this.state().activeProfileId ?? 'default';
+    const folder = path.join(this.dataDir, 'claude-account-usage', identity);
+    const file = path.join(folder, 'owner.json');
+    try {
+      if ((JSON.parse(readFileSync(file, 'utf8')) as { account?: string }).account === account)
+        return;
+    } catch {
+      // Not claimed yet.
+    }
+    try {
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(file, JSON.stringify({ account, at: new Date().toISOString() }));
+    } catch (error) {
+      console.error('[claude-accounts] could not record usage owner:', error);
+    }
+  }
+
   private accountUsage(
+    account: string,
     file: string,
     now: number,
   ): Pick<CodexAccount, 'limits' | 'usageStatus' | 'usageCheckedAt'> {
@@ -1282,8 +1310,25 @@ export class ClaudeAccounts {
       };
       const token = credentials.claudeAiOauth?.accessToken;
       if (!token) return { limits: null, usageStatus: 'unavailable', usageCheckedAt: null };
-      const identity = createHash('sha256').update(token).digest('hex');
-      const limits = claudeLimits(path.join(this.dataDir, 'claude-account-usage', identity), now);
+      // The usage recorded under the token it holds now, and under every token its sessions were
+      // started with (claimUsage): the newest wins.
+      const root = path.join(this.dataDir, 'claude-account-usage');
+      const identities = new Set([createHash('sha256').update(token).digest('hex')]);
+      for (const name of existsSync(root) ? readdirSync(root) : []) {
+        try {
+          const owner = JSON.parse(readFileSync(path.join(root, name, 'owner.json'), 'utf8')) as {
+            account?: string;
+          };
+          if (owner.account === account) identities.add(name);
+        } catch {
+          // Unclaimed (started before owners were recorded): matched by its token only.
+        }
+      }
+      let limits: ReturnType<typeof claudeLimits> = null;
+      for (const identity of identities) {
+        const found = claudeLimits(path.join(root, identity), now);
+        if (found && (!limits || Date.parse(found.asOf) > Date.parse(limits.asOf))) limits = found;
+      }
       return {
         limits,
         usageCheckedAt: limits?.asOf ?? null,

@@ -11,6 +11,7 @@ import { getCard, getSetting, insertCard, setSetting, updateCard } from './store
 import { cardAttachmentsDir, listAttachments } from './attachments.js';
 import { recordEvent } from './agents/turnState.js';
 import { type SopStore, sopReport } from './sops.js';
+import { ClaudeAccounts } from './agents/codexAccounts.js';
 
 type Owner = { kind: 'session' | 'run'; id: number; logPath: string };
 const tokenKey = (token: string) => `board-mcp:${createHash('sha256').update(token).digest('hex')}`;
@@ -142,6 +143,10 @@ export function boardConnection(
     } catch {
       /* No attributable login yet. */
     }
+    // Which saved account that token belongs to, so its usage still shows after Claude rotates
+    // the token (PM-366).
+    if (usageIdentity && owner.kind === 'session')
+      new ClaudeAccounts(dataDir, db).claimUsage(usageIdentity);
     const hook =
       owner.kind === 'session'
         ? [

@@ -144,3 +144,61 @@ it('does not attribute an external login to the previously selected profile or o
     rmSync(temp, { recursive: true, force: true });
   }
 });
+
+it('keeps showing an account’s usage after Claude rotates its token (PM-366)', () => {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'pm-claude-rotated-'));
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  const home = path.join(temp, 'default');
+  mkdirSync(home);
+  process.env.CLAUDE_CONFIG_DIR = home;
+  const db = openDb(':memory:');
+  const report = (identity: string, used: number) =>
+    spawnSync(process.execPath, ['scripts/claude-statusline.mjs', temp, identity], {
+      input: JSON.stringify({
+        rate_limits: {
+          five_hour: { used_percentage: used, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+        },
+      }),
+      env: { ...process.env, CLAUDE_CONFIG_DIR: home },
+      encoding: 'utf8',
+    });
+  const hash = (token: string) => createHash('sha256').update(token).digest('hex');
+  try {
+    writeFileSync(
+      path.join(home, '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: 'fake-default', refreshToken: 'fake-dr' } }),
+    );
+    const pool = new ClaudeAccounts(temp, db);
+    const other = pool.importAccount(
+      'Other',
+      JSON.stringify({ claudeAiOauth: { accessToken: 'fake-other', refreshToken: 'fake-or' } }),
+    ).accounts[0]!;
+    const work = pool
+      .importAccount(
+        'Work',
+        JSON.stringify({ claudeAiOauth: { accessToken: 'fake-work-1', refreshToken: 'fake-wr' } }),
+      )
+      .accounts.find((a) => a.name === 'Work')!;
+    pool.setActive(work.id);
+    // A session starts on Work and is claimed for it; then Claude rotates the live token.
+    pool.claimUsage(hash('fake-work-1'));
+    writeFileSync(
+      path.join(home, '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: 'fake-work-2', refreshToken: 'fake-wr' } }),
+    );
+    expect(report(hash('fake-work-1'), 54).status).toBe(0);
+    const state = pool.state();
+    expect(state.activeProfileId).toBe(work.id);
+    const shown = state.accounts.find((a) => a.id === work.id)!;
+    expect(shown.limits?.windows[0]?.usedPercent).toBe(54);
+    expect(shown.usageStatus).toBe('fresh');
+    // Never someone else's: the other saved account and the default login stay empty.
+    expect(state.accounts.find((a) => a.id === other.id)?.limits).toBeNull();
+    expect(state.defaultAccount.limits).toBeNull();
+  } finally {
+    db.close();
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
