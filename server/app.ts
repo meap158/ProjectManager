@@ -601,10 +601,11 @@ export function createApp(
         });
       }
     }
-    // Orchestrators first, then the most recently messaged.
+    // The project's own sessions first, orchestrators at the bottom (the owner's call), each
+    // group most recently messaged first; the first one is preselected.
     sessions.sort(
       (a, b) =>
-        Number(b.kind === 'orchestrator') - Number(a.kind === 'orchestrator') ||
+        Number(a.kind === 'orchestrator') - Number(b.kind === 'orchestrator') ||
         (b.lastInputAt ?? '').localeCompare(a.lastInputAt ?? ''),
     );
     return c.json({ sessions });
