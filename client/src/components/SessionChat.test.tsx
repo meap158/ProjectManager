@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, SessionTranscript } from '../../../shared/types';
 import { api } from '../api';
@@ -37,6 +37,11 @@ vi.mock('../api', () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.mocked(api.sendSessionInput).mockImplementation(async () => ({
+    queued: false,
+    session: session(),
+  }));
+  vi.useRealTimers();
 });
 
 const session = (over: Partial<AgentSession> = {}) =>
@@ -231,6 +236,133 @@ describe('SessionChat keys behave as in the terminal (PM-116)', () => {
   });
 });
 
+describe('chat delivery reliability', () => {
+  const box = () => screen.getByLabelText('Message to the session') as HTMLTextAreaElement;
+  const ready = async (over: Partial<AgentSession> = {}) => {
+    sessionStorage.clear();
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
+    vi.mocked(api.sendSessionInput).mockImplementation(async () => ({
+      queued: false,
+      session: session(),
+    }));
+    const view = render(<SessionChat session={session(over)} onError={vi.fn()} />);
+    await screen.findByText('No messages yet. Send one below.');
+    return view;
+  };
+
+  it('serializes Enter, form submit and touch Send before React rerenders', async () => {
+    await ready();
+    fireEvent.change(box(), { target: { value: 'send once' } });
+    await act(async () => {
+      fireEvent.keyDown(box(), { key: 'Enter' });
+      fireEvent.submit(box().closest('form')!);
+      fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(api.sendSessionInput).mock.calls.map((c) => c[1])).toEqual([
+      CLEAR_INPUT,
+      '\x1b[200~send once\x1b[201~',
+      '\r',
+    ]);
+  });
+
+  it('does not hand a submitted draft back to the terminal during an in-flight send', async () => {
+    const view = await ready();
+    let finish!: (value: { queued: boolean; session: AgentSession }) => void;
+    vi.mocked(api.sendSessionInput).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    fireEvent.change(box(), { target: { value: 'switch views' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    handOffDraft(7);
+    view.unmount();
+    render(<SessionChat session={session()} onError={vi.fn()} />);
+    expect(box().value).toBe('');
+    await act(async () => {
+      finish({ queued: false, session: session() });
+    });
+    await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledTimes(3));
+  });
+
+  it('ignores held Enter and IME confirmation but still supports an explicit send', async () => {
+    await ready();
+    fireEvent.change(box(), { target: { value: 'Tiếng Việt' } });
+    fireEvent.keyDown(box(), { key: 'Enter', repeat: true });
+    fireEvent.compositionStart(box());
+    fireEvent.keyDown(box(), { key: 'Enter' });
+    fireEvent.compositionEnd(box());
+    fireEvent.keyDown(box(), { key: 'Enter', keyCode: 229 });
+    expect(api.sendSessionInput).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledTimes(3));
+  });
+
+  it('keeps accepted delivery distinct from transcript delay and never offers a blind resend', async () => {
+    await ready();
+    vi.useFakeTimers();
+    fireEvent.change(box(), { target: { value: 'slow transcript' } });
+    await act(async () => {
+      fireEvent.submit(box().closest('form')!);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(screen.getByText('Sent to CLI; waiting for transcript')).toBeDefined();
+    expect(screen.queryByText('Not sent yet')).toBeNull();
+    expect(api.sendSessionInput).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not restore a message for resending when the Enter acknowledgement is lost', async () => {
+    await ready();
+    vi.mocked(api.sendSessionInput).mockImplementation(async (_id, data) => {
+      if (data === '\r') throw new Error('Connection lost');
+      return { queued: false, session: session() };
+    });
+    fireEvent.change(box(), { target: { value: 'possibly delivered' } });
+    fireEvent.submit(box().closest('form')!);
+    await screen.findByText('Delivery unconfirmed. Check the CLI before sending again.');
+    expect(box().value).toBe('');
+    expect(api.sendSessionInput).toHaveBeenCalledTimes(3);
+  });
+
+  it('reports the server queue when the session is down', async () => {
+    await ready({ status: 'dead' });
+    vi.mocked(api.sendSessionInput).mockResolvedValue({ queued: true, session: session() });
+    fireEvent.change(box(), { target: { value: 'when relaunched' } });
+    fireEvent.submit(box().closest('form')!);
+    await screen.findByText('Queued for session relaunch');
+    expect(api.sendSessionInput).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps a repeated message pending until a new transcript entry records it', async () => {
+    sessionStorage.clear();
+    vi.mocked(api.sendSessionInput).mockResolvedValue({ queued: false, session: session() });
+    const old = { id: 'old', kind: 'user' as const, text: 'continue', at: null };
+    vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({ items: [old] }));
+    vi.useFakeTimers();
+    render(<SessionChat session={session()} onError={vi.fn()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.querySelector('.chat-msg.is-user')).not.toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'continue' }));
+    });
+    expect(document.querySelectorAll('.chat-msg.is-pending')).toHaveLength(1);
+    vi.mocked(api.sessionTranscript).mockResolvedValue(
+      transcript({ items: [{ ...old, id: 'new' }], reset: true }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1600);
+    });
+    expect(document.querySelectorAll('.chat-msg.is-pending')).toHaveLength(0);
+  });
+});
+
 describe('statusLine', () => {
   it("reads the CLI's live status line instead of a bare Working…", () => {
     expect(
@@ -385,7 +517,7 @@ describe('Continue key (PM-121)', () => {
     vi.mocked(api.sessionTranscript).mockResolvedValue(transcript({}));
     const view = render(<SessionChat session={session()} onError={() => {}} />);
     await screen.findByLabelText('Message to the session');
-    expect(screen.queryByRole('button', { name: 'Enter' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Enter' })).toBeDefined();
     fireEvent.change(box(), { target: { value: 'my draft' } });
     fireEvent.click(screen.getByRole('button', { name: 'continue' }));
     await waitFor(() =>
@@ -476,11 +608,12 @@ describe('quick key order (PM-121)', () => {
         (b) => b.getAttribute('aria-label') ?? b.textContent,
       );
     expect(keys().slice(0, 2)).toEqual(['continue', 'Escape']);
-    expect(keys()).not.toContain('Enter');
+    expect(keys()).toContain('Enter');
     view.unmount();
     render(<SessionChat session={session({ tailState: 'input' })} onError={() => {}} />);
     await screen.findByText(/Allow edit\?/);
     expect(keys().slice(0, 2)).toEqual(['Enter', 'Escape']);
+    expect(keys().filter((key) => key === 'Enter')).toHaveLength(1);
   });
 });
 

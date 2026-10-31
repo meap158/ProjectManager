@@ -319,6 +319,8 @@ asking). Change any of them under **Settings > Keyboard shortcuts**.
 You can also type the **4-character code** manually. Prefer the computer's `.local` address when
 your phone resolves it: it survives changes to the host's network IP. Mobile chat is available
 for Claude Code, Codex, OpenCode and Grok sessions; CLI view shows the original screen.
+The chat composer has a send button, image attachments and CLI keys. It reports queued or
+unconfirmed delivery without offering a blind resend when the transcript is slow.
 
 <details>
 <summary><b>How it stays safe</b></summary>

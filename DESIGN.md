@@ -860,8 +860,12 @@ chat. Its pane header has a **Chat | CLI** switch, remembered per device (`pm.se
   tool calls with their full input and output, one tap away.
 - Consecutive tool calls fold into one **N steps** row (tools used, latest step, running /
   failed state), like chat apps do, so the agent's messages stand out.
-- A composer sends to the same session (bracketed paste, then Enter; Return adds a line on
-  phones, Ctrl/⌘+Enter sends on keyboards); quick keys (Esc, arrows, Enter, 1–3, ^C) answer
+- A composer sends to the same session (bracketed paste, then Enter). The 44px send button and
+  Return submit; Shift+Return adds a line. IME confirmation and held Return never submit.
+  Submissions are serialized across panes and view changes. Delivery feedback distinguishes
+  sending, accepted by the CLI, queued for relaunch and an unconfirmed Enter acknowledgement.
+  Transcript delay never offers an automatic resend. Repeated text matches a new transcript
+  message, rather than an older identical message. Quick keys (Esc, arrows, Enter, 1–3, ^C) answer
   menus; while the CLI asks something, its current screen shows above them
   (`GET /api/agent-sessions/:id/screen`).
 - Other CLIs, and desktop, keep the terminal.

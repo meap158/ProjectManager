@@ -259,11 +259,13 @@
   font-size: 16px; /* 16px keeps iOS from zooming into the field. */
   line-height: 1.4;
 }
-.chat-send {
+.chat-composer .chat-send {
   flex: none;
   min-height: 44px;
   border-radius: 22px;
-  padding: 0 16px;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
 }
 
 /* The pane header's Chat / Terminal switch. */

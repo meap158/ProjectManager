@@ -724,6 +724,8 @@ export function screenInfo(screen: string, providerId = ''): ScreenInfo {
 }
 
 const draftKey = (id: number) => `pm.chatDraft.${id}`;
+// Synchronous across panes and remounts: React state alone cannot serialize input events.
+const activeSubmissions = new Set<number>();
 function readDraft(id: number): string {
   try {
     return sessionStorage.getItem(draftKey(id)) ?? '';
@@ -747,6 +749,7 @@ function saveDraft(id: number, text: string) {
  * unmount, which development mode runs at every mount).
  */
 export function handOffDraft(sessionId: number): void {
+  if (activeSubmissions.has(sessionId)) return;
   const text = readDraft(sessionId).trim();
   if (!text) return;
   void api
@@ -840,6 +843,7 @@ export function SessionChat({
   // browser tab); see the unmount effect below for what the terminal shows meanwhile.
   const [draft, setDraft] = useState(() => readDraft(session.id));
   const [sending, setSending] = useState(false);
+  const composing = useRef(false);
   const [unseen, setUnseen] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
@@ -1067,46 +1071,65 @@ export function SessionChat({
     const text = quick ?? draft.trim();
     // Uploaded images go; a failed one stays in the tray to retry or remove.
     const images = quick ? [] : attachments.filter((a) => a.status === 'ready');
-    if ((!text && !images.length) || sending || (!quick && uploading)) return;
+    if ((!text && !images.length) || activeSubmissions.has(id) || (!quick && uploading)) return;
+    activeSubmissions.add(id);
     setSending(true);
     // Shown in the chat at once (PM-116), until the CLI's transcript records it.
     const pendingId = ++pendingSeq.current;
     const shown = [...images.map((a) => `[image: ${a.name}]`), text].filter(Boolean).join('\n');
     setPending((prev) => [
       ...prev,
-      { id: pendingId, text: text || shown, label: shown, due: false },
+      {
+        id: pendingId,
+        text: text || shown,
+        label: shown,
+        delivery: 'sending',
+        before: items.filter((i) => i.kind === 'user').map((i) => i.id),
+      },
     ]);
     if (!quick) {
+      saveDraft(id, '');
       setDraft('');
       setAttachments((prev) => prev.filter((a) => a.status !== 'ready'));
       setRecall(null);
     }
     atBottom.current = true;
+    let enterAttempted = false;
     try {
       // Only what you typed: first empty the CLI's whole input (CLEAR_INPUT: leftovers there
       // went out in front of the message, PM-125). Each image path
       // goes in as its own paste (that's how the CLIs recognise an image), then the text as
       // one bracketed paste (multi-line stays one prompt), and Enter submits it.
-      await send(CLEAR_INPUT);
-      for (const image of images) await send(`\x1b[200~${image.path}\x1b[201~`);
-      if (text) await send(`\x1b[200~${text}\x1b[201~`);
-      await send('\r');
+      let queued = (await send(CLEAR_INPUT)).queued;
+      for (const image of images)
+        queued = (await send(`\x1b[200~${image.path}\x1b[201~`)).queued || queued;
+      if (text) queued = (await send(`\x1b[200~${text}\x1b[201~`)).queued || queued;
+      enterAttempted = true;
+      queued = (await send('\r')).queued || queued;
+      setPending((prev) =>
+        prev.map((p) =>
+          p.id === pendingId ? { ...p, delivery: queued ? 'queued' : 'accepted' } : p,
+        ),
+      );
       for (const image of images) if (image.preview) URL.revokeObjectURL(image.preview);
       if (text) setSent((prev) => [...prev, text]);
-      // An idle CLI records a message within a second or two; still missing after a few, it is
-      // being held (e.g. a long paste waiting for another Enter): offer to send it.
-      setTimeout(
-        () => setPending((prev) => prev.map((p) => (p.id === pendingId ? { ...p, due: true } : p))),
-        4_000,
-      );
     } catch {
+      if (enterAttempted) {
+        // A lost Enter response can follow successful delivery. Resending would duplicate it.
+        setPending((prev) =>
+          prev.map((p) => (p.id === pendingId ? { ...p, delivery: 'unknown' } : p)),
+        );
+        for (const image of images) if (image.preview) URL.revokeObjectURL(image.preview);
+        return;
+      }
       // Shown by onError. Nothing typed is lost: the message goes back into the box.
       setPending((prev) => prev.filter((p) => p.id !== pendingId));
       if (!quick) {
-        setDraft(text);
-        setAttachments(images);
+        setDraft((current) => (current ? `${text}\n${current}` : text));
+        setAttachments((current) => [...images, ...current]);
       }
     } finally {
+      activeSubmissions.delete(id);
       setSending(false);
     }
   };
@@ -1118,14 +1141,34 @@ export function SessionChat({
   const [sent, setSent] = useState<string[]>([]);
   /** Messages you sent that the transcript doesn't show yet (the CLI may still be busy). */
   const [pending, setPending] = useState<
-    { id: number; text: string; label: string; due: boolean }[]
+    {
+      id: number;
+      text: string;
+      label: string;
+      delivery: 'sending' | 'accepted' | 'queued' | 'unknown';
+      before: string[];
+    }[]
   >([]);
   const pendingSeq = useRef(0);
   // A pending message is done once the transcript has it as a user message.
-  const recorded = new Set(
-    items.filter((i) => i.kind === 'user' && i.text).map((i) => i.text!.trim()),
-  );
-  const unrecorded = pending.filter((p) => !recorded.has(p.text));
+  // Match new transcript entries once each. An old identical message is not this send's receipt.
+  useEffect(() => {
+    const claimed = new Set<string>();
+    setPending((prev) =>
+      prev.filter((p) => {
+        const receipt = items.find(
+          (i) =>
+            i.kind === 'user' &&
+            i.text?.trim() === p.text &&
+            !p.before.includes(i.id) &&
+            !claimed.has(i.id),
+        );
+        if (receipt) claimed.add(receipt.id);
+        return !receipt;
+      }),
+    );
+  }, [items]);
+  const unrecorded = pending;
   /** Which earlier message ↑ / ↓ is showing (from the newest back), and the draft it replaced. */
   const [recall, setRecall] = useState<{ index: number; draft: string } | null>(null);
   /**
@@ -1236,6 +1279,7 @@ export function SessionChat({
   };
 
   const pressKey = (key: (typeof KEYS)[number]) => {
+    if (key.aria === 'Enter' && activeSubmissions.has(id)) return;
     const listKey =
       key.aria === 'Arrow up'
         ? 'up'
@@ -1288,24 +1332,21 @@ export function SessionChat({
           {unrecorded.map((p) => (
             <div key={p.id} className="chat-msg is-user is-pending">
               <div className="chat-bubble">{renderText(p.label)}</div>
-              {working || asking ? (
+              {p.delivery === 'unknown' ? (
+                <span className="chat-pending-note">
+                  Delivery unconfirmed. Check the CLI before sending again.
+                </span>
+              ) : p.delivery === 'queued' ? (
+                <span className="chat-pending-note">Queued for session relaunch</span>
+              ) : p.delivery === 'sending' ? (
+                <span className="chat-pending-note">Sending…</span>
+              ) : working || asking ? (
                 // The CLI holds messages while it works (or asks something) and sends them after.
                 <span className="chat-pending-note">
                   {asking ? 'Waiting: answer the CLI first' : 'Queued, sends when the CLI is done'}
                 </span>
-              ) : p.due ? (
-                <span className="chat-pending-note">
-                  Not sent yet{' '}
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() => void send('\r').catch(() => undefined)}
-                  >
-                    Send
-                  </button>
-                </span>
               ) : (
-                <span className="chat-pending-note">Sending…</span>
+                <span className="chat-pending-note">Sent to CLI; waiting for transcript</span>
               )}
             </div>
           ))}
@@ -1386,8 +1427,7 @@ export function SessionChat({
           </button>
         )}
         <div className="chat-keys" role="group" aria-label="Terminal keys">
-          {/* First key (PM-121): Continue, the most common nudge. Enter is only needed while the
-            CLI asks something or a suggestion list is open, and then takes this place. */}
+          {/* Continue leaves the composer's draft alone. Enter remains available as a CLI key. */}
           {asking || suggestions.length ? (
             <button
               key="enter"
@@ -1404,12 +1444,13 @@ export function SessionChat({
               type="button"
               className="chat-key chat-key-continue"
               title='Send "continue"'
+              disabled={sending}
               onClick={() => void submit('continue')}
             >
               continue
             </button>
           )}
-          {KEYS.filter((k) => k.aria !== 'Enter').map((k) => (
+          {KEYS.filter((k) => k.aria !== 'Enter' || (!asking && !suggestions.length)).map((k) => (
             <button
               key={k.aria}
               type="button"
@@ -1531,6 +1572,12 @@ export function SessionChat({
               session.status === 'running' ? 'Message…' : 'Session is down: queues for relaunch'
             }
             aria-label="Message to the session"
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
             onChange={(e) => {
               setDraft(e.target.value);
               setRecall(null); // Editing a recalled message makes it your draft.
@@ -1543,6 +1590,11 @@ export function SessionChat({
               void addImages(files);
             }}
             onKeyDown={(e) => {
+              if (
+                e.key === 'Enter' &&
+                (e.repeat || composing.current || e.nativeEvent.isComposing || e.keyCode === 229)
+              )
+                return;
               const listKey: Record<string, 'up' | 'down' | 'pick' | 'close'> = {
                 ArrowUp: 'up',
                 ArrowDown: 'down',
@@ -1579,6 +1631,30 @@ export function SessionChat({
               }
             }}
           />
+          <button
+            type="submit"
+            className="btn btn-icon chat-send"
+            aria-label="Send message"
+            disabled={
+              sending ||
+              !!uploading ||
+              (!draft.trim() && !attachments.some((a) => a.status === 'ready'))
+            }
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
+            </svg>
+          </button>
         </form>
         {/* Below the message box, as the CLIs show their command list (PM-132). */}
         {suggestions.length > 0 && (
