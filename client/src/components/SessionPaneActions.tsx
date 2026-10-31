@@ -12,9 +12,9 @@ import { SessionProgress } from './SessionProgress';
 //
 //   → Review   the linked card, once the work looks done
 //   progress   what the CLI reports it is doing
-//   image      attach a picture to the terminal (the chat view has its own)
 //   continue   type "continue" into a CLI that stopped to wait
 //   restart / stop / start, and dispose for an ended one-time task session
+//   image      attach a picture to the terminal (the chat view has its own), last beside fullscreen
 //
 // The caller wraps it (its own layout and the ⋯ overflow on phones).
 
@@ -86,9 +86,6 @@ export function SessionPaneActions({
       {showProgress && s.terminal === 'pty' && (
         <SessionProgress session={s} onChanged={onChanged} />
       )}
-      {running && s.terminal === 'pty' && view !== 'chat' && (
-        <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
-      )}
       {showContinue && view !== 'chat' && (
         <SessionContinue session={s} onError={onError} iconOnly />
       )}
@@ -146,6 +143,9 @@ export function SessionPaneActions({
         >
           ▶
         </button>
+      )}
+      {running && s.terminal === 'pty' && view !== 'chat' && (
+        <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
       )}
       {!running && s.cardId && !s.supervise && onDeleted && (
         <ConfirmDelete

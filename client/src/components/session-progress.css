@@ -16,6 +16,10 @@
   margin: 0;
   accent-color: var(--accent);
   cursor: pointer;
+  /* Optical centring: the typeface's tall ascent (stacked Vietnamese marks) puts the text's
+     visual centre below the line-box centre the box aligns to, so the box reads a pixel high. */
+  position: relative;
+  top: 1px;
 }
 .session-auto-continue.is-on {
   color: var(--accent);
