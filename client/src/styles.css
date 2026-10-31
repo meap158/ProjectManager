@@ -1843,6 +1843,13 @@ dialog.confirm-dialog {
 .confirm-dialog p {
   margin: 0;
   color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.confirm-dialog .dialog-body {
+  min-width: 0;
+}
+.confirm-dialog h2 {
+  overflow-wrap: anywhere;
 }
 dialog::backdrop {
   background: rgb(0 0 0 / 0.4);

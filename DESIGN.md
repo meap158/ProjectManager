@@ -4,6 +4,9 @@ This file defines how ProjectManager looks and behaves. If a component disagrees
 fix the component or update this file in the same commit — never let design decisions live only in code
 or chat history.
 
+Confirmation dialog headings and messages wrap long paths and commands anywhere within the
+dialog width. Keep the full text selectable, with vertical scrolling when needed.
+
 ## 1. Principles
 
 Agents status filters retain their selected fill during Shift-click and phone long-press selection.
