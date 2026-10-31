@@ -315,10 +315,10 @@ export const api = {
     request<{ theme: string }>('PUT', '/preferences/theme', { theme }),
   /** Files tab (PM-252): one folder of the project, and a file's preview. */
   /** The folder previewer (PM-286): entries with sizes and times, one level or everything below. */
-  folderInfo: (id: number, path: string, recursive: boolean) =>
+  folderInfo: (id: number, path: string, recursive: boolean, offset?: number) =>
     request<FolderInfo>(
       'GET',
-      `/projects/${id}/folder-info?path=${encodeURIComponent(path)}${recursive ? '&recursive=1' : ''}`,
+      `/projects/${id}/folder-info?path=${encodeURIComponent(path)}${recursive ? '&recursive=1' : ''}${offset === undefined ? '' : `&offset=${offset}`}`,
     ),
   projectFolder: (id: number, path: string) =>
     request<FolderListing>('GET', `/projects/${id}/tree?path=${encodeURIComponent(path)}`),

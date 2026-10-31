@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import { useSearchParams } from 'react-router';
 import type { FolderInfo, FolderItem } from '../../../shared/types';
 import { api } from '../api';
@@ -90,8 +98,20 @@ export function FolderView({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
+  const requestGeneration = useRef(0);
+  const morePending = useRef(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadKey = `${projectId}|${dir}|${view.recursive}|${reload}`;
+  const [lastLoadKey, setLastLoadKey] = useState(loadKey);
+  if (lastLoadKey !== loadKey) {
+    setLastLoadKey(loadKey);
+    setLoading(true);
+    setLoadingMore(false);
+  }
   useEffect(() => {
     let current = true;
+    const generation = ++requestGeneration.current;
+    morePending.current = false;
     // The list on screen stays while a new one loads (switching recursion, refreshing).
     api
       .folderInfo(projectId, dir, view.recursive)
@@ -108,8 +128,47 @@ export function FolderView({
       });
     return () => {
       current = false;
+      requestGeneration.current = generation + 1;
     };
   }, [projectId, dir, view.recursive, reload]);
+
+  const loadMore = async () => {
+    if (!data || data.nextOffset === undefined || morePending.current || loading) return;
+    const generation = requestGeneration.current;
+    morePending.current = true;
+    setLoadingMore(true);
+    try {
+      const next = await api.folderInfo(projectId, dir, view.recursive, data.nextOffset);
+      if (generation !== requestGeneration.current) return;
+      setData((previous) => {
+        if (!previous) return next;
+        const items = [
+          ...new Map([...previous.items, ...next.items].map((i) => [i.path, i])).values(),
+        ];
+        const files = items.filter((i) => i.kind === 'file');
+        return {
+          ...next,
+          items,
+          files: files.length,
+          folders: items.length - files.length,
+          totalSize: files.reduce((sum, i) => sum + (i.size ?? 0), 0),
+          newest: files.reduce<string | null>(
+            (latest, i) => (i.mtime && (!latest || i.mtime > latest) ? i.mtime : latest),
+            null,
+          ),
+        };
+      });
+      setError(null);
+      setCount((current) => current + PAGE);
+    } catch (e) {
+      if (generation === requestGeneration.current) setError((e as Error).message);
+    } finally {
+      if (generation === requestGeneration.current) {
+        morePending.current = false;
+        setLoadingMore(false);
+      }
+    }
+  };
 
   // What changed since the last visit: the moment this folder was last looked at, kept per project and
   // folder. It is read once on arrival and written when the view closes, so the badges show what is new
@@ -280,7 +339,7 @@ export function FolderView({
           {formatBytes(data.totalSize)}
           {data.newest ? ` · newest ${formatRelative(data.newest)}` : ''}
           {shown.length !== data.items.length ? ` · showing ${shown.length.toLocaleString()}` : ''}
-          {data.truncated ? ' · first entries only (the folder is large)' : ''}
+          {data.truncated ? ' · more entries available' : ''}
         </p>
       )}
 
@@ -423,10 +482,9 @@ export function FolderView({
         </button>
       </div>
 
-      {error ? (
-        <div className="error-banner">{error}</div>
-      ) : !data ? (
-        <div className="skeleton" style={{ height: 240 }} />
+      {error && <div className="error-banner">{error}</div>}
+      {!data ? (
+        !error && <div className="skeleton" style={{ height: 240 }} />
       ) : shown.length === 0 ? (
         <p className="faint files-empty">
           {data.items.length === 0 ? 'This folder is empty.' : 'Nothing matches these filters.'}
@@ -474,6 +532,17 @@ export function FolderView({
             </button>
           )}
         </div>
+      )}
+
+      {data?.nextOffset !== undefined && shown.length <= count && (
+        <button
+          type="button"
+          className="btn fv-more"
+          disabled={loading || loadingMore}
+          onClick={() => void loadMore()}
+        >
+          {loadingMore ? 'Loading more entries…' : 'Load more entries'}
+        </button>
       )}
 
       {viewer !== null && viewer >= 0 && (

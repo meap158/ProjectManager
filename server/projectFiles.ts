@@ -128,17 +128,20 @@ export const MAX_FOLDER_LIMIT = 5_000;
 /**
  * A folder's contents with sizes and times, for the previewer. One level, or the whole tree below
  * it. Read only and bounded: `limit` items are returned (and the walk looks at no more than
- * MAX_WALK entries), `truncated` says more exist. Links are listed as what they are and never
+ * MAX_WALK new entries). `nextOffset` resumes a truncated walk. Earlier directories are visited
+ * again to reconstruct the traversal queue without retaining server-side handles or snapshots.
+ * Links are listed as what they are and never
  * followed, so a link cannot lead the walk outside the project; node_modules and .git are not
  * entered.
  */
 export async function folderInfo(
   root: string,
   rel: string,
-  options: { recursive?: boolean; limit?: number } = {},
+  options: { recursive?: boolean; limit?: number; offset?: number } = {},
 ): Promise<FolderInfo> {
   const recursive = options.recursive === true;
   const limit = Math.max(1, Math.min(MAX_FOLDER_LIMIT, options.limit ?? DEFAULT_FOLDER_LIMIT));
+  const offset = Number.isSafeInteger(options.offset) && options.offset! > 0 ? options.offset! : 0;
   const dir = await resolveInside(root, rel);
   if (!(await stat(dir)).isDirectory()) throw new FileAccessError(400, 'Not a folder');
   const realRoot = await realpath(root);
@@ -156,7 +159,7 @@ export async function folderInfo(
     }
     for await (const dirent of handle) {
       if (HIDDEN.has(dirent.name)) continue;
-      if (++walked > MAX_WALK || items.length >= limit) {
+      if (++walked > offset + MAX_WALK || (walked > offset && items.length >= limit)) {
         truncated = true;
         break;
       }
@@ -165,6 +168,8 @@ export async function folderInfo(
       if (!info) continue;
       const symlink = info.isSymbolicLink();
       const isDir = !symlink && info.isDirectory();
+      if (isDir && recursive && !SKIPPED_WHEN_RECURSIVE.has(dirent.name)) queue.push(abs);
+      if (walked <= offset) continue;
       items.push({
         name: dirent.name,
         path: toRel(realRoot, abs),
@@ -178,7 +183,6 @@ export async function folderInfo(
         height: null,
         git: null,
       });
-      if (isDir && recursive && !SKIPPED_WHEN_RECURSIVE.has(dirent.name)) queue.push(abs);
     }
   }
   if (!recursive) {
@@ -204,6 +208,7 @@ export async function folderInfo(
     totalSize: files.reduce((sum, f) => sum + (f.size ?? 0), 0),
     newest,
     truncated,
+    nextOffset: truncated ? walked - 1 : undefined,
   };
 }
 

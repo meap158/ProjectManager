@@ -80,6 +80,75 @@ const names = () =>
   );
 
 describe('FolderView', () => {
+  it('keeps loaded entries on a continuation failure and retries the same page', async () => {
+    vi.mocked(api.folderInfo)
+      .mockResolvedValueOnce({ ...INFO, truncated: true, nextOffset: 2000 })
+      .mockRejectedValueOnce(new Error('Temporary read failure'))
+      .mockResolvedValueOnce({ ...INFO, items: [item('assets/last.txt')] });
+    show();
+    await screen.findByText('notes.md');
+    fireEvent.click(screen.getByRole('button', { name: 'Load more entries' }));
+    await screen.findByText('Temporary read failure');
+    expect(screen.getByText('notes.md')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more entries' }));
+    await screen.findByText('last.txt');
+    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'assets', false, 2000);
+    expect(screen.queryByText('Temporary read failure')).toBeNull();
+  });
+
+  it('ignores a continuation that finishes after changing folders', async () => {
+    let finish!: (info: FolderInfo) => void;
+    vi.mocked(api.folderInfo)
+      .mockResolvedValueOnce({ ...INFO, truncated: true, nextOffset: 2000 })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ ...INFO, path: 'other', items: [item('other/current.txt')] });
+    const props = { projectId: 1, onOpenFile: vi.fn(), onOpenDir: vi.fn(), onClose: vi.fn() };
+    const mounted = render(
+      <MemoryRouter>
+        <FolderView {...props} dir="assets" />
+      </MemoryRouter>,
+    );
+    await screen.findByText('notes.md');
+    fireEvent.click(screen.getByRole('button', { name: 'Load more entries' }));
+    expect(
+      screen.getByRole('button', { name: 'Loading more entries…' }).hasAttribute('disabled'),
+    ).toBe(true);
+    mounted.rerender(
+      <MemoryRouter>
+        <FolderView {...props} dir="other" />
+      </MemoryRouter>,
+    );
+    await screen.findByText('current.txt');
+    await act(async () => finish({ ...INFO, items: [item('assets/stale.txt')] }));
+    expect(names()).toEqual(['current.txt']);
+  });
+
+  it('loads later project entries even when the first page has no filter matches', async () => {
+    vi.mocked(api.folderInfo)
+      .mockResolvedValueOnce({ ...INFO, truncated: true, nextOffset: 2000 })
+      .mockResolvedValueOnce({
+        ...INFO,
+        truncated: true,
+        nextOffset: 4000,
+        items: [item('assets/later.mp3')],
+      })
+      .mockResolvedValueOnce({ ...INFO, items: [item('assets/last.mp3')] });
+    show('&types=audio');
+    await screen.findByText('Nothing matches these filters.');
+    fireEvent.click(screen.getByRole('button', { name: 'Load more entries' }));
+    await screen.findByText('later.mp3');
+    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'assets', false, 2000);
+    fireEvent.click(screen.getByRole('button', { name: 'Load more entries' }));
+    await screen.findByText('last.mp3');
+    expect(names()).toEqual(['later.mp3', 'last.mp3']);
+    expect(screen.queryByRole('button', { name: 'Load more entries' })).toBeNull();
+  });
+
   it('summarises the folder and lists its entries, newest first, folders in front', async () => {
     show();
     expect(await screen.findByText(/4 files · 1 folder/)).toBeTruthy();

@@ -31,6 +31,22 @@ function tree(): string {
 const names = (info: FolderInfo) => info.items.map((i) => i.path).sort();
 
 describe('folderInfo', () => {
+  it('continues the project walk across pages without losing nested entries', async () => {
+    const root = tree();
+    const expected = await folderInfo(root, '', { recursive: true });
+    const paths: string[] = [];
+    let offset = 0;
+    for (;;) {
+      const page = await folderInfo(root, '', { recursive: true, limit: 2, offset });
+      paths.push(...page.items.map((i) => i.path));
+      if (!page.truncated) break;
+      expect(page.nextOffset).toBeGreaterThan(offset);
+      offset = page.nextOffset!;
+    }
+    expect(paths.sort()).toEqual(names(expected));
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
   it('lists one level with size, modified and created times', async () => {
     const info = await folderInfo(tree(), '');
     expect(names(info)).toEqual(['README.md', 'assets', 'node_modules']);
@@ -118,6 +134,14 @@ describe('GET /projects/:id/folder-info', () => {
     expect(ok.status).toBe(200);
     const body = (await ok.json()) as FolderInfo;
     expect(body.files).toBe(3);
+    const first = (await (await get('?path=&recursive=1&limit=2')).json()) as FolderInfo;
+    const next = (await (
+      await get(`?path=&recursive=1&limit=2&offset=${first.nextOffset}`)
+    ).json()) as FolderInfo;
+    expect(next.items).toHaveLength(2);
+    expect(next.items.some((i) => first.items.some((before) => before.path === i.path))).toBe(
+      false,
+    );
     // A phone on the LAN or the tunnel reads it too (it changes nothing).
     expect((await get('?path=assets', { 'x-pm-lan': '1' })).status).toBe(200);
     expect((await get('?path=../..')).status).toBe(400);

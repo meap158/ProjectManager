@@ -475,6 +475,7 @@ export function createApp(
         folderInfo(root, c.req.query('path') ?? '', {
           recursive: c.req.query('recursive') === '1',
           limit: Number.isFinite(limit) ? limit : DEFAULT_FOLDER_LIMIT,
+          offset: Number(c.req.query('offset') ?? 0),
         }),
       ),
     );

@@ -4,6 +4,10 @@ This file defines how ProjectManager looks and behaves. If a component disagrees
 fix the component or update this file in the same commit — never let design decisions live only in code
 or chat history.
 
+Folder previews load large project listings in batches. Show more reveals loaded entries; Load
+more entries continues the server walk, even when current filters match nothing loaded so far.
+Counts, sorting and filters cover the loaded entries until the final batch arrives.
+
 Confirmation dialog headings and messages wrap long paths and commands anywhere within the
 dialog width. Keep the full text selectable, with vertical scrolling when needed.
 

@@ -929,6 +929,8 @@ export interface FolderInfo {
   newest: string | null;
   /** More entries exist than were returned (the cap, or the walk limit). */
   truncated: boolean;
+  /** Resume this folder walk after the entries already visited. */
+  nextOffset?: number;
 }
 
 /** One of our SOPs (PM-316): the shared standard each project's agent instructions carry. */
