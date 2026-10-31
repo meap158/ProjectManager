@@ -23,6 +23,7 @@ const session = {
   name: 'Master',
   status: 'running',
   terminal: 'pty',
+  providerId: 'opencode',
   startedAt: '2026-10-12',
   logBytes: 0,
 } as AgentSession;
@@ -48,20 +49,17 @@ it('reports stop failures and keeps lifecycle controls available', async () => {
   );
 });
 it('sends “continue” with one tap while the chat is running', async () => {
-  const refresh = vi.fn();
-  render(<OrchestratorTerminal session={session} onChanged={refresh} />);
+  render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: 'Continue Master' }));
   await waitFor(() =>
     expect(api.sendSessionInput).toHaveBeenCalledWith(41, expect.stringContaining('continue')),
   );
   await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledWith(41, '\r'));
-  await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText('Continue sent')).toBeTruthy();
 });
-it('disables Continue while the chat is stopped', () => {
+it('hides Continue while the chat is stopped', () => {
   render(<OrchestratorTerminal session={{ ...session, status: 'exited' }} onChanged={vi.fn()} />);
-  expect(
-    (screen.getByRole('button', { name: 'Continue Master' }) as HTMLButtonElement).disabled,
-  ).toBe(true);
+  expect(screen.queryByRole('button', { name: 'Continue Master' })).toBeNull();
 });
 it('toggles full screen from the header and restores it with Escape (PM-138)', () => {
   render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
