@@ -27,6 +27,9 @@ export interface ShortcutAction {
 /** The selected row of the Agents work list (not the open terminal's own header buttons). */
 const SELECTED_WORK = '.work-list > li.selected';
 
+/** The project panel owns Ctrl+Arrow while the focus is inside it. */
+const PROJECT_PANEL = '#project-panel';
+
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   {
     id: 'list.next',
@@ -311,6 +314,14 @@ export function decide(
   if (inTextField(focus)) return null;
   const inTerminal = inTerminalInput(focus);
   if (inTerminal && !hasModifier(combo)) return null;
+  // The project panel owns Ctrl+Arrow while the focus is inside it: its rows move between
+  // projects. The Agents list shortcuts yield so the key reaches the panel's own handler.
+  if (
+    (action.id === 'list.next' || action.id === 'list.previous') &&
+    focus instanceof Element &&
+    focus.closest(PROJECT_PANEL)
+  )
+    return null;
   if (action.scope) {
     const scope = doc.querySelector(action.scope);
     if (!scope) return null; // Nothing selected here: the key is someone else's.

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./api', () => ({
@@ -18,6 +19,7 @@ const {
   setShortcut,
   resetAllShortcuts,
   validCombo,
+  useShortcut,
   SHORTCUT_ACTIONS,
 } = await import('./shortcuts');
 
@@ -88,6 +90,27 @@ describe('handler', () => {
     dialog.setAttribute('open', '');
     document.body.append(dialog);
     expect(press(document.body, continueKey)).toBeNull();
+  });
+
+  it('lets Ctrl+Arrow reach the project panel instead of the Agents list', () => {
+    function ListShortcuts() {
+      useShortcut('list.next', () => true);
+      useShortcut('list.previous', () => true);
+      return null;
+    }
+    const view = render(<ListShortcuts />);
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<aside id="project-panel"><a class="sidebar-item" href="/p/1">One</a></aside>',
+    );
+    const link = document.querySelector('#project-panel a')!;
+    const down = { key: 'ArrowDown', code: 'ArrowDown', ctrlKey: true };
+    const up = { key: 'ArrowUp', code: 'ArrowUp', ctrlKey: true };
+    expect(press(link, down)).toBeNull();
+    expect(press(link, up)).toBeNull();
+    expect(press(document.body, down)).toEqual({ id: 'list.next', target: null });
+    expect(press(document.body, up)).toEqual({ id: 'list.previous', target: null });
+    view.unmount();
   });
 
   it('lets plain keys reach a terminal, but takes them on the page', async () => {
