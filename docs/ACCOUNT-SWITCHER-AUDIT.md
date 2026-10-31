@@ -47,3 +47,23 @@ Draft text or a missing readable empty prompt does not block account rotation (o
 2026-10-29). Working turns, queued input and approval prompts still defer it. Waiting messages
 identify the session by its name and number. The allowance-reset Continue path retains its
 empty-prompt check; account rotation still sends Continue only to limit-blocked sessions.
+
+## Allowance continuation and its toggle (PM-374)
+
+The Codex Auto-continue checkbox updates immediately and uses the saved session returned by
+the API. A pending save adds no visible header element, so the terminal keeps its width.
+Stale polls cannot undo the pending choice. Save failures restore the previous value; once
+the server confirms the choice, later cancellation is shown normally. Double-clicking this
+control does not maximize the terminal pane.
+
+Codex rechecks an armed limit even when the usage reading arrives after the last terminal
+output. Both the visible usage-limit message and an exhausted paused-goal footer can arm the
+wait. After the reset plus 30 seconds, delivery still requires the same session generation
+and conversation, an idle empty prompt, no queued input and a recent supervisor check. The
+one-shot claim is saved before delivery. Manual input and stop/restart cancel it.
+
+Claude keeps its native allowance continuation. ProjectManager does not add another reset
+submission. Its optional account rotation resumes conversations and sends Continue only to
+sessions blocked at a limit, leaving ordinary idle sessions without an extra prompt. Tests
+cover this provider boundary and rotation delivery; no real quota wait or live CLI input was
+used for verification.

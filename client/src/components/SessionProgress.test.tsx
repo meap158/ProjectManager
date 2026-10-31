@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
@@ -77,6 +77,53 @@ describe('SessionProgress', () => {
     render(<SessionProgress session={session} />);
     expect(screen.getByText(/^Resumes /)).toBeDefined();
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('keeps the toggle stable through saving and stale polls, then follows cancellation', async () => {
+    const original = makeSession({
+      providerId: 'codex',
+      autoContinue: { enabled: false, resumesAt: null, message: '' },
+    });
+    const updated = {
+      ...original,
+      autoContinue: { enabled: true, resumesAt: null, message: 'Watching' },
+    };
+    let finish!: (s: AgentSession) => void;
+    vi.mocked(api.setAutoContinue).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const onChanged = vi.fn();
+    const view = render(<SessionProgress session={original} onChanged={onChanged} />);
+    const box = () => screen.getByRole('checkbox') as HTMLInputElement;
+    fireEvent.click(box());
+    expect(box().checked).toBe(true);
+    expect(document.querySelector('.spinner')).toBeNull();
+    view.rerender(<SessionProgress session={{ ...original }} onChanged={onChanged} />);
+    expect(box().checked).toBe(true);
+    await act(async () => finish(updated));
+    expect(box().checked).toBe(true);
+    expect(onChanged).toHaveBeenCalledWith(updated);
+    view.rerender(<SessionProgress session={updated} onChanged={onChanged} />);
+    view.rerender(<SessionProgress session={original} onChanged={onChanged} />);
+    expect(box().checked).toBe(false);
+  });
+
+  it('rolls back a failed save and does not maximize the pane on double-click', async () => {
+    const parent = vi.fn();
+    vi.mocked(api.setAutoContinue).mockRejectedValue(new Error('Save failed'));
+    render(
+      <div onDoubleClick={parent}>
+        <SessionProgress session={makeSession({ providerId: 'codex' })} />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole('checkbox'));
+    await screen.findByText('Save failed');
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+    fireEvent.doubleClick(screen.getByText('Auto-continue'));
+    expect(parent).not.toHaveBeenCalled();
   });
 
   it('shows the usage limit like Claude desktop: reset time, Try again, View details', async () => {

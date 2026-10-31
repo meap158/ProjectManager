@@ -2,7 +2,7 @@ import { stripTerminal } from './activity.js';
 import type { UsageWindow } from '../../shared/limits.js';
 
 export function allowanceReset(tail: string, windows: UsageWindow[], now: number): string | null {
-  if (!/you[’']ve hit your usage limit/i.test(stripTerminal(tail).slice(-2000))) return null;
+  if (!mentionsUsageLimit(stripTerminal(tail).slice(-2000))) return null;
   const resets = windows
     .filter((w) => w.usedPercent >= 99 && w.resetsAt)
     .map((w) => Date.parse(w.resetsAt!));

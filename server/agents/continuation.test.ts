@@ -70,6 +70,7 @@ describe('a /goal footer after the limit message scrolled away', () => {
   ] as never;
   it('counts as the limit while the login is exhausted', () => {
     expect(usageLimitShown(footer, exhausted, Date.now())).toBeDefined();
+    expect(allowanceReset(footer, exhausted, Date.now())).not.toBeNull();
   });
   it('does not once the login has quota again', () => {
     expect(usageLimitShown(footer, [], Date.now())).toBeUndefined();

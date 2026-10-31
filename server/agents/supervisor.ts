@@ -1657,7 +1657,11 @@ export class AgentSupervisor {
     );
     if (!state?.enabled || state.resumesAt) return;
     const windows = this.codexWindowsForSession(row);
-    const resumesAt = allowanceReset(this.logTail(row.log_path) ?? '', windows, Date.now());
+    const resumesAt = allowanceReset(
+      this.sessionScreen(row.id, 4000) ?? this.logTail(row.log_path) ?? '',
+      windows,
+      Date.now(),
+    );
     if (!resumesAt) return;
     setSetting(this.db, key, { ...state, resumesAt, message: 'Waiting for allowance reset' });
   }
@@ -1895,7 +1899,8 @@ export class AgentSupervisor {
       state.checkedAt = Date.now();
       setSetting(this.db, key, state);
       const size = this.fileSize(row.log_path);
-      if (!state.resumesAt && size > state.offset) {
+      // Usage may arrive after the limit message, without another byte of terminal output.
+      if (!state.resumesAt) {
         this.armContinuation(row);
         state = getSetting(this.db, key)!;
         state.offset = size;
@@ -1906,7 +1911,7 @@ export class AgentSupervisor {
         this.cancelContinuation(row.id, 'Allowance reset while offline. Continue manually.');
         continue;
       }
-      const tail = this.logTail(row.log_path) ?? '';
+      const tail = this.sessionScreen(row.id, 4000) ?? this.logTail(row.log_path) ?? '';
       // A placeholder is evidence that the CLI draft is empty; never overwrite typed text.
       if (
         this.sessionActivity(row, this.fileModifiedAt(row.log_path)) !== 'idle' ||

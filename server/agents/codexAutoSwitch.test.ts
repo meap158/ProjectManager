@@ -3,9 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { openDb } from '../db.js';
-import { insertProject } from '../store.js';
+import { getSetting, insertProject, setSetting } from '../store.js';
 import { AgentSupervisor } from './supervisor.js';
-import type { CodexAccounts } from './codexAccounts.js';
+import type { ClaudeAccounts, CodexAccounts } from './codexAccounts.js';
 import type { AgentSession } from '../../shared/types.js';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -26,6 +26,8 @@ async function setup() {
   await supervisor.ready;
   const inside = supervisor as unknown as {
     codexAccounts: CodexAccounts;
+    claudeAccounts: ClaudeAccounts;
+    tickClaudeRotation(): void;
     live: Map<string, unknown>;
     waitingCodexRuns: Set<number>;
     starting: Set<string>;
@@ -38,6 +40,12 @@ async function setup() {
     sessionActivity(row: { id: number }, last: string | null): 'idle' | 'running' | 'input';
     sessionScreen(id: number): string;
     usageLimitOnScreen(): { resetsAt: string | null } | undefined;
+    codexWindowsForSession(): {
+      label: string;
+      windowMinutes: number;
+      usedPercent: number;
+      resetsAt: string;
+    }[];
   };
   cleanups.push(async () => {
     inside.live.clear();
@@ -101,6 +109,144 @@ async function setup() {
   };
   return { root, db, project, supervisor, inside, switchAccount, accounts, target, add, quota };
 }
+
+it('arms when usage arrives after the last output, then continues once at reset', async () => {
+  const h = await setup();
+  h.accounts.setAutoSwitch(false);
+  const id = h.add();
+  h.db.prepare("UPDATE agent_sessions SET terminal='pty' WHERE id=?").run(id);
+  const write = vi.fn(() => true);
+  h.inside.live.set(`session:${id}`, { proc: { write }, log: { totalBytes: 0 } });
+  vi.mocked(h.inside.sessionScreen).mockReturnValue("You've hit your usage limit\n> ");
+  const windows = vi.spyOn(h.inside, 'codexWindowsForSession').mockReturnValue([]);
+  h.supervisor.setAutoContinue(id, true);
+  expect(
+    getSetting<{ resumesAt: string | null }>(h.db, `session-auto-continue:${id}`)?.resumesAt,
+  ).toBeNull();
+  const reset = Date.now() + 60_000;
+  windows.mockReturnValue([
+    {
+      label: '5-hour',
+      windowMinutes: 300,
+      usedPercent: 100,
+      resetsAt: new Date(reset).toISOString(),
+    },
+  ]);
+  h.inside.tickContinuation();
+  expect(
+    getSetting<{ resumesAt: string | null }>(h.db, `session-auto-continue:${id}`)?.resumesAt,
+  ).toBe(new Date(reset + 30_000).toISOString());
+  vi.useFakeTimers();
+  vi.setSystemTime(reset + 31_000);
+  vi.mocked(h.inside.sessionScreen).mockReturnValue('> ');
+  h.inside.tickContinuation();
+  h.inside.tickContinuation();
+  expect(write).toHaveBeenCalledOnce();
+  expect(write.mock.calls[0]?.[0]).toContain('Continue the interrupted task');
+  expect(getSetting<{ enabled: boolean }>(h.db, `session-auto-continue:${id}`)?.enabled).toBe(
+    false,
+  );
+});
+
+it.each(['working', 'draft', 'queued', 'generation', 'offline'])(
+  'does not auto-continue over %s',
+  async (blocker) => {
+    const h = await setup();
+    h.accounts.setAutoSwitch(false);
+    const id = h.add();
+    h.db.prepare("UPDATE agent_sessions SET terminal='pty' WHERE id=?").run(id);
+    const write = vi.fn(() => true);
+    h.inside.live.set(`session:${id}`, { proc: { write }, log: { totalBytes: 0 } });
+    h.supervisor.setAutoContinue(id, true);
+    const key = `session-auto-continue:${id}`;
+    const state = getSetting<Record<string, unknown>>(h.db, key)!;
+    setSetting(h.db, key, {
+      ...state,
+      resumesAt: new Date(Date.now() - 1000).toISOString(),
+      ...(blocker === 'generation' ? { startedAt: 'old' } : {}),
+      ...(blocker === 'offline' ? { checkedAt: Date.now() - 31 * 60_000 } : {}),
+    });
+    if (blocker === 'working') vi.mocked(h.inside.sessionActivity).mockReturnValue('running');
+    if (blocker === 'draft') vi.mocked(h.inside.sessionScreen).mockReturnValue('> my draft');
+    if (blocker === 'queued')
+      h.db
+        .prepare('INSERT INTO agent_input_queue(session_id,data,created_at) VALUES (?,?,?)')
+        .run(id, 'queued', new Date().toISOString());
+    h.inside.tickContinuation();
+    expect(write).not.toHaveBeenCalled();
+  },
+);
+
+it('leaves Claude allowance continuation to the native CLI', async () => {
+  const h = await setup();
+  const id = h.add();
+  h.db.prepare("UPDATE agent_sessions SET provider_id='claude', terminal='pty' WHERE id=?").run(id);
+  expect(() => h.supervisor.setAutoContinue(id, true)).toThrow(/Claude.*native auto-continue/);
+  expect(getSetting(h.db, `session-auto-continue:${id}`)).toBeNull();
+});
+
+it('continues only Claude limit-blocked sessions after account rotation', async () => {
+  const h = await setup();
+  const blocked = h.add(),
+    idle = h.add();
+  h.db.prepare("UPDATE agent_sessions SET provider_id='claude', terminal='pty'").run();
+  vi.mocked(h.inside.sessionScreen).mockImplementation((id) =>
+    id === blocked ? 'Claude usage limit reached\n> ' : '> ',
+  );
+  const accounts = h.inside.claudeAccounts;
+  vi.spyOn(accounts, 'autoSwitchEnabled').mockReturnValue(true);
+  vi.spyOn(accounts, 'state').mockReturnValue({
+    autoSwitch: true,
+    activeProfileId: null,
+    defaultAccount: {
+      available: true,
+      limits: {
+        providerId: 'claude',
+        asOf: new Date().toISOString(),
+        source: 'fixture',
+        windows: [
+          {
+            label: '5-hour',
+            windowMinutes: 300,
+            usedPercent: 100,
+            resetsAt: new Date(Date.now() + 3600000).toISOString(),
+          },
+        ],
+      },
+    },
+    accounts: [
+      {
+        id: 'backup',
+        name: 'Backup',
+        createdAt: new Date().toISOString(),
+        limits: {
+          providerId: 'claude',
+          asOf: new Date().toISOString(),
+          source: 'fixture',
+          windows: [
+            {
+              label: '5-hour',
+              windowMinutes: 300,
+              usedPercent: 0,
+              resetsAt: new Date(Date.now() + 3600000).toISOString(),
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const select = vi.spyOn(accounts, 'setActive').mockReturnValue(accounts.state());
+  const restart = vi
+    .spyOn(h.supervisor, 'restartSession')
+    .mockResolvedValue({ status: 'running' } as AgentSession);
+  h.inside.tickClaudeRotation();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(select).toHaveBeenCalledWith('backup');
+  expect(restart).toHaveBeenCalledWith(blocked, { continuePrompt: true });
+  expect(restart).toHaveBeenCalledWith(idle, { continuePrompt: false });
+});
 it('defers at 100% while any grace turn is working, then switches at idle without inventing Continue', async () => {
   const h = await setup();
   h.add();

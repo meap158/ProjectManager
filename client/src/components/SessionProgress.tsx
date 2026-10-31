@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AgentSession, CodexAccountsState } from '../../../shared/types';
 import { api } from '../api';
 import { Dropdown } from './Dropdown';
@@ -50,14 +50,35 @@ const fullTime = (iso: string) =>
  * resets in your timezone, "Auto-continue when limits reset", Try again, Switch account (PM-164),
  * and View details. Switching account changes the Codex login in Settings for every Codex CLI.
  */
-export function SessionProgress({ session }: { session: AgentSession }) {
+export function SessionProgress({
+  session,
+  onChanged,
+}: {
+  session: AgentSession;
+  onChanged?: (session: AgentSession) => void;
+}) {
+  const saving = useRef(false);
+  const [saved, setSaved] = useState<{
+    id: number;
+    continuation: AgentSession['autoContinue'];
+  } | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [pending, setPending] = useState<'toggle' | 'retry' | 'switch' | null>(null);
   const [error, setError] = useState('');
   const [details, setDetails] = useState(false);
   const [accountsState, setAccountsState] = useState<CodexAccountsState | null>(null);
-  const continuation = session.autoContinue;
+  const continuation = saved?.id === session.id ? saved.continuation : session.autoContinue;
+  useEffect(() => {
+    if (
+      saved?.id === session.id &&
+      !saving.current &&
+      session.autoContinue?.enabled === saved.continuation?.enabled
+    )
+      setSaved(null);
+  }, [session.autoContinue, session.id, saved]);
   const limit = session.usageLimit ?? null;
+  const limited = !!limit;
+  const limitResetsAt = limit?.resetsAt;
   const enabled = !!continuation?.enabled;
   const resumesAt = enabled ? (continuation?.resumesAt ?? null) : null;
   const resetAt = resumesAt ?? limit?.resetsAt ?? null;
@@ -68,7 +89,7 @@ export function SessionProgress({ session }: { session: AgentSession }) {
   }, [resetAt]);
 
   useEffect(() => {
-    if (!limit || session.providerId !== 'codex' || typeof api.getCodexAccounts !== 'function')
+    if (!limited || session.providerId !== 'codex' || typeof api.getCodexAccounts !== 'function')
       return;
     let active = true;
     api
@@ -80,7 +101,7 @@ export function SessionProgress({ session }: { session: AgentSession }) {
     return () => {
       active = false;
     };
-  }, [limit, session.providerId, session.codexAccountId]);
+  }, [limited, limitResetsAt, session.providerId, session.codexAccountId]);
 
   if (session.providerId !== 'codex' || session.terminal !== 'pty') return null;
   const msLeft = resetAt ? Date.parse(resetAt) - clock : null;
@@ -120,6 +141,7 @@ export function SessionProgress({ session }: { session: AgentSession }) {
     <span
       className={`session-progress${limit ? ' is-limited' : ''}`}
       onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
     >
       {session.codexAccountName &&
         session.codexAccountId &&
@@ -156,7 +178,34 @@ export function SessionProgress({ session }: { session: AgentSession }) {
           checked={enabled}
           disabled={pending !== null}
           aria-label={`Auto-continue ${session.name} when limits reset`}
-          onChange={() => act('toggle', () => api.setAutoContinue(session.id, !enabled))}
+          onChange={() => {
+            if (saving.current) return;
+            saving.current = true;
+            const previous = continuation;
+            setSaved({
+              id: session.id,
+              continuation: { enabled: !enabled, resumesAt: null, message: 'Saving auto-continue' },
+            });
+            void act('toggle', async () => {
+              try {
+                const next = await api.setAutoContinue(session.id, !enabled);
+                setSaved({
+                  id: session.id,
+                  continuation: next.autoContinue ?? {
+                    enabled: !enabled,
+                    resumesAt: null,
+                    message: '',
+                  },
+                });
+                onChanged?.(next);
+              } catch (error) {
+                setSaved({ id: session.id, continuation: previous });
+                throw error;
+              } finally {
+                saving.current = false;
+              }
+            });
+          }}
         />
         <span className="session-auto-continue-label">
           {limit ? 'Auto-continue when limits reset' : 'Auto-continue'}
@@ -205,7 +254,9 @@ export function SessionProgress({ session }: { session: AgentSession }) {
           </button>
         </>
       )}
-      {pending === 'toggle' && <span className="spinner" aria-label="Saving" />}
+      <span className="sr-only" aria-live="polite">
+        {pending === 'toggle' ? 'Saving auto-continue' : ''}
+      </span>
       {error && (
         <span className="session-progress-error" role="alert">
           {error}

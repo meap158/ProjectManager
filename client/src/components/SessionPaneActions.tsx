@@ -83,7 +83,9 @@ export function SessionPaneActions({
           → Review
         </button>
       )}
-      {showProgress && s.terminal === 'pty' && <SessionProgress session={s} />}
+      {showProgress && s.terminal === 'pty' && (
+        <SessionProgress session={s} onChanged={onChanged} />
+      )}
       {running && s.terminal === 'pty' && view !== 'chat' && (
         <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
       )}
