@@ -136,7 +136,11 @@ export function boardConnection(
           'utf8',
         ),
       );
-      if (typeof credentials.claudeAiOauth?.accessToken === 'string')
+      // An empty token would hash to one shared folder for every login.
+      if (
+        typeof credentials.claudeAiOauth?.accessToken === 'string' &&
+        credentials.claudeAiOauth.accessToken
+      )
         usageIdentity = createHash('sha256')
           .update(credentials.claudeAiOauth.accessToken)
           .digest('hex');

@@ -29,13 +29,25 @@ function used(w: UsageWindow, now: number): number {
 
 type Entry = {
   id: string;
+  available: boolean;
+  email: string | null;
   limits: { windows: UsageWindow[] } | null;
 };
 
 function entries(state: CodexAccountsState): Entry[] {
   return [
-    { id: 'default', limits: state.defaultAccount?.limits ?? null },
-    ...state.accounts.map((a) => ({ id: a.id, limits: a.limits ?? null })),
+    {
+      id: 'default',
+      available: state.defaultAccount?.available !== false,
+      email: state.defaultAccount?.email ?? null,
+      limits: state.defaultAccount?.limits ?? null,
+    },
+    ...state.accounts.map((a) => ({
+      id: a.id,
+      available: true,
+      email: a.email ?? null,
+      limits: a.limits ?? null,
+    })),
   ];
 }
 
@@ -58,6 +70,7 @@ export function readingExhausted(
  * The current account counts as exhausted on a reading of 99% or more, or on the message when the
  * reading is not at least 5 points clear of it. Candidates: not tried, not exhausted by their last
  * reading; one never read is allowed but ranked last, and the next tick moves on if it is also out.
+ * The current account's other entry (the default login and a saved copy of it) is never a candidate.
  * Ranking: most 5-hour left, then most weekly left, then saved order.
  */
 export function nextClaudeAccount(
@@ -86,7 +99,15 @@ export function nextClaudeAccount(
         week: week ? 100 - used(week, now) : 100,
       };
     })
-    .filter((r) => r.e.id !== currentId && !tried.includes(r.e.id) && !r.bad)
+    // The default login and a saved copy of it are one account: switching between them gains nothing.
+    .filter(
+      (r) =>
+        r.e.id !== currentId &&
+        r.e.available &&
+        !tried.includes(r.e.id) &&
+        !r.bad &&
+        !(r.e.email && current?.email && r.e.email.toLowerCase() === current.email.toLowerCase()),
+    )
     .sort(
       (a, b) =>
         Number(b.known) - Number(a.known) ||

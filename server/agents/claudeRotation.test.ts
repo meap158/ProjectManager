@@ -48,6 +48,23 @@ describe('Claude account rotation', () => {
     expect(readingExhausted(null, NOW)).toBeNull();
   });
 
+  it('never switches to the current account saved under its other entry', () => {
+    const s = state(limits(100), [
+      ['copy', limits(0)],
+      ['b', limits(50)],
+    ]);
+    (s.defaultAccount as { email?: string }).email = 'Me@example.com';
+    (s.accounts[0] as { email?: string }).email = 'me@example.com';
+    expect(nextClaudeAccount(s, [], false, NOW)?.id).toBe('b');
+  });
+
+  it('never switches to a signed-out default login', () => {
+    const s = state(limits(0), [['a', limits(100)]], 'a');
+    expect(nextClaudeAccount(s, [], false, NOW)?.id).toBe('default');
+    (s.defaultAccount as { available: boolean }).available = false;
+    expect(nextClaudeAccount(s, [], false, NOW)).toBeNull();
+  });
+
   it('stays put while the current login has quota and no limit message shows', () => {
     expect(nextClaudeAccount(state(limits(60), [['a', limits(10)]]), [], false, NOW)).toBeNull();
   });

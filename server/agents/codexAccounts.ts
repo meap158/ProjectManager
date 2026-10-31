@@ -1196,6 +1196,8 @@ function normalPath(value: string): string {
 const CLAUDE_REGISTRY = 'claude-accounts.json';
 const CLAUDE_ACTIVE_KEY = 'claude-accounts-active';
 const CLAUDE_AUTO_SWITCH_KEY = 'claude-accounts-auto-switch';
+/** When PM last put another account's credentials in the live file (ms). */
+const CLAUDE_SWAPPED_KEY = 'claude-accounts-swapped-at';
 
 /**
  * Saved Claude Code accounts (PM-169): manages `.credentials.json` profiles alongside the user's
@@ -1231,45 +1233,72 @@ export class ClaudeAccounts {
   state(now = Date.now()): CodexAccountsState {
     const registry = this.readRegistry();
     const saved = getSetting<string | null>(this.db, CLAUDE_ACTIVE_KEY) ?? null;
+    const savedAccount = saved ? registry.accounts.find((account) => account.id === saved) : null;
+    const liveCredsFile = path.join(this.defaultHome(), '.credentials.json');
+    const liveLogin = this.liveLogin();
+    // The chosen profile is still the one in use while the live login holds its credentials, or
+    // the same account's: Claude rotates both tokens when it refreshes them, after which only the
+    // account itself still matches. Dropping it then showed the default login as active, split the
+    // usage between the two and left the saved copy with a refresh token Claude had retired.
     const activeProfileId =
-      saved &&
-      registry.accounts.some((account) => account.id === saved) &&
-      this.sameCredential(
-        path.join(this.defaultHome(), '.credentials.json'),
-        path.join(this.home(saved), '.credentials.json'),
-      )
-        ? saved
+      savedAccount &&
+      (this.sameCredential(
+        liveCredsFile,
+        path.join(this.home(savedAccount.id), '.credentials.json'),
+      ) ||
+        sameLogin(liveLogin, {
+          email: savedAccount.email ?? null,
+          plan: savedAccount.plan ?? null,
+        }))
+        ? savedAccount.id
         : null;
     const autoSwitch = this.autoSwitchEnabled();
     const defCredsFile = this.defaultBackupCredsFile();
-    const liveCredsFile = path.join(this.defaultHome(), '.credentials.json');
     const sourceCredsFile = activeProfileId ? defCredsFile : liveCredsFile;
     const defMeta = this.readAuthMeta(sourceCredsFile, activeProfileId === null);
+    const logins = [
+      // Grouped by an identity that names the right account, never a stale profile's email.
+      {
+        key: 'default',
+        ...(activeProfileId ? defMeta : (liveLogin ?? { email: null, plan: null })),
+        file: sourceCredsFile,
+      },
+      ...registry.accounts.map((account) => {
+        const home = this.home(account.id);
+        const meta =
+          account.email !== undefined || account.plan !== undefined
+            ? { email: account.email ?? null, plan: account.plan ?? null }
+            : this.readAuthMeta(path.join(home, '.credentials.json'), false);
+        const file =
+          account.id === activeProfileId ? liveCredsFile : path.join(home, '.credentials.json');
+        return { key: account.id, ...meta, file };
+      }),
+    ];
+    // One Claude account saved twice (the default login and a saved copy of it) shares one usage:
+    // each shows the newest report from either.
+    const usage = (login: (typeof logins)[number]) => {
+      const same = logins.filter((other) => other === login || sameEmail(other.email, login.email));
+      return this.accountUsage(
+        same.map((other) => other.key),
+        same.map((other) => other.file),
+        now,
+      );
+    };
     const defaultAccount = {
-      available: existsSync(sourceCredsFile),
+      // A file holding no token is a signed-out login (Claude empties both on /logout).
+      available: this.signedIn(sourceCredsFile),
       email: defMeta.email,
       plan: defMeta.plan,
-      ...this.accountUsage('default', sourceCredsFile, now),
+      ...usage(logins[0]!),
     };
-    const accounts: CodexAccount[] = registry.accounts.map((account) => {
-      const home = this.home(account.id);
-      const meta =
-        account.email !== undefined || account.plan !== undefined
-          ? { email: account.email ?? null, plan: account.plan ?? null }
-          : this.readAuthMeta(path.join(home, '.credentials.json'), false);
-      return {
-        id: account.id,
-        name: account.name,
-        createdAt: account.createdAt,
-        email: meta.email,
-        plan: meta.plan,
-        ...this.accountUsage(
-          account.id,
-          account.id === activeProfileId ? liveCredsFile : path.join(home, '.credentials.json'),
-          now,
-        ),
-      };
-    });
+    const accounts: CodexAccount[] = registry.accounts.map((account, index) => ({
+      id: account.id,
+      name: account.name,
+      createdAt: account.createdAt,
+      email: logins[index + 1]!.email,
+      plan: logins[index + 1]!.plan,
+      ...usage(logins[index + 1]!),
+    }));
     return { accounts, activeProfileId, autoSwitch, defaultAccount };
   }
 
@@ -1281,7 +1310,7 @@ export class ClaudeAccounts {
    * ("Usage not refreshed") while its sessions reported it all along.
    */
   claimUsage(identity: string): void {
-    if (!/^[a-f0-9]{64}$/.test(identity)) return;
+    if (!/^[a-f0-9]{64}$/.test(identity) || identity === EMPTY_TOKEN_HASH) return;
     const account = this.state().activeProfileId ?? 'default';
     const folder = path.join(this.dataDir, 'claude-account-usage', identity);
     const file = path.join(folder, 'owner.json');
@@ -1299,27 +1328,38 @@ export class ClaudeAccounts {
     }
   }
 
+  /** `accounts` and `files` are one Claude account's entries: usually one, two when saved twice. */
   private accountUsage(
-    account: string,
-    file: string,
+    accounts: string[],
+    files: string[],
     now: number,
   ): Pick<CodexAccount, 'limits' | 'usageStatus' | 'usageCheckedAt'> {
     try {
-      const credentials = JSON.parse(readFileSync(file, 'utf8')) as {
-        claudeAiOauth?: { accessToken?: string };
-      };
-      const token = credentials.claudeAiOauth?.accessToken;
-      if (!token) return { limits: null, usageStatus: 'unavailable', usageCheckedAt: null };
-      // The usage recorded under the token it holds now, and under every token its sessions were
+      const tokens = files.flatMap((file) => {
+        try {
+          const credentials = JSON.parse(readFileSync(file, 'utf8')) as {
+            claudeAiOauth?: { accessToken?: string };
+          };
+          const token = credentials.claudeAiOauth?.accessToken;
+          return token ? [token] : [];
+        } catch {
+          return [];
+        }
+      });
+      if (!tokens.length) return { limits: null, usageStatus: 'unavailable', usageCheckedAt: null };
+      // The usage recorded under the tokens it holds now, and under every token its sessions were
       // started with (claimUsage): the newest wins.
       const root = path.join(this.dataDir, 'claude-account-usage');
-      const identities = new Set([createHash('sha256').update(token).digest('hex')]);
+      const identities = new Set(
+        tokens.map((token) => createHash('sha256').update(token).digest('hex')),
+      );
       for (const name of existsSync(root) ? readdirSync(root) : []) {
         try {
           const owner = JSON.parse(readFileSync(path.join(root, name, 'owner.json'), 'utf8')) as {
             account?: string;
           };
-          if (owner.account === account) identities.add(name);
+          if (owner.account && accounts.includes(owner.account) && name !== EMPTY_TOKEN_HASH)
+            identities.add(name);
         } catch {
           // Unclaimed (started before owners were recorded): matched by its token only.
         }
@@ -1358,19 +1398,56 @@ export class ClaudeAccounts {
       );
     }
 
+    // Which account is signed in now: the active profile's, else what Claude says of the live
+    // login. The backup of the default login carries its email, so a later switch can tell when
+    // the default login and a saved copy are the same account.
+    const current = currentActive ? this.account(currentActive) : undefined;
+    const live = current
+      ? { email: current.email ?? null, plan: current.plan ?? null }
+      : this.liveLogin();
+    const withEmail = (raw: string): string => {
+      try {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        if (live?.email && !parsed.email) parsed.email = live.email;
+        return JSON.stringify(parsed);
+      } catch {
+        return raw;
+      }
+    };
     if (currentActive === null && normalized !== null) {
       if (existsSync(liveCreds)) {
         mkdirSync(path.dirname(backupCreds), { recursive: true, mode: 0o700 });
-        this.writePrivate(backupCreds, readFileSync(liveCreds, 'utf8'));
+        this.writePrivate(backupCreds, withEmail(readFileSync(liveCreds, 'utf8')));
       } else {
         rmSync(backupCreds, { force: true });
       }
     }
 
+    // Switching between two entries of one account (the default login and a saved copy of it)
+    // keeps the live login: Claude rotates its tokens on refresh, so the other entry's copy may
+    // hold a refresh token Claude has already retired. That copy is brought up to date instead.
+    const target =
+      normalized === null
+        ? existsSync(backupCreds)
+          ? this.readAuthMeta(backupCreds, false)
+          : null
+        : { email: account?.email ?? null, plan: account?.plan ?? null };
+    const sameAccount = existsSync(liveCreds) && sameLogin(live, target);
+    if (sameAccount) {
+      const raw = readFileSync(liveCreds, 'utf8');
+      if (normalized === null) this.writePrivate(backupCreds, withEmail(raw));
+      else this.writePrivate(path.join(this.home(normalized), '.credentials.json'), raw);
+    } else if (normalized !== currentActive) {
+      setSetting(this.db, CLAUDE_SWAPPED_KEY, Date.now());
+    }
+
     if (normalized === null) {
       if (existsSync(backupCreds)) {
         mkdirSync(this.defaultHome(), { recursive: true, mode: 0o700 });
-        this.writePrivate(liveCreds, readFileSync(backupCreds, 'utf8'));
+        // The email is PM's note for the backup; Claude's live file never carries one.
+        const restored = JSON.parse(readFileSync(backupCreds, 'utf8')) as Record<string, unknown>;
+        delete restored.email;
+        this.writePrivate(liveCreds, JSON.stringify(restored));
       } else if (currentActive !== null) {
         rmSync(liveCreds, { force: true });
       }
@@ -1389,6 +1466,54 @@ export class ClaudeAccounts {
       this.writeRegistry({ ...registry, activeProfileId: normalized });
     }
     return this.state();
+  }
+
+  /**
+   * The account behind the live credentials, which name none themselves: Claude's own profile in
+   * .claude.json, but only when Claude fetched it after PM last swapped accounts (before that was
+   * recorded, the registry's last write stands in: every switch rewrites it). PM swaps the credentials without touching the profile, so until
+   * Claude fetches it again it may describe the previous account; Claude's own token refresh
+   * keeps the account, and its /login fetches the profile. The plan comes from the credentials.
+   */
+  private liveLogin(): { email: string | null; plan: string | null } | null {
+    const file = path.join(this.defaultHome(), '.credentials.json');
+    const registry = path.join(this.dataDir, CLAUDE_REGISTRY);
+    const swappedAt =
+      getSetting<number>(this.db, CLAUDE_SWAPPED_KEY) ??
+      (existsSync(registry) ? statSync(registry).mtimeMs : 0);
+    try {
+      const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+      const auth = normalizeClaudeAuth(raw);
+      if (!auth) return null;
+      const meta = extractClaudeAuthMeta(auth, raw);
+      const profile = (
+        JSON.parse(readFileSync(this.globalConfigFile(), 'utf8')) as {
+          oauthAccount?: { emailAddress?: unknown; profileFetchedAt?: unknown };
+        }
+      ).oauthAccount;
+      const fresh =
+        typeof profile?.profileFetchedAt === 'number' && profile.profileFetchedAt >= swappedAt;
+      const email =
+        fresh && typeof profile.emailAddress === 'string' ? profile.emailAddress.trim() : '';
+      return { email: email || null, plan: meta.plan };
+    } catch {
+      return null;
+    }
+  }
+
+  private signedIn(file: string): boolean {
+    try {
+      return normalizeClaudeAuth(JSON.parse(readFileSync(file, 'utf8'))) !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Claude keeps .claude.json in CLAUDE_CONFIG_DIR when that is set, else in the home folder. */
+  private globalConfigFile(): string {
+    return process.env.CLAUDE_CONFIG_DIR
+      ? path.join(this.defaultHome(), '.claude.json')
+      : path.join(os.homedir(), '.claude.json');
   }
 
   /** Off until chosen: Claude rotation restarts sessions, so it is never a surprise. */
@@ -1513,7 +1638,7 @@ export class ClaudeAccounts {
       }
     }
     if (includeGlobalConfig && (!email || !plan)) {
-      const globalClaudeJson = path.join(os.homedir(), '.claude.json');
+      const globalClaudeJson = this.globalConfigFile();
       if (existsSync(globalClaudeJson)) {
         try {
           const parsed = JSON.parse(readFileSync(globalClaudeJson, 'utf8')) as {
@@ -1591,6 +1716,25 @@ export class ClaudeAccounts {
       rmSync(temp, { force: true });
     }
   }
+}
+
+/** sha256 of '': sessions started with an empty token, whatever the account, all report here. */
+const EMPTY_TOKEN_HASH = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+function sameEmail(left: string | null, right: string | null): boolean {
+  return !!left && !!right && left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+/**
+ * One Claude account: the same email, and the same plan when both are known. The plan check
+ * guards against a stale email naming another account; two accounts on one plan stay possible.
+ */
+function sameLogin(
+  left: { email: string | null; plan: string | null } | null,
+  right: { email: string | null; plan: string | null } | null,
+): boolean {
+  if (!left || !right || !sameEmail(left.email, right.email)) return false;
+  return !left.plan || !right.plan || left.plan === right.plan;
 }
 
 export function normalizeClaudeAuth(value: unknown): Record<string, unknown> | null {

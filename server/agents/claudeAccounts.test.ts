@@ -202,3 +202,113 @@ it('keeps showing an account’s usage after Claude rotates its token (PM-366)',
     rmSync(temp, { recursive: true, force: true });
   }
 });
+
+// Claude's credentials name no account (no email): which one they are comes from its profile in
+// .claude.json, trusted only when fetched after the credentials were last written.
+const claudeCreds = (token: string, plan = 'pro') =>
+  JSON.stringify({
+    claudeAiOauth: { accessToken: token, refreshToken: `${token}-refresh`, subscriptionType: plan },
+  });
+const token = (file: string) =>
+  (JSON.parse(readFileSync(file, 'utf8')) as { claudeAiOauth: { accessToken: string } })
+    .claudeAiOauth.accessToken;
+const claudeProfile = (home: string, email: string, fetchedAt: number) =>
+  writeFileSync(
+    path.join(home, '.claude.json'),
+    JSON.stringify({ oauthAccount: { emailAddress: email, profileFetchedAt: fetchedAt } }),
+  );
+
+it('treats the default login and a saved copy of it as one account after both tokens rotate', () => {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'pm-claude-same-'));
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  const home = path.join(temp, 'default');
+  mkdirSync(home);
+  process.env.CLAUDE_CONFIG_DIR = home;
+  const db = openDb(':memory:');
+  const live = path.join(home, '.credentials.json');
+  const usage = (token: string, used: number, asOf: string) => {
+    const folder = path.join(temp, 'claude-account-usage', hash(token));
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      path.join(folder, 'claude-limits.json'),
+      JSON.stringify({
+        asOf,
+        fiveHour: { used_percentage: used, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+        sevenDay: null,
+      }),
+    );
+  };
+  const hash = (token: string) => createHash('sha256').update(token).digest('hex');
+  try {
+    writeFileSync(live, claudeCreds('fake-1'));
+    claudeProfile(home, 'me@example.com', Date.now() + 60_000);
+    const pool = new ClaudeAccounts(temp, db);
+    const copy = pool.saveCurrentAccount().accounts[0]!;
+    expect(copy.email).toBe('me@example.com');
+    pool.setActive(copy.id);
+    // Claude refreshes: the access and refresh tokens both change, so no token matches the copy.
+    writeFileSync(live, claudeCreds('fake-2'));
+    pool.claimUsage(hash('fake-2'));
+    usage('fake-2', 40, new Date().toISOString());
+    let state = pool.state();
+    expect(state.activeProfileId).toBe(copy.id);
+    expect(state.accounts[0]?.limits?.windows[0]?.usedPercent).toBe(40);
+    expect(state.defaultAccount.limits?.windows[0]?.usedPercent).toBe(40);
+
+    // Back on the default login (the same account): the refreshed login stays, never the old
+    // backup, and both entries show the newest report.
+    pool.setActive(null);
+    expect(token(live)).toBe('fake-2');
+    pool.claimUsage(hash('fake-3'));
+    usage('fake-3', 65, new Date(Date.now() + 1000).toISOString());
+    state = pool.state();
+    expect(state.activeProfileId).toBeNull();
+    expect(state.defaultAccount.limits?.windows[0]?.usedPercent).toBe(65);
+    expect(state.accounts[0]?.limits?.windows[0]?.usedPercent).toBe(65);
+
+    // And onto the copy again: it takes the live login rather than restoring its older tokens.
+    pool.setActive(copy.id);
+    expect(token(live)).toBe('fake-2');
+  } finally {
+    db.close();
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+it('never takes a stale Claude profile as the live account', () => {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'pm-claude-stale-'));
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  const home = path.join(temp, 'default');
+  mkdirSync(home);
+  process.env.CLAUDE_CONFIG_DIR = home;
+  const db = openDb(':memory:');
+  const live = path.join(home, '.credentials.json');
+  try {
+    // The profile still names A, but was fetched before the live (other) login was written.
+    claudeProfile(home, 'a@example.com', 0);
+    writeFileSync(live, claudeCreds('other'));
+    const pool = new ClaudeAccounts(temp, db);
+    const a = pool.importAccount(
+      'A',
+      JSON.stringify({ email: 'a@example.com', ...JSON.parse(claudeCreds('a')) }),
+    ).accounts[0]!;
+    expect(a.email).toBe('a@example.com');
+    expect(pool.state().accounts[0]?.limits).toBeNull();
+    pool.setActive(a.id);
+    expect(
+      JSON.parse(
+        readFileSync(path.join(temp, 'claude-accounts', a.id, '.credentials.json'), 'utf8'),
+      ).claudeAiOauth.accessToken,
+    ).toBe('a');
+    expect(token(live)).toBe('a');
+    pool.setActive(null);
+    expect(JSON.parse(readFileSync(live, 'utf8')).claudeAiOauth.accessToken).toBe('other');
+  } finally {
+    db.close();
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
