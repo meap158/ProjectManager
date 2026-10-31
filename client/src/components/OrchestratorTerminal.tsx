@@ -156,15 +156,9 @@ export function OrchestratorTerminal({
         </span>
         <SessionRestartStatus session={session} />
         <fieldset disabled={busy} className="orchestrator-terminal-controls">
-          <SessionToggle
-            session={session}
-            onStart={() => void change(() => api.startSession(session.id))}
-            onStop={() => void change(() => api.stopSession(session.id))}
-            onRestart={() => change(() => api.restartSession(session.id))}
-          />
           <button
             type="button"
-            className="btn btn-sm"
+            className="btn btn-sm session-toggle continue"
             title="Send “continue” to resume"
             aria-label={`Continue ${session.name}`}
             disabled={session.status !== 'running'}
@@ -175,8 +169,17 @@ export function OrchestratorTerminal({
               })
             }
           >
-            Continue
+            <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+              <path d="M6 5l8 7-8 7zM17 5h2v14h-2z" />
+            </svg>
+            <span className="session-toggle-label">Continue</span>
           </button>
+          <SessionToggle
+            session={session}
+            onStart={() => void change(() => api.startSession(session.id))}
+            onStop={() => void change(() => api.stopSession(session.id))}
+            onRestart={() => change(() => api.restartSession(session.id))}
+          />
         </fieldset>
         <SessionImageButton
           sessionId={session.id}
