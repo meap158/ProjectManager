@@ -264,9 +264,7 @@ export function CodexAccountsPanel({
     if (ok) setRenamingId(null);
   }
 
-  // Codex CLIs always run on ~/.codex/auth.json: switching copies a saved login there (PM-243),
-  // so the default row is the login in use, and the saved profile it matches is marked too.
-  const defaultInUse = !isClaude || state?.activeProfileId === null;
+  // Both providers copy the selected login to their normal CLI credentials file.
   const activeLabel =
     state === null
       ? 'loading…'
@@ -332,6 +330,8 @@ export function CodexAccountsPanel({
           <p style={{ margin: 0 }}>
             Default login: <code>{credFile}</code>. Saved profiles are{' '}
             <code>{importFileLabel}</code> copies.
+            {isClaude &&
+              ' The default row is the live login. An original login preserved before switching has its own restore action.'}
             {!isClaude && ' Never run codex logout: it revokes the token on OpenAI’s server.'}
             {!isClaude && ' Switching keeps each session’s conversation going.'}
           </p>
@@ -561,11 +561,7 @@ export function CodexAccountsPanel({
           )}
           <ul className="list codex-accounts-list">
             <li className="codex-account-row">
-              <span
-                className={`status-dot${defaultInUse ? ' green' : ''}`}
-                role="img"
-                aria-label={defaultInUse ? 'Active account' : 'Inactive account'}
-              />
+              <span className="status-dot green" role="img" aria-label="Active account" />
               <span className="codex-account-info">
                 <b>Default {cliTitle} account</b>{' '}
                 <span className="faint" style={{ fontSize: 12.5 }}>
@@ -612,29 +608,34 @@ export function CodexAccountsPanel({
                 >
                   <AccountActionIcon action="refresh" />
                 </button>
-                {defaultInUse ? (
-                  <span className="badge badge-done">active</span>
-                ) : (
+                <span className="badge badge-done">active</span>
+              </span>
+            </li>
+
+            {isClaude && state.originalAccount?.available && (
+              <li className="codex-account-row">
+                <span className="status-dot" aria-hidden="true" />
+                <span className="codex-account-info">
+                  <b>Original Claude login</b>
+                  {state.originalAccount.email && (
+                    <span className="faint"> · {state.originalAccount.email}</span>
+                  )}
+                  <span className="faint">Preserved before switching accounts</span>
+                  <AccountUsage account={state.originalAccount} loading={loadingUsage} now={now} />
+                </span>
+                <span className="actions codex-account-actions">
                   <button
                     type="button"
                     className="btn btn-sm"
                     disabled={busy}
-                    aria-label="Use default"
-                    title="Switch to default account"
-                    onClick={() =>
-                      act(() =>
-                        isClaude
-                          ? api.setActiveClaudeAccount(null)
-                          : api.setActiveCodexAccount(null),
-                      )
-                    }
+                    onClick={() => void act(() => api.setActiveClaudeAccount(null))}
                   >
                     <AccountActionIcon action="switch" />
-                    <span className="account-action-label">Use default</span>
+                    <span className="account-action-label">Restore original login</span>
                   </button>
-                )}
-              </span>
-            </li>
+                </span>
+              </li>
+            )}
 
             {orderedAccounts.map((acc) => {
               const isActive = state.activeProfileId === acc.id;

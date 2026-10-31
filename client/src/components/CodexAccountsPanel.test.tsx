@@ -84,6 +84,42 @@ const baseState: CodexAccountsState = {
 };
 
 describe('CodexAccountsPanel (PM-164)', () => {
+  it('shows the selected Claude login as the live default and restores the separate original', async () => {
+    const selected: CodexAccountsState = {
+      ...baseState,
+      activeProfileId: baseState.accounts[0]!.id,
+      defaultAccount: { available: true, email: 'work@example.com', plan: 'pro' },
+      originalAccount: { available: true, email: 'original@example.com' },
+    };
+    vi.mocked(api.getClaudeAccounts).mockResolvedValue(selected);
+    vi.mocked(api.setActiveClaudeAccount).mockResolvedValue({
+      ...baseState,
+      originalAccount: undefined,
+    });
+    render(<CodexAccountsPanel providerId="claude" onError={vi.fn()} />);
+    const defaultRow = (await screen.findByText('Default Claude account')).closest('li')!;
+    expect(within(defaultRow).getByText('active')).toBeDefined();
+    expect(defaultRow.textContent).toContain('work@example.com');
+    expect(defaultRow.textContent).not.toContain('not signed in');
+    expect(screen.queryByRole('button', { name: 'Use default' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Restore original login' }));
+    await waitFor(() => expect(api.setActiveClaudeAccount).toHaveBeenCalledWith(null));
+    await waitFor(() => expect(screen.queryByText('Original Claude login')).toBeNull());
+  });
+
+  it('does not offer a signed-out original as the live default or a restore action', async () => {
+    vi.mocked(api.getClaudeAccounts).mockResolvedValue({
+      ...baseState,
+      activeProfileId: baseState.accounts[0]!.id,
+      defaultAccount: { available: true, email: 'work@example.com' },
+      originalAccount: { available: false },
+    });
+    render(<CodexAccountsPanel providerId="claude" onError={vi.fn()} />);
+    const defaultRow = (await screen.findByText('Default Claude account')).closest('li')!;
+    expect(within(defaultRow).getByText('active')).toBeDefined();
+    expect(screen.queryByText('Original Claude login')).toBeNull();
+    expect(screen.queryByText(/not signed in/)).toBeNull();
+  });
   it('uses the standard refresh controls for Claude without calling Codex usage', async () => {
     vi.mocked(api.getClaudeAccounts).mockResolvedValue(baseState);
     render(<CodexAccountsPanel providerId="claude" onError={vi.fn()} />);

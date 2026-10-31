@@ -28,7 +28,10 @@ it('switches isolated Claude profiles, preserves saved timestamps, and restores 
     );
     const account = added.accounts[0]!;
     expect(Number.isFinite(Date.parse(account.createdAt))).toBe(true);
-    expect(pool.setActive(account.id).activeProfileId).toBe(account.id);
+    const selected = pool.setActive(account.id);
+    expect(selected.activeProfileId).toBe(account.id);
+    expect(selected.defaultAccount.available).toBe(true);
+    expect(selected.originalAccount?.available).toBe(true);
     expect(
       JSON.parse(readFileSync(path.join(home, '.credentials.json'), 'utf8')).claudeAiOauth
         .accessToken,
@@ -59,7 +62,8 @@ it('switches isolated Claude profiles, preserves saved timestamps, and restores 
     ).toBe(true);
     expect(pool.state().accounts[0]?.limits?.windows[0]?.usedPercent).toBe(37);
     expect(pool.state().accounts[0]?.usageStatus).toBe('fresh');
-    expect(pool.state().defaultAccount.limits).toBeNull();
+    expect(pool.state().defaultAccount.limits?.windows[0]?.usedPercent).toBe(37);
+    expect(pool.state().originalAccount?.limits).toBeNull();
     expect(pool.setActive(null).activeProfileId).toBeNull();
     expect(readFileSync(path.join(home, '.credentials.json'), 'utf8')).toBe(original);
   } finally {
@@ -90,7 +94,8 @@ it('preserves refreshed tokens and restores an unsigned-in default without reviv
     const first = pool.importAccount('First', auth('first')).accounts[0]!.id;
     const second = pool.importAccount('Second', auth('second')).accounts[1]!.id;
     pool.setActive(first);
-    expect(pool.state().defaultAccount.available).toBe(false);
+    expect(pool.state().defaultAccount.available).toBe(true);
+    expect(pool.state().originalAccount?.available).toBe(false);
     writeFileSync(live, auth('refreshed'));
     pool.setActive(second);
     pool.setActive(first);
@@ -192,9 +197,10 @@ it('keeps showing an account’s usage after Claude rotates its token (PM-366)',
     const shown = state.accounts.find((a) => a.id === work.id)!;
     expect(shown.limits?.windows[0]?.usedPercent).toBe(54);
     expect(shown.usageStatus).toBe('fresh');
-    // Never someone else's: the other saved account and the default login stay empty.
+    // The live default mirrors Work. Other accounts and the preserved original stay empty.
     expect(state.accounts.find((a) => a.id === other.id)?.limits).toBeNull();
-    expect(state.defaultAccount.limits).toBeNull();
+    expect(state.defaultAccount.limits?.windows[0]?.usedPercent).toBe(54);
+    expect(state.originalAccount?.limits).toBeNull();
   } finally {
     db.close();
     if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;

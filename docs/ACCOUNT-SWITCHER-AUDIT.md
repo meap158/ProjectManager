@@ -67,3 +67,17 @@ submission. Its optional account rotation resumes conversations and sends Contin
 sessions blocked at a limit, leaving ordinary idle sessions without an extra prompt. Tests
 cover this provider boundary and rotation delivery; no real quota wait or live CLI input was
 used for verification.
+
+## Claude live default login (PM-375)
+
+The Default Claude account row describes the live `.credentials.json`, matching Codex's
+default-row meaning. Selecting a saved profile already installs its credentials there, so
+both the live row and its matching saved profile show active with the same identity and
+usage. A missing original backup does not make the live account appear signed out.
+
+The original login remains preserved separately in account state as `originalAccount`.
+When it holds signed-in credentials, the drawer shows Original Claude login with Restore
+original login. That action uses the existing restore path. Rotation considers the original
+login's availability and quota separately from the live default alias, avoiding a switch back
+to the current account through its duplicate row. Tests use temporary credential files;
+live verification only read non-secret account state and did not switch logins.

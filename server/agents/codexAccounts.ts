@@ -1299,7 +1299,24 @@ export class ClaudeAccounts {
       plan: logins[index + 1]!.plan,
       ...usage(logins[index + 1]!),
     }));
-    return { accounts, activeProfileId, autoSwitch, defaultAccount };
+    const active = accounts.find((account) => account.id === activeProfileId);
+    return {
+      accounts,
+      activeProfileId,
+      autoSwitch,
+      // The default credentials file holds the selected login, just as it does for Codex.
+      defaultAccount: active
+        ? {
+            available: this.signedIn(liveCredsFile),
+            email: active.email,
+            plan: active.plan,
+            limits: active.limits,
+            usageStatus: active.usageStatus,
+            usageCheckedAt: active.usageCheckedAt,
+          }
+        : defaultAccount,
+      originalAccount: activeProfileId ? defaultAccount : undefined,
+    };
   }
 
   /**

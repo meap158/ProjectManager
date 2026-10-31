@@ -35,12 +35,14 @@ type Entry = {
 };
 
 function entries(state: CodexAccountsState): Entry[] {
+  // Selecting 'default' restores the original login, not the live selected profile's alias.
+  const original = state.originalAccount ?? state.defaultAccount;
   return [
     {
       id: 'default',
-      available: state.defaultAccount?.available !== false,
-      email: state.defaultAccount?.email ?? null,
-      limits: state.defaultAccount?.limits ?? null,
+      available: original?.available !== false,
+      email: original?.email ?? null,
+      limits: original?.limits ?? null,
     },
     ...state.accounts.map((a) => ({
       id: a.id,

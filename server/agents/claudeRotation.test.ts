@@ -32,6 +32,15 @@ const state = (
   }) as never;
 
 describe('Claude account rotation', () => {
+  it('ranks the original login separately from the selected live-default alias', () => {
+    const s = state(limits(100), [['a', limits(100)]], 'a');
+    s.defaultAccount!.email = 'active@example.com';
+    s.accounts[0]!.email = 'active@example.com';
+    s.originalAccount = { available: true, email: 'original@example.com', limits: limits(10) };
+    expect(nextClaudeAccount(s, [], false, NOW)?.id).toBe('default');
+    s.originalAccount.available = false;
+    expect(nextClaudeAccount(s, [], false, NOW)).toBeNull();
+  });
   it('recognises the CLI limit messages', () => {
     expect(claudeLimitOnScreen('Claude usage limit reached. Your limit will reset at 3pm')).toBe(
       true,
