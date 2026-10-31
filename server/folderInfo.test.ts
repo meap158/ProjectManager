@@ -114,6 +114,64 @@ describe('folderInfo', () => {
     expect(link).toMatchObject({ symlink: true, kind: 'file' });
     expect(info.items.some((i) => i.path.includes('secret.txt'))).toBe(false);
   });
+
+  it('filters by type on the server, always keeping directories', async () => {
+    const root = tree();
+    const info = await folderInfo(root, '', { recursive: true, types: ['image'] });
+    const paths = names(info);
+    expect(paths).toContain('assets');
+    expect(paths).toContain('assets/logo.png');
+    expect(info.items.every((i) => i.kind === 'dir' || /\.png$|\.svg$/i.test(i.path))).toBe(true);
+    expect(info.items.some((i) => i.path === 'README.md')).toBe(false);
+    expect(info.total!.files).toBe(3); // logo.png plus the two svgs.
+    expect(info.total!.folders).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reports scope totals on every page, not just the page', async () => {
+    const root = tree();
+    const full = await folderInfo(root, '', { recursive: true });
+    const page = await folderInfo(root, '', { recursive: true, limit: 2 });
+    expect(page.items).toHaveLength(2);
+    expect(page.truncated).toBe(true);
+    expect(page.total!.files).toBe(full.total!.files);
+    expect(page.total!.folders).toBe(full.total!.folders);
+    expect(page.total!.size).toBe(full.total!.size);
+    expect(page.total!.newest).toBe(full.total!.newest);
+    // The page stats still describe the page alone.
+    expect(page.files).toBe(page.items.filter((i) => i.kind === 'file').length);
+    // A paged walk still walked the whole scope, so it is complete.
+    expect(page.total!.complete).toBe(true);
+    expect(page.total!.scanned).toBe(full.total!.scanned);
+  });
+
+  it('pages a filtered scope to exhaustion without losing matches', async () => {
+    const root = tree();
+    const full = await folderInfo(root, '', { recursive: true, types: ['image'] });
+    const paths: string[] = [];
+    let offset = 0;
+    for (;;) {
+      const page = await folderInfo(root, '', {
+        recursive: true,
+        limit: 2,
+        offset,
+        types: ['image'],
+      });
+      expect(page.total!.files).toBe(full.total!.files);
+      paths.push(...page.items.map((i) => i.path));
+      if (!page.truncated) break;
+      expect(page.nextOffset).toBeGreaterThan(offset);
+      offset = page.nextOffset!;
+    }
+    expect(paths.sort()).toEqual(full.items.map((i) => i.path).sort());
+  });
+
+  it('ignores unknown type ids and reports a complete walk', async () => {
+    const root = tree();
+    const info = await folderInfo(root, '', { recursive: true, types: ['image', 'nope'] });
+    expect(info.total!.complete).toBe(true);
+    expect(info.total!.scanned).toBeGreaterThan(0);
+    expect(info.items.every((i) => i.kind === 'dir' || /\.png$|\.svg$/i.test(i.path))).toBe(true);
+  });
 });
 
 describe('GET /projects/:id/folder-info', () => {
@@ -148,6 +206,28 @@ describe('GET /projects/:id/folder-info', () => {
     expect((await get('?path=nope')).status).toBe(404);
     // A junk limit falls back to the default instead of failing.
     expect((await get('?path=assets&limit=abc')).status).toBe(200);
+  });
+
+  it('filters by type through the route and ignores unknown groups', async () => {
+    const db = openDb(':memory:');
+    const app = createApp(db);
+    const host = { host: 'localhost:5180', 'content-type': 'application/json' };
+    const made = await app.request('/api/projects', {
+      method: 'POST',
+      headers: host,
+      body: JSON.stringify({ path: tree() }),
+    });
+    const { id } = (await made.json()) as { id: number };
+    const get = (query: string) =>
+      app.request(`/api/projects/${id}/folder-info${query}`, { headers: { ...host } });
+    const filtered = (await (await get('?path=&recursive=1&types=image')).json()) as FolderInfo;
+    expect(filtered.items.length).toBeGreaterThan(0);
+    expect(filtered.items.every((i) => i.kind === 'dir' || /\.(png|svg)$/i.test(i.path))).toBe(
+      true,
+    );
+    expect(filtered.total!.files).toBe(3);
+    const mixed = (await (await get('?path=&recursive=1&types=image,nope')).json()) as FolderInfo;
+    expect(mixed.total!.files).toBe(3);
   });
 });
 

@@ -294,7 +294,7 @@ describe('ProjectFiles', () => {
       'true',
     );
     expect((screen.getByLabelText('Include subfolders') as HTMLInputElement).checked).toBe(true);
-    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'dist', true);
+    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'dist', true, undefined, ['image']);
   });
 
   it('a pinned folder opens like the folder in the tree: its contents on the right, the tree following', async () => {

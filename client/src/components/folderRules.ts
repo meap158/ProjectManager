@@ -1,11 +1,12 @@
 import type { FolderItem } from '../../../shared/types';
+import { EXTENSION_TO_TYPE_GROUP } from '../../../shared/types';
+import type { TypeGroup } from '../../../shared/types';
+
+export type { TypeGroup } from '../../../shared/types';
 
 // The folder previewer's pure rules (PM-286): what kind of thing an entry is, which entries a set of
 // filters keeps, how they sort, what changed since you last looked, and how all of it round-trips
 // through the address so a view can be linked and survives a reload.
-
-export type TypeGroup =
-  'folder' | 'image' | 'video' | 'audio' | 'document' | 'code' | 'data' | 'archive' | 'other';
 
 /** The groups offered as filters, in the order shown (folders are always kept unless filtered by name). */
 export const FILE_GROUPS: { id: Exclude<TypeGroup, 'folder'>; label: string }[] = [
@@ -19,20 +20,9 @@ export const FILE_GROUPS: { id: Exclude<TypeGroup, 'folder'>; label: string }[] 
   { id: 'other', label: 'Other' },
 ];
 
-const GROUPS: Record<string, Exclude<TypeGroup, 'folder' | 'other'>> = {};
-const add = (group: Exclude<TypeGroup, 'folder' | 'other'>, extensions: string) => {
-  for (const ext of extensions.split(' ')) GROUPS[ext] = group;
+const GROUPS: Record<string, Exclude<TypeGroup, 'folder' | 'other'>> = {
+  ...EXTENSION_TO_TYPE_GROUP,
 };
-add('image', 'png jpg jpeg gif webp avif svg ico bmp tif tiff heic psd');
-add('video', 'mp4 mov webm mkv avi m4v');
-add('audio', 'mp3 wav ogg flac m4a aac opus');
-add('document', 'md mdx txt pdf doc docx rtf odt html htm csv xlsx xls pptx');
-add(
-  'code',
-  'ts tsx js jsx mjs cjs py rs go java kt cs c h cpp rb php swift sh bat cmd ps1 css scss less sql vue',
-);
-add('data', 'json jsonl yaml yml toml xml ini cfg conf env lock log db sqlite');
-add('archive', 'zip gz tar tgz 7z rar');
 
 export const extensionOf = (name: string): string => {
   const dot = name.lastIndexOf('.');

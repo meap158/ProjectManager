@@ -8,6 +8,9 @@
 Persistent AI coding agent sessions. Every project. Any screen, including your phone.
 Your projects and session data stay on your computer.
 
+Folder previews share recent scans across pages and type filters. Refresh bypasses the
+thirty-second cache when you need the latest files immediately.
+
 Large folder previews offer Load more entries to continue beyond the first batch, including
 Project scope with subfolders. Filters and sorting apply to all entries loaded so far.
 

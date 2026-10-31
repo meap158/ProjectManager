@@ -92,7 +92,7 @@ describe('FolderView', () => {
     expect(screen.getByText('notes.md')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Load more entries' }));
     await screen.findByText('last.txt');
-    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'assets', false, 2000);
+    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'assets', false, 2000, undefined);
     expect(screen.queryByText('Temporary read failure')).toBeNull();
   });
 
@@ -142,7 +142,7 @@ describe('FolderView', () => {
     await screen.findByText('Nothing matches these filters.');
     fireEvent.click(screen.getByRole('button', { name: 'Load more entries' }));
     await screen.findByText('later.mp3');
-    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'assets', false, 2000);
+    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'assets', false, 2000, ['audio']);
     fireEvent.click(screen.getByRole('button', { name: 'Load more entries' }));
     await screen.findByText('last.mp3');
     expect(names()).toEqual(['later.mp3', 'last.mp3']);
@@ -153,7 +153,7 @@ describe('FolderView', () => {
     show();
     expect(await screen.findByText(/4 files · 1 folder/)).toBeTruthy();
     expect(names()).toEqual(['icons', 'logo.png', 'notes.md', 'run.sh', 'hero.jpg']);
-    expect(api.folderInfo).toHaveBeenCalledWith(1, 'assets', false);
+    expect(api.folderInfo).toHaveBeenCalledWith(1, 'assets', false, undefined, undefined);
   });
 
   it('filters by type and by name, and keeps the view in the address', async () => {
@@ -218,26 +218,13 @@ describe('FolderView', () => {
     expect(screen.queryByRole('img', { name: 'Merge conflict' })).toBeNull();
   });
 
-  it('shows the image glyph at once for formats browsers cannot draw', async () => {
-    const raw: FolderInfo = {
-      ...INFO,
-      files: 1,
-      folders: 0,
-      totalSize: 100,
-      items: [item('assets/photo.heic', { size: 100 })],
-    };
-    vi.mocked(api.folderInfo).mockResolvedValueOnce(raw);
-    show();
-    await screen.findByText('photo.heic');
-    expect(document.querySelector('.fv-thumb img')).toBeNull();
-    expect(document.querySelector('.fv-thumb svg')).toBeTruthy();
-  });
-
   it('reads the subfolders too when asked', async () => {
     show();
     await screen.findByText(/4 files/);
     fireEvent.click(screen.getByLabelText('Include subfolders'));
-    await waitFor(() => expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'assets', true));
+    await waitFor(() =>
+      expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'assets', true, undefined, undefined),
+    );
     expect(url()).toContain('rec=1');
   });
 
@@ -334,4 +321,165 @@ describe('FolderView', () => {
     show();
     expect(await screen.findByText('Not found')).toBeTruthy();
   });
+
+  it('summarises the scope from the server totals, not the returned page', async () => {
+    vi.mocked(api.folderInfo).mockResolvedValueOnce({
+      ...INFO,
+      files: 1,
+      folders: 0,
+      totalSize: 2048,
+      newest: '2026-10-20T10:00:00.000Z',
+      items: [item('assets/logo.png')],
+      total: {
+        files: 40,
+        folders: 2,
+        size: 81920,
+        newest: '2026-10-25T10:00:00.000Z',
+        scanned: 42,
+        complete: true,
+      },
+    });
+    show();
+    expect(await screen.findByText(/40 files · 2 folders/)).toBeTruthy();
+    expect(screen.queryByText(/first entries only/)).toBeNull();
+  });
+
+  it('says first entries only when the server walk itself was truncated', async () => {
+    vi.mocked(api.folderInfo).mockResolvedValueOnce({
+      ...INFO,
+      total: {
+        files: 40,
+        folders: 2,
+        size: 81920,
+        newest: '2026-10-25T10:00:00.000Z',
+        scanned: 20000,
+        complete: false,
+      },
+    });
+    show();
+    expect(await screen.findByText(/first entries only/)).toBeTruthy();
+  });
+
+  it('sends the active type filter so the server can search the whole scope', async () => {
+    show('&types=image');
+    await screen.findByText(/4 files/);
+    expect(api.folderInfo).toHaveBeenCalledWith(1, 'assets', false, undefined, ['image']);
+  });
+
+  it('shows the file icon when a thumbnail fails to load', async () => {
+    const broken: FolderInfo = {
+      ...INFO,
+      files: 1,
+      folders: 0,
+      totalSize: 100,
+      items: [item('assets/broken.png', { size: 100 })],
+    };
+    vi.mocked(api.folderInfo).mockResolvedValueOnce(broken);
+    show();
+    await screen.findByText('broken.png');
+    const img = document.querySelector('.fv-thumb img') as HTMLImageElement;
+    expect(img).toBeTruthy();
+    fireEvent.error(img);
+    await waitFor(() => expect(document.querySelector('.fv-thumb img')).toBeNull());
+  });
+
+  it('shows the image glyph at once for formats browsers cannot draw', async () => {
+    const raw: FolderInfo = {
+      ...INFO,
+      files: 1,
+      folders: 0,
+      totalSize: 100,
+      items: [item('assets/photo.heic', { size: 100 })],
+    };
+    vi.mocked(api.folderInfo).mockResolvedValueOnce(raw);
+    show();
+    await screen.findByText('photo.heic');
+    expect(document.querySelector('.fv-thumb img')).toBeNull();
+    expect(document.querySelector('.fv-thumb svg')).toBeTruthy();
+  });
+
+  it('shows the file icon for a picture over the thumbnail size cap', async () => {
+    const big: FolderInfo = {
+      ...INFO,
+      files: 1,
+      folders: 0,
+      totalSize: 3 * 1024 * 1024,
+      items: [item('assets/huge.png', { size: 26 * 1024 * 1024 })],
+    };
+    vi.mocked(api.folderInfo).mockResolvedValueOnce(big);
+    show();
+    await screen.findByText('huge.png');
+    expect(document.querySelector('.fv-thumb img')).toBeNull();
+  });
+});
+
+it('loads later recursive batches before sorting recent files', async () => {
+  vi.mocked(api.folderInfo)
+    .mockResolvedValueOnce({
+      ...INFO,
+      recursive: true,
+      truncated: true,
+      nextOffset: 20,
+      items: [item('assets/old.png')],
+    })
+    .mockResolvedValueOnce({
+      ...INFO,
+      recursive: true,
+      truncated: false,
+      items: [item('assets/new.png', { mtime: '2026-11-01T00:00:00.000Z' })],
+    });
+  show('&rec=1');
+  await waitFor(() => expect(api.folderInfo).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText('new.png')).toBeTruthy();
+});
+
+it('renders a 3 MB image and retries its thumbnail on refresh', async () => {
+  vi.mocked(api.folderInfo).mockResolvedValue({
+    ...INFO,
+    items: [item('assets/large.png', { size: 3 * 1024 * 1024 })],
+  });
+  show();
+  await screen.findByText('large.png');
+  const image = document.querySelector('.fv-thumb img') as HTMLImageElement;
+  expect(image).toBeTruthy();
+  const source = image.src;
+  fireEvent.error(image);
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  await waitFor(() => {
+    const next = document.querySelector('.fv-thumb img') as HTMLImageElement;
+    expect(next).toBeTruthy();
+    expect(next.src).not.toBe(source);
+  });
+  vi.mocked(api.folderInfo).mockResolvedValue(INFO);
+});
+
+it('shows the first recursive batch while a later batch is still pending', async () => {
+  let finish!: (info: FolderInfo) => void;
+  vi.mocked(api.folderInfo)
+    .mockResolvedValueOnce({ ...INFO, recursive: true, truncated: true, nextOffset: 2000 })
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+  show('&rec=1');
+  expect(await screen.findByText('logo.png')).toBeTruthy();
+  await waitFor(() => expect(api.folderInfo).toHaveBeenCalledTimes(2));
+  await act(async () => finish({ ...INFO, recursive: true, items: [item('assets/recent.png')] }));
+  expect(await screen.findByText('recent.png')).toBeTruthy();
+  expect(screen.getByText('logo.png')).toBeTruthy();
+});
+
+it('does not rescan on repeated focus while data is fresh, but Refresh bypasses the cache', async () => {
+  show();
+  await screen.findByText('logo.png');
+  const calls = vi.mocked(api.folderInfo).mock.calls.length;
+  fireEvent.focus(window);
+  fireEvent.focus(window);
+  expect(api.folderInfo).toHaveBeenCalledTimes(calls);
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  await waitFor(() =>
+    expect(api.folderInfo).toHaveBeenLastCalledWith(1, 'assets', false, undefined, undefined, true),
+  );
 });

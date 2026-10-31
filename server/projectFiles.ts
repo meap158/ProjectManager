@@ -7,8 +7,11 @@ import type {
   GitMark,
   FolderListing,
   TreeEntry,
+  TypeGroup,
 } from '../shared/types.js';
+import { EXTENSION_TO_TYPE_GROUP, KNOWN_TYPE_GROUPS } from '../shared/types.js';
 import { isAvailable, run } from './analysis/exec.js';
+import { folderSnapshot } from './folderSnapshot.js';
 import { HEADER_BYTES, hasImageSize, readImageSize } from './imageSize.js';
 
 // The project page's Files tab (PM-252): a VS Code style tree read one folder at a time, and
@@ -32,18 +35,33 @@ const HIDDEN = new Set(['.git']);
 const MAX_ENTRIES = 5_000;
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 export const MAX_RAW_BYTES = 25 * 1024 * 1024;
-const IMAGE = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.avif']);
+
+/** A file's type group from the shared extension map (folders are handled by the caller). */
+export function groupOfFile(name: string): Exclude<TypeGroup, 'folder'> {
+  const dot = name.lastIndexOf('.');
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+  return EXTENSION_TO_TYPE_GROUP[ext] ?? 'other';
+}
 
 export const RAW_TYPES: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.jpe': 'image/jpeg',
+  '.jfif': 'image/jpeg',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  '.cur': 'image/x-icon',
   '.bmp': 'image/bmp',
   '.avif': 'image/avif',
+  '.apng': 'image/apng',
+  '.tif': 'image/tiff',
+  '.tiff': 'image/tiff',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
+  '.psd': 'image/vnd.adobe.photoshop',
   '.css': 'text/css; charset=utf-8',
   '.woff2': 'font/woff2',
   '.woff': 'font/woff',
@@ -119,72 +137,80 @@ export async function listFolder(root: string, rel: string): Promise<FolderListi
 }
 
 /** Folders a recursive listing never enters: huge, generated, and not what asset tracking is for. */
-const SKIPPED_WHEN_RECURSIVE = new Set(['node_modules', '.git']);
 /** Entries looked at in one recursive walk, however many are returned. */
-const MAX_WALK = 20_000;
 export const DEFAULT_FOLDER_LIMIT = 2_000;
 export const MAX_FOLDER_LIMIT = 5_000;
 
 /**
  * A folder's contents with sizes and times, for the previewer. One level, or the whole tree below
- * it. Read only and bounded: `limit` items are returned (and the walk looks at no more than
- * MAX_WALK new entries). `nextOffset` resumes a truncated walk. Earlier directories are visited
- * again to reconstruct the traversal queue without retaining server-side handles or snapshots.
+ * it. Responses stay bounded. A short-lived metadata snapshot is shared across pages and type
+ * filters, with bounded concurrent stat calls. Explicit refresh replaces that scope's snapshot.
+ * Walk windows grow in 20,000-entry batches when continuation reaches the previous boundary.
  * Links are listed as what they are and never
  * followed, so a link cannot lead the walk outside the project; node_modules and .git are not
  * entered.
  */
+/** Known type-group ids accepted as a `types` filter (anything else is ignored). */
+const KNOWN_TYPES = new Set<string>(KNOWN_TYPE_GROUPS as readonly string[]);
+
 export async function folderInfo(
   root: string,
   rel: string,
-  options: { recursive?: boolean; limit?: number; offset?: number } = {},
+  options: {
+    recursive?: boolean;
+    limit?: number;
+    offset?: number;
+    types?: string[];
+    refresh?: boolean;
+  } = {},
 ): Promise<FolderInfo> {
   const recursive = options.recursive === true;
   const limit = Math.max(1, Math.min(MAX_FOLDER_LIMIT, options.limit ?? DEFAULT_FOLDER_LIMIT));
   const offset = Number.isSafeInteger(options.offset) && options.offset! > 0 ? options.offset! : 0;
+  const filter = new Set((options.types ?? []).filter((t) => KNOWN_TYPES.has(t)));
+  const passes = (name: string, isDir: boolean): boolean => {
+    if (isDir) return true; // Directories stay so you can still navigate.
+    if (filter.size === 0) return true;
+    return filter.has(groupOfFile(name));
+  };
   const dir = await resolveInside(root, rel);
   if (!(await stat(dir)).isDirectory()) throw new FileAccessError(400, 'Not a folder');
   const realRoot = await realpath(root);
   const items: FolderItem[] = [];
-  let truncated = false;
-  let walked = 0;
-  const queue = [dir];
-  while (queue.length > 0 && !truncated) {
-    const current = queue.shift()!;
-    let handle;
-    try {
-      handle = await opendir(current);
-    } catch {
-      continue; // Unreadable folder: skipped, not fatal.
+  let pageEndWalked: number | null = null;
+  let moreBeyondPage = false;
+  let totalFiles = 0;
+  let totalFolders = 0;
+  let totalBytes = 0;
+  let totalNewest: string | null = null;
+  const snapshot = await folderSnapshot(realRoot, dir, recursive, offset, options.refresh === true);
+  const hitMax = !snapshot.complete;
+  const walked = snapshot.scanned + (hitMax ? 1 : 0);
+  for (const { index, item } of snapshot.entries) {
+    const isDir = item.kind === 'dir';
+    if (!passes(item.name, isDir)) continue;
+    if (isDir) totalFolders++;
+    else {
+      totalFiles++;
+      totalBytes += item.size ?? 0;
+      if (item.mtime && (!totalNewest || item.mtime > totalNewest)) totalNewest = item.mtime;
     }
-    for await (const dirent of handle) {
-      if (HIDDEN.has(dirent.name)) continue;
-      if (++walked > offset + MAX_WALK || (walked > offset && items.length >= limit)) {
-        truncated = true;
-        break;
-      }
-      const abs = path.join(current, dirent.name);
-      const info = await lstat(abs).catch(() => null);
-      if (!info) continue;
-      const symlink = info.isSymbolicLink();
-      const isDir = !symlink && info.isDirectory();
-      if (isDir && recursive && !SKIPPED_WHEN_RECURSIVE.has(dirent.name)) queue.push(abs);
-      if (walked <= offset) continue;
-      items.push({
-        name: dirent.name,
-        path: toRel(realRoot, abs),
-        kind: isDir ? 'dir' : 'file',
-        size: isDir ? null : info.size,
-        mtime: info.mtime.toISOString(),
-        ctime: (info.birthtimeMs > 0 ? info.birthtime : info.ctime).toISOString(),
-        ignored: false,
-        symlink,
-        width: null,
-        height: null,
-        git: null,
-      });
+    if (index <= offset) continue;
+    if (items.length >= limit) {
+      moreBeyondPage = true;
+      continue;
     }
+    items.push({ ...item });
+    if (items.length === limit) pageEndWalked = index;
   }
+  // The page fills before the walk ends: the next page resumes where the page left off.
+  // Hitting the walk limit also truncates, resuming one entry back like before.
+  const truncated = hitMax || moreBeyondPage;
+  const nextOffset = moreBeyondPage
+    ? (pageEndWalked ?? walked - 1)
+    : hitMax
+      ? walked - 1
+      : undefined;
   if (!recursive) {
     const asked = items.map((e) => (e.kind === 'dir' ? `${e.path}/` : e.path));
     for (const ignored of await gitIgnored(realRoot, asked)) {
@@ -208,7 +234,15 @@ export async function folderInfo(
     totalSize: files.reduce((sum, f) => sum + (f.size ?? 0), 0),
     newest,
     truncated,
-    nextOffset: truncated ? walked - 1 : undefined,
+    nextOffset,
+    total: {
+      files: totalFiles,
+      folders: totalFolders,
+      size: totalBytes,
+      newest: totalNewest,
+      scanned: snapshot.scanned,
+      complete: !hitMax,
+    },
   };
 }
 
@@ -331,7 +365,7 @@ export async function previewFile(root: string, rel: string): Promise<FilePrevie
     size: info.size,
     mtime: info.mtime.toISOString(),
   };
-  if (IMAGE.has(path.extname(abs).toLowerCase())) return { kind: 'image', ...base };
+  if (groupOfFile(path.basename(abs)) === 'image') return { kind: 'image', ...base };
   if (info.size > MAX_TEXT_BYTES) return { kind: 'too-large', ...base };
   const content = await readFile(abs);
   // A NUL byte in the first 8 KB: binary, as git and VS Code decide.

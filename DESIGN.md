@@ -4,6 +4,10 @@ This file defines how ProjectManager looks and behaves. If a component disagrees
 fix the component or update this file in the same commit — never let design decisions live only in code
 or chat history.
 
+Folder previews reuse metadata snapshots for thirty seconds across pages and type filters.
+Focus revalidation is throttled; Refresh always requests a new scan. Recursive batches appear
+as they arrive and retain loaded content during revalidation.
+
 Folder previews load large project listings in batches. Show more reveals loaded entries; Load
 more entries continues the server walk, even when current filters match nothing loaded so far.
 Counts, sorting and filters cover the loaded entries until the final batch arrives.

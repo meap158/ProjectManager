@@ -18,8 +18,8 @@ import {
   readSavedView,
   writeSavedView,
   applyFilters,
-  canPreviewImage,
   changedSince,
+  canPreviewImage,
   readSeen,
   readViewParams,
   sortItems,
@@ -46,7 +46,7 @@ import './folder-view.css';
 
 const PAGE = 120;
 /** Pictures bigger than this show an icon in the grid instead of loading the whole file as a thumbnail. */
-const THUMB_MAX_BYTES = 2 * 1024 * 1024;
+const THUMB_MAX_BYTES = 25 * 1024 * 1024;
 const RANGES: DropdownOption<ModifiedRange>[] = [
   { value: 'any', label: 'Any time' },
   { value: 'today', label: 'Today' },
@@ -102,7 +102,10 @@ export function FolderView({
   const requestGeneration = useRef(0);
   const morePending = useRef(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const loadKey = `${projectId}|${dir}|${view.recursive}|${reload}`;
+  const lastReadAt = useRef(0);
+  const forceRefresh = useRef(false);
+  const typeKey = view.types.join(',');
+  const loadKey = `${projectId}|${dir}|${view.recursive}|${typeKey}|${reload}`;
   const [lastLoadKey, setLastLoadKey] = useState(loadKey);
   if (lastLoadKey !== loadKey) {
     setLastLoadKey(loadKey);
@@ -114,13 +117,54 @@ export function FolderView({
     const generation = ++requestGeneration.current;
     morePending.current = false;
     // The list on screen stays while a new one loads (switching recursion, refreshing).
-    api
-      .folderInfo(projectId, dir, view.recursive)
-      .then((next) => {
+    const types = typeKey ? typeKey.split(',') : undefined;
+    const request = forceRefresh.current
+      ? api.folderInfo(projectId, dir, view.recursive, undefined, types, true)
+      : api.folderInfo(projectId, dir, view.recursive, undefined, types);
+    request
+      .then(async (next) => {
         if (!current) return;
-        setData(next);
+        const items = new Map(next.items.map((item) => [item.path, item]));
+        const publish = () => {
+          const all = [...items.values()];
+          const files = all.filter((item) => item.kind === 'file');
+          setData({
+            ...next,
+            items: all,
+            files: files.length,
+            folders: all.length - files.length,
+            totalSize: files.reduce((sum, item) => sum + (item.size ?? 0), 0),
+            newest: files.reduce<string | null>(
+              (latest, item) =>
+                item.mtime && (!latest || item.mtime > latest) ? item.mtime : latest,
+              null,
+            ),
+          });
+        };
+        publish();
+        lastReadAt.current = Date.now();
+        forceRefresh.current = false;
         setError(null);
         setLoading(false);
+        morePending.current = view.recursive && next.nextOffset !== undefined;
+        setLoadingMore(morePending.current);
+        try {
+          while (current && view.recursive && next.nextOffset !== undefined) {
+            const offset = next.nextOffset;
+            const page = await api.folderInfo(projectId, dir, view.recursive, offset, types);
+            if (!current) return;
+            if (page.nextOffset !== undefined && page.nextOffset <= offset)
+              throw new Error('Folder listing did not advance. Refresh to retry.');
+            for (const item of page.items) items.set(item.path, item);
+            next = page;
+            publish();
+          }
+        } finally {
+          if (current) {
+            morePending.current = false;
+            setLoadingMore(false);
+          }
+        }
       })
       .catch((e: Error) => {
         if (!current) return;
@@ -131,7 +175,28 @@ export function FolderView({
       current = false;
       requestGeneration.current = generation + 1;
     };
-  }, [projectId, dir, view.recursive, reload]);
+  }, [projectId, dir, view.recursive, typeKey, reload]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (
+        document.visibilityState === 'visible' &&
+        !morePending.current &&
+        Date.now() - lastReadAt.current >= 30_000
+      ) {
+        lastReadAt.current = Date.now();
+        setReload((n) => n + 1);
+      }
+    };
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, []);
 
   const loadMore = async () => {
     if (!data || data.nextOffset === undefined || morePending.current || loading) return;
@@ -139,7 +204,13 @@ export function FolderView({
     morePending.current = true;
     setLoadingMore(true);
     try {
-      const next = await api.folderInfo(projectId, dir, view.recursive, data.nextOffset);
+      const next = await api.folderInfo(
+        projectId,
+        dir,
+        view.recursive,
+        data.nextOffset,
+        typeKey ? typeKey.split(',') : undefined,
+      );
       if (generation !== requestGeneration.current) return;
       setData((previous) => {
         if (!previous) return next;
@@ -157,6 +228,9 @@ export function FolderView({
             (latest, i) => (i.mtime && (!latest || i.mtime > latest) ? i.mtime : latest),
             null,
           ),
+          // Scope totals come from the server (PM-390): keep the first page's, they
+          // describe the whole scope, not the merged pages.
+          total: previous.total ?? next.total,
         };
       });
       setError(null);
@@ -218,7 +292,14 @@ export function FolderView({
   const [sheet, setSheet] = useState(false);
   const modifiedId = useId();
   const sortId = useId();
-  const rawUrl = useCallback((path: string) => api.projectRawUrl(projectId, path), [projectId]);
+  const itemsByPath = useMemo(() => new Map(data?.items.map((item) => [item.path, item])), [data]);
+  const rawUrl = useCallback(
+    (path: string) => {
+      const item = itemsByPath.get(path);
+      return `${api.projectRawUrl(projectId, path)}&v=${encodeURIComponent(`${item?.mtime ?? ''}|${item?.size ?? ''}|${reload}`)}`;
+    },
+    [projectId, itemsByPath, reload],
+  );
 
   const open = (item: FolderItem) => {
     if (item.kind === 'dir') onOpenDir(item.path);
@@ -309,6 +390,7 @@ export function FolderView({
           className="btn btn-sm fv-refresh"
           title="Read this folder again"
           onClick={() => {
+            forceRefresh.current = true;
             setLoading(true);
             setReload((n) => n + 1);
           }}
@@ -335,12 +417,22 @@ export function FolderView({
 
       {data && (
         <p className="faint fv-summary" role="status">
-          {data.files.toLocaleString()} {data.files === 1 ? 'file' : 'files'} ·{' '}
-          {data.folders.toLocaleString()} {data.folders === 1 ? 'folder' : 'folders'} ·{' '}
-          {formatBytes(data.totalSize)}
-          {data.newest ? ` · newest ${formatRelative(data.newest)}` : ''}
+          {(data.total?.files ?? data.files).toLocaleString()}{' '}
+          {(data.total?.files ?? data.files) === 1 ? 'file' : 'files'} ·{' '}
+          {(data.total?.folders ?? data.folders).toLocaleString()}{' '}
+          {(data.total?.folders ?? data.folders) === 1 ? 'folder' : 'folders'} ·{' '}
+          {formatBytes(data.total?.size ?? data.totalSize)}
+          {(data.total?.newest ?? data.newest)
+            ? ` · newest ${formatRelative((data.total?.newest ?? data.newest)!)}`
+            : ''}
           {shown.length !== data.items.length ? ` · showing ${shown.length.toLocaleString()}` : ''}
-          {data.truncated ? ' · more entries available' : ''}
+          {data.total
+            ? !data.total.complete
+              ? ' · first entries only'
+              : ''
+            : data.truncated
+              ? ' · more entries available'
+              : ''}
         </p>
       )}
 
@@ -601,10 +693,14 @@ function GridCell({
   onOpen: (item: FolderItem) => void;
   showPath: boolean;
 }) {
-  const image =
+  const canThumb =
     typeGroupOf(item) === 'image' &&
     canPreviewImage(item.name) &&
     (item.size ?? 0) <= THUMB_MAX_BYTES;
+  // The failed path, not a flag: a new path renders a new thumbnail without an effect.
+  const [failedPath, setFailedPath] = useState<string | null>(null);
+  const source = rawUrl(item.path);
+  const image = canThumb && failedPath !== source;
   const spec = iconFor(item);
   return (
     <li>
@@ -617,7 +713,14 @@ function GridCell({
       >
         <span className="fv-thumb">
           {image ? (
-            <img src={rawUrl(item.path)} alt="" loading="lazy" decoding="async" draggable={false} />
+            <img
+              src={source}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              draggable={false}
+              onError={() => setFailedPath(source)}
+            />
           ) : (
             <FileTypeIcon spec={spec} size={36} />
           )}

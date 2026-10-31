@@ -476,6 +476,11 @@ export function createApp(
           recursive: c.req.query('recursive') === '1',
           limit: Number.isFinite(limit) ? limit : DEFAULT_FOLDER_LIMIT,
           offset: Number(c.req.query('offset') ?? 0),
+          refresh: c.req.query('refresh') === '1',
+          types: (c.req.query('types') ?? '')
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean),
         }),
       ),
     );

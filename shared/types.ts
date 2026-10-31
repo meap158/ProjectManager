@@ -894,6 +894,128 @@ export interface FilePin {
   kind: 'file' | 'dir' | null;
 }
 
+/** File kinds the folder previewer groups by (PM-286): folders stay apart, the rest by extension. */
+export type TypeGroup =
+  'folder' | 'image' | 'video' | 'audio' | 'document' | 'code' | 'data' | 'archive' | 'other';
+
+/** Extension (lowercased, no dot) to its type group. One shared map so client and server agree. */
+export const EXTENSION_TO_TYPE_GROUP: Record<string, Exclude<TypeGroup, 'folder' | 'other'>> = {
+  png: 'image',
+  jpg: 'image',
+  jpeg: 'image',
+  jpe: 'image',
+  jfif: 'image',
+  gif: 'image',
+  webp: 'image',
+  avif: 'image',
+  svg: 'image',
+  ico: 'image',
+  bmp: 'image',
+  tif: 'image',
+  tiff: 'image',
+  heic: 'image',
+  psd: 'image',
+  mp4: 'video',
+  mov: 'video',
+  webm: 'video',
+  mkv: 'video',
+  avi: 'video',
+  m4v: 'video',
+  mp3: 'audio',
+  wav: 'audio',
+  ogg: 'audio',
+  flac: 'audio',
+  m4a: 'audio',
+  aac: 'audio',
+  opus: 'audio',
+  md: 'document',
+  mdx: 'document',
+  txt: 'document',
+  pdf: 'document',
+  doc: 'document',
+  docx: 'document',
+  rtf: 'document',
+  odt: 'document',
+  html: 'document',
+  htm: 'document',
+  csv: 'document',
+  xlsx: 'document',
+  xls: 'document',
+  pptx: 'document',
+  ts: 'code',
+  tsx: 'code',
+  js: 'code',
+  jsx: 'code',
+  mjs: 'code',
+  cjs: 'code',
+  py: 'code',
+  rs: 'code',
+  go: 'code',
+  java: 'code',
+  kt: 'code',
+  cs: 'code',
+  c: 'code',
+  h: 'code',
+  cpp: 'code',
+  rb: 'code',
+  php: 'code',
+  swift: 'code',
+  sh: 'code',
+  bat: 'code',
+  cmd: 'code',
+  ps1: 'code',
+  css: 'code',
+  scss: 'code',
+  less: 'code',
+  sql: 'code',
+  vue: 'code',
+  json: 'data',
+  jsonl: 'data',
+  yaml: 'data',
+  yml: 'data',
+  toml: 'data',
+  xml: 'data',
+  ini: 'data',
+  cfg: 'data',
+  conf: 'data',
+  env: 'data',
+  lock: 'data',
+  log: 'data',
+  db: 'data',
+  sqlite: 'data',
+  zip: 'archive',
+  gz: 'archive',
+  tar: 'archive',
+  tgz: 'archive',
+  '7z': 'archive',
+  rar: 'archive',
+};
+
+/** Known filterable type groups (everything but folder and other catch-all handling aside). */
+export const KNOWN_TYPE_GROUPS: readonly Exclude<TypeGroup, 'folder'>[] = [
+  'image',
+  'video',
+  'audio',
+  'document',
+  'code',
+  'data',
+  'archive',
+  'other',
+];
+
+/** Scope totals over the whole walked scope (PM-390): what the summary describes. */
+export interface FolderTotals {
+  files: number;
+  folders: number;
+  size: number;
+  /** The newest modified time among the scope's files. */
+  newest: string | null;
+  /** Entries walked to build the totals. */
+  scanned: number;
+  /** False when the walk hit the walk limit before exhaustion. */
+  complete: boolean;
+}
+
 /** The Files tab's folder previewer (PM-286): one entry with the times asset tracking needs. */
 export interface FolderItem {
   name: string;
@@ -921,7 +1043,7 @@ export interface FolderInfo {
   path: string;
   items: FolderItem[];
   recursive: boolean;
-  /** Totals over the items returned. */
+  /** Totals over the items returned (the page, for backward compatibility). */
   folders: number;
   files: number;
   totalSize: number;
@@ -931,6 +1053,8 @@ export interface FolderInfo {
   truncated: boolean;
   /** Resume this folder walk after the entries already visited. */
   nextOffset?: number;
+  /** Scope totals over the whole walked scope (PM-390); absent from older cached payloads. */
+  total?: FolderTotals;
 }
 
 /** One of our SOPs (PM-316): the shared standard each project's agent instructions carry. */
