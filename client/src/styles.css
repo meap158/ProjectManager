@@ -2259,13 +2259,18 @@ dialog::backdrop {
 /* Project · card key · unlink: one line; the project name truncates first. */
 .pane-meta {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 4px;
   min-width: 0;
   white-space: nowrap;
 }
 .pane-meta .mono {
   flex: none;
+  font-size: inherit;
+  line-height: inherit;
+}
+.pane-meta .icon-btn {
+  align-self: center;
 }
 .icon-btn.icon-btn-sm {
   width: 18px;
