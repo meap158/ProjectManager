@@ -5,7 +5,12 @@ import type { AgentSession } from '../../../shared/types';
 import { OrchestratorTerminal } from './OrchestratorTerminal';
 import { api } from '../api';
 vi.mock('../api', () => ({
-  api: { stopSession: vi.fn(), startSession: vi.fn(), restartSession: vi.fn() },
+  api: {
+    stopSession: vi.fn(),
+    startSession: vi.fn(),
+    restartSession: vi.fn(),
+    sendSessionInput: vi.fn(async () => ({ queued: false })),
+  },
 }));
 vi.mock('./TerminalView', () => ({ TerminalView: () => null }));
 afterEach(() => {
@@ -41,6 +46,22 @@ it('reports stop failures and keeps lifecycle controls available', async () => {
   expect(screen.getByRole('button', { name: 'Stop Master' }).closest('fieldset')?.disabled).toBe(
     false,
   );
+});
+it('sends “continue” with one tap while the chat is running', async () => {
+  const refresh = vi.fn();
+  render(<OrchestratorTerminal session={session} onChanged={refresh} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Continue Master' }));
+  await waitFor(() =>
+    expect(api.sendSessionInput).toHaveBeenCalledWith(41, expect.stringContaining('continue')),
+  );
+  await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledWith(41, '\r'));
+  await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+});
+it('disables Continue while the chat is stopped', () => {
+  render(<OrchestratorTerminal session={{ ...session, status: 'exited' }} onChanged={vi.fn()} />);
+  expect(
+    (screen.getByRole('button', { name: 'Continue Master' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
 });
 it('toggles full screen from the header and restores it with Escape (PM-138)', () => {
   render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);

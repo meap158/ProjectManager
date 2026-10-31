@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentSession } from '../../../shared/types';
 import { api } from '../api';
+import { sendMessageToSession } from '../sessionSend';
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
 import { sendImageToSession } from '../sessionImages';
 import { SessionChat, ViewSwitch, useSessionView } from './SessionChat';
@@ -161,6 +162,21 @@ export function OrchestratorTerminal({
             onStop={() => void change(() => api.stopSession(session.id))}
             onRestart={() => change(() => api.restartSession(session.id))}
           />
+          <button
+            type="button"
+            className="btn btn-sm"
+            title="Send “continue” to resume"
+            aria-label={`Continue ${session.name}`}
+            disabled={session.status !== 'running'}
+            onClick={() =>
+              void change(async () => {
+                await sendMessageToSession(session, 'continue');
+                return session;
+              })
+            }
+          >
+            Continue
+          </button>
         </fieldset>
         <SessionImageButton
           sessionId={session.id}
