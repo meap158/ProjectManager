@@ -389,7 +389,9 @@
   }
 }
 
-/* Phones: one column. The tree until a file opens, then its preview with a way back. */
+/* Phones: one column. The tree until a file opens, then its preview with a way back.
+   The frame keeps height:auto with a min-height until it reports its content height (a scripted
+   postMessage), then the app sets its exact height so the page scrolls instead of the frame. */
 @media (max-width: 768px) {
   .project-files {
     grid-template-columns: minmax(0, 1fr);

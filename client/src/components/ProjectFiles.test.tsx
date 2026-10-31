@@ -216,6 +216,45 @@ describe('ProjectFiles', () => {
     expect(screen.queryByText('../../etc/x')).toBeNull();
   });
 
+  it('sizes the frame to its reported content height on phones, and ignores strangers', async () => {
+    const query = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    const original = window.matchMedia;
+    window.matchMedia = (() => query) as unknown as typeof window.matchMedia;
+    try {
+      show('?tab=files&file=README.md');
+      const frame = (await screen.findByTitle('Preview of README.md')) as HTMLIFrameElement;
+      // A stranger's report is ignored.
+      act(() => {
+        window.dispatchEvent(new MessageEvent('message', { data: { pmHeight: 900 } }));
+      });
+      expect(frame.style.height).toBe('');
+      // The frame's own report sizes it so the page scrolls instead of the frame.
+      await waitFor(() => {
+        act(() => {
+          window.dispatchEvent(
+            new MessageEvent('message', { data: { pmHeight: 900 }, source: frame.contentWindow }),
+          );
+        });
+        expect(frame.style.height).toBe('900px');
+      });
+      // Absurd values are ignored.
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', { data: { pmHeight: -5 }, source: frame.contentWindow }),
+        );
+      });
+      expect(frame.style.height).toBe('900px');
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
   it("shows a selected folder's contents in the right pane, and a file from it keeps the way back", async () => {
     show();
     const tree = await screen.findByRole('tree');
@@ -517,6 +556,12 @@ describe('the preview frame document', () => {
     expect(out).toContain('<p>hello</p>');
     expect(out).not.toContain('boom()');
     expect(out).toContain('nonce="n1"');
+  });
+
+  it('tells the app its content height so phones can size the frame', () => {
+    const out = buildFrameDocument('<p>hello</p>', head, 'n1');
+    expect(out).toContain('pmHeight');
+    expect(out).toContain('pmMeasure');
   });
 });
 

@@ -1226,19 +1226,66 @@ function RenderedFrame({
     return () => clearTimeout(timer);
   }, [waiting]);
   const frameRefs = [useRef<HTMLIFrameElement>(null), useRef<HTMLIFrameElement>(null)];
-  // Only the visible frame may ask to open a file, and only with a path string (re-checked by the
-  // caller). The frame's origin is opaque, so the source window is the identity check.
+  // Which slot a message comes from, or null for a stranger. Only the visible frame may ask to
+  // open a file, and only with a path string (re-checked by the caller). The frame's origin is
+  // opaque, so the source window is the identity check. Either slot may report its content
+  // height; the app only uses it on phones (see below).
+  const slotOf = (source: unknown): 0 | 1 | null => {
+    if (source !== null && source !== undefined) {
+      if (source === frameRefs[0]?.current?.contentWindow) return 0;
+      if (source === frameRefs[1]?.current?.contentWindow) return 1;
+    }
+    return null;
+  };
   useEffect(() => {
     const onMessage = (event: globalThis.MessageEvent) => {
-      if (event.source !== frameRefs[activeSlot.current]?.current?.contentWindow) return;
-      const data = event.data as { pmFile?: unknown } | null;
-      if (data && typeof data.pmFile === 'string') onOpenFile(data.pmFile);
+      const slot = slotOf(event.source);
+      if (slot === null) return;
+      const data = event.data as { pmFile?: unknown; pmHeight?: unknown } | null;
+      if (data && typeof data.pmFile === 'string') {
+        if (slot !== activeSlot.current) return;
+        onOpenFile(data.pmFile);
+        return;
+      }
+      if (data && typeof data.pmHeight === 'number' && isFinite(data.pmHeight)) {
+        // Phones size the frame to its content and let the page scroll; the desktop frame keeps
+        // its measured height and scrolls inside, so the report is ignored there.
+        if (!window.matchMedia || !window.matchMedia(MOBILE_PREVIEW_QUERY).matches) return;
+        const frame = frameRefs[slot]?.current;
+        if (!frame || data.pmHeight <= 0 || data.pmHeight > 20000) return;
+        frame.style.height = `${String(Math.round(data.pmHeight))}px`;
+      }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
     // The refs are stable objects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onOpenFile]);
+
+  // Crossing to a phone asks the frames to report their content height again (their CSS height
+  // becomes content-driven there); crossing back to desktop clears the inline height so the
+  // measured CSS height applies again.
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const query = window.matchMedia(MOBILE_PREVIEW_QUERY);
+    const onChange = () => {
+      for (const ref of frameRefs) {
+        const frame = ref.current;
+        if (!frame) continue;
+        if (query.matches) frame.contentWindow?.postMessage({ pmMeasure: true }, '*');
+        else frame.style.height = '';
+      }
+    };
+    if (typeof query.addEventListener === 'function') query.addEventListener('change', onChange);
+    else query.addListener(onChange);
+    return () => {
+      if (typeof query.removeEventListener === 'function')
+        query.removeEventListener('change', onChange);
+      else query.removeListener(onChange);
+    };
+    // The refs are stable objects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className={`files-frames${loading ? ' is-loading' : ''}`}>
@@ -1370,6 +1417,9 @@ export function rewriteRelative(
 /** The longest the old page waits for the new one to report that it has loaded. */
 const FRAME_SWAP_MS = 1500;
 
+/** Below this width the preview frame is sized to its content (see the height report above). */
+const MOBILE_PREVIEW_QUERY = '(max-width: 768px)';
+
 const escapeAttr = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -1378,14 +1428,28 @@ const escapeAttr = (value: string) =>
  * removed below and blocked by the CSP. On a plain left click on a link to another project file it
  * asks the app to open that file in place (no page load); modified clicks keep their normal
  * behaviour. It sends only a path string, which the app re-validates.
+ *
+ * It also reports the page's own height, so phones can size the frame to its content and let the
+ * page scroll instead of trapping the page in a fixed box: the app ignores the report on desktop,
+ * where the frame keeps its measured height. Phones ask again after a breakpoint change.
  */
-const FRAME_CLICK_SCRIPT = `document.addEventListener('click',function(e){
+const FRAME_SCRIPT = `document.addEventListener('click',function(e){
 if(e.defaultPrevented||e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
 var a=e.target&&e.target.closest?e.target.closest('a[data-pm-file]'):null;
 if(!a)return;
 e.preventDefault();
 parent.postMessage({pmFile:a.getAttribute('data-pm-file')},'*');
-});`;
+});
+(function(){
+var scheduled=false;
+function measure(){scheduled=false;var h=document.documentElement;var b=document.body;var v=Math.max(h?h.scrollHeight:0,h?h.offsetHeight:0,b?b.scrollHeight:0);if(isFinite(v)&&v>0)parent.postMessage({pmHeight:Math.round(v)},'*');}
+function schedule(){if(scheduled)return;scheduled=true;if(window.requestAnimationFrame)window.requestAnimationFrame(measure);else setTimeout(measure,0);}
+window.addEventListener('load',schedule);
+window.addEventListener('resize',schedule);
+window.addEventListener('message',function(e){if(e.data&&e.data.pmMeasure)schedule();});
+if(window.ResizeObserver){try{new ResizeObserver(schedule).observe(document.documentElement);}catch(err){}}
+schedule();
+})();`;
 
 /**
  * Turns previewed markup into the frame's document. The markup is parsed (an inert document,
@@ -1414,7 +1478,7 @@ export function buildFrameDocument(markup: string, headMarkup: string, nonce: st
   doc.head.prepend(holder.content);
   const script = doc.createElement('script');
   script.setAttribute('nonce', nonce);
-  script.textContent = FRAME_CLICK_SCRIPT;
+  script.textContent = FRAME_SCRIPT;
   doc.body.append(script);
   return `<!doctype html>${doc.documentElement.outerHTML}`;
 }
