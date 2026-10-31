@@ -562,6 +562,7 @@ describe('the preview frame document', () => {
     const out = buildFrameDocument('<p>hello</p>', head, 'n1');
     expect(out).toContain('pmHeight');
     expect(out).toContain('pmMeasure');
+    expect(out).toContain('document.fonts');
   });
 });
 

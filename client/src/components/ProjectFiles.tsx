@@ -1445,9 +1445,10 @@ var scheduled=false;
 function measure(){scheduled=false;var h=document.documentElement;var b=document.body;var v=Math.max(h?h.scrollHeight:0,h?h.offsetHeight:0,b?b.scrollHeight:0);if(isFinite(v)&&v>0)parent.postMessage({pmHeight:Math.round(v)},'*');}
 function schedule(){if(scheduled)return;scheduled=true;if(window.requestAnimationFrame)window.requestAnimationFrame(measure);else setTimeout(measure,0);}
 window.addEventListener('load',schedule);
+if(document.fonts&&document.fonts.ready){try{document.fonts.ready.then(schedule);}catch(err2){}}
 window.addEventListener('resize',schedule);
 window.addEventListener('message',function(e){if(e.data&&e.data.pmMeasure)schedule();});
-if(window.ResizeObserver){try{new ResizeObserver(schedule).observe(document.documentElement);}catch(err){}}
+if(window.ResizeObserver){try{var ro=new ResizeObserver(schedule);ro.observe(document.documentElement);if(document.body)ro.observe(document.body);}catch(err){}}
 schedule();
 })();`;
 
