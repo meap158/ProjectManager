@@ -39,6 +39,26 @@ export const extensionOf = (name: string): string => {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 };
 
+/**
+ * Image formats every current browser draws in an <img>. Raw photos and editor files (heic,
+ * tif/tiff, psd) classify as images but get the image glyph instead of a doomed thumbnail
+ * download: the browser would fetch the whole file only to fail rendering it.
+ */
+const RENDERABLE_IMAGE = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'jpe',
+  'jfif',
+  'gif',
+  'webp',
+  'avif',
+  'svg',
+  'ico',
+  'bmp',
+]);
+export const canPreviewImage = (name: string): boolean => RENDERABLE_IMAGE.has(extensionOf(name));
+
 export function typeGroupOf(item: Pick<FolderItem, 'name' | 'kind'>): TypeGroup {
   if (item.kind === 'dir') return 'folder';
   return GROUPS[extensionOf(item.name)] ?? 'other';

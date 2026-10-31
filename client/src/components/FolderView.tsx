@@ -18,6 +18,7 @@ import {
   readSavedView,
   writeSavedView,
   applyFilters,
+  canPreviewImage,
   changedSince,
   readSeen,
   readViewParams,
@@ -600,7 +601,10 @@ function GridCell({
   onOpen: (item: FolderItem) => void;
   showPath: boolean;
 }) {
-  const image = typeGroupOf(item) === 'image' && (item.size ?? 0) <= THUMB_MAX_BYTES;
+  const image =
+    typeGroupOf(item) === 'image' &&
+    canPreviewImage(item.name) &&
+    (item.size ?? 0) <= THUMB_MAX_BYTES;
   const spec = iconFor(item);
   return (
     <li>

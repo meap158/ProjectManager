@@ -35,6 +35,29 @@ describe('iconFor', () => {
     expect(iconFor(file('.profile')).glyph).toBe('file');
   });
 
+  it('gives every image format the image glyph, not the generic page', () => {
+    for (const ext of [
+      'png',
+      'jpg',
+      'jpeg',
+      'jpe',
+      'jfif',
+      'gif',
+      'webp',
+      'avif',
+      'svg',
+      'ico',
+      'bmp',
+      'tif',
+      'tiff',
+      'heic',
+      'psd',
+    ]) {
+      expect(iconFor(file(`photo.${ext}`)).glyph).toBe('image');
+    }
+    expect(iconFor(file('PHOTO.HEIC')).glyph).toBe('image');
+  });
+
   it('shows open and closed folders, and marks the well-known ones', () => {
     expect(iconFor(dir('src'), false).glyph).toBe('folder');
     expect(iconFor(dir('src'), true).glyph).toBe('folder-open');

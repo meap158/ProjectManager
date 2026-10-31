@@ -218,6 +218,21 @@ describe('FolderView', () => {
     expect(screen.queryByRole('img', { name: 'Merge conflict' })).toBeNull();
   });
 
+  it('shows the image glyph at once for formats browsers cannot draw', async () => {
+    const raw: FolderInfo = {
+      ...INFO,
+      files: 1,
+      folders: 0,
+      totalSize: 100,
+      items: [item('assets/photo.heic', { size: 100 })],
+    };
+    vi.mocked(api.folderInfo).mockResolvedValueOnce(raw);
+    show();
+    await screen.findByText('photo.heic');
+    expect(document.querySelector('.fv-thumb img')).toBeNull();
+    expect(document.querySelector('.fv-thumb svg')).toBeTruthy();
+  });
+
   it('reads the subfolders too when asked', async () => {
     show();
     await screen.findByText(/4 files/);

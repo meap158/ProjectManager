@@ -4,6 +4,7 @@ import type { FolderItem } from '../../../shared/types';
 import {
   DEFAULT_VIEW,
   applyFilters,
+  canPreviewImage,
   changedSince,
   hasViewParams,
   readSavedView,
@@ -51,6 +52,31 @@ describe('typeGroupOf', () => {
     expect(typeGroupOf(item('noext'))).toBe('other');
     expect(typeGroupOf(item('.gitignore'))).toBe('other'); // A leading dot is a name, not an extension.
     expect(typeGroupOf(item('assets', { kind: 'dir' }))).toBe('folder');
+  });
+});
+
+describe('canPreviewImage', () => {
+  it('allows what browsers draw, and refuses raw photos and editor files', () => {
+    for (const ext of [
+      'png',
+      'jpg',
+      'jpeg',
+      'jpe',
+      'jfif',
+      'gif',
+      'webp',
+      'avif',
+      'svg',
+      'ico',
+      'bmp',
+    ]) {
+      expect(canPreviewImage(`photo.${ext}`)).toBe(true);
+    }
+    expect(canPreviewImage('PHOTO.JPG')).toBe(true);
+    for (const ext of ['heic', 'tif', 'tiff', 'psd']) {
+      expect(canPreviewImage(`photo.${ext}`)).toBe(false);
+    }
+    expect(canPreviewImage('noext')).toBe(false);
   });
 });
 
