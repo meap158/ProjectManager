@@ -174,6 +174,8 @@ export function withPermissions(
   }
   if (level === 'cli' || command.length === 0) return { command, env };
   if (providerId === 'opencode') {
+    // Auto mode is Claude's own (PM-326): OpenCode keeps its defaults, as the other CLIs do.
+    if (level === 'auto') return { command, env };
     const existing = JSON.parse(
       env.OPENCODE_CONFIG_CONTENT || process.env.OPENCODE_CONFIG_CONTENT || '{}',
     ) as Record<string, unknown>;
