@@ -1,3 +1,4 @@
+import { mediaKind } from '../shared/media.js';
 import { lstat, open, opendir, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type {
@@ -366,6 +367,8 @@ export async function previewFile(root: string, rel: string): Promise<FilePrevie
     mtime: info.mtime.toISOString(),
   };
   if (groupOfFile(path.basename(abs)) === 'image') return { kind: 'image', ...base };
+  const media = mediaKind(abs);
+  if (media) return { kind: media, ...base };
   if (info.size > MAX_TEXT_BYTES) return { kind: 'too-large', ...base };
   const content = await readFile(abs);
   // A NUL byte in the first 8 KB: binary, as git and VS Code decide.

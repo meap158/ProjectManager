@@ -118,6 +118,8 @@ export interface OrchestratorRunPage {
 }
 
 export const api = {
+  projectMediaUrl: (id: number, path: string) =>
+    `/api/projects/${id}/media?path=${encodeURIComponent(path)}`,
   projectBranches: (id: number) => request<ProjectBranches>('GET', `/projects/${id}/branches`),
   orchestratorHistory: (id: string, before?: number, focus?: number) =>
     request<OrchestratorRunPage>(

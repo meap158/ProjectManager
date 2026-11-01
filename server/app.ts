@@ -1,3 +1,4 @@
+import { streamMedia } from './mediaPreview.js';
 import { projectBranches } from './branches.js';
 import { GrokAccountError } from './agents/grokAccounts.js';
 import { createCardIssue, GitHubIssueError } from './githubIssues.js';
@@ -715,6 +716,11 @@ export function createApp(
 
   // Bytes for image previews and a previewed page's own styles and images. Never runnable on
   // this origin: a sandbox CSP and nosniff, so an .html or .svg can't script the app.
+  app.get('/projects/:id/media', async (c) => {
+    const root = projectRoot(c);
+    return await fileErrors(() => streamMedia(root, c.req.query('path') ?? '', c.req.raw));
+  });
+
   app.get('/projects/:id/raw', async (c) => {
     const root = projectRoot(c);
     const requested = c.req.query('path') ?? '';

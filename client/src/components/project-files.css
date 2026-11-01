@@ -503,3 +503,23 @@
   margin: 0 0 6px;
   font-size: 12.5px;
 }
+
+.files-media {
+  min-width: 0;
+  padding: 8px 0;
+}
+.files-media video {
+  display: block;
+  width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+.files-media audio {
+  display: block;
+  width: 100%;
+}
+.files-media .error-banner {
+  margin-top: 8px;
+}

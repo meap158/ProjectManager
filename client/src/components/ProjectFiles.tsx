@@ -1079,6 +1079,13 @@ function FileView({
         <div className={`files-image${loading ? ' is-loading' : ''}`}>
           <img src={api.projectRawUrl(projectId, shownPath)} alt={shownPath} />
         </div>
+      ) : preview.kind === 'video' || preview.kind === 'audio' ? (
+        <MediaPreview
+          key={`${projectId}:${shownPath}`}
+          projectId={projectId}
+          path={shownPath}
+          kind={preview.kind}
+        />
       ) : preview.kind === 'binary' ? (
         <p className="faint files-empty">Binary file: no preview.</p>
       ) : preview.kind === 'too-large' ? (
@@ -1488,3 +1495,47 @@ const newNonce = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID().replace(/-/g, '')
     : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+
+function MediaPreview({
+  projectId,
+  path,
+  kind,
+}: {
+  projectId: number;
+  path: string;
+  kind: 'video' | 'audio';
+}) {
+  const [failed, setFailed] = useState(false);
+  const src = api.projectMediaUrl(projectId, path);
+  return (
+    <div className="files-media">
+      {kind === 'video' ? (
+        <video
+          controls
+          playsInline
+          preload="metadata"
+          src={src}
+          aria-label={`Video preview: ${path}`}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <audio
+          controls
+          preload="metadata"
+          src={src}
+          aria-label={`Audio preview: ${path}`}
+          onError={() => setFailed(true)}
+        />
+      )}
+      {failed && (
+        <div className="error-banner">
+          This browser could not play this format.{' '}
+          <a href={src} download>
+            Download the file
+          </a>{' '}
+          to play it on your device.
+        </div>
+      )}
+    </div>
+  );
+}

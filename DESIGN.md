@@ -4,6 +4,10 @@ This file defines how ProjectManager looks and behaves. If a component disagrees
 fix the component or update this file in the same commit, and never let design decisions live only in code
 or chat history.
 
+Files video and audio previews use native controls with metadata-only preload and no autoplay.
+Media streams support seeking through byte ranges; the 2 MB limit applies only to text previews.
+Players fit the preview pane on desktop and phone, with a download fallback for unsupported codecs.
+
 The Files lightbox opens at Fit, measuring the stage after toolbar and filmstrip padding.
 The zoom indicator reports actual pixel scale. Resizing re-fits the image without stretching;
 100% remains an explicit zoom action. The filmstrip renders at most 41 nearby options, with

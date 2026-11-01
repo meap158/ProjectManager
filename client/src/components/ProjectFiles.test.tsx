@@ -32,6 +32,7 @@ vi.mock('../api', () => ({
       mtime: new Date().toISOString(),
       content: path.endsWith('.md') ? '# Title\n\nSome *text*.' : 'line one\nline two',
     })),
+    projectMediaUrl: (id: number, path: string) => `/api/projects/${id}/media?path=${path}`,
     projectRawUrl: (id: number, path: string) => `/api/projects/${id}/raw?path=${path}`,
     renameProjectFile: vi.fn(async (_id: number, path: string, name: string) => {
       const next = [...path.split('/').slice(0, -1), name].join('/');
@@ -95,6 +96,37 @@ const show = (search = '?tab=files') =>
   );
 
 describe('ProjectFiles', () => {
+  it('previews large video with native controls and metadata preload, and reports codec failure', async () => {
+    vi.mocked(api.projectFile).mockResolvedValueOnce({
+      kind: 'video',
+      path: 'clip.mp4',
+      size: 100 * 1024 * 1024,
+      mtime: new Date().toISOString(),
+    });
+    show('?tab=files&file=clip.mp4');
+    const player = (await screen.findByLabelText('Video preview: clip.mp4')) as HTMLVideoElement;
+    expect(player.controls).toBe(true);
+    expect(player.preload).toBe('metadata');
+    expect(player.hasAttribute('playsinline')).toBe(true);
+    expect(player.autoplay).toBe(false);
+    expect(player.getAttribute('src')).toContain('/media?path=clip.mp4');
+    expect(screen.queryByText(/2 MB max/)).toBeNull();
+    fireEvent.error(player);
+    expect(screen.getByRole('link', { name: 'Download the file' })).toBeTruthy();
+  });
+  it('previews audio without using the text renderer', async () => {
+    vi.mocked(api.projectFile).mockResolvedValueOnce({
+      kind: 'audio',
+      path: 'song.mp3',
+      size: 10000000,
+      mtime: new Date().toISOString(),
+    });
+    show('?tab=files&file=song.mp3');
+    const player = (await screen.findByLabelText('Audio preview: song.mp3')) as HTMLAudioElement;
+    expect(player.controls).toBe(true);
+    expect(player.preload).toBe('metadata');
+  });
+
   it('lists the root, greys ignored entries, and opens folders on demand', async () => {
     show();
     const tree = await screen.findByRole('tree', { name: 'Project files' });

@@ -853,7 +853,12 @@ export interface FolderListing {
 
 export type FilePreview =
   | { kind: 'text'; path: string; size: number; mtime: string; content: string }
-  | { kind: 'image' | 'binary' | 'too-large'; path: string; size: number; mtime: string };
+  | {
+      kind: 'image' | 'video' | 'audio' | 'binary' | 'too-large';
+      path: string;
+      size: number;
+      mtime: string;
+    };
 
 /** An app listening on this computer's loopback (Preview page, PM-253). */
 export interface LocalApp {
