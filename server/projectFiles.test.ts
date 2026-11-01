@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -110,4 +110,34 @@ describe('routes', () => {
     await app.supervisor.shutdown();
     db.close();
   });
+});
+
+it('renders a 9.1 MB HTML page while preserving text, HTML and containment limits', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'pm-large-html-'));
+  try {
+    const content =
+      '<!doctype html><h1>Asset pipeline</h1><!--' +
+      'x'.repeat(Math.round(9.1 * 1024 * 1024)) +
+      '--><p>Last item</p>';
+    writeFileSync(path.join(dir, 'asset-pipeline.HTML'), content);
+    const result = await previewFile(dir, 'asset-pipeline.HTML');
+    expect(result.kind).toBe('html');
+    expect('content' in result && result.content).toBe(content);
+    writeFileSync(path.join(dir, 'large.txt'), content);
+    expect(await previewFile(dir, 'large.txt')).toMatchObject({
+      kind: 'too-large',
+      maxBytes: 2 * 1024 * 1024,
+    });
+    writeFileSync(path.join(dir, 'huge.htm'), '');
+    truncateSync(path.join(dir, 'huge.htm'), 25 * 1024 * 1024 + 1);
+    expect(await previewFile(dir, 'huge.htm')).toMatchObject({
+      kind: 'too-large',
+      maxBytes: 25 * 1024 * 1024,
+    });
+    writeFileSync(path.join(dir, 'binary.html'), Buffer.from([1, 0, 2]));
+    expect((await previewFile(dir, 'binary.html')).kind).toBe('binary');
+    await expect(previewFile(dir, '../outside.html')).rejects.toMatchObject({ status: 400 });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -185,3 +185,8 @@ anything.
   pre-send persistent fingerprint and empty-prompt guards. Stopped sessions require explicit wake;
   existing Codex rotation/reset and Claude native waits retain ownership. See
   `docs/ORCHESTRATOR-SESSION-SUPERVISION.md` for research and acceptance criteria.
+
+- PM-407: Files renders HTML/HTM up to 25 MB through the existing sanitized, nonce-CSP sandbox.
+  Above 2 MB, return `kind: 'html'` and offer source download instead of the code view. Ordinary
+  text remains capped at 2 MB; `too-large.maxBytes` supplies the applicable limit. Never serve
+  project HTML as executable content on the app origin or relax frame restrictions.

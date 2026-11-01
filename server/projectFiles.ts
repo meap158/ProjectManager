@@ -36,6 +36,7 @@ const HIDDEN = new Set(['.git']);
 const MAX_ENTRIES = 5_000;
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 export const MAX_RAW_BYTES = 25 * 1024 * 1024;
+const MAX_HTML_BYTES = MAX_RAW_BYTES;
 
 /** A file's type group from the shared extension map (folders are handled by the caller). */
 export function groupOfFile(name: string): Exclude<TypeGroup, 'folder'> {
@@ -369,11 +370,17 @@ export async function previewFile(root: string, rel: string): Promise<FilePrevie
   if (groupOfFile(path.basename(abs)) === 'image') return { kind: 'image', ...base };
   const media = mediaKind(abs);
   if (media) return { kind: media, ...base };
-  if (info.size > MAX_TEXT_BYTES) return { kind: 'too-large', ...base };
+  const html = /\.html?$/i.test(abs);
+  const maxBytes = html ? MAX_HTML_BYTES : MAX_TEXT_BYTES;
+  if (info.size > maxBytes) return { kind: 'too-large', ...base, maxBytes };
   const content = await readFile(abs);
   // A NUL byte in the first 8 KB: binary, as git and VS Code decide.
   if (content.subarray(0, 8192).includes(0)) return { kind: 'binary', ...base };
-  return { kind: 'text', ...base, content: content.toString('utf8') };
+  return {
+    kind: html && info.size > MAX_TEXT_BYTES ? 'html' : 'text',
+    ...base,
+    content: content.toString('utf8'),
+  };
 }
 
 /** A file's bytes for previews that need them (images, a page's styles), size-capped. */

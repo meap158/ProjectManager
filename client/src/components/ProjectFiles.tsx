@@ -1047,6 +1047,11 @@ function FileView({
           </span>
         )}
         <span className="actions">
+          {preview?.kind === 'html' && (
+            <a className="btn btn-sm" href={api.projectRawUrl(projectId, shownPath)} download>
+              Download source
+            </a>
+          )}
           {preview?.kind === 'text' && RENDERED.has(ext) && (
             <span className="session-view-switch" role="group" aria-label="View">
               <button type="button" aria-pressed={rendered} onClick={() => setRendered(true)}>
@@ -1075,6 +1080,15 @@ function FileView({
         <div className="error-banner">{error}</div>
       ) : !preview ? (
         <div className="skeleton" style={{ height: 240 }} />
+      ) : preview.kind === 'html' ? (
+        <RenderedFrame
+          projectId={projectId}
+          path={shownPath}
+          source={preview.content}
+          markdown={false}
+          onOpenFile={onOpenFile}
+          loading={loading}
+        />
       ) : preview.kind === 'image' ? (
         <div className={`files-image${loading ? ' is-loading' : ''}`}>
           <img src={api.projectRawUrl(projectId, shownPath)} alt={shownPath} />
@@ -1090,7 +1104,8 @@ function FileView({
         <p className="faint files-empty">Binary file: no preview.</p>
       ) : preview.kind === 'too-large' ? (
         <p className="faint files-empty">
-          Too large to preview ({formatBytes(preview.size)}; 2 MB max).
+          Too large to preview ({formatBytes(preview.size)};{' '}
+          {formatBytes(preview.maxBytes ?? 2 * 1024 * 1024)} max).
         </p>
       ) : preview.kind !== 'text' ? null : rendered && RENDERED.has(ext) ? (
         <RenderedFrame

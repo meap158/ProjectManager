@@ -9,7 +9,8 @@ Persistent AI coding agent sessions. Every project. Any screen, including your p
 Your projects and session data stay on your computer.
 
 Files plays video and audio through seekable streams with native controls. Large media files
-are independent of the 2 MB text-preview limit and load metadata before playback.
+are independent of the 2 MB text-preview limit and load metadata before playback. HTML pages
+up to 25 MB render in the existing sandbox; source above 2 MB is available as a download.
 
 Files image previews open fitted to the available window, with actual-size zoom and a bounded
 filmstrip for large image collections.

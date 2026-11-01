@@ -7,6 +7,8 @@ or chat history.
 Files video and audio previews use native controls with metadata-only preload and no autoplay.
 Media streams support seeking through byte ranges; the 2 MB limit applies only to text previews.
 Players fit the preview pane on desktop and phone, with a download fallback for unsupported codecs.
+HTML pages above 2 MB render up to 25 MB through the same sandbox and CSP. Their source is
+downloadable instead of building a large code view; ordinary text stays capped at 2 MB.
 
 The Files lightbox opens at Fit, measuring the stage after toolbar and filmstrip padding.
 The zoom indicator reports actual pixel scale. Resizing re-fits the image without stretching;

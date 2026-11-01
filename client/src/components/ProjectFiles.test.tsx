@@ -667,3 +667,32 @@ describe('paths', () => {
     expect(foldersTo(null)).toEqual(['']);
   });
 });
+
+it('renders large HTML through the existing sandbox and offers source as a download', async () => {
+  FOLDERS.References = { path: 'References', entries: [], truncated: false };
+  FOLDERS['References/owner-pages'] = {
+    path: 'References/owner-pages',
+    entries: [],
+    truncated: false,
+  };
+  vi.mocked(api.projectFile).mockResolvedValueOnce({
+    kind: 'html',
+    path: 'References/owner-pages/asset-pipeline.html',
+    size: 9542042,
+    mtime: new Date().toISOString(),
+    content:
+      '<!doctype html><h1>Asset pipeline</h1><script>window.evil=true</script><img src="sprite.png" onerror="evil()"><a href="guide.md">Guide</a>',
+  });
+  show('?tab=files&file=References/owner-pages/asset-pipeline.html');
+  const frame = await screen.findByTitle('Preview of References/owner-pages/asset-pipeline.html');
+  expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+  const doc = frame.getAttribute('srcdoc')!;
+  expect(doc).toContain('<h1>Asset pipeline</h1>');
+  expect(doc).not.toContain('window.evil');
+  expect(doc).not.toContain('onerror');
+  expect(doc).toContain("script-src 'nonce-");
+  expect(doc).toContain('References%2Fowner-pages%2Fsprite.png');
+  expect(doc).toContain('data-pm-file="References/owner-pages/guide.md"');
+  expect(screen.queryByRole('button', { name: 'Source' })).toBeNull();
+  expect(screen.getByRole('link', { name: 'Download source' }).hasAttribute('download')).toBe(true);
+});

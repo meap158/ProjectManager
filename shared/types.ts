@@ -852,9 +852,11 @@ export interface FolderListing {
 }
 
 export type FilePreview =
-  | { kind: 'text'; path: string; size: number; mtime: string; content: string }
+  | { kind: 'text' | 'html'; path: string; size: number; mtime: string; content: string }
   | {
       kind: 'image' | 'video' | 'audio' | 'binary' | 'too-large';
+      /** Applicable preview cap, supplied for too-large responses. */
+      maxBytes?: number;
       path: string;
       size: number;
       mtime: string;
