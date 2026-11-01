@@ -1281,6 +1281,7 @@ export class ClaudeAccounts {
       return this.accountUsage(
         same.map((other) => other.key),
         same.map((other) => other.file),
+        same.map((other) => other.email),
         now,
       );
     };
@@ -1328,27 +1329,38 @@ export class ClaudeAccounts {
    */
   claimUsage(identity: string): void {
     if (!/^[a-f0-9]{64}$/.test(identity) || identity === EMPTY_TOKEN_HASH) return;
-    const account = this.state().activeProfileId ?? 'default';
+    const state = this.state();
+    const account = state.activeProfileId ?? 'default';
+    // The email names the account itself. The default slot holds whichever login was there at
+    // the time, so a claim for 'default' alone later credited one account's usage to another.
+    const email =
+      (state.activeProfileId
+        ? state.accounts.find((a) => a.id === state.activeProfileId)?.email
+        : this.liveLogin()?.email) ?? null;
     const folder = path.join(this.dataDir, 'claude-account-usage', identity);
     const file = path.join(folder, 'owner.json');
     try {
-      if ((JSON.parse(readFileSync(file, 'utf8')) as { account?: string }).account === account)
-        return;
+      const owner = JSON.parse(readFileSync(file, 'utf8')) as { account?: string; email?: string };
+      if (owner.account === account && (owner.email ?? null) === email) return;
     } catch {
       // Not claimed yet.
     }
     try {
       mkdirSync(folder, { recursive: true });
-      writeFileSync(file, JSON.stringify({ account, at: new Date().toISOString() }));
+      writeFileSync(file, JSON.stringify({ account, email, at: new Date().toISOString() }));
     } catch (error) {
       console.error('[claude-accounts] could not record usage owner:', error);
     }
   }
 
-  /** `accounts` and `files` are one Claude account's entries: usually one, two when saved twice. */
+  /**
+   * `accounts`, `files` and `emails` are one Claude account's entries: usually one, two when the
+   * default login and a saved copy of it are the same account.
+   */
   private accountUsage(
     accounts: string[],
     files: string[],
+    emails: (string | null)[],
     now: number,
   ): Pick<CodexAccount, 'limits' | 'usageStatus' | 'usageCheckedAt'> {
     try {
@@ -1374,9 +1386,15 @@ export class ClaudeAccounts {
         try {
           const owner = JSON.parse(readFileSync(path.join(root, name, 'owner.json'), 'utf8')) as {
             account?: string;
+            email?: string | null;
           };
-          if (owner.account && accounts.includes(owner.account) && name !== EMPTY_TOKEN_HASH)
-            identities.add(name);
+          if (name === EMPTY_TOKEN_HASH) continue;
+          // A claim names its account by email; an older one without it counts only for a saved
+          // profile's id, never for 'default', whose login changes from one switch to the next.
+          const mine = owner.email
+            ? emails.some((email) => sameEmail(email, owner.email ?? null))
+            : !!owner.account && owner.account !== 'default' && accounts.includes(owner.account);
+          if (mine) identities.add(name);
         } catch {
           // Unclaimed (started before owners were recorded): matched by its token only.
         }

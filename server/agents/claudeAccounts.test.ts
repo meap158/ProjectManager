@@ -318,3 +318,47 @@ it('never takes a stale Claude profile as the live account', () => {
     rmSync(temp, { recursive: true, force: true });
   }
 });
+
+it('never credits one account’s usage to another that later takes the default slot (PM-395)', () => {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'pm-claude-slot-'));
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  const home = path.join(temp, 'default');
+  mkdirSync(home);
+  process.env.CLAUDE_CONFIG_DIR = home;
+  const db = openDb(':memory:');
+  const live = path.join(home, '.credentials.json');
+  const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+  const report = (value: string, used: number) => {
+    const folder = path.join(temp, 'claude-account-usage', hash(value));
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      path.join(folder, 'claude-limits.json'),
+      JSON.stringify({
+        asOf: new Date().toISOString(),
+        fiveHour: { used_percentage: used, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+        sevenDay: null,
+      }),
+    );
+  };
+  try {
+    // A is the default login; its session is claimed and reports, then A's token rotates.
+    writeFileSync(live, claudeCreds('a-1'));
+    claudeProfile(home, 'a@example.com', Date.now() + 60_000);
+    const pool = new ClaudeAccounts(temp, db);
+    pool.claimUsage(hash('a-1'));
+    report('a-1', 30);
+    // The owner signs in as B on the default slot and saves it.
+    writeFileSync(live, claudeCreds('b-1', 'max'));
+    claudeProfile(home, 'b@example.com', Date.now() + 120_000);
+    const b = pool.saveCurrentAccount().accounts[0]!;
+    const state = pool.state();
+    expect(state.defaultAccount.email).toBe('b@example.com');
+    expect(state.defaultAccount.limits).toBeNull();
+    expect(state.accounts.find((x) => x.id === b.id)?.limits).toBeNull();
+  } finally {
+    db.close();
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    rmSync(temp, { recursive: true, force: true });
+  }
+});

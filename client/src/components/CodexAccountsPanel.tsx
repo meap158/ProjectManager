@@ -620,7 +620,7 @@ export function CodexAccountsPanel({
                   {state.originalAccount.email && (
                     <span className="faint"> · {state.originalAccount.email}</span>
                   )}
-                  <span className="faint">Preserved before switching accounts</span>
+                  <span className="faint"> · preserved before switching accounts</span>
                   <AccountUsage account={state.originalAccount} loading={loadingUsage} now={now} />
                 </span>
                 <span className="actions codex-account-actions">
