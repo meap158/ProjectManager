@@ -62,8 +62,31 @@ are limited to the orchestrator's projects at call time:
 - `worker_output`: a worker session's screen or a run's output tail.
 - `message_worker`: a message to a worker session, only while it is idle (never while it works
   or is asking the user something).
+- `list_sessions`: the CLI sessions in scope, with project, agent, state and linked card.
+- `assign_card`: hand a card to a running CLI session in the card's project, the card dialog's
+  Send to session (`supervisor.attachCard` with `send`): links it, moves it to In progress and
+  types the task in. Only an idle session with no other live card and no undelivered input;
+  never the orchestrator's own chat or another project's session. The state is re-read right
+  before typing, and the result says the delivery is unconfirmed, so the chat checks with
+  `worker_output` instead of resending.
+- `start_session`: a new interactive session on a card in its project folder, the card dialog's
+  New terminal (`createSession` with the card). It passes the same checks as `dispatch_worker`
+  (shared `capacity` and the scheduler's `plan` verdict: worker limits, provider, quota
+  reserve, no live worker on the card), plus the per-project session limit. A `requestId`
+  replays the same session after a lost response (`orchestrator-session-requests:<id>`), and
+  two concurrent calls for one card cannot both start one. Started sessions are ordinary
+  sessions: `orchestrator_id` stays reserved for the chat itself.
 
-Moves, new cards, dispatches and messages appear in Activity marked "(chat)".
+**Handing work out (PM-399).** `delegateToSessions` on the orchestrator (Orchestrators page,
+"Chat may hand cards to CLI sessions"; missing means on) decides how the chat gets work done.
+On, its briefing and check prompts tell it to hand ready cards to an idle session in the card's
+project, or start one within the limits, and to work directly only when neither fits. Off,
+`dispatch_worker`, `assign_card` and `start_session` are refused and the prompts keep the
+earlier direct-work rule (PM-181, which this owner request replaced as the default). Watch only
+stays a briefing rule: the chat recommends and acts only when the user explicitly asks.
+
+Moves, new cards, dispatches, hand-overs, started sessions and messages appear in Activity
+marked "(chat)", and hand-overs and starts are also in the card's agent audit.
 
 Routes: `POST /api/orchestrators/:id/chat` opens it (reusing its session, restarting it if
 stopped) and `POST /api/orchestrators/:id/check` with `{ focus: all | todo | in_progress |

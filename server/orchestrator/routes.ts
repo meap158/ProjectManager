@@ -19,6 +19,7 @@ const config = z.object({
   strategy: z.enum(['observe', 'autonomous']).optional(),
   followDashboardAttention: z.boolean().optional(),
   pruneDashboardAttention: z.boolean().optional(),
+  delegateToSessions: z.boolean().optional(),
   projectIds: z.array(z.number().int().positive()).max(500),
   providers: z
     .array(z.enum(['claude', 'codex', 'grok', 'antigravity', 'opencode']))

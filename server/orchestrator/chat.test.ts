@@ -451,6 +451,132 @@ describe('orchestrator chat tools (PM-89)', () => {
   });
 });
 
+describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
+  const live = (s: Partial<AgentSession>): Partial<AgentSession> => ({
+    status: 'running',
+    tailState: 'idle',
+    cardId: null,
+    cardKey: null,
+    queuedInputBytes: 0,
+    providerId: 'codex',
+    ...s,
+  });
+  const withSessionTools = (supervisor: Record<string, unknown>) => {
+    const attachCard = vi.fn((id: number, cardId: number) => ({
+      session: { id, cardId } as AgentSession,
+      queued: false,
+      sent: true,
+    }));
+    const createSession = vi.fn(
+      async (projectId: number, input: { cardId?: number; providerId?: string }) =>
+        ({ id: 90, projectId, cardId: input.cardId, providerId: input.providerId }) as AgentSession,
+    );
+    Object.assign(supervisor, { attachCard, createSession });
+    return { attachCard, createSession };
+  };
+
+  it('is on by default; turned off, every hand-over tool is refused', async () => {
+    const { call, mine, sessions, a, db } = setup({ delegateToSessions: false });
+    sessions.push(live({ id: 21, projectId: a, name: 'idle' }));
+    await expect(call('assign_card', { card: mine.key, sessionId: 21 })).rejects.toThrow(
+      /turned off/,
+    );
+    await expect(call('start_session', { card: mine.key })).rejects.toThrow(/turned off/);
+    await expect(call('dispatch_worker', { card: mine.key })).rejects.toThrow(/turned off/);
+    db.close();
+  });
+
+  it('assigns a card only to an idle session in its project with no other card', async () => {
+    const { call, mine, sessions, supervisor, a, b, record, db } = setup();
+    const { attachCard } = withSessionTools(supervisor);
+    sessions.push(
+      live({ id: 31, projectId: b, name: 'elsewhere' }),
+      live({ id: 32, projectId: a, name: 'busy', tailState: 'running' }),
+      live({ id: 33, projectId: a, name: 'asking', tailState: 'input' }),
+      live({ id: 34, projectId: a, name: 'taken', cardId: 999, cardKey: 'PM-999' }),
+      live({ id: 35, projectId: a, name: 'queued', queuedInputBytes: 12 }),
+      live({ id: 36, projectId: a, name: 'free' }),
+      live({ id: 37, projectId: a, name: 'chat', orchestratorId: 'master-1' }),
+    );
+    const assign = (sessionId: number) => call('assign_card', { card: mine.key, sessionId });
+    await expect(assign(31)).rejects.toThrow(/not a CLI session in your scope/);
+    await expect(assign(32)).rejects.toThrow(/is working/);
+    await expect(assign(33)).rejects.toThrow(/asking the user/);
+    await expect(assign(34)).rejects.toThrow(/working on PM-999/);
+    await expect(assign(35)).rejects.toThrow(/input waiting/);
+    await expect(assign(37)).rejects.toThrow(/not a CLI session in your scope/);
+    expect(attachCard).not.toHaveBeenCalled();
+    const result = (await call('assign_card', {
+      card: mine.key,
+      sessionId: 36,
+      instructions: 'Start with the form',
+    })) as { delivery: string };
+    expect(result.delivery).toMatch(/not confirmed/);
+    expect(attachCard).toHaveBeenCalledWith(
+      36,
+      mine.id,
+      expect.objectContaining({
+        send: true,
+        prompt: expect.stringContaining('Start with the form'),
+      }),
+    );
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ action: 'assigned' }));
+    db.close();
+  });
+
+  it('starts a session on a card within its limits, and replays a request ID', async () => {
+    const { call, mine, sessions, supervisor, a, db } = setup();
+    const { createSession } = withSessionTools(supervisor);
+    const first = (await call('start_session', { card: mine.key, requestId: 'r1' })) as {
+      started: { id: number };
+    };
+    expect(first.started.id).toBe(90);
+    expect(createSession).toHaveBeenCalledWith(
+      a,
+      expect.objectContaining({ providerId: 'codex', cardId: mine.id }),
+    );
+    // The session now counts as the card's live worker.
+    sessions.push(live({ id: 90, projectId: a, name: 'started', cardId: mine.id }));
+    const again = (await call('start_session', { card: mine.key, requestId: 'r1' })) as {
+      replayed: boolean;
+      session: { id: number };
+    };
+    expect(again).toMatchObject({ replayed: true, session: { id: 90 } });
+    await expect(
+      call('start_session', { card: mine.key, requestId: 'r1', instructions: 'other' }),
+    ).rejects.toThrow(/different work/);
+    await expect(call('start_session', { card: mine.key })).rejects.toThrow(/already has 1 of 1/);
+    expect(createSession).toHaveBeenCalledTimes(1);
+    db.close();
+  });
+
+  it('lists only the CLI sessions in its projects', async () => {
+    const { call, sessions, a, b, db } = setup();
+    sessions.push(
+      live({ id: 41, projectId: a, name: 'mine' }),
+      live({ id: 42, projectId: b, name: 'theirs' }),
+      live({ id: 43, projectId: a, name: 'chat', orchestratorId: 'master-1' }),
+    );
+    const result = (await call('list_sessions')) as { sessions: { id: number }[] };
+    expect(result.sessions.map((s) => s.id)).toEqual([41]);
+    await expect(call('list_sessions', { projectId: b })).rejects.toThrow(/not in your scope/);
+    db.close();
+  });
+
+  it('prompts follow the setting: hand over when on, direct work when off', () => {
+    const base = {
+      name: 'X',
+      providers: ['codex'],
+      projectIds: [],
+    } as unknown as OrchestratorConfig;
+    expect(checkPrompt(base, 'todo')).toContain('assign_card');
+    expect(briefing(base, [])).toContain('Handing work to CLI sessions is on');
+    const off = { ...base, delegateToSessions: false };
+    expect(checkPrompt(off, 'todo')).toContain('do not dispatch workers or delegate');
+    expect(briefing(off, [])).toContain('Do not dispatch workers or delegate');
+  });
+});
+
 describe('board tools endpoint (PM-89)', () => {
   it("gives an orchestrator's chat its tools, and every other session the card tools", async () => {
     const { Hono } = await import('hono');
@@ -664,12 +790,19 @@ it('creates one chat on overlapping opens and reuses it after successful startup
   }
 });
 
-it('keeps every chat check in direct execution mode and includes dashboard alert context (PM-179, PM-172)', () => {
-  const instance = { name: 'All', strategy: 'autonomous' } as OrchestratorConfig;
+it('keeps every chat check in direct execution mode when hand-over is off, and includes dashboard alert context (PM-179, PM-172, PM-399)', () => {
+  const instance = {
+    name: 'All',
+    strategy: 'autonomous',
+    delegateToSessions: false,
+  } as OrchestratorConfig;
   for (const focus of ['all', 'todo', 'in_progress', 'review', 'attention'] as const) {
     const prompt = checkPrompt(instance, focus);
     expect(prompt).toContain('do not dispatch workers or delegate');
     expect(prompt).not.toContain('Start workers');
+    expect(checkPrompt({ ...instance, delegateToSessions: true }, focus)).not.toContain(
+      'do not dispatch workers',
+    );
   }
   expect(checkPrompt(instance, 'attention')).toContain('uncommitted and unpushed');
   expect(checkPrompt(instance, 'attention')).toContain('Do not push, merge, discard files');
@@ -728,7 +861,8 @@ it('sends one in-scope card to a running, idle chat and refuses every other case
   expect([id, echo]).toEqual([5, false]);
   expect(text).toContain(mine.key);
   expect(text).toContain('Add login');
-  expect(text).toContain('do not dispatch workers');
+  // Handing work to sessions is on by default (PM-399).
+  expect(text).toContain('assign_card');
 
   session.status = 'killed';
   expect(chat.chatState('master-1')).toEqual({ running: false, state: null });

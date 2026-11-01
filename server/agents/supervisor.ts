@@ -4134,7 +4134,7 @@ function resolveCwd(cwd: string): string {
   }
 }
 
-function defaultPrompt(
+export function defaultPrompt(
   key: string,
   title: string,
   description: string,

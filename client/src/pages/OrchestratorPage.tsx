@@ -34,6 +34,7 @@ const defaults: Omit<OrchestratorConfig, 'id'> = {
   quotaMaxAgeMs: 3600000,
   followDashboardAttention: true,
   pruneDashboardAttention: true,
+  delegateToSessions: true,
 };
 
 function actionBadgeClass(action: string): string {
@@ -1581,6 +1582,15 @@ export function OrchestratorPage() {
                       }
                     />
                     Remove follow-up tasks once their issue is resolved
+                  </label>
+                  <label className="orchestrator-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.delegateToSessions ?? true}
+                      onChange={(e) => setDraft({ ...draft, delegateToSessions: e.target.checked })}
+                    />
+                    Chat may hand cards to CLI sessions (an idle one, or a new one within the worker
+                    limits)
                   </label>
                 </div>
               </div>

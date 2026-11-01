@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Db } from '../db.js';
-import { AgentError, type AgentSupervisor } from '../agents/supervisor.js';
+import { AgentError, defaultPrompt, type AgentSupervisor } from '../agents/supervisor.js';
 import { providerStatuses } from '../agents/providers.js';
 import { stripTerminal } from '../agents/activity.js';
 import {
@@ -217,7 +217,56 @@ export const ORCHESTRATOR_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'list_sessions',
+    description:
+      'The CLI sessions in your projects: id, project, agent, state (idle = waiting for its next instruction, running = working, input = asking the user), linked card and last output. Use it to find an idle session to hand a card to.',
+    inputSchema: {
+      type: 'object',
+      properties: { projectId: { type: 'integer' } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'assign_card',
+    description:
+      "Hand a card to a running CLI session in the card's project, like the card dialog's Send to session: links the card, moves it to In progress and types the task in. Only an idle session with no other live card; the delivery is not confirmed, so check it with worker_output rather than sending again.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        card: { type: ['string', 'integer'] },
+        sessionId: { type: 'integer' },
+        instructions: { type: 'string', maxLength: 4000, description: 'Added to the task text' },
+      },
+      required: ['card', 'sessionId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'start_session',
+    description:
+      "Start a new interactive CLI session on a card in its project folder, like the card dialog's New terminal: the task is typed in and the card moves to In progress. Respects your worker limits, quota reserve and the per-project session limit. Supply a requestId and reuse it after a lost response to get the same session back.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        card: { type: ['string', 'integer'] },
+        providerId: {
+          type: 'string',
+          description: 'One of your providers; default: the first available',
+        },
+        instructions: { type: 'string', maxLength: 4000, description: 'Added to the task text' },
+        requestId: { type: 'string', maxLength: 128 },
+      },
+      required: ['card'],
+      additionalProperties: false,
+    },
+  },
 ];
+
+/** Whether an orchestrator's chat may hand work to CLI sessions and workers (PM-399). */
+export function delegates(instance: OrchestratorConfig): boolean {
+  return instance.strategy !== 'observe' && instance.delegateToSessions !== false;
+}
 
 const fail = (message: string): never => {
   throw new Error(message);
@@ -525,6 +574,84 @@ export class OrchestratorChat implements OrchestratorToolHost {
       status: c.status,
       updatedAt: c.updatedAt,
     });
+    const sessionBrief = (s: AgentSession) => ({
+      id: s.id,
+      name: s.name,
+      projectId: s.projectId,
+      project: projectName(s.projectId),
+      providerId: s.providerId,
+      status: s.status,
+      state: s.tailState,
+      card: s.cardKey,
+      lastOutputAt: s.lastOutputAt,
+    });
+    /**
+     * Handing work out is a setting (PM-399). Watch only stays a briefing rule, as before: the
+     * chat acts there only when the user explicitly asks.
+     */
+    const requireDelegation = () => {
+      if (instance.delegateToSessions === false)
+        fail(
+          'Handing work to CLI sessions is turned off for this orchestrator; work on it directly in this chat',
+        );
+    };
+    /**
+     * The checks every new worker passes, run or session (PM-399): the card is open and in a
+     * project, has no live worker, your worker limits have room and a provider of yours is
+     * installed. Each refusal names the limit, so it is not retried blindly.
+     */
+    const capacity = async (c: Card, requested?: string) => {
+      if (c.projectId === 0)
+        fail(
+          `${c.key} belongs to no project ("All projects"), so a worker has no folder to run in; ` +
+            'work on it directly in this chat, or move it to a project first',
+        );
+      if (c.status === 'done') fail(`${c.key} is done; move it back first if it needs more work`);
+      const { sessions, runs } = workers();
+      const live = sessions.length + runs.length;
+      if (live >= instance.maxWorkers)
+        fail(`At capacity: ${live} of ${instance.maxWorkers} workers are busy in your scope`);
+      const inProject =
+        sessions.filter((s) => s.projectId === c.projectId).length +
+        runs.filter((r) => r.projectId === c.projectId).length;
+      if (inProject >= instance.maxWorkersPerProject)
+        fail(
+          `${projectName(c.projectId)} already has ${inProject} of ${instance.maxWorkersPerProject} workers`,
+        );
+      if (runs.some((r) => r.cardId === c.id) || sessions.some((s) => s.cardId === c.id))
+        fail(`${c.key} already has a live worker; check it with get_card / worker_output`);
+      const available = new Set(
+        (await providerStatuses()).filter((p) => p.available).map((p) => p.id),
+      );
+      if (requested && !instance.providers.includes(requested))
+        fail(`Use one of your providers: ${instance.providers.join(', ')}`);
+      const providerId = requested ?? instance.providers.find((p) => available.has(p));
+      if (!providerId || !available.has(providerId))
+        fail(`None of your providers is installed: ${instance.providers.join(', ')}`);
+      return { providerId: providerId!, available };
+    };
+    /** The scheduler's own verdict on a card: provider capacity, quota reserve, assignments. */
+    const plan = (latest: Card, providerId: string, available: Set<string>, mine?: number) => {
+      const policy = this.instance(orchestratorId);
+      const blockedCardIds = new OrchestratorAssignments(this.db).blockedCards();
+      if (mine !== undefined) blockedCardIds.delete(mine);
+      const decision = planOrchestration(
+        { ...policy, providers: [providerId] },
+        {
+          cards: [latest],
+          runs: planningRuns(this.db, policy.projectIds),
+          sessions: this.supervisor.listAllSessions().filter((s) => !s.orchestratorId),
+          availableProviders:
+            available.has(providerId) && policy.providers.includes(providerId) ? [providerId] : [],
+          limits: readLimits(this.dataDir),
+          blockedCardIds,
+        },
+      )[0];
+      return {
+        allowed: decision?.action === 'dispatch',
+        reason: decision?.reason ?? 'Task is outside current scope or not ready',
+      };
+    };
 
     if (name === 'report_work') {
       const input = z
@@ -780,6 +907,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         })
         .strict()
         .parse(args);
+      requireDelegation();
       const c = card(input.card);
       if (c.projectId === 0)
         fail(
@@ -824,28 +952,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       };
       const prior = replay();
       if (prior) return prior;
-      if (c.status === 'done') fail(`${c.key} is done; move it back first if it needs more work`);
-      const { sessions, runs } = workers();
-      const live = sessions.length + runs.length;
-      if (live >= instance.maxWorkers)
-        fail(`At capacity: ${live} of ${instance.maxWorkers} workers are busy in your scope`);
-      const inProject =
-        sessions.filter((s) => s.projectId === c.projectId).length +
-        runs.filter((r) => r.projectId === c.projectId).length;
-      if (inProject >= instance.maxWorkersPerProject)
-        fail(
-          `${projectName(c.projectId)} already has ${inProject} of ${instance.maxWorkersPerProject} workers`,
-        );
-      if (runs.some((r) => r.cardId === c.id) || sessions.some((s) => s.cardId === c.id))
-        fail(`${c.key} already has a live worker; check it with get_card / worker_output`);
-      const available = new Set(
-        (await providerStatuses()).filter((p) => p.available).map((p) => p.id),
-      );
-      if (input.providerId && !instance.providers.includes(input.providerId))
-        fail(`Use one of your providers: ${instance.providers.join(', ')}`);
-      const providerId = input.providerId ?? instance.providers.find((p) => available.has(p));
-      if (!providerId || !available.has(providerId))
-        fail(`None of your providers is installed: ${instance.providers.join(', ')}`);
+      const { providerId, available } = await capacity(c, input.providerId);
       // Provider discovery yielded: another caller may already have reserved this request.
       const concurrent = replay();
       if (concurrent) return concurrent;
@@ -853,8 +960,6 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const check = () => {
         if (reservation.intent && !reservation.intent.current())
           return { allowed: false, reason: 'Dispatch reservation changed' };
-        if (!providerId) return { allowed: false, reason: 'No provider selected' };
-        const policy = this.instance(orchestratorId);
         const latest = getCard(this.db, c.id);
         if (
           !latest ||
@@ -864,26 +969,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
           latest.updatedAt !== c.updatedAt
         )
           return { allowed: false, reason: 'Task changed before launch; inspect it again' };
-        const blockedCardIds = new OrchestratorAssignments(this.db).blockedCards();
-        if (reservation.intent) blockedCardIds.delete(c.id);
-        const decision = planOrchestration(
-          { ...policy, providers: [providerId] },
-          {
-            cards: [latest],
-            runs: planningRuns(this.db, policy.projectIds),
-            sessions: this.supervisor.listAllSessions().filter((s) => !s.orchestratorId),
-            availableProviders:
-              available.has(providerId) && policy.providers.includes(providerId)
-                ? [providerId]
-                : [],
-            limits: readLimits(this.dataDir),
-            blockedCardIds,
-          },
-        )[0];
-        return {
-          allowed: decision?.action === 'dispatch',
-          reason: decision?.reason ?? 'Task is outside current scope or not ready',
-        };
+        return plan(latest, providerId, available, reservation.intent ? c.id : undefined);
       };
       const permission = check();
       if (!permission.allowed) {
@@ -1012,7 +1098,266 @@ export class OrchestratorChat implements OrchestratorToolHost {
       return { sent: true, sessionId: s!.id };
     }
 
+    if (name === 'list_sessions') {
+      const input = z
+        .object({ projectId: z.number().int().positive().optional() })
+        .strict()
+        .parse(args);
+      if (input.projectId !== undefined && !inScope(input.projectId))
+        fail(`Project ${input.projectId} is not in your scope`);
+      const sessions = this.supervisor
+        .listAllSessions()
+        .filter(
+          (s) =>
+            !s.orchestratorId &&
+            inScope(s.projectId) &&
+            (input.projectId === undefined || s.projectId === input.projectId),
+        )
+        .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running'))
+        .slice(0, LIST_LIMIT);
+      return { sessions: sessions.map(sessionBrief), delegation: delegates(instance) };
+    }
+
+    if (name === 'assign_card') {
+      const input = z
+        .object({
+          card: z.unknown(),
+          sessionId: z.number().int().positive(),
+          instructions: z.string().trim().max(4000).optional(),
+        })
+        .strict()
+        .parse(args);
+      requireDelegation();
+      const c = card(input.card);
+      if (c.status === 'done') fail(`${c.key} is done; move it back first if it needs more work`);
+      const s = this.supervisor.getSession(input.sessionId);
+      if (!s || s.orchestratorId || !inScope(s.projectId))
+        fail(`Session ${input.sessionId} is not a CLI session in your scope`);
+      if (s!.projectId !== c.projectId)
+        fail(
+          `Session ${s!.id} works in ${projectName(s!.projectId)}, not ${projectName(c.projectId)}; pick a session in the card's project or start one`,
+        );
+      if (s!.status !== 'running') fail(`Session ${s!.id} is not running`);
+      if (s!.cardId !== null && s!.cardId !== c.id)
+        fail(`Session ${s!.id} is working on ${s!.cardKey}; pick an idle session without a card`);
+      const { sessions, runs } = workers();
+      if (
+        runs.some((r) => r.cardId === c.id) ||
+        sessions.some((other) => other.cardId === c.id && other.id !== s!.id)
+      )
+        fail(`${c.key} already has a live worker; check it with get_card / worker_output`);
+      // Typing into a session mid-turn or mid-question would mix into its work: re-read the
+      // state right before sending.
+      const fresh = this.supervisor.getSession(s!.id);
+      if (!fresh || fresh.status !== 'running') fail(`Session ${s!.id} is not running`);
+      if (fresh!.tailState !== 'idle')
+        fail(
+          fresh!.tailState === 'input'
+            ? `Session ${s!.id} is asking the user something; leave it to them`
+            : `Session ${s!.id} is working; check back later or start a session instead`,
+        );
+      if (fresh!.queuedInputBytes > 0)
+        fail(`Session ${s!.id} still has input waiting to be delivered; check back later`);
+      const prompt = input.instructions
+        ? defaultPrompt(
+            c.key,
+            c.title,
+            c.description,
+            `Instructions from the orchestrator:\n${input.instructions}`,
+            c.issueUrl,
+          )
+        : undefined;
+      const result = this.supervisor.attachCard(s!.id, c.id, {
+        send: true,
+        ...(prompt ? { prompt } : {}),
+      });
+      audit(c.id, 'assign_card', { sessionId: s!.id, instructions: input.instructions ?? null });
+      this.record(
+        orchestratorId,
+        'assigned',
+        `${c.key} handed to session ${s!.id} "${s!.name}" (chat)`,
+        c.id,
+      );
+      return {
+        assigned: true,
+        delivery: result.sent
+          ? result.queued
+            ? 'queued: the session is down; it gets the task when it comes back'
+            : 'sent, not confirmed: check with worker_output before sending anything again'
+          : 'linked only: this session is not an AI CLI, so the task was not typed in',
+        session: sessionBrief(result.session),
+        card: brief(getCard(this.db, c.id) ?? c),
+      };
+    }
+
+    if (name === 'start_session') {
+      const input = z
+        .object({
+          card: z.unknown(),
+          providerId: z.string().optional(),
+          instructions: z.string().trim().max(4000).optional(),
+          requestId: z.string().trim().min(1).max(128).optional(),
+        })
+        .strict()
+        .parse(args);
+      requireDelegation();
+      const c = card(input.card);
+      const fingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            cardId: c.id,
+            providerId: input.providerId ?? null,
+            instructions: input.instructions ?? '',
+          }),
+        )
+        .digest('hex');
+      const requests = new SessionRequests(this.db, orchestratorId);
+      if (input.requestId) {
+        const prior = requests.get(input.requestId);
+        if (prior) {
+          if (prior.fingerprint !== fingerprint)
+            fail(`Request ID ${input.requestId} was used for different work; use a new ID`);
+          const existing = prior.sessionId ? this.supervisor.getSession(prior.sessionId) : null;
+          return {
+            replayed: true,
+            ...(existing
+              ? { session: sessionBrief(existing) }
+              : {
+                  note: 'That request is still starting, or failed; do not start a replacement yet',
+                }),
+            card: brief(getCard(this.db, c.id) ?? c),
+          };
+        }
+      }
+      if (this.starting.has(c.id)) fail(`A session for ${c.key} is already starting`);
+      this.starting.add(c.id);
+      try {
+        return await this.startSession(c, input, fingerprint, requests, {
+          capacity,
+          plan,
+          audit,
+          sessionBrief,
+          brief,
+          orchestratorId,
+        });
+      } finally {
+        this.starting.delete(c.id);
+      }
+    }
+
     return fail(`Unknown tool: ${name}`);
+  }
+
+  /** Cards with a start_session in flight, so two concurrent calls cannot both start one. */
+  private starting = new Set<number>();
+
+  private async startSession(
+    c: Card,
+    input: { providerId?: string; instructions?: string; requestId?: string },
+    fingerprint: string,
+    requests: SessionRequests,
+    h: {
+      capacity: (
+        c: Card,
+        requested?: string,
+      ) => Promise<{ providerId: string; available: Set<string> }>;
+      plan: (
+        latest: Card,
+        providerId: string,
+        available: Set<string>,
+      ) => { allowed: boolean; reason: string };
+      audit: (cardId: number, action: string, detail: unknown) => unknown;
+      sessionBrief: (s: AgentSession) => unknown;
+      brief: (c: Card) => unknown;
+      orchestratorId: string;
+    },
+  ): Promise<unknown> {
+    const { capacity, plan, audit, sessionBrief, brief, orchestratorId } = h;
+    {
+      const { providerId, available } = await capacity(c, input.providerId);
+      const verdict = plan(getCard(this.db, c.id) ?? c, providerId, available);
+      if (!verdict.allowed) fail(verdict.reason);
+      if (input.requestId) requests.reserve(input.requestId, fingerprint);
+      const prompt = input.instructions
+        ? defaultPrompt(
+            c.key,
+            c.title,
+            c.description,
+            `Instructions from the orchestrator:\n${input.instructions}`,
+            c.issueUrl,
+          )
+        : undefined;
+      let session: AgentSession;
+      try {
+        session = await this.supervisor.createSession(c.projectId, {
+          providerId,
+          cardId: c.id,
+          ...(prompt ? { prompt } : {}),
+        });
+      } catch (error) {
+        if (input.requestId) requests.forget(input.requestId);
+        throw error;
+      }
+      if (input.requestId) requests.started(input.requestId, session.id);
+      audit(c.id, 'start_session', {
+        sessionId: session.id,
+        providerId,
+        instructions: input.instructions ?? null,
+      });
+      this.record(
+        orchestratorId,
+        'started',
+        `${c.key}: ${providerId} session ${session.id} started (chat)`,
+        c.id,
+      );
+      return {
+        started: sessionBrief(session),
+        card: brief(getCard(this.db, c.id) ?? c),
+        ...(input.requestId ? { requestId: input.requestId } : {}),
+      };
+    }
+  }
+}
+
+/**
+ * start_session request IDs of one orchestrator (PM-399): a lost response replays the same
+ * session instead of starting another. Kept in settings, the newest 100.
+ */
+class SessionRequests {
+  private key: string;
+  constructor(
+    private db: Db,
+    orchestratorId: string,
+  ) {
+    this.key = `orchestrator-session-requests:${orchestratorId}`;
+  }
+  private all(): Record<string, { fingerprint: string; sessionId: number | null; at: string }> {
+    return getSetting(this.db, this.key) ?? {};
+  }
+  private save(map: ReturnType<SessionRequests['all']>) {
+    const entries = Object.entries(map)
+      .sort((a, b) => b[1].at.localeCompare(a[1].at))
+      .slice(0, 100);
+    setSetting(this.db, this.key, Object.fromEntries(entries));
+  }
+  get(id: string) {
+    return this.all()[id] ?? null;
+  }
+  reserve(id: string, fingerprint: string) {
+    this.save({
+      ...this.all(),
+      [id]: { fingerprint, sessionId: null, at: new Date().toISOString() },
+    });
+  }
+  started(id: string, sessionId: number) {
+    const map = this.all();
+    if (map[id]) map[id] = { ...map[id], sessionId };
+    this.save(map);
+  }
+  forget(id: string) {
+    const map = this.all();
+    delete map[id];
+    this.save(map);
   }
 }
 
@@ -1059,6 +1404,18 @@ function openingPrompt(instance: OrchestratorConfig): string {
   return `${openingLine(instance)}\n\nCall the projectmanager overview tool, then give me a short status: what needs attention, what is in progress, what is waiting in To do, and what you suggest next. Don't start workers or change cards until I ask.`;
 }
 
+/**
+ * How the chat gets work done when it may hand it out (PM-399): to a session already in the
+ * project, else a new one within the limits, else directly.
+ */
+const HAND_OVER =
+  "Hand ready work to a CLI session: assign_card to an idle session in the card's project with no card (list_sessions), or start_session within your worker limits when none fits. Work directly here only when no session can take it or the task is about this orchestrator itself. Never type into a session that is working or asking the user; check hand-overs with worker_output instead of resending.";
+const CHECKS_DELEGATING: Partial<Record<CheckFocus, string>> = {
+  todo: `To do: go through each To do task and decide whether it is ready to work on. ${HAND_OVER} Record concrete blockers on unclear tasks.`,
+  in_progress:
+    "In progress: check each card's progress (get_card, worker_output, list_sessions and the project's git log). Nudge an idle session that stopped short with message_worker; continue work directly only when its session is gone, preserving its changes. Move finished work to Review with evidence. Record concrete blockers on stalled cards.",
+};
+
 const CHECKS: Record<CheckFocus, string> = {
   todo: 'To do: go through each To do task. Decide whether it is ready to work on. Implement ready tasks directly in this chat session, most important first. Inspect the project instructions and existing changes, complete the work and verify it before moving cards to Review. Do not dispatch workers or delegate; record concrete blockers on unclear tasks.',
   in_progress:
@@ -1083,7 +1440,9 @@ export function cardPrompt(instance: OrchestratorConfig, card: Card, projectName
       ? `Card notes:
 ${notes.length > 1500 ? `${notes.slice(0, 1500)}…` : notes}`
       : '',
-    `Call get_card ${card.key} for its full notes and history, read the project's instructions, and work it directly in this chat session; do not dispatch workers or delegate. Verify before moving it to Review, and keep the board truthful.${observe}`,
+    delegates(instance)
+      ? `Call get_card ${card.key} for its full notes and history and read the project's instructions. ${HAND_OVER} Verify before moving it to Review, and keep the board truthful.`
+      : `Call get_card ${card.key} for its full notes and history, read the project's instructions, and work it directly in this chat session; do not dispatch workers or delegate. Verify before moving it to Review, and keep the board truthful.${observe}`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -1098,16 +1457,21 @@ export function checkPrompt(
     attentionKinds.length > 0
       ? ` Handle only these alert kinds: ${attentionKinds.join(', ')}; leave every other alert untouched and say so.`
       : '';
+  const delegating = delegates(instance);
+  const step = (f: Exclude<CheckFocus, 'all'>) =>
+    (delegating ? CHECKS_DELEGATING[f] : undefined) ?? CHECKS[f];
   const steps =
     focus === 'all'
-      ? [CHECKS.in_progress, CHECKS.review, CHECKS.todo, CHECKS.attention]
-      : [focus === 'attention' ? CHECKS.attention + only : CHECKS[focus]];
+      ? [step('in_progress'), step('review'), step('todo'), step('attention')]
+      : [focus === 'attention' ? CHECKS.attention + only : step(focus)];
   const observe =
     instance.strategy === 'observe'
       ? '\nWatch only: inspect and recommend changes; do not edit files or move cards unless the user explicitly authorizes the work.'
       : '';
   return [
-    'Check on pending work in your scope now. Call overview first. Work directly in this chat session; do not dispatch workers or delegate. Worker capacity does not gate direct work.',
+    delegating
+      ? 'Check on pending work in your scope now. Call overview first. Hand work to CLI sessions in your projects where one fits, within your worker limits; work directly here otherwise.'
+      : 'Check on pending work in your scope now. Call overview first. Work directly in this chat session; do not dispatch workers or delegate. Worker capacity does not gate direct work.',
     ...steps.map((s, i) => `${i + 1}. ${s}`),
     `Finish with a short report: what you moved, started or noted, what's blocked, and what needs me.${observe}`,
   ].join('\n');
@@ -1130,8 +1494,12 @@ and implementing authorized work directly in this chat session. This folder is y
 
 ## Your settings
 
-- Chat mode: ${instance.strategy === 'observe' ? 'Watch only (recommend; implement only when the user explicitly asks)' : 'Process authorized work directly in this chat session'}
-- Do not dispatch workers or delegate work from this chat. Worker capacity does not block direct work.
+- Chat mode: ${instance.strategy === 'observe' ? 'Watch only (recommend; implement only when the user explicitly asks)' : delegates(instance) ? 'Hand authorized work to CLI sessions in your projects; work directly when none can take it' : 'Process authorized work directly in this chat session'}
+${
+  delegates(instance)
+    ? '- Handing work to CLI sessions is on: assign_card, start_session, dispatch_worker and message_worker are available, within the limits below.'
+    : '- Do not dispatch workers or delegate work from this chat. Worker capacity does not block direct work.'
+}
 - Background scheduler settings below are separate from this chat's direct work:
 - Providers for workers: ${instance.providers.join(', ')}
 - Worker limits: ${instance.maxWorkers} in total, ${instance.maxWorkersPerProject} per project
@@ -1149,15 +1517,24 @@ ${projects.map(project).join('\n') || '- (none)'}
 - \`dispatch_worker\`: start a one-time agent worker on a card, with your instructions. Supply a unique requestId for each new dispatch; reuse it with identical arguments after a lost response to recover the original run. A pending replay means wait; it is not permission to launch another worker.
 - \`worker_output\`: what a worker session or run shows now.
 - \`message_worker\`: message an idle worker session (e.g. ask for a status update).
+- \`list_sessions\`: the CLI sessions in your projects, with their state and linked card.
+- \`assign_card\`: hand a card to an idle session in its project (links it, moves it to In progress, types the task in). Delivery is not confirmed: check with worker_output, never resend blindly.
+- \`start_session\`: start a new CLI session on a card in its project, within your worker limits and the quota reserve. Use a unique requestId and reuse it after a lost response.
 - \`sop_report\`, \`sop_card\`: audit your projects against our SOPs (Settings > SOPs) and turn a gap into a card. Waivers are the owner's decision; suggest one with a reason instead of treating a gap as fine.
 
 ## How to work
 
 - Call \`report_work\` before each card or repository task, and clear it when finished or blocked, so the chat shows the actual task above its terminal.
 
-- To do: inspect each task and its project's instructions, then implement authorized work directly here. Preserve existing changes; verify the requirements before moving a card to Review. Do not dispatch workers or delegate.
+${
+  delegates(instance)
+    ? `- To do: inspect each task and its project's instructions. ${HAND_OVER} Verify the requirements before moving a card to Review.
+- In progress: check progress (get_card, worker_output, list_sessions, the project's \`git log\`/\`git status\`).
+  Nudge an idle session that stopped short; continue directly only when its session is gone, without overwriting its changes. Move finished work to Review with evidence; note concrete blockers.`
+    : `- To do: inspect each task and its project's instructions, then implement authorized work directly here. Preserve existing changes; verify the requirements before moving a card to Review. Do not dispatch workers or delegate.
 - In progress: check progress (get_card, worker_output, the project's \`git log\`/\`git status\`).
-  Continue unfinished work directly here without overwriting active sessions' changes. Move finished work to Review with evidence; note concrete blockers.
+  Continue unfinished work directly here without overwriting active sessions' changes. Move finished work to Review with evidence; note concrete blockers.`
+}
 - Review: check the evidence and tell the user what's ready to accept. Move to Done only when
   the requirements are clearly met; the user accepts or rejects finished runs.
 - Read scoped project folders and make authorized changes directly in this chat. Follow each project's instructions, preserve unrelated changes, and run appropriate checks. Never push, merge, delete branches or run destructive commands without explicit authorization for that action.

@@ -6,6 +6,11 @@ export interface OrchestratorConfig {
   strategy?: 'observe' | 'autonomous';
   followDashboardAttention?: boolean;
   pruneDashboardAttention?: boolean;
+  /**
+   * The chat may hand cards to CLI sessions in its projects: assign one to an idle session, or
+   * start a session within the worker limits (PM-399). Missing means on.
+   */
+  delegateToSessions?: boolean;
   projectIds: number[];
   providers: string[];
   maxWorkers: number;
