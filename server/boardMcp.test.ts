@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { openDb } from './db.js';
@@ -103,15 +106,26 @@ describe('card-scoped board MCP', () => {
   it('keeps tokens out of argv and preserves existing CLI configuration', () => {
     const { db } = setup();
     const owner = { kind: 'session' as const, id: 1, logPath: 'test-log' };
-    for (const provider of ['claude', 'codex', 'opencode']) {
-      const result = boardConnection(db, process.cwd(), owner, provider, [provider, 'hello'], {
-        OPENCODE_CONFIG_CONTENT: '{"model":"existing"}',
-      });
-      expect(result.env.PM_BOARD_TOKEN).toHaveLength(64);
-      expect(result.command.join(' ')).not.toContain(result.env.PM_BOARD_TOKEN);
-      if (provider === 'opencode')
-        expect(JSON.parse(result.env.OPENCODE_CONFIG_CONTENT!).model).toBe('existing');
+    // A throwaway data folder and Claude home: a Claude session records which login it uses, and
+    // with the repo as data folder and the real ~/.claude it wrote the owner's login into the repo.
+    const dataDir = mkdtempSync(path.join(os.tmpdir(), 'pm-board-conn-'));
+    const previous = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = path.join(dataDir, 'claude-home');
+    try {
+      for (const provider of ['claude', 'codex', 'opencode']) {
+        const result = boardConnection(db, dataDir, owner, provider, [provider, 'hello'], {
+          OPENCODE_CONFIG_CONTENT: '{"model":"existing"}',
+        });
+        expect(result.env.PM_BOARD_TOKEN).toHaveLength(64);
+        expect(result.command.join(' ')).not.toContain(result.env.PM_BOARD_TOKEN);
+        if (provider === 'opencode')
+          expect(JSON.parse(result.env.OPENCODE_CONFIG_CONTENT!).model).toBe('existing');
+      }
+    } finally {
+      db.close();
+      if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = previous;
+      rmSync(dataDir, { recursive: true, force: true });
     }
-    db.close();
   });
 });
