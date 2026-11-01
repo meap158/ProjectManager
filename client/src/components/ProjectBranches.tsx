@@ -56,7 +56,7 @@ export function ProjectBranches({ projectId, visible }: { projectId: number; vis
       </div>
       {error && <div className="error-banner">{error}</div>}
       {!data ? (
-        <p className="faint">{error ? 'Branch information unavailable.' : 'Reading branches?'}</p>
+        <p className="faint">{error ? 'Branch information unavailable.' : 'Reading branches...'}</p>
       ) : !data.isRepo ? (
         <p className="faint">This folder is not a Git repository.</p>
       ) : (
@@ -64,7 +64,7 @@ export function ProjectBranches({ projectId, visible }: { projectId: number; vis
           <div className="branch-current">
             <span className="faint">Current branch</span>
             <strong className="mono">
-              {data.current ?? (data.detached ? `Detached HEAD ? ${data.head}` : 'No commits yet')}
+              {data.current ?? (data.detached ? `Detached HEAD: ${data.head}` : 'No commits yet')}
             </strong>
             {current && <BranchFacts branch={current} />}
           </div>
@@ -82,7 +82,7 @@ export function ProjectBranches({ projectId, visible }: { projectId: number; vis
                 className="input"
                 type="search"
                 aria-label="Filter branches"
-                placeholder="Filter branches?"
+                placeholder="Filter branches..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -118,7 +118,7 @@ function BranchFacts({ branch }: { branch: ProjectBranch }) {
         <span>
           {branch.upstream ? (
             <>
-              Tracks <span className="mono">{branch.upstream}</span> ?{' '}
+              Tracks <span className="mono">{branch.upstream}</span>:{' '}
               {branch.tracking ? branch.tracking.replace(/^\[|\]$/g, '') : 'Up to date'}
             </>
           ) : (

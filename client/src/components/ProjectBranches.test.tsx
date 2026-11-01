@@ -62,3 +62,23 @@ it('does not read branches while the overview is hidden', () => {
   render(<ProjectBranches projectId={1} visible={false} />);
   expect(read).not.toHaveBeenCalled();
 });
+
+it('starts collapsed and filters a large branch list by name', async () => {
+  read.mockResolvedValue({
+    isRepo: true,
+    current: 'main',
+    detached: false,
+    branches: [
+      { ...branch, name: 'main', current: true },
+      ...Array.from({ length: 10 }, (_, i) => ({ ...branch, name: `feature/topic-${i}` })),
+    ],
+  });
+  render(<ProjectBranches projectId={1} visible />);
+  await screen.findByText('main');
+  expect(document.querySelector('details')?.open).toBe(false);
+  fireEvent.change(screen.getByRole('searchbox', { hidden: true }), {
+    target: { value: 'topic-7' },
+  });
+  expect(screen.getByText('feature/topic-7')).toBeTruthy();
+  expect(screen.queryByText('feature/topic-6')).toBeNull();
+});

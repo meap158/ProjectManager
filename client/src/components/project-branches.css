@@ -19,6 +19,7 @@
 }
 .branch-current {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 .branch-current strong,
@@ -27,6 +28,8 @@
   min-width: 0;
 }
 .branch-facts {
+  width: 100%;
+  max-width: 100%;
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
@@ -34,6 +37,7 @@
   min-width: 0;
 }
 .branch-facts > span {
+  max-width: 100%;
   min-width: 0;
   overflow-wrap: anywhere;
 }
