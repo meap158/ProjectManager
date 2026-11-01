@@ -11,10 +11,14 @@ import { resolveArgv } from './resolve.js';
 //
 //   CLI          read-only                        edit files                        full access
 //   claude       --permission-mode plan           --permission-mode acceptEdits     --permission-mode bypassPermissions
-//   codex        --sandbox read-only              --sandbox workspace-write         --sandbox danger-full-access
+//   codex        --sandbox read-only              --sandbox workspace-write         --sandbox danger-full-access + --ask-for-approval never
 //   grok         --permission-mode plan           --permission-mode acceptEdits     --permission-mode bypassPermissions
 //   antigravity  --mode plan                      --mode accept-edits               --dangerously-skip-permissions
-//   opencode     config: edit deny, bash ask      config: edit allow, bash ask      config: edit/bash allow
+//   opencode         config: edit deny, bash ask
+//     edit: config edit allow, bash ask
+//     full: config: every known tool allow (including external_directory, so work
+//       outside the session folder stops asking); doom_loop still asks, as a backstop
+//       against runaway repetition rather than a permission.
 //
 // 'cli' passes nothing: the CLI's own config and defaults apply (the default, so nothing changes
 // until the user picks a level).
@@ -49,7 +53,10 @@ const SESSION_ARGS: Record<string, Partial<Record<AgentAutonomy | 'auto', string
   codex: {
     read: ['--sandbox', 'read-only'],
     edit: ['--sandbox', 'workspace-write'],
-    full: ['--sandbox', 'danger-full-access'],
+    // Interactive sessions ask per the approval policy even inside a full sandbox, so full access
+    // also says never. (One-shot `exec` runs have no approval flag; their autonomy args live in
+    // providers.ts and stay sandbox-only.)
+    full: ['--sandbox', 'danger-full-access', '--ask-for-approval', 'never'],
   },
   grok: {
     read: ['--permission-mode', 'plan'],
@@ -67,7 +74,25 @@ const SESSION_ARGS: Record<string, Partial<Record<AgentAutonomy | 'auto', string
 const OPENCODE_PERMISSION: Record<AgentAutonomy, Record<string, string>> = {
   read: { edit: 'deny', bash: 'ask', webfetch: 'allow' },
   edit: { edit: 'allow', bash: 'ask', webfetch: 'allow' },
-  full: { edit: 'allow', bash: 'allow', webfetch: 'allow' },
+  // Full access allows every known tool, including work outside the session folder
+  // (external_directory, which otherwise asks on every cross-folder read). doom_loop is
+  // deliberately left out: it fires only on identical repeated calls, a runaway signal rather
+  // than ordinary work, so it keeps asking even at full access.
+  full: {
+    edit: 'allow',
+    bash: 'allow',
+    webfetch: 'allow',
+    read: 'allow',
+    glob: 'allow',
+    grep: 'allow',
+    task: 'allow',
+    todowrite: 'allow',
+    skill: 'allow',
+    lsp: 'allow',
+    question: 'allow',
+    websearch: 'allow',
+    external_directory: 'allow',
+  },
 };
 
 /** CLIs ProjectManager can set a permission level for. */

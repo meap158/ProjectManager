@@ -18,11 +18,14 @@ describe('agent permissions', () => {
       '--resume',
       'x',
     ]);
-    // Before a subcommand, where Codex expects global flags.
+    // Before a subcommand, where Codex expects global flags. Full access also stops the
+    // approval prompts: sandbox alone does not, the approval policy still asks by default.
     expect(withPermissions('codex', 'full', ['codex', 'resume', 'id'], {}).command).toEqual([
       'codex',
       '--sandbox',
       'danger-full-access',
+      '--ask-for-approval',
+      'never',
       'resume',
       'id',
     ]);
@@ -52,6 +55,20 @@ describe('agent permissions', () => {
       mcp: { projectmanager: {} },
       permission: { edit: 'deny', bash: 'ask', webfetch: 'allow' },
     });
+  });
+
+  it('gives OpenCode full access to every known tool, including other project folders', () => {
+    const { env } = withPermissions('opencode', 'full', ['opencode'], {
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ mcp: { projectmanager: {} } }),
+    });
+    const permission = JSON.parse(env.OPENCODE_CONFIG_CONTENT!).permission as Record<
+      string,
+      string
+    >;
+    expect(permission.edit).toBe('allow');
+    expect(permission.bash).toBe('allow');
+    expect(permission.external_directory).toBe('allow');
+    expect(permission.doom_loop).toBeUndefined();
   });
 
   it('resolves per-CLI overrides against the global level', () => {
