@@ -784,7 +784,9 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
 - **Chrome budget:** a single 40px toolbar (title, layout picker, inline "New session") and 28px
   pane headers. A header shows a status dot, the session name, project link and card link, plus
   stop/start, maximise (also by double-clicking the header) and remove-from-layout. Removing a
-  pane never kills the session.
+  pane never kills the session. When room runs out, the agent and project label shrinks and clips
+  first, never drawing under the controls. A header 520px wide or less (three or four panes on a
+  laptop) hides the agent's name and shortens Codex's Auto-continue to "Auto" (PM-398).
 - **Coming back to a section** (PM-72, `client/src/sectionMemory.ts`): the top bar and the phone
   tab bar link each section to the address last open in it (e.g. the Board filtered to one
   project), every address restores its scroll position, and the Agents page reopens the terminal

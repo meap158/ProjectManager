@@ -52,6 +52,32 @@
   /* The project and card links give way before the session name (PM-58's notice is wide). */
   .workspace .pane-identity > .pane-meta {
     flex-shrink: 20;
+    /* Clip what no longer fits: a narrow pane otherwise draws "Codex · project" under the
+       Auto-continue checkbox beside it (PM-398). */
+    overflow: hidden;
+  }
+  /* A narrow pane (three or four across a laptop screen) shortens Codex's checkbox to "Auto",
+     so the session name keeps its room. The full wording stays in its aria-label and tooltip. */
+  .workspace .pane-head {
+    container: pane-head / inline-size;
+    /* A container is its own stacking context: lift it so its menus (a dropdown, the usage
+       limit details) still paint over the terminal below and the panes beside it. */
+    position: relative;
+    z-index: 20;
+  }
+  @container pane-head (max-width: 520px) {
+    /* As on phones, the agent's name gives way so the project name can truncate cleanly. */
+    .pane-agent,
+    .pane-agent + span {
+      display: none;
+    }
+    .session-auto-continue-label {
+      font-size: 0;
+    }
+    .session-auto-continue-label::before {
+      content: 'Auto';
+      font-size: 12px;
+    }
   }
   .workspace .pane-identity > .inline-rename {
     flex: 0 1 auto;
