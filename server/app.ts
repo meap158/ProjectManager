@@ -340,6 +340,8 @@ export function createApp(
   const orchestrator = new OrchestratorService(db, supervisor, options.dataDir ?? null, () =>
     store.listProjects(db, (id) => scanner.state(id)),
   );
+  // Card images live beside the agent logs: <dataDir>/attachments/<cardId>/.
+  const attachmentsRoot = path.join(path.dirname(logDir), 'attachments');
   const orchestratorChat = new OrchestratorChat(
     db,
     supervisor,
@@ -347,10 +349,9 @@ export function createApp(
     () => store.listProjects(db, (id) => scanner.state(id)),
     options.dataDir ?? null,
     sopStore,
+    attachmentsRoot,
   );
   registerOrchestratorRoutes(app, orchestrator, orchestratorChat);
-  // Card images live beside the agent logs: <dataDir>/attachments/<cardId>/.
-  const attachmentsRoot = path.join(path.dirname(logDir), 'attachments');
   registerAttachmentRoutes(app, db, attachmentsRoot);
   registerSessionImageRoutes(app, db, attachmentsRoot);
   registerBoardMcp(app, db, attachmentsRoot, orchestratorChat, sopStore);

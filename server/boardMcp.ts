@@ -315,7 +315,16 @@ export function registerBoardMcp(
           call.name,
           call.arguments,
         );
-        return reply({ content: [{ type: 'text', text: JSON.stringify(value, null, 1) }] });
+        // An image (read_image, PM-400) goes through as native content, not as JSON text.
+        const native =
+          value &&
+          typeof value === 'object' &&
+          Array.isArray((value as Record<string, unknown>).mcpContent)
+            ? ((value as Record<string, unknown>).mcpContent as unknown[])
+            : null;
+        return reply({
+          content: native ?? [{ type: 'text', text: JSON.stringify(value, null, 1) }],
+        });
       }
       // SOPs (PM-316): this session's own project only; needs no card.
       if (call.name === 'sop_check') {

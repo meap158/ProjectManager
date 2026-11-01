@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cardAttachmentsDir, listAttachments } from '../attachments.js';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Db } from '../db.js';
@@ -218,6 +219,17 @@ export const ORCHESTRATOR_TOOLS = [
     },
   },
   {
+    name: 'read_image',
+    description:
+      "Look at one of a card's attached images (index from get_card's attachments), as an image rather than text.",
+    inputSchema: {
+      type: 'object',
+      properties: { card: { type: ['string', 'integer'] }, index: { type: 'integer', minimum: 0 } },
+      required: ['card', 'index'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'list_sessions',
     description:
       'The CLI sessions in your projects: id, project, agent, state (idle = waiting for its next instruction, running = working, input = asking the user), linked card and last output. Use it to find an idle session to hand a card to.',
@@ -263,6 +275,42 @@ export const ORCHESTRATOR_TOOLS = [
   },
 ];
 
+/** Continuity for long chats (PM-400): its handover notes and artefacts, in its own folder. */
+const HANDOVER = 'HANDOVER.md';
+const ARTIFACTS = 'artifacts';
+const ARTIFACT_FILES = 50;
+const ARTIFACT_MB = 100;
+const RECENT_EVENTS = 15;
+
+/** Keeps the chat's artefacts folder bounded: the newest files, within the size cap. */
+export function pruneArtifacts(
+  dir: string,
+  maxFiles = ARTIFACT_FILES,
+  maxBytes = ARTIFACT_MB * 1024 * 1024,
+): void {
+  mkdirSync(dir, { recursive: true });
+  const files = readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => {
+      const file = path.join(dir, e.name);
+      const st = statSync(file);
+      return { file, size: st.size, at: st.mtimeMs };
+    })
+    .sort((a, b) => b.at - a.at);
+  let total = 0;
+  files.forEach((f, i) => {
+    total += f.size;
+    // Its own folder under data/, holding only what the chat wrote there.
+    if (i >= maxFiles || total > maxBytes) rmSync(f.file, { force: true });
+  });
+}
+
+/**
+ * A tool result carrying native MCP content (an image) instead of JSON text; the board bridge
+ * (server/boardMcp.ts) passes it through as is (PM-400).
+ */
+export const MCP_CONTENT = 'mcpContent';
+
 /** Whether an orchestrator's chat may hand work to CLI sessions and workers (PM-399). */
 export function delegates(instance: OrchestratorConfig): boolean {
   return instance.strategy !== 'observe' && instance.delegateToSessions !== false;
@@ -282,6 +330,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
     private projects: () => ProjectSummary[],
     private dataDir: string | null,
     private sops: SopStore | null = null,
+    /** Card images (<dataDir>/attachments), for get_card and read_image (PM-400). */
+    private attachmentsRoot: string | null = null,
   ) {}
 
   private instance(id: string): OrchestratorConfig {
@@ -345,7 +395,15 @@ export class OrchestratorChat implements OrchestratorToolHost {
   /** Writes the briefing every CLI reads at start (CLAUDE.md, AGENTS.md, GEMINI.md). */
   private writeBriefing(instance: OrchestratorConfig): string {
     const dir = this.home(instance.id);
-    const text = briefing(instance, this.scope(instance));
+    pruneArtifacts(path.join(dir, ARTIFACTS));
+    // Its own recent activity, newest first, so a restarted or compacted chat knows what it
+    // already handed out and decided (PM-400).
+    const recent = this.service
+      .state()
+      .events.filter((e) => e.orchestratorId === instance.id)
+      .slice(-RECENT_EVENTS)
+      .reverse();
+    const text = briefing(instance, this.scope(instance), recent);
     for (const file of ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md'])
       writeFileSync(path.join(dir, file), text);
     return dir;
@@ -842,7 +900,31 @@ export class OrchestratorChat implements OrchestratorToolHost {
         })),
         recentRuns: runs.map(runBrief),
         agentActivity: activity,
+        // Read each with read_image (PM-400): never pasted into the conversation as text.
+        attachments: this.attachmentsRoot
+          ? listAttachments(this.attachmentsRoot, c.id).map((a, index) => ({
+              index,
+              name: a.name,
+              type: a.type,
+              bytes: a.bytes,
+            }))
+          : [],
       };
+    }
+
+    if (name === 'read_image') {
+      const input = z
+        .object({ card: z.unknown(), index: z.number().int().min(0) })
+        .strict()
+        .parse(args);
+      const c = card(input.card);
+      if (!this.attachmentsRoot) fail('Card images are not available here');
+      const image = listAttachments(this.attachmentsRoot!, c.id)[input.index];
+      if (!image) fail(`${c.key} has no image ${input.index}; get_card lists them`);
+      const data = readFileSync(
+        path.join(cardAttachmentsDir(this.attachmentsRoot!, c.id), image!.file),
+      ).toString('base64');
+      return { [MCP_CONTENT]: [{ type: 'image', mimeType: image!.type, data }] };
     }
 
     if (name === 'update_card') {
@@ -1478,7 +1560,11 @@ export function checkPrompt(
 }
 
 /** The orchestrator's standing briefing, regenerated at every open from the live scope. */
-export function briefing(instance: OrchestratorConfig, projects: ProjectSummary[]): string {
+export function briefing(
+  instance: OrchestratorConfig,
+  projects: ProjectSummary[],
+  recent: readonly OrchestratorEvent[] = [],
+): string {
   const project = (p: ProjectSummary) => {
     const c = p.cardCounts;
     const git = p.git?.isRepo
@@ -1517,6 +1603,7 @@ ${projects.map(project).join('\n') || '- (none)'}
 - \`dispatch_worker\`: start a one-time agent worker on a card, with your instructions. Supply a unique requestId for each new dispatch; reuse it with identical arguments after a lost response to recover the original run. A pending replay means wait; it is not permission to launch another worker.
 - \`worker_output\`: what a worker session or run shows now.
 - \`message_worker\`: message an idle worker session (e.g. ask for a status update).
+- \`read_image\`: look at a card's attached image (index from get_card).
 - \`list_sessions\`: the CLI sessions in your projects, with their state and linked card.
 - \`assign_card\`: hand a card to an idle session in its project (links it, moves it to In progress, types the task in). Delivery is not confirmed: check with worker_output, never resend blindly.
 - \`start_session\`: start a new CLI session on a card in its project, within your worker limits and the quota reserve. Use a unique requestId and reuse it after a lost response.
@@ -1540,5 +1627,28 @@ ${
 - Read scoped project folders and make authorized changes directly in this chat. Follow each project's instructions, preserve unrelated changes, and run appropriate checks. Never push, merge, delete branches or run destructive commands without explicit authorization for that action.
 - Keep the board truthful: every move gets a short note saying why.
 - Report concisely: what you did, what's blocked, what needs the user.
-`;
+
+## Long sessions
+
+This conversation may be compacted or restarted; this file is rewritten at every open and the
+CLI reloads it, but anything only said in chat can be lost.
+
+- Keep \`${HANDOVER}\` in this folder current: open threads, what you handed to which session or
+  worker, decisions the user made and what you are waiting for. Read it after a restart or when
+  you lose track, and replace finished entries rather than letting it grow (keep it short).
+- Put large artefacts (logs, long command output, screenshots, diffs) in \`${ARTIFACTS}/\` here and
+  refer to them by path instead of pasting them into the conversation. The oldest are removed
+  beyond ${ARTIFACT_FILES} files or ${ARTIFACT_MB} MB.
+- Look at card images with \`read_image\` (indexes in get_card's attachments), and ask
+  worker_output for only as many characters as you need.
+- The board and its notes are the durable record: put evidence on cards, not only in chat.
+${
+  recent.length
+    ? `
+## Your recent activity (newest first, when this chat opened)
+
+${recent.map((e) => `- ${e.at.slice(0, 16).replace('T', ' ')} ${e.action}: ${e.message.slice(0, 200)}`).join('\n')}
+`
+    : ''
+}`;
 }

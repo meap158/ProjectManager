@@ -88,6 +88,22 @@ stays a briefing rule: the chat recommends and acts only when the user explicitl
 Moves, new cards, dispatches, hand-overs, started sessions and messages appear in Activity
 marked "(chat)", and hand-overs and starts are also in the card's agent audit.
 
+**Long sessions (PM-400).** A chat can run for days, be compacted by its CLI or restarted, so
+nothing it needs lives only in the conversation:
+
+- Every open rewrites the briefing with the orchestrator's 15 most recent Activity events
+  (newest first), so a reopened chat knows what it already handed out and decided.
+- The briefing asks it to keep `HANDOVER.md` in its folder current (open threads, hand-overs,
+  the user's decisions, what it waits for). The briefing rewrite never touches that file.
+- Large artefacts (logs, long output, screenshots, diffs) go to `artifacts/` in its folder and
+  are referred to by path. Each open keeps the newest 50 files within 100 MB and removes the
+  rest (`pruneArtifacts`): the folder holds only what the chat wrote there.
+- `get_card` lists a card's images and `read_image` returns one as native MCP image content
+  (the board bridge passes a `mcpContent` result through), so screenshots are never pasted
+  as text.
+- The board stays the durable record: evidence goes on cards. Codex conversations are slimmed
+  of old screenshots on relaunch as for any session (`server/agents/codexImages.ts`).
+
 Routes: `POST /api/orchestrators/:id/chat` opens it (reusing its session, restarting it if
 stopped) and `POST /api/orchestrators/:id/check` with `{ focus: all | todo | in_progress |
 review }` asks it for a one-time check on pending work: In progress (check progress, move

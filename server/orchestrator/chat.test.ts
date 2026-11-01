@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -9,7 +17,7 @@ import type { AgentSupervisor } from '../agents/supervisor.js';
 import type { AgentRun, AgentSession, ProjectSummary } from '../../shared/types.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { OrchestratorService } from './service.js';
-import { OrchestratorChat, briefing, checkPrompt } from './chat.js';
+import { OrchestratorChat, briefing, checkPrompt, pruneArtifacts } from './chat.js';
 import { readLimits } from '../agents/limits.js';
 import { OrchestratorAssignments } from './assignments.js';
 import { providerStatuses } from '../agents/providers.js';
@@ -41,7 +49,7 @@ const summary = (id: number, name: string): ProjectSummary =>
     missing: false,
   }) as unknown as ProjectSummary;
 
-function setup(overrides: Partial<OrchestratorConfig> = {}) {
+function setup(overrides: Partial<OrchestratorConfig> = {}, attachmentsRoot: string | null = null) {
   const db = openDb(':memory:');
   const a = insertProject(db, 'Alpha', path.join(tmp, 'Alpha'));
   const b = insertProject(db, 'Beta', path.join(tmp, 'Beta'));
@@ -99,6 +107,7 @@ function setup(overrides: Partial<OrchestratorConfig> = {}) {
     () => [summary(a, 'Alpha'), summary(b, 'Beta')],
     tmp,
     new SopStore(null),
+    attachmentsRoot,
   );
   const call = (name: string, args: Record<string, unknown> = {}) =>
     chat.call('master-1', 5, name, args);
@@ -448,6 +457,68 @@ describe('orchestrator chat tools (PM-89)', () => {
       expect.objectContaining({ cwd: home, orchestratorId: 'master-1', providerId: 'codex' }),
     );
     expect(briefing({ name: 'X', providers: [], projectIds: [] } as never, [])).toContain('(none)');
+  });
+});
+
+describe('orchestrator chat keeps long sessions on track (PM-400)', () => {
+  it("lists a card's images and returns one as native image content, in scope only", async () => {
+    const root = path.join(tmp, 'attachments-400');
+    const { call, mine, other, db } = setup({}, root);
+    const dir = path.join(root, String(mine.id));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, '00000000-0000-0000-0000-000000000001__shot.png'), 'png-bytes');
+    const card = (await call('get_card', { card: mine.key })) as {
+      attachments: { index: number; name: string }[];
+    };
+    expect(card.attachments).toEqual([expect.objectContaining({ index: 0, name: 'shot.png' })]);
+    const image = (await call('read_image', { card: mine.key, index: 0 })) as {
+      mcpContent: { type: string; mimeType: string; data: string }[];
+    };
+    expect(image.mcpContent[0]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+    expect(Buffer.from(image.mcpContent[0]!.data, 'base64').toString()).toBe('png-bytes');
+    await expect(call('read_image', { card: mine.key, index: 3 })).rejects.toThrow(/no image 3/);
+    await expect(call('read_image', { card: other.key, index: 0 })).rejects.toThrow(
+      /not in this orchestrator/,
+    );
+    db.close();
+  });
+
+  it('briefs a reopened chat with its handover file, artefacts folder and recent activity', () => {
+    const base = {
+      name: 'X',
+      providers: ['codex'],
+      projectIds: [],
+    } as unknown as OrchestratorConfig;
+    const text = briefing(
+      base,
+      [],
+      [
+        {
+          at: '2026-11-02T10:15:00.000Z',
+          orchestratorId: 'x',
+          action: 'assigned',
+          message: 'PM-4 handed to session 7 (chat)',
+        },
+      ],
+    );
+    expect(text).toContain('HANDOVER.md');
+    expect(text).toContain('artifacts/');
+    expect(text).toContain('2026-11-02 10:15 assigned: PM-4 handed to session 7');
+    expect(briefing(base, [])).not.toContain('Your recent activity');
+  });
+
+  it('keeps the artefacts folder to the newest files within its caps', () => {
+    const dir = path.join(tmp, 'artifacts-400');
+    mkdirSync(dir, { recursive: true });
+    for (let i = 0; i < 5; i++) {
+      const file = path.join(dir, `log-${i}.txt`);
+      writeFileSync(file, 'x'.repeat(100));
+      const at = new Date(Date.now() - (5 - i) * 60_000);
+      utimesSync(file, at, at);
+    }
+    pruneArtifacts(dir, 3, 250);
+    // Newest first: log-4 and log-3 fit in 250 bytes; log-2 would make 300.
+    expect(readdirSync(dir).sort()).toEqual(['log-3.txt', 'log-4.txt']);
   });
 });
 
