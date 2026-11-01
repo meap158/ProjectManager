@@ -20,14 +20,14 @@ conversation resumable across a switch (docs/CODEX-CONVERSATION-RESUME.md).
 
 ## Comparison
 
-| Topic | OmniRoute | ProjectManager | Verdict |
-| --- | --- | --- | --- |
-| Where usage comes from | requests it proxies, plus provider usage APIs | each CLI's own usage and statusline data per profile | Different by design; ours reads what the subscription actually reports |
-| Truthful states (`unknown` is not `exhausted`) | explicit: healthy, approaching limit, exhausted, unavailable, unknown | the same principle: an unreadable or reset window is unknown, not exhausted (planner fix 2026-10-25) | Already aligned; nothing to borrow |
-| Rotation when a limit is hit | automatic, across pooled accounts | auto-switch for accounts marked eligible, then resume the conversation | Already have the useful part |
-| Reset countdowns, windows | per provider quota snapshots | per window `resetsAt` shown in the account panels and the Inbox | Already have |
-| Health of saved logins | provider health checks | Check and refresh in the panels | Comparable |
-| Security model | holds many providers' keys and logins in one gateway; pools consumer subscription logins behind one endpoint | each login stays in its own profile and is never shared between accounts | Theirs is a different risk model (see below) |
+| Topic                                          | OmniRoute                                                                                                    | ProjectManager                                                                                       | Verdict                                                                |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Where usage comes from                         | requests it proxies, plus provider usage APIs                                                                | each CLI's own usage and statusline data per profile                                                 | Different by design; ours reads what the subscription actually reports |
+| Truthful states (`unknown` is not `exhausted`) | explicit: healthy, approaching limit, exhausted, unavailable, unknown                                        | the same principle: an unreadable or reset window is unknown, not exhausted (planner fix 2026-10-25) | Already aligned; nothing to borrow                                     |
+| Rotation when a limit is hit                   | automatic, across pooled accounts                                                                            | auto-switch for accounts marked eligible, then resume the conversation                               | Already have the useful part                                           |
+| Reset countdowns, windows                      | per provider quota snapshots                                                                                 | per window `resetsAt` shown in the account panels and the Inbox                                      | Already have                                                           |
+| Health of saved logins                         | provider health checks                                                                                       | Check and refresh in the panels                                                                      | Comparable                                                             |
+| Security model                                 | holds many providers' keys and logins in one gateway; pools consumer subscription logins behind one endpoint | each login stays in its own profile and is never shared between accounts                             | Theirs is a different risk model (see below)                           |
 
 ## Why it is not adopted
 
