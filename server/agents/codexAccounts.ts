@@ -1300,6 +1300,7 @@ export class ClaudeAccounts {
       plan: logins[index + 1]!.plan,
       ...usage(logins[index + 1]!),
     }));
+    this.claimLive(liveCredsFile, activeProfileId, accounts, liveLogin);
     const active = accounts.find((account) => account.id === activeProfileId);
     return {
       accounts,
@@ -1318,6 +1319,140 @@ export class ClaudeAccounts {
         : defaultAccount,
       originalAccount: activeProfileId ? defaultAccount : undefined,
     };
+  }
+
+  /**
+   * Status line reports go to the live token's folder (scripts/claude-statusline.mjs), and Claude
+   * rotates that token every few hours: the folder is claimed for the account in use as soon as
+   * it appears, so its readings stay with that account after the next rotation.
+   */
+  private claimLive(
+    liveCredsFile: string,
+    activeProfileId: string | null,
+    accounts: CodexAccount[],
+    liveLogin: { email: string | null } | null,
+  ): void {
+    try {
+      const token = (
+        JSON.parse(readFileSync(liveCredsFile, 'utf8')) as {
+          claudeAiOauth?: { accessToken?: string };
+        }
+      ).claudeAiOauth?.accessToken;
+      if (!token) return;
+      const folder = path.join(
+        this.dataDir,
+        'claude-account-usage',
+        createHash('sha256').update(token).digest('hex'),
+      );
+      const email =
+        (activeProfileId
+          ? accounts.find((a) => a.id === activeProfileId)?.email
+          : liveLogin?.email) ?? null;
+      if (!email || !existsSync(folder) || existsSync(path.join(folder, 'owner.json'))) return;
+      writeFileSync(
+        path.join(folder, 'owner.json'),
+        JSON.stringify({
+          account: activeProfileId ?? 'default',
+          email,
+          at: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      // Best effort: the token match still covers the folder until the next rotation.
+    }
+  }
+
+  private usageRefresh: Promise<void> | null = null;
+  private usageRefreshedAt = 0;
+  /** Replaced in tests; the live query otherwise. */
+  usageFetcher: (token: string) => Promise<ClaudeUsageReading | null> = fetchClaudeUsage;
+
+  /**
+   * Asks Anthropic for the usage of every login whose access token is still valid (PM-395), and
+   * records it where the status line would, so the rows, the meter and rotation read it as usual.
+   * A login whose token has expired keeps its last reading: renewing the token would replace it
+   * (Claude retires the old refresh token), and that is Claude Code's job. With `maxAgeMs`, it
+   * skips when the last refresh is newer than that. Never throws.
+   */
+  refreshUsage(options: { maxAgeMs?: number } = {}): Promise<void> {
+    if (this.usageRefresh) return this.usageRefresh;
+    if (options.maxAgeMs !== undefined && Date.now() - this.usageRefreshedAt < options.maxAgeMs)
+      return Promise.resolve();
+    this.usageRefresh = this.queryUsage()
+      .catch((error: unknown) => console.error('[claude-accounts] usage refresh failed:', error))
+      .finally(() => {
+        this.usageRefreshedAt = Date.now();
+        this.usageRefresh = null;
+      });
+    return this.usageRefresh;
+  }
+
+  private async queryUsage(): Promise<void> {
+    const state = this.state();
+    const registry = this.readRegistry();
+    const live = path.join(this.defaultHome(), '.credentials.json');
+    const logins: { file: string; email: string | null; account: string }[] = [
+      {
+        file: live,
+        account: state.activeProfileId ?? 'default',
+        email:
+          (state.activeProfileId
+            ? state.accounts.find((a) => a.id === state.activeProfileId)?.email
+            : this.liveLogin()?.email) ?? null,
+      },
+      ...registry.accounts
+        .filter((account) => account.id !== state.activeProfileId)
+        .map((account) => ({
+          file: path.join(this.home(account.id), '.credentials.json'),
+          account: account.id,
+          email: account.email ?? null,
+        })),
+    ];
+    if (state.activeProfileId)
+      logins.push({
+        file: this.defaultBackupCredsFile(),
+        account: 'default',
+        email: this.readAuthMeta(this.defaultBackupCredsFile(), false).email,
+      });
+    const seen = new Set<string>();
+    await Promise.all(
+      logins.map(async (login) => {
+        let token: string;
+        try {
+          const oauth = (
+            JSON.parse(readFileSync(login.file, 'utf8')) as {
+              claudeAiOauth?: { accessToken?: string; expiresAt?: number };
+            }
+          ).claudeAiOauth;
+          if (!oauth?.accessToken) return;
+          if (typeof oauth.expiresAt === 'number' && oauth.expiresAt < Date.now() + 60_000) return;
+          token = oauth.accessToken;
+        } catch {
+          return;
+        }
+        const identity = createHash('sha256').update(token).digest('hex');
+        if (seen.has(identity)) return;
+        seen.add(identity);
+        const reading = await this.usageFetcher(token);
+        if (!reading) return;
+        const folder = path.join(this.dataDir, 'claude-account-usage', identity);
+        mkdirSync(folder, { recursive: true });
+        // The same record the status line writes (scripts/claude-statusline.mjs).
+        this.writePrivate(
+          path.join(folder, 'claude-limits.json'),
+          JSON.stringify({ asOf: new Date().toISOString(), ...reading }),
+        );
+        if (login.email && !existsSync(path.join(folder, 'owner.json')))
+          writeFileSync(
+            path.join(folder, 'owner.json'),
+            JSON.stringify({
+              account: login.account,
+              email: login.email,
+              at: new Date().toISOString(),
+            }),
+          );
+      }),
+    );
   }
 
   /**
@@ -1750,6 +1885,41 @@ export class ClaudeAccounts {
     } finally {
       rmSync(temp, { force: true });
     }
+  }
+}
+
+export type ClaudeUsageWindow = { used_percentage: number; resets_at: string | null };
+export type ClaudeUsageReading = {
+  fiveHour: ClaudeUsageWindow | null;
+  sevenDay: ClaudeUsageWindow | null;
+};
+
+/**
+ * One login's plan usage from Anthropic, the source of Claude Code's own /usage. It is not a
+ * documented API (the owner chose it over waiting for a session to report, PM-395): any failure
+ * or unexpected shape gives null, and the status line's readings carry on as before.
+ */
+export async function fetchClaudeUsage(token: string): Promise<ClaudeUsageReading | null> {
+  try {
+    const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as Record<string, unknown>;
+    const window = (value: unknown): ClaudeUsageWindow | null => {
+      const w = value as { utilization?: unknown; resets_at?: unknown } | null;
+      if (!w || typeof w.utilization !== 'number') return null;
+      return {
+        used_percentage: w.utilization,
+        resets_at: typeof w.resets_at === 'string' ? w.resets_at : null,
+      };
+    };
+    const reading = { fiveHour: window(body.five_hour), sevenDay: window(body.seven_day) };
+    return reading.fiveHour || reading.sevenDay ? reading : null;
+  } catch {
+    return null;
   }
 }
 

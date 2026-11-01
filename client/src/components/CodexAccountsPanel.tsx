@@ -103,8 +103,8 @@ export function CodexAccountsPanel({
   const load = useCallback(async () => {
     if (acting.current) return;
     const started = ++revision.current;
-    // Codex: opening the panel also re-reads missing or old usage in the background (PM-173).
-    const fetchState = isClaude ? api.getClaudeAccounts : api.getCodexAccountsRefreshing;
+    // Opening the panel also re-reads missing or old usage in the background (PM-173, PM-395).
+    const fetchState = isClaude ? api.getClaudeAccountsRefreshing : api.getCodexAccountsRefreshing;
     await fetchState().then(
       (s) => {
         if (started !== revision.current) return;
@@ -433,7 +433,9 @@ export function CodexAccountsPanel({
                 onClick={async () => {
                   setRefreshingUsage(true);
                   try {
-                    await act(isClaude ? api.getClaudeAccounts : api.refreshCodexAccountsUsage);
+                    await act(
+                      isClaude ? api.refreshClaudeAccountsUsage : api.refreshCodexAccountsUsage,
+                    );
                   } finally {
                     setRefreshingUsage(false);
                   }
@@ -602,7 +604,9 @@ export function CodexAccountsPanel({
                   title="Refresh usage for default account"
                   onClick={() =>
                     void act(() =>
-                      isClaude ? api.getClaudeAccounts() : api.refreshCodexAccountUsage('default'),
+                      isClaude
+                        ? api.refreshClaudeAccountsUsage()
+                        : api.refreshCodexAccountUsage('default'),
                     )
                   }
                 >
@@ -791,7 +795,9 @@ export function CodexAccountsPanel({
                       title={`Refresh usage for ${acc.name}`}
                       onClick={() =>
                         void act(() =>
-                          isClaude ? api.getClaudeAccounts() : api.refreshCodexAccountUsage(acc.id),
+                          isClaude
+                            ? api.refreshClaudeAccountsUsage()
+                            : api.refreshCodexAccountUsage(acc.id),
                         )
                       }
                     >

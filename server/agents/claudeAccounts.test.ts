@@ -362,3 +362,93 @@ it('never credits one account’s usage to another that later takes the default 
     rmSync(temp, { recursive: true, force: true });
   }
 });
+
+it('queries usage for logins with a valid token and records it per login (PM-395)', async () => {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'pm-claude-query-'));
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  const home = path.join(temp, 'default');
+  mkdirSync(home);
+  process.env.CLAUDE_CONFIG_DIR = home;
+  const db = openDb(':memory:');
+  const creds = (token: string, expiresAt: number) =>
+    JSON.stringify({
+      claudeAiOauth: { accessToken: token, refreshToken: `${token}-r`, expiresAt },
+    });
+  try {
+    writeFileSync(path.join(home, '.credentials.json'), creds('live', Date.now() + 3_600_000));
+    claudeProfile(home, 'live@example.com', Date.now() + 60_000);
+    const pool = new ClaudeAccounts(temp, db);
+    const fresh = pool.importAccount(
+      'Fresh',
+      JSON.stringify({
+        email: 'fresh@example.com',
+        ...JSON.parse(creds('fresh', Date.now() + 3_600_000)),
+      }),
+    ).accounts[0]!;
+    const expired = pool
+      .importAccount(
+        'Expired',
+        JSON.stringify({
+          email: 'old@example.com',
+          ...JSON.parse(creds('old', Date.now() - 1000)),
+        }),
+      )
+      .accounts.find((a) => a.name === 'Expired')!;
+    const asked: string[] = [];
+    pool.usageFetcher = async (token) => {
+      asked.push(token);
+      const used = token === 'live' ? 12 : 34;
+      return {
+        fiveHour: {
+          used_percentage: used,
+          resets_at: new Date(Date.now() + 3_600_000).toISOString(),
+        },
+        sevenDay: null,
+      };
+    };
+    await pool.refreshUsage();
+    expect(asked.sort()).toEqual(['fresh', 'live']);
+    const state = pool.state();
+    expect(state.defaultAccount.limits?.windows[0]?.usedPercent).toBe(12);
+    expect(state.accounts.find((a) => a.id === fresh.id)?.limits?.windows[0]?.usedPercent).toBe(34);
+    expect(state.accounts.find((a) => a.id === expired.id)?.limits).toBeNull();
+    // Throttled: a second call inside the window does not ask again.
+    await pool.refreshUsage({ maxAgeMs: 60_000 });
+    expect(asked).toHaveLength(2);
+  } finally {
+    db.close();
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+it('records a status line report under the login in use now, not the launch token (PM-395)', () => {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'pm-claude-report-'));
+  const home = path.join(temp, 'default');
+  mkdirSync(home);
+  const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+  try {
+    // The session started on A; the owner switched to B and Claude picked up the new file.
+    writeFileSync(path.join(home, '.credentials.json'), claudeCreds('b-now'));
+    const result = spawnSync(
+      process.execPath,
+      ['scripts/claude-statusline.mjs', temp, hash('a-launch')],
+      {
+        input: JSON.stringify({
+          rate_limits: {
+            five_hour: { used_percentage: 7, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+          },
+        }),
+        env: { ...process.env, CLAUDE_CONFIG_DIR: home },
+        encoding: 'utf8',
+      },
+    );
+    expect(result.status).toBe(0);
+    const root = path.join(temp, 'claude-account-usage');
+    expect(existsSync(path.join(root, hash('b-now'), 'claude-limits.json'))).toBe(true);
+    expect(existsSync(path.join(root, hash('a-launch')))).toBe(false);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});

@@ -699,8 +699,20 @@ export class AgentSupervisor {
     return this.withCodexAccounts((accounts) => accounts.setAutoSwitch(enabled));
   }
 
-  claudeAccountsState(): CodexAccountsState {
-    return this.withClaudeAccounts((accounts) => accounts.state());
+  /** `refreshStale` (the accounts panel): also query usage in the background, at most every 5 min. */
+  claudeAccountsState(refreshStale = false): CodexAccountsState {
+    return this.withClaudeAccounts((accounts) => {
+      if (refreshStale) void accounts.refreshUsage({ maxAgeMs: 5 * 60_000 });
+      return accounts.state();
+    });
+  }
+
+  /** Refresh usage: queries every login whose token is still valid, then answers. */
+  async refreshClaudeAccountsUsage(): Promise<CodexAccountsState> {
+    if (!this.claudeAccounts)
+      throw new AgentError(400, 'Claude accounts require a configured data directory');
+    await this.claudeAccounts.refreshUsage();
+    return this.claudeAccountsState();
   }
 
   importClaudeAccount(name: string, authJson: string): CodexAccountsState {
@@ -1762,6 +1774,8 @@ export class AgentSupervisor {
     for (const id of this.claudeLimitSeen.keys())
       if (!rows.some((r) => r.id === id)) this.claudeLimitSeen.delete(id);
     if (!rows.length) return;
+    // Fresh readings for the decision on a later tick (rotation never waits for the network).
+    void accounts.refreshUsage({ maxAgeMs: 5 * 60_000 });
     const blocked = new Set<number>();
     for (const row of rows) {
       if (this.noTurnSinceStart.has(row.id)) continue;

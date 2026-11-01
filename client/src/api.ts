@@ -609,6 +609,11 @@ export const api = {
       `/agents/codex-accounts/${encodeURIComponent(accountId)}`,
     ),
   getClaudeAccounts: () => request<CodexAccountsState>('GET', '/agents/claude-accounts'),
+  /** The accounts panel: also queries usage in the background, at most every 5 minutes. */
+  getClaudeAccountsRefreshing: () =>
+    request<CodexAccountsState>('GET', '/agents/claude-accounts?refresh=stale'),
+  refreshClaudeAccountsUsage: () =>
+    request<CodexAccountsState>('POST', '/agents/claude-accounts/usage'),
   importClaudeAccount: (name: string, authJson: string) =>
     request<CodexAccountsState>('POST', '/agents/claude-accounts', { name, authJson }),
   saveCurrentClaudeAccount: (name?: string) =>

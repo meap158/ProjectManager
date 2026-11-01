@@ -415,7 +415,13 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
   );
 
   // ---- Claude accounts (PM-169: saved .credentials.json profiles) -----------------------------
-  app.get('/agents/claude-accounts', (c) => c.json(supervisor.claudeAccountsState()));
+  // ?refresh=stale (the accounts panel): also query usage in the background.
+  app.get('/agents/claude-accounts', (c) =>
+    c.json(supervisor.claudeAccountsState(c.req.query('refresh') === 'stale')),
+  );
+  app.post('/agents/claude-accounts/usage', async (c) =>
+    c.json(await supervisor.refreshClaudeAccountsUsage()),
+  );
 
   app.post('/agents/claude-accounts', async (c) => {
     const body = await parseBody(

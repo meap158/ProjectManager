@@ -42,6 +42,8 @@ vi.mock('../api', () => ({
     renameCodexAccount: vi.fn(),
     removeCodexAccount: vi.fn(),
     getClaudeAccounts: vi.fn(),
+    getClaudeAccountsRefreshing: vi.fn(),
+    refreshClaudeAccountsUsage: vi.fn(),
     importClaudeAccount: vi.fn(),
     saveCurrentClaudeAccount: vi.fn(),
     setActiveClaudeAccount: vi.fn(),
@@ -55,6 +57,7 @@ beforeEach(() => {
   // The panel's first load also asks for a background usage refresh (PM-173); tests set
   // the state through getCodexAccounts.
   vi.mocked(api.getCodexAccountsRefreshing).mockImplementation(() => api.getCodexAccounts());
+  vi.mocked(api.getClaudeAccountsRefreshing).mockImplementation(() => api.getClaudeAccounts());
 });
 afterEach(() => {
   cleanup();
@@ -122,10 +125,11 @@ describe('CodexAccountsPanel (PM-164)', () => {
   });
   it('uses the standard refresh controls for Claude without calling Codex usage', async () => {
     vi.mocked(api.getClaudeAccounts).mockResolvedValue(baseState);
+    vi.mocked(api.refreshClaudeAccountsUsage).mockResolvedValue(baseState);
     render(<CodexAccountsPanel providerId="claude" onError={vi.fn()} />);
     await screen.findByText('Default Claude account');
     fireEvent.click(screen.getByRole('button', { name: 'Refresh usage for Work Pro' }));
-    await waitFor(() => expect(api.getClaudeAccounts).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.refreshClaudeAccountsUsage).toHaveBeenCalledTimes(1));
     expect(api.refreshCodexAccountUsage).not.toHaveBeenCalled();
     expect(api.refreshCodexAccountsUsage).not.toHaveBeenCalled();
   });

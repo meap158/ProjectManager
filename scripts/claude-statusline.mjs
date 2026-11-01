@@ -8,6 +8,7 @@
 //  - its output is passed through as is; with none configured, nothing is printed (as before).
 // Never breaks Claude: recording failures are ignored and every path exits 0.
 import { mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -38,8 +39,19 @@ try {
     const temp = `${file}.${process.pid}.tmp`;
     writeFileSync(temp, JSON.stringify(record));
     renameSync(temp, file);
-    // Attribute usage to the login that emitted this status, never every saved profile.
-    const identity = process.argv[3];
+    // Attribute usage to the login in use now: Claude Code re-reads its credentials file while it
+    // runs, so after an account switch a session started on one login reports the next one's
+    // usage. The token it was started with (argv[3]) is only the fallback (PM-395).
+    let identity = process.argv[3];
+    try {
+      const home = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+      const token = JSON.parse(readFileSync(path.join(home, '.credentials.json'), 'utf8'))
+        .claudeAiOauth?.accessToken;
+      if (typeof token === 'string' && token)
+        identity = createHash('sha256').update(token).digest('hex');
+    } catch {
+      // No readable credentials: keep the launch token.
+    }
     if (typeof identity === 'string' && /^[a-f0-9]{64}$/.test(identity)) {
       const folder = path.join(dataDir, 'claude-account-usage', identity);
       mkdirSync(folder, { recursive: true });
