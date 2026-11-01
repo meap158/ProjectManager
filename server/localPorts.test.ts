@@ -9,6 +9,7 @@ import {
   parseNetstat,
   projectForCommand,
   readPageMeta,
+  retryDelayMs,
 } from './localPorts.js';
 
 // Detecting which apps listen on this computer's loopback (PM-253).
@@ -162,6 +163,16 @@ describe('isImageResponse', () => {
     expect(isImageResponse(200, 'text/html; charset=utf-8')).toBe(false);
     expect(isImageResponse(404, 'image/png')).toBe(false);
     expect(isImageResponse(200, null)).toBe(false);
+  });
+});
+
+describe('retryDelayMs', () => {
+  it('backs off exponentially and caps at a minute', () => {
+    expect(retryDelayMs(1)).toBe(5000);
+    expect(retryDelayMs(2)).toBe(10000);
+    expect(retryDelayMs(3)).toBe(20000);
+    expect(retryDelayMs(10)).toBe(60000);
+    expect(retryDelayMs(100)).toBe(60000);
   });
 });
 

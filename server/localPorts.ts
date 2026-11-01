@@ -222,19 +222,22 @@ interface PageMeta {
    * needed for that (many dev pages have none, and some use an inline one). */
   web: boolean;
 }
-const metaCache = new Map<number, PageMeta & { at: number; failed?: boolean }>();
+const metaCache = new Map<number, PageMeta & { at: number; failed?: boolean; fails?: number }>();
 const META_MS = 30_000;
-/** A slow or failed answer is asked again after this, not after META_MS. */
-const META_RETRY_MS = 5_000;
-/** Headers may take a while on a dev server's first request; the body is only read at its start. */
-const PAGE_MS = 5_000;
+/** A slow or failed answer backs off exponentially instead of stalling every scan. */
+export function retryDelayMs(fails: number): number {
+  return Math.min(60_000, 5_000 * 2 ** Math.max(0, fails - 1));
+}
+/** Headers may be slow on a dev server's first request, but not that slow: a port that stays silent is usually not a page at all, and failed ports back off instead of stalling every scan. */
+const PAGE_MS = 2_000;
 const PAGE_BYTES = 64 * 1024;
 
 /** Asks the app for "/" briefly, then checks that its icon exists. Apps that do not speak HTML
  * (APIs, databases) just have no title or icon, which is what marks them as back ends. */
 async function pageMeta(port: number): Promise<PageMeta> {
   const hit = metaCache.get(port);
-  if (hit && Date.now() - hit.at < (hit.failed ? META_RETRY_MS : META_MS)) return hit;
+  if (hit && Date.now() - hit.at < (hit.failed ? retryDelayMs(hit.fails ?? 1) : META_MS))
+    return hit;
   let meta: PageMeta = { title: null, icon: null, web: false };
   let failed = false;
   try {
@@ -263,7 +266,12 @@ async function pageMeta(port: number): Promise<PageMeta> {
     failed = true;
     if (hit && !hit.failed) meta = { title: hit.title, icon: hit.icon, web: hit.web };
   }
-  metaCache.set(port, { at: Date.now(), failed, ...meta });
+  metaCache.set(
+    port,
+    failed
+      ? { at: Date.now(), failed, fails: (hit?.fails ?? 0) + 1, ...meta }
+      : { at: Date.now(), failed, ...meta },
+  );
   return meta;
 }
 
@@ -290,19 +298,22 @@ async function readStart(res: Response, max: number): Promise<string> {
 /** The declared icon if it really is an image, else the conventional places, in order. */
 async function confirmIcon(port: number, icon: string | null): Promise<string | null> {
   if (icon?.startsWith('data:')) return icon;
-  for (const path of new Set([...(icon ? [icon] : []), ...ICON_FALLBACKS])) {
+  const paths = [...new Set([...(icon ? [icon] : []), ...ICON_FALLBACKS])];
+  const probe = async (path: string): Promise<boolean> => {
     try {
       const res = await fetch(`http://127.0.0.1:${port}${path}`, {
         redirect: 'manual',
-        signal: AbortSignal.timeout(1_500),
+        signal: AbortSignal.timeout(800),
       });
       const ok = isImageResponse(res.status, res.headers.get('content-type'));
       await res.body?.cancel();
-      if (ok) return path;
+      return ok;
     } catch {
-      // Try the next place.
+      return false;
     }
-  }
+  };
+  const results = await Promise.all(paths.map((path) => probe(path)));
+  for (const [i, path] of paths.entries()) if (results[i]) return path;
   return null;
 }
 
@@ -314,7 +325,8 @@ let scanning: { key: string; done: Promise<LocalApp[]> } | null = null;
 /**
  * A process's name and command line don't change while it runs, so they are looked up once per
  * pid (the PowerShell query is most of a scan's cost; the sidebar polls on every page). Pids that
- * stop listening are dropped, and `fresh` (the Refresh button, Stop's re-check) skips it.
+ * stop listening are dropped; `fresh` (the Refresh button, Stop's re-check) keeps it and only
+ * skips the app list and page-meta caches.
  */
 const processCache = new Map<number, ProcessInfo>();
 
@@ -327,7 +339,6 @@ export async function detectLocalApps(
   if (fresh) {
     cache = null;
     metaCache.clear();
-    processCache.clear();
   }
   const key = [...blocked].sort().join(',') + projects.map((p) => `${p.id}=${p.path}`).join('|');
   if (cache && cache.key === key && Date.now() - cache.at < CACHE_MS) return cache.apps;
@@ -350,12 +361,17 @@ async function scan(
   const pids = new Set(found.map((l) => l.pid));
   for (const pid of processCache.keys()) if (!pids.has(pid)) processCache.delete(pid);
   const missing = [...pids].filter((pid) => !processCache.has(pid));
+  const metaByPort = new Map(
+    [...new Set(found.map((l) => l.port))].map((port) => [port, pageMeta(port)] as const),
+  );
   for (const [pid, entry] of await processInfo(missing)) processCache.set(pid, entry);
   const info = processCache;
   const kept = found.filter(
     (l) => !SYSTEM_PROCESSES.has((info.get(l.pid)?.name ?? '').toLowerCase()),
   );
-  const metas = await Promise.all(kept.map((l) => pageMeta(l.port)));
+  const keptPorts = new Set(kept.map((l) => l.port));
+  for (const l of found) if (!keptPorts.has(l.port)) metaCache.delete(l.port);
+  const metas = await Promise.all(kept.map((l) => metaByPort.get(l.port)!));
   const apps: LocalApp[] = kept.map((l, i) => {
     const p = info.get(l.pid);
     const command = (p?.command ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
