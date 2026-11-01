@@ -1177,7 +1177,8 @@ function ShowInPaneButton({ onClick }: { onClick: () => void }) {
 function ShortcutsHelp() {
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
-    const close = (event: MouseEvent | KeyboardEvent) => {
+    // The DOM's events, not React's synthetic types of the same names imported in this file.
+    const close = (event: globalThis.MouseEvent | globalThis.KeyboardEvent) => {
       const el = ref.current;
       if (!el?.open) return;
       if (

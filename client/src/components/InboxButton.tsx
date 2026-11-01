@@ -59,7 +59,7 @@ export function inboxItems(sessions: AgentSession[], now = Date.now()): InboxIte
     else if (session.tailState === 'input') item('input', null);
     else if (session.usageLimit) item('limit', null);
     // Idle, and its reply ends by asking you something in words (PM-298, from its transcript).
-    else if (session.question) item('asked', session.lastInputAt);
+    else if (session.question) item('asked', session.lastInputAt ?? null);
     else if (
       sessionActivity(session, now) === 'idle' &&
       session.lastInputAt &&
