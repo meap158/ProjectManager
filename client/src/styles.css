@@ -6504,6 +6504,13 @@ span.path-link:hover .path-icon {
     min-width: 44px;
     min-height: 44px;
   }
+  /* The workspace pane head is a grid with a column per control; Continue gets its own. */
+  .workspace .pane-head:has(> .pane-continue-phone) {
+    grid-template-columns: 8px minmax(0, 1fr) 44px repeat(3, var(--pane-action-size, 34px));
+  }
+  .workspace .pane-head:has(> .session-view-switch):has(> .pane-continue-phone) {
+    grid-template-columns: 8px minmax(0, 1fr) auto 44px repeat(3, var(--pane-action-size, 34px));
+  }
   .pane-controls-buttons .session-continue,
   .project-terminal-actions .session-continue {
     display: none;
