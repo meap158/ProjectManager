@@ -8,12 +8,6 @@
 Persistent AI coding agent sessions. Every project. Any screen, including your phone.
 Your projects and session data stay on your computer.
 
-Folder previews share recent scans across pages and type filters. Refresh bypasses the
-thirty-second cache when you need the latest files immediately.
-
-Large folder previews offer Load more entries to continue beyond the first batch, including
-Project scope with subfolders. Filters and sorting apply to all entries loaded so far.
-
 [![Node 22.13+](https://img.shields.io/badge/node-22.13%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev)
@@ -43,6 +37,25 @@ Project scope with subfolders. Filters and sorting apply to all entries loaded s
 **ProjectManager** is an open-source, self-hosted AI coding agent manager and project dashboard.
 Add your project folders, start agent CLI sessions in real terminals, link them to board cards, and
 watch commits and pull requests move the cards for you. No account, no cloud, no tracking.
+
+## An opinionated tool
+
+ProjectManager is one developer's way of running a lot of coding agents at once, built for daily
+use and shared as is. It makes a few choices on purpose:
+
+- **Your CLIs, unchanged.** Claude Code, Codex and the rest run in real terminals with their own
+  logins, commands and resume. The terminal is the CLI's own screen, and its config files are
+  never edited.
+- **Git moves the board.** Put a card key like `PM-12` in a commit or branch and the card moves.
+  Agents are told to do the same, so the board shows what actually landed.
+- **One person, one computer.** One SQLite file, no accounts, and the server listens only on
+  your machine. Your phone pairs over the LAN, or reaches it through your own Cloudflare Tunnel.
+- **Usage limits are part of the job.** Saved logins, live 5-hour and weekly meters, automatic
+  account switching at a limit and a Continue that picks blocked sessions back up.
+- **Agents get narrow tools.** A session can read and update only the card it was given, and
+  every change is recorded on that card.
+
+It is not a team tracker, a hosted agent runner or an editor. Keep your IDE; this sits beside it.
 
 ---
 
@@ -126,19 +139,25 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
 
 </details>
 
-### Recent quality-of-life updates
+### Recently added
 
-- **Account switching:** saved Codex and Claude logins, optional Antigravity accounts, live usage
-  and reset times, and automatic Codex rotation at usage limits.
-- **Batch CLI choices:** answer matching attention menus across many sessions at once, with
-  queued and failed input reported.
-- **Keyboard shortcuts:** act on the selected session without leaving the keyboard, assignable in
-  Settings.
+- **Preview:** a built-in browser lists the apps running on your `localhost` ports. Pick an
+  element on the page, mark up a screenshot of it and send both to a CLI session.
+- **Inbox:** a bell in the top bar lists every session that is asking you something, failed, hit
+  a usage limit or finished its reply. Answer from the list.
+- **Account switching:** saved Codex and Claude logins and optional Antigravity accounts, with
+  live usage and reset times. Codex, and Claude Code if you turn it on, switch to the login with
+  the most quota left when one runs out (see [the account audit](docs/ACCOUNT-SWITCHER-AUDIT.md)).
+- **Files:** a VS Code-style explorer with Markdown, HTML, image and code previews. Very large
+  folders load in batches with a Load more button.
+- **SOPs:** **Settings > SOPs** checks every project's agent instructions against a shared
+  standard (handover notes, roadmap, safe process cleanup, writing style) and turns a gap into a
+  card ([docs/SOPS.md](docs/SOPS.md)).
 - **Orchestrators:** a chat that follows up on tasks and moves cards across all your projects.
 - **Remote access (opt-in):** reach your workspace through your own Cloudflare Tunnel with
   Cloudflare Access, an email allowlist and an authenticator code.
-- **Searchable dropdowns, grouped Settings tabs, chat view for OpenCode and Grok** and a more
-  stable launcher that restarts the server after an unexpected exit.
+- **Batch CLI choices and keyboard shortcuts:** answer the same menu in many sessions at once,
+  and act on the selected session without the mouse.
 
 ---
 
@@ -281,7 +300,8 @@ session's project and linked card, so you can switch tasks without losing contex
   jumps between panes, <kbd>Alt</kbd>+<kbd>Enter</kbd> maximizes one, and you can drag panes to swap them.
 - **Stay organized.** Filter by project, agent, activity or task name, and rename sessions.
 - **Plan usage at a glance.** See your 5-hour and weekly limits and when they reset (Claude Code
-  and Codex).
+  and Codex). Near a limit, Settings shows what the next automatic switch will be and why it is
+  waiting; a working session is never interrupted by a switch.
 - **Batch CLI choices.** Apply detected attention-menu choices across sessions.
 
 Closing ProjectManager (or a crash) ends every session's process within about 20 seconds, so no
@@ -365,15 +385,15 @@ email allowlist and an authenticator code in front of it: see
 
 **Next**
 
-- [x] Project file tree with a VS Code-style explorer and Markdown/HTML preview (PM-252)
-- [x] Files context menu: open, open in the system app, reveal, copy path, rename in place (PM-259)
-- [x] Inbox: a top-bar bell lists every session that needs a decision, failed, hit a usage limit or finished its reply, with the question or reply on each row, answerable in place (PM-261)
-- [x] Built-in browser: a **Preview** page lists running `localhost` apps (front ends first) beside a small browser; apps run on their own origin with live reload, and over the LAN or remotely it is a read-only view (PM-253)
 - [ ] More agent options, such as OpenCode with other models and Cline (PM-212)
-- [ ] Ideas from terminal agent managers: agent state, inbox, hooks (PM-211)
+- [ ] Ideas from terminal agent managers: agent state, hooks (PM-211)
 
 **Recently shipped**
 
+- [x] Built-in browser with an element picker that sends a marked-up screenshot to a session (PM-253, PM-311)
+- [x] Inbox for sessions that need you (PM-261)
+- [x] Files tab with previews and a context menu (PM-252, PM-259)
+- [x] SOP audits across projects (PM-316)
 - [x] Account switching with live usage for Codex, Claude and Antigravity
 - [x] Orchestrator chat across all projects
 - [x] Remote access through Cloudflare Tunnel
@@ -475,20 +495,3 @@ stand, local only).
 </div>
 
 <!-- Topics: ai-coding-agents, claude-code, codex, kanban, project-management, local-first, terminal, mcp, developer-tools -->
-
-Codex automatic account switching waits for safe idle prompts so grace work can finish. Accounts
-are ranked by remaining 5-hour quota, weekly quota, then saved order, with fresh positive quota
-required in every reported window. See [the account audit](docs/ACCOUNT-SWITCHER-AUDIT.md).
-Near the limit, Settings shows why switching is waiting, the next check countdown and any
-failed attempt. Active work can defer the switch beyond that check.
-
-Home remembers whether you last viewed All projects or an individual project, including its tab.
-The selection survives section changes and reloads in this browser.
-
-Files: recursive folder views show the first batch immediately, then merge and sort continuation
-batches in the background so Project includes recent descendants. Refresh, returning to the tab and a visible-tab one-minute refresh
-reload metadata and image URLs. Browser-renderable images up to the 25 MB preview limit use lazy
-thumbnails; unsupported formats retain a file icon.
-
-Deep recursive file listings reuse the latest metadata window across continuation pages, including
-folders with more than 60,000 entries. Older windows for that folder are released.

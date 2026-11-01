@@ -11,6 +11,9 @@ as they arrive and retain loaded content during revalidation.
 Folder previews load large project listings in batches. Show more reveals loaded entries; Load
 more entries continues the server walk, even when current filters match nothing loaded so far.
 Counts, sorting and filters cover the loaded entries until the final batch arrives.
+Continuation pages of a deep walk reuse the walk's latest metadata snapshot, also past 60,000
+entries, and older snapshots of that folder are released. Images the browser can show, up to
+the 25 MB preview limit, get lazy thumbnails; other formats keep a file icon.
 
 Confirmation dialog headings and messages wrap long paths and commands anywhere within the
 dialog width. Keep the full text selectable, with vertical scrolling when needed.
