@@ -31,8 +31,11 @@ export function folderSnapshot(
   entry.pending = scan(root, dir, recursive, end).then(
     (result) => {
       entry.until = Date.now() + TTL;
-      // Very deep walks remain readable, but do not retain oversized snapshots.
-      if (result.entries.length > 60_000 && snapshots.get(key) === entry) snapshots.delete(key);
+      // Keep the latest window for a scope: later pages must not rescan a deep tree.
+      // Replacing earlier windows bounds retained copies of the same metadata.
+      for (const oldKey of snapshots.keys()) {
+        if (oldKey !== key && oldKey.startsWith(`${scope}:`)) snapshots.delete(oldKey);
+      }
       return result;
     },
     (error) => {

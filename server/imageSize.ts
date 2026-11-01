@@ -116,6 +116,8 @@ const READERS: Record<string, (b: Buffer) => ImageSize | null> = {
   bmp,
   jpg: jpeg,
   jpeg,
+  jpe: jpeg,
+  jfif: jpeg,
   webp,
   svg,
 };

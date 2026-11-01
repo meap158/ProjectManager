@@ -50,3 +50,11 @@ it('keeps at most three scope snapshots', async () => {
   }
   expect(await folderSnapshot(root, root, false, 0, false)).not.toBe(first);
 });
+
+it('retains a deep walk for its continuation pages', async () => {
+  const root = tree();
+  const first = await folderSnapshot(root, root, true, 60_000, false);
+  // Model a deep metadata result without creating 60,000 fixture files.
+  first.entries.length = 60_001;
+  expect(await folderSnapshot(root, root, true, 62_000, false)).toBe(first);
+});
