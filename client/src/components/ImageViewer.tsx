@@ -47,6 +47,30 @@ function Stage({
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const stage = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ w: 0, h: 0 });
+  const fitted = natural ? fitImage(natural, viewport) : null;
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    const measure = () => {
+      const css = getComputedStyle(el);
+      setViewport({
+        w: Math.max(0, el.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight)),
+        h: Math.max(
+          0,
+          el.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom),
+        ),
+      });
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
   const pointers = useRef(new Map<number, Point>());
   const gesture = useRef<{ start: Point; origin: Point; pinch: number; scale: number } | null>(
     null,
@@ -146,13 +170,18 @@ function Stage({
         alt={name}
         draggable={false}
         decoding="async"
-        style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
+        style={{
+          width: fitted?.w || undefined,
+          height: fitted?.h || undefined,
+          transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+        }}
         onLoad={(event) =>
           setNatural({ w: event.currentTarget.naturalWidth, h: event.currentTarget.naturalHeight })
         }
       />
       <output className="iv-zoom" aria-live="polite">
-        {Math.round(scale * 100)}%{natural ? ` · ${natural.w} × ${natural.h}` : ''}
+        {fitted ? `${Math.round(fitted.ratio * scale * 100)}%` : 'Fit'}
+        {natural ? ` · ${natural.w} × ${natural.h}` : ''}
       </output>
     </div>
   );
@@ -163,9 +192,22 @@ const pinchDistance = (pointers: Map<number, Point>): number => {
   return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
 };
 
+/** The unzoomed picture fits inside the usable stage, preserving aspect ratio and native size. */
+export function fitImage(natural: { w: number; h: number }, viewport: { w: number; h: number }) {
+  const ratio =
+    natural.w > 0 && natural.h > 0
+      ? Math.min(viewport.w / natural.w, viewport.h / natural.h, 1)
+      : 0;
+  return { w: natural.w * ratio, h: natural.h * ratio, ratio };
+}
+
 /** The scale at which the picture is shown at its own pixel size, relative to "fit". */
 function fitFor(natural: { w: number; h: number }, stage: HTMLElement): number {
-  const fit = Math.min(stage.clientWidth / natural.w, stage.clientHeight / natural.h, 1);
+  const css = getComputedStyle(stage);
+  const fit = fitImage(natural, {
+    w: stage.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight),
+    h: stage.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom),
+  }).ratio;
   return fit > 0 ? clamp(1 / fit) : 1;
 }
 
@@ -207,6 +249,8 @@ export function ImageViewer({
   }, [index]);
 
   if (!item) return null;
+  // Keep the filmstrip bounded even for project-wide collections with thousands of pictures.
+  const stripStart = Math.max(0, Math.min(index - 20, items.length - 41));
   const step = (by: 1 | -1) => onIndex((index + by + items.length) % items.length);
   const zoom = (detail: 'in' | 'out' | 'fit' | 'actual') =>
     dialog.current
@@ -380,18 +424,20 @@ export function ImageViewer({
         </span>
         {items.length > 1 && (
           <div className="iv-strip" ref={strip} role="listbox" aria-label="Pictures in this folder">
-            {items.map((entry, i) => (
+            {items.slice(stripStart, stripStart + 41).map((entry, at) => (
               <button
                 key={entry.path}
                 type="button"
                 role="option"
-                aria-selected={i === index}
-                aria-current={i === index ? 'true' : undefined}
+                aria-posinset={at + stripStart + 1}
+                aria-setsize={items.length}
+                aria-selected={at + stripStart === index}
+                aria-current={at + stripStart === index ? 'true' : undefined}
                 aria-label={entry.name}
                 className="iv-thumb"
-                onClick={() => onIndex(i)}
+                onClick={() => onIndex(at + stripStart)}
               >
-                {Math.abs(i - index) <= 40 && (
+                {Math.abs(at + stripStart - index) <= 40 && (
                   <img
                     src={rawUrl(entry.path)}
                     alt=""

@@ -8,6 +8,9 @@
 Persistent AI coding agent sessions. Every project. Any screen, including your phone.
 Your projects and session data stay on your computer.
 
+Files image previews open fitted to the available window, with actual-size zoom and a bounded
+filmstrip for large image collections.
+
 Project Overview shows the current Git branch, upstream status and an expandable list of local
 and known remote branches with their latest commits. Branch reads never fetch or change checkout.
 

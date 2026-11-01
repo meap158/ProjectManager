@@ -17,6 +17,8 @@
   inset: 0;
   display: grid;
   place-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   padding: 56px 72px 112px;
   overflow: hidden;
@@ -28,8 +30,10 @@
 }
 /* The checkerboard sits on the picture itself, so transparency shows on the picture only. */
 .iv-image {
-  max-width: 100%;
-  max-height: 100%;
+  display: block;
+  max-width: calc(100vw - 144px);
+  max-height: calc(100dvh - 168px);
+  object-fit: contain;
   background-color: var(--surface-2);
   background-image:
     linear-gradient(
@@ -209,6 +213,15 @@
 @media (max-width: 640px), (pointer: coarse) {
   .iv-stage {
     padding: 56px 8px 120px;
+  }
+  .iv-image {
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 176px);
+  }
+  .iv-zoom {
+    top: auto;
+    bottom: 96px;
+    left: 8px;
   }
   .iv-btn {
     min-width: 44px;

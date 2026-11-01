@@ -4,6 +4,11 @@ This file defines how ProjectManager looks and behaves. If a component disagrees
 fix the component or update this file in the same commit, and never let design decisions live only in code
 or chat history.
 
+The Files lightbox opens at Fit, measuring the stage after toolbar and filmstrip padding.
+The zoom indicator reports actual pixel scale. Resizing re-fits the image without stretching;
+100% remains an explicit zoom action. The filmstrip renders at most 41 nearby options, with
+full-collection arrow navigation and accessible position counts.
+
 Project Overview shows a compact Git branches panel. Current branch and upstream tracking remain
 visible; other local and known remote branches expand into a bounded scrollable list. Long branch
 names wrap, phone rows stack, and refresh controls retain 44px touch targets. Reads never fetch or
