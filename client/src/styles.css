@@ -6492,6 +6492,23 @@ span.path-link:hover .path-icon {
   }
 }
 
+/* Phones keep a session's Continue beside ⋯ in its pane header, not inside the ⋯ menu. */
+.pane-continue-phone {
+  display: none;
+}
+@media (max-width: 768px) {
+  .pane-continue-phone {
+    display: inline-flex;
+  }
+  .pane-continue-phone .session-continue {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .pane-controls-buttons .session-continue,
+  .project-terminal-actions .session-continue {
+    display: none;
+  }
+}
 /* Compact session shortcuts retain labels for assistive technology and touch targets. */
 .work-list .session-continue {
   display: inline-flex;

@@ -20,6 +20,7 @@ import { ConfirmDelete } from './ConfirmDelete';
 import { SessionToggle } from './SessionToggle';
 import { LimitsStrip } from './LimitsStrip';
 import { sendImageToSession } from '../sessionImages';
+import { SessionContinue } from './SessionContinue';
 import { SessionPaneActions } from './SessionPaneActions';
 import { SessionRestartStatus } from './SessionProgress';
 import { SessionChat, ViewSwitch, useSessionView } from './SessionChat';
@@ -555,7 +556,13 @@ export function AgentsPanel({
                     <ViewSwitch view={sessionView.view} onChange={sessionView.choose} />
                   )}
                   <span className="project-terminal-spacer" style={{ flex: 1 }} />
-                  {/* Phones: the title gets the room; the actions open from ⋯ in a row below. */}
+                  {/* Phones: the title gets the room; the actions open from ⋯ in a row below,
+                      except Continue, which stays beside ⋯ (the CLI view has no composer key). */}
+                  {sessionView.view !== 'chat' && (
+                    <span className="pane-continue-phone">
+                      <SessionContinue session={active} onError={setError} iconOnly />
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="icon-btn project-actions-toggle"

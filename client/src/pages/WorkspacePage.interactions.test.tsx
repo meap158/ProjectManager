@@ -388,9 +388,16 @@ it.each(['all', 'idle', 'running', 'ended'])(
     }
     fireEvent.click(screen.getByRole('button', { name: 'Show Alpha' }));
     const header = document.querySelector('.work-panel .pane-head');
-    const headerContinue = header?.querySelector('button[aria-label="Continue Alpha"]');
+    // The desktop copy sits with the session actions; phones show the copy beside ⋯ instead.
+    const headerContinue = header?.querySelector(
+      '.pane-controls-buttons button[aria-label="Continue Alpha"]',
+    );
+    const phoneContinue = header?.querySelector(
+      '.pane-continue-phone button[aria-label="Continue Alpha"]',
+    );
     if (status !== 'ended') {
       expect(headerContinue).toBeTruthy();
+      expect(phoneContinue).toBeTruthy();
       expect(headerContinue?.classList.contains('icon-btn')).toBe(true);
       const buttons = [...headerContinue!.parentElement!.querySelectorAll('button')];
       expect(
@@ -404,6 +411,7 @@ it.each(['all', 'idle', 'running', 'ended'])(
       ).toBeNull();
     } else {
       expect(headerContinue).toBeFalsy();
+      expect(phoneContinue).toBeFalsy();
     }
   },
 );
