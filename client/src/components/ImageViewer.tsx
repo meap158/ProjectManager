@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -239,14 +240,30 @@ export function ImageViewer({
     return () => (previous as HTMLElement | null)?.focus?.({ preventScroll: true });
   }, []);
 
-  // The filmstrip keeps the current picture in view.
-  useEffect(() => {
+  // Measure within the strip, independent of its offset parent. Recenter before paint
+  // as the bounded window moves, and when resizing changes the strip width.
+  useLayoutEffect(() => {
     const bar = strip.current;
-    const current = bar?.querySelector<HTMLElement>('[aria-current="true"]');
-    // The strip's own scroller only (scrollIntoView would also move the page behind the viewer).
-    if (bar && current)
-      bar.scrollLeft = current.offsetLeft - bar.clientWidth / 2 + current.offsetWidth / 2;
-  }, [index]);
+    if (!bar) return;
+    const reveal = () => {
+      const current = bar.querySelector<HTMLElement>('[aria-current="true"]');
+      if (!current) return;
+      const bounds = bar.getBoundingClientRect();
+      const selected = current.getBoundingClientRect();
+      bar.scrollLeft = Math.max(
+        0,
+        bar.scrollLeft + selected.left + selected.width / 2 - bounds.left - bounds.width / 2,
+      );
+    };
+    reveal();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(reveal);
+    observer?.observe(bar);
+    window.addEventListener('resize', reveal);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', reveal);
+    };
+  }, [index, item?.path, items.length]);
 
   if (!item) return null;
   // Keep the filmstrip bounded even for project-wide collections with thousands of pictures.

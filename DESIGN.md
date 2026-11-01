@@ -11,7 +11,8 @@ Players fit the preview pane on desktop and phone, with a download fallback for 
 The Files lightbox opens at Fit, measuring the stage after toolbar and filmstrip padding.
 The zoom indicator reports actual pixel scale. Resizing re-fits the image without stretching;
 100% remains an explicit zoom action. The filmstrip renders at most 41 nearby options, with
-full-collection arrow navigation and accessible position counts.
+full-collection arrow navigation and accessible position counts. The selected thumbnail follows
+the main image and remains visible through navigation and resizing; scroll only the strip.
 
 Project Overview shows a compact Git branches panel. Current branch and upstream tracking remain
 visible; other local and known remote branches expand into a bounded scrollable list. Long branch
