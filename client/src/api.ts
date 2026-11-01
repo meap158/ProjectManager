@@ -1,3 +1,4 @@
+import type { ProjectBranches } from '../../shared/branches';
 import type { AntigravityAccountsState } from '../../shared/antigravityAccounts';
 import type { NativeAccountsState } from '../../shared/nativeAccounts';
 import type {
@@ -117,6 +118,7 @@ export interface OrchestratorRunPage {
 }
 
 export const api = {
+  projectBranches: (id: number) => request<ProjectBranches>('GET', `/projects/${id}/branches`),
   orchestratorHistory: (id: string, before?: number, focus?: number) =>
     request<OrchestratorRunPage>(
       'GET',

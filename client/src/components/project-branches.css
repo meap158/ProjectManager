@@ -1,0 +1,89 @@
+.project-branches {
+  margin-bottom: 14px;
+  min-width: 0;
+}
+.branch-heading,
+.branch-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.branch-heading {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.branch-heading h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.branch-current {
+  display: grid;
+  gap: 4px;
+}
+.branch-current strong,
+.branch-row strong {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.branch-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  min-width: 0;
+}
+.branch-facts > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.branch-subject {
+  flex: 1 1 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.branch-commit {
+  display: flex;
+  gap: 8px;
+}
+.project-branches summary {
+  cursor: pointer;
+  padding: 10px 0 0;
+  font-weight: 600;
+}
+.branch-hint {
+  margin: 8px 0;
+  font-size: 12px;
+}
+.branch-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.branch-list li {
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+.project-branches .input {
+  width: 100%;
+}
+@media (max-width: 768px) {
+  .branch-heading .btn {
+    min-height: 44px;
+  }
+  .project-branches summary {
+    min-height: 44px;
+  }
+  .branch-facts {
+    flex-direction: column;
+  }
+  .branch-subject {
+    flex: none;
+  }
+  .branch-list {
+    max-height: 50dvh;
+  }
+}

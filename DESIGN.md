@@ -4,6 +4,11 @@ This file defines how ProjectManager looks and behaves. If a component disagrees
 fix the component or update this file in the same commit, and never let design decisions live only in code
 or chat history.
 
+Project Overview shows a compact Git branches panel. Current branch and upstream tracking remain
+visible; other local and known remote branches expand into a bounded scrollable list. Long branch
+names wrap, phone rows stack, and refresh controls retain 44px touch targets. Reads never fetch or
+change branches.
+
 Folder previews reuse metadata snapshots for thirty seconds across pages and type filters.
 Focus revalidation is throttled; Refresh always requests a new scan. Recursive batches appear
 as they arrive and retain loaded content during revalidation.

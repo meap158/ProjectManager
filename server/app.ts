@@ -1,3 +1,4 @@
+import { projectBranches } from './branches.js';
 import { GrokAccountError } from './agents/grokAccounts.js';
 import { createCardIssue, GitHubIssueError } from './githubIssues.js';
 import { jsonEtag } from './jsonEtag.js';
@@ -461,6 +462,16 @@ export function createApp(
       throw error;
     }
   };
+
+  app.get('/projects/:id/branches', async (c) => {
+    const root = projectRoot(c);
+    try {
+      return c.json(await projectBranches(root));
+    } catch (error) {
+      console.error('[branches]', error);
+      return c.json({ error: 'Could not read Git branches' }, 500);
+    }
+  });
 
   app.get('/projects/:id/tree', async (c) => {
     const root = projectRoot(c);

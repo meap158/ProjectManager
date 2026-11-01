@@ -1,3 +1,4 @@
+import { ProjectBranches } from '../components/ProjectBranches';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { CARD_STATUS_LABELS, type ProjectDetail } from '../../../shared/types';
@@ -247,6 +248,7 @@ export function ProjectPage() {
           cached per project and refreshes in the background. Panels are keyed by
           project so switching projects starts from that project's cache. */}
       <div className="tab-panel" hidden={tab !== 'overview'}>
+        <ProjectBranches key={id} projectId={id} visible={tab === 'overview'} />
         <Overview project={project} />
       </div>
       <div className="tab-panel" hidden={tab !== 'board'}>
