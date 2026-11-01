@@ -17,16 +17,16 @@ Project scope with subfolders. Filters and sorting apply to all entries loaded s
 [![Node 22.13+](https://img.shields.io/badge/node-22.13%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev)
-[![Local-first](https://img.shields.io/badge/data-stays%20on%20your%20machine-8A63D2)](#-your-data-stays-yours)
-[![Windows · macOS · Linux](https://img.shields.io/badge/runs%20on-Windows%20·%20macOS%20·%20Linux-555)](#-quick-start)
+[![Local-first](https://img.shields.io/badge/data-stays%20on%20your%20machine-8A63D2)](#your-data-stays-yours)
+[![Windows · macOS · Linux](https://img.shields.io/badge/runs%20on-Windows%20·%20macOS%20·%20Linux-555)](#quick-start)
 
-[Quick start](#-quick-start) ·
-[Features](#-what-you-get) ·
-[Board](#-the-board-keeps-itself-up-to-date) ·
-[AI agents](#-ai-agents-in-real-terminals) ·
-[Phone](#-use-it-from-your-phone) ·
-[Roadmap](#-roadmap) ·
-[FAQ](#-faq)
+[Quick start](#quick-start) ·
+[Features](#what-you-get) ·
+[Board](#the-board-keeps-itself-up-to-date) ·
+[AI agents](#ai-agents-in-real-terminals) ·
+[Phone](#use-it-from-your-phone) ·
+[Roadmap](#roadmap) ·
+[FAQ](#faq)
 
 <br>
 
@@ -46,13 +46,13 @@ watch commits and pull requests move the cards for you. No account, no cloud, no
 
 ---
 
-## ✨ What you get
+## What you get
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-### 🔄 Sessions that survive restarts
+### Sessions that survive restarts
 
 Close the browser without stopping your agents. A separate session host keeps CLI processes
 running across quick server restarts, and active sessions relaunch with their saved conversation
@@ -61,7 +61,7 @@ when the CLI supports resume. Terminal history stays with the session.
 </td>
 <td width="50%" valign="top">
 
-### 🤖 Multiple agents, multiple projects
+### Multiple agents, multiple projects
 
 Run **Claude Code, Codex, Grok, Antigravity and OpenCode** side by side. Name sessions, filter
 the list, or watch up to four terminal panes. See which sessions are working, idle or waiting
@@ -72,7 +72,7 @@ for you, and switch saved Codex and Claude accounts under **Settings > Agent CLI
 <tr>
 <td width="50%" valign="top">
 
-### 🗂️ Projects and tasks in context
+### Projects and tasks in context
 
 Link sessions to board cards and hand work to an agent. Commits and pull requests move cards
 through **Backlog → To do → In progress → Review → Done**. Code stats, languages, disk usage and
@@ -85,7 +85,7 @@ rename (on the computer running ProjectManager only).
 </td>
 <td width="50%" valign="top">
 
-### 📱 Works on your phone too
+### Works on your phone too
 
 Compact session rows, collapsible filters, touch scrolling, fullscreen terminals, image uploads
 and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone once.
@@ -142,7 +142,7 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
 
 ---
 
-## 🚀 Quick start
+## Quick start
 
 You need **[Node.js 22.13 or newer](https://nodejs.org)** and **git**.
 
@@ -197,7 +197,7 @@ code -1), `launch.bat` and `launch.ps1` start it again, up to 10 times. Crash ou
 
 ---
 
-## 🔄 The board keeps itself up to date
+## The board keeps itself up to date
 
 Every card has a key like **`PM-12`**. Just use it in your normal git work:
 
@@ -259,7 +259,7 @@ GitHub Project status.
 
 ---
 
-## 🤖 AI agents in real terminals
+## AI agents in real terminals
 
 The **Agents** workspace brings your existing coding CLIs together. Every row and pane shows the
 session's project and linked card, so you can switch tasks without losing context.
@@ -269,8 +269,8 @@ session's project and linked card, so you can switch tasks without losing contex
 | Claude Code |              ✅              |            ✅             |
 | Codex       |              ✅              |            ✅             |
 | Grok        |              ✅              |            ✅             |
-| OpenCode    |              ✅              |             —             |
-| Antigravity |              ✅              |             —             |
+| OpenCode    |              ✅              |            n/a            |
+| Antigravity |              ✅              |            n/a            |
 
 - **Hand over a card.** Choose an agent and it starts in a terminal with the task typed in. The
   card moves to **In progress**.
@@ -316,7 +316,7 @@ asking). Change any of them under **Settings > Keyboard shortcuts**.
 
 ---
 
-## 📱 Use it from your phone
+## Use it from your phone
 
 1. Open **Settings → LAN access** and turn it on.
 2. Scan the QR code shown on the host. It opens the address and fills in the pairing code.
@@ -351,7 +351,7 @@ email allowlist and an authenticator code in front of it: see
 
 ---
 
-## 🔒 Your data stays yours
+## Your data stays yours
 
 - Everything is stored in **one SQLite file** on your computer (`./data`). No account, no cloud,
   no tracking.
@@ -361,7 +361,7 @@ email allowlist and an authenticator code in front of it: see
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 **Next**
 
@@ -386,7 +386,7 @@ Have an idea? [Open an issue](https://github.com/meap158/ProjectManager/issues).
 
 ---
 
-## ❓ FAQ
+## FAQ
 
 <details>
 <summary><b>Does it upload my code anywhere?</b></summary>
@@ -442,7 +442,7 @@ mode described above.
 
 ---
 
-## 🛠️ For developers
+## For developers
 
 | Command          | What it does                                                   |
 | ---------------- | -------------------------------------------------------------- |
@@ -460,7 +460,7 @@ stand, local only).
 
 ---
 
-## 🙏 Credits
+## Credits
 
 - Animated components by **[Rare UI](https://rareui.com)** (MIT + Commons Clause; attribution
   required).
@@ -484,3 +484,11 @@ failed attempt. Active work can defer the switch beyond that check.
 
 Home remembers whether you last viewed All projects or an individual project, including its tab.
 The selection survives section changes and reloads in this browser.
+
+Files: recursive folder views show the first batch immediately, then merge and sort continuation
+batches in the background so Project includes recent descendants. Refresh, returning to the tab and a visible-tab one-minute refresh
+reload metadata and image URLs. Browser-renderable images up to the 25 MB preview limit use lazy
+thumbnails; unsupported formats retain a file icon.
+
+Deep recursive file listings reuse the latest metadata window across continuation pages, including
+folders with more than 60,000 entries. Older windows for that folder are released.

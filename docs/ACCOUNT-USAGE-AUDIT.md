@@ -1,4 +1,4 @@
-# Account usage audit — 2026-10-24
+# Account usage audit, 2026-10-24
 
 ## Corrections
 

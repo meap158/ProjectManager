@@ -1,4 +1,4 @@
-# Pending ProjectManager review — updated 2026-10-23
+# Pending ProjectManager review, updated 2026-10-23
 
 Checked the live project board and AGENT_HANDOVER.md. Review status is not evidence of unfinished
 implementation; many cards await owner/device acceptance. Do not relaunch workers for those cards.

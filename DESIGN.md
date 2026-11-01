@@ -1,7 +1,7 @@
-# DESIGN.md — Design source of truth
+# DESIGN.md: design source of truth
 
 This file defines how ProjectManager looks and behaves. If a component disagrees with this file, either
-fix the component or update this file in the same commit — never let design decisions live only in code
+fix the component or update this file in the same commit, and never let design decisions live only in code
 or chat history.
 
 Folder previews reuse metadata snapshots for thirty seconds across pages and type filters.
@@ -168,7 +168,7 @@ a populated pane.
   the only elastic part, so the row never lurches when badges appear), then two-line rows:
   name + state badge, then one glance line (lines · top language · relative last commit).
   The full path lives in the `title` tooltip, not a third line. Footer holds a portfolio
-  totals card (lines / 30-day commits / active tasks — the KDP "Active Focus" analogue) so
+  totals card (lines / 30-day commits / active tasks, the KDP "Active Focus" analogue) so
   totals never require a trip home (plus the Plan usage card above it, PM-41). The project
   count sits in the All projects link's subtitle ("Portfolio · 23 projects", "11 of 23 shown"
   while filtering), not in a footer row of its own (PM-43). Polls every 2s while any scan runs, otherwise every 10s,
@@ -204,12 +204,12 @@ a populated pane.
 - **Density budget:** panel padding 14–16px, card gaps ≤ 12px, footer ≤ 16px. New chrome
   must earn vertical pixels: prefer a second line of glance data over a new section.
 - **Tablet widths (769–900px):** the shell stacks and the sidebar becomes one horizontal strip
-  above the page (controls in a single row, projects as sideways-scrolling chips, footer hidden) —
+  above the page (controls in a single row, projects as sideways-scrolling chips, footer hidden):
   never a tall stacked panel that eats the first screenful. Phones get the layout in §10.
 - **Sticky chrome:** the dashboard/project headers (+ tabs) live in `.sticky-head`
   (`position: sticky`, opaque page background, one rule line). Titles, actions and tabs stay
   visible while tab content scrolls; banners and notices scroll away. Stuck bars keep 8px
-  breathing room above (`.page` top padding compensates, so resting pages are unchanged) —
+  breathing room above (`.page` top padding compensates, so resting pages are unchanged):
   sticky content never touches the viewport edge. When the Board/List view switch closes the
   head (global Board), its rule is the head's bottom line: no second border below it.
 - **Sticky board column headers (PM-56, Notion-style):** on both boards each column header
@@ -237,8 +237,8 @@ The home page is the master dashboard for all tracked folders, top to bottom:
 3. Portfolio rollups: languages summed across projects (same slots/Other rule as §5) and
    merged commits-per-month.
 4. **Rankings**: one sortable table (Project / Lines / Commits 30d / Last commit / Planned /
-   Active tasks). Column clicks follow the sorter rule — a new column starts from its natural
-   direction, clicking the active column reverses it — with `aria-sort` and a visible
+   Active tasks). Column clicks follow the sorter rule: a new column starts from its natural
+   direction, clicking the active column reverses it, with `aria-sort` and a visible
    arrow. Lines cells carry a thin size bar.
 5. Project cards grid (visual entry points, unchanged).
 
@@ -455,7 +455,7 @@ adjacent-pair CVD separation in both modes).
 - **Tabs (project page):** a plain, stable tab bar (`.tabs` / `role="tablist"`), synced to `?tab=`
   in the URL. Each tab has a fitting 14px stroke icon: grid (Overview), kanban columns (Board),
   terminal prompt (Agents). Icons live in the shared `components/icons.tsx` set (also used by the
-  topbar: grid for All projects, terminal for Agents) — inline SVG, no icon dependency,
+  topbar: grid for All projects, terminal for Agents), inline SVG, no icon dependency,
   `aria-hidden`, inheriting the text color.
   - Tabs never animate or move. Rare UI's GooeyNav was removed because its moving segments were
     distracting.
@@ -465,7 +465,7 @@ adjacent-pair CVD separation in both modes).
   - Native HTML5 drag-and-drop. A drop indicator line appears above the target card, and the column
     highlights when dropping at its end.
   - Column presets (Settings → Boards): Full flow, Simple (To do/In progress/Done), Capture flow
-    (Backlog/In progress/Done). Presets only hide columns — cards keep their statuses everywhere
+    (Backlog/In progress/Done). Presets only hide columns, and cards keep their statuses everywhere
     else, and the board counts hidden cards instead of losing them.
   - **Keyboard alternative:** open a card (Enter/click) and change its **Column** dropdown. Every
     drag-and-drop action has a non-drag equivalent.
@@ -498,11 +498,11 @@ adjacent-pair CVD separation in both modes).
 | Success / info  | `.notice` (e.g. "Moved by commits: PM-3 → Done" with a "View board" action)                  |
 | Folder missing  | danger badge on the card and a banner on the project page. The last scan stays visible       |
 
-**Stability (no layout shift, no flash — portfolio brief addendum 6):**
+**Stability (no layout shift, no flash; portfolio brief addendum 6):**
 
 - Tab switches never blank or refetch from empty: all tab panels stay mounted (`hidden`),
   per-project data caches in module scope and refreshes in the background (board cards, agent
-  sessions/runs — the KDP ManuscriptViewer pattern), and hidden tabs never poll or stream
+  sessions/runs, the KDP ManuscriptViewer pattern), and hidden tabs never poll or stream
   (`TerminalView` pauses, keeping offset and scrollback).
 - Switching projects keys panels by project id and resets the rename box; stale data stays
   visible until the new project loads.
@@ -668,7 +668,7 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
 (boundary validation, idempotent operations, prove-it-works verification).
 
 - **Sessions** are interactive terminals (project page → Agents tab). They survive GUI
-  navigation (server-side processes) and — when supervised and still wanted — crashes,
+  navigation (server-side processes) and, when supervised and still wanted, crashes,
   server restarts and machine reboots, via `desiredState` + `supervise` + stored resume
   argv (`claude --continue`; shells/custom commands respawn). stdin typed while down waits
   in a durable queue and flushes on spawn.
@@ -698,7 +698,7 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   OpenCode-Windows and Antigravity). The recipe (label, what it downloads, docs link)
   shows before anything runs; execution needs the explicit Install POST; output streams live
   and availability re-probes past the status cache on success. Installs never relaunch after
-  a restart — retry by hand. Same-machine trust model and caps apply.
+  a restart; retry by hand. Same-machine trust model and caps apply.
 - **Usage limits (PM-17):** under a CLI's name, one line per plan window (5-hour, Weekly): label,
   a thin 6px meter (accent; amber from 75%, red from 90%), the percentage, and "resets in 4h 5m".
   The meter is `role="meter"` and the number is always printed, so colour is never the only
@@ -891,13 +891,13 @@ values (5px, 7px, 9px, 18px…) are never added.
   toolbar rows), 8 (panels' inner rhythm, option rows), 10/12 (cards, tiles), 14/16 (sections,
   panels), 20 (dialog rhythm), 24 (`--gutter`, 16 at phone width).
 - **Symmetry:** padding shorthands are symmetric on both axes (`8px`, `6px 8px`, `10px 12px`).
-  Asymmetry needs a functional reason stated in a comment — e.g. `.pane-head` keeps a slimmer
+  Asymmetry needs a functional reason stated in a comment, e.g. `.pane-head` keeps a slimmer
   right edge because icon buttons sit flush there, and `.chip` keeps extra left padding for
   its remove button.
 - **Balance:** rows that mix text and controls hold one line (title truncates, actions keep
-  fixed slots — see §2); icon-only buttons are square-ish (22–32px); menus and dialogs share
+  fixed slots; see §2); icon-only buttons are square-ish (22–32px); menus and dialogs share
   the 4px outer / 7–8px row padding with the sorter and dropdown atoms.
-- **Audit trail:** normalised to the scale — tooltip `6px 9px` → `6px 8px`, project figures
+- **Audit trail:** normalised to the scale: tooltip `6px 9px` → `6px 8px`, project figures
   and list indents `18px` → `16px`, workspace padding → symmetric `8px`, pane-body gutters →
   `6px 0 0 6px`, sidebar microcopy gap `5px` → `6px`, dropdown rows `7px 9px` → `7px 8px`.
 
@@ -1015,3 +1015,8 @@ Settings is split into tabs (`?tab=`): Agents (CLIs, permissions, CPU budget, in
 **Preview on phones (PM-253):** the list or the page, one at a time, both full width. With no page open the address field takes the whole toolbar (the tools do nothing yet); with one open it shows Apps, Back, Reload, the address and Save, and Forward only when there is somewhere to go. "Apps" shows the list while the page stays loaded behind it, and "Page" returns to it as left (scroll, forms, history); a row's menu opens an app in a new tab, and the tab strip appears once there are two. Preview stays under Agents in the bottom bar, which keeps five tabs.
 
 PM-306: desktop and mobile Home return to the remembered All projects or individual project selection, including the project tab. The sidebar keeps its All projects label and selected highlight while other sections are open. Selection persists in this browser across reloads; direct links and browser history win. The mobile Projects control opens the picker and is highlighted while it is open.
+
+Files: recursive folder views show the first batch immediately, then merge and sort continuation
+batches in the background so Project includes recent descendants. Refresh, returning to the tab and a visible-tab one-minute refresh
+reload metadata and image URLs. Browser-renderable images up to the 25 MB preview limit use lazy
+thumbnails; unsupported formats retain a file icon.

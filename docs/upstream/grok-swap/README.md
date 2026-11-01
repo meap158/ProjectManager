@@ -88,7 +88,7 @@ See [SECURITY.md](SECURITY.md).
 
 ## Related tools
 
-- [`cursor-account-switcher`](https://github.com/reloadlife/cursor-account-switcher) — generic Cursor/Codex/Grok file swapper; no Grok usage dashboard
+- [`cursor-account-switcher`](https://github.com/reloadlife/cursor-account-switcher): generic Cursor/Codex/Grok file swapper; no Grok usage dashboard
 - CodexBar already reads `~/.grok/auth.json` for Grok usage; a menu-bar switcher can sit on top of this CLI later
 
 ## Development
