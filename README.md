@@ -163,6 +163,10 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
   standard (handover notes, roadmap, safe process cleanup, writing style) and turns a gap into a
   card ([docs/SOPS.md](docs/SOPS.md)).
 - **Orchestrators:** a chat that follows up on tasks and moves cards across all your projects.
+  Enable **Auto-continue enrolled sessions while quota permits** in its settings to supervise
+  unfinished card work. Scoped tools inspect progress, enroll workers and explicitly wake stopped
+  sessions. Fresh quota, empty prompts and persisted delivery checks guard each continuation.
+  See [session supervision](docs/ORCHESTRATOR-SESSION-SUPERVISION.md) for research and controls.
 - **Remote access (opt-in):** reach your workspace through your own Cloudflare Tunnel with
   Cloudflare Access, an email allowlist and an authenticator code.
 - **Batch CLI choices and keyboard shortcuts:** answer the same menu in many sessions at once,

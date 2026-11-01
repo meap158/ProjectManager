@@ -179,3 +179,9 @@ anything.
 
 - PM-306: Home includes `/` and `/projects/:id`. Keep the persistent Home selection separate from
   last-page startup restoration; the temporary launcher `/` must not overwrite it. See `homeSelection.test.tsx`.
+
+- PM-405: `server/orchestrator/sessionSupervision.ts` owns opt-in scoped session enrollment,
+  quota readiness and continuation. Keep the scheduler lease, current-card binding, single owner,
+  pre-send persistent fingerprint and empty-prompt guards. Stopped sessions require explicit wake;
+  existing Codex rotation/reset and Claude native waits retain ownership. See
+  `docs/ORCHESTRATOR-SESSION-SUPERVISION.md` for research and acceptance criteria.

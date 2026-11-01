@@ -1,6 +1,6 @@
 # Roadmap
 
-Last updated 2026-10-25. This is the plan and where it stands. Day-to-day work lives on the board
+Last updated 2026-11-02. This is the plan and where it stands. Day-to-day work lives on the board
 (`PM-n` cards); what is built is in the [README](README.md); how it works is in
 [CLAUDE.md](CLAUDE.md) and [DESIGN.md](DESIGN.md).
 
@@ -20,6 +20,8 @@ data stay on your computer, and it works from a phone too.
   and pull requests.
 - Persistent agent sessions in real terminals (Claude Code, Codex, Grok, Antigravity, OpenCode),
   card-linked runs, and orchestrator chats that work across projects.
+- Opt-in scoped supervision of unfinished session cards, with fresh quota checks and explicit
+  stopped-session wake requests (PM-405).
 - Switching between accounts of the same agent and reading each one's usage.
 - Reaching the app from a phone: over the LAN, and from anywhere through the owner's own Cloudflare
   Tunnel.

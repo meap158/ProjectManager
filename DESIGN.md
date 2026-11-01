@@ -32,6 +32,10 @@ the 25 MB preview limit, get lazy thumbnails; other formats keep a file icon.
 Confirmation dialog headings and messages wrap long paths and commands anywhere within the
 dialog width. Keep the full text selectable, with vertical scrolling when needed.
 
+Orchestrator settings offer automatic session continuation as an unchecked option. Its help text
+explains enrollment and wait conditions. Session checks report the session name, card, progress and
+an actionable wait reason. Enrollment, continuation and explicit wake actions use decision history.
+
 ## 1. Principles
 
 Agents status filters retain their selected fill during Shift-click and phone long-press selection.

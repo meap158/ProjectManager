@@ -1,4 +1,5 @@
-﻿import { OrchestratorAssignments } from './assignments.js';
+import { SessionSupervision } from './sessionSupervision.js';
+import { OrchestratorAssignments } from './assignments.js';
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../db.js';
 import type { AgentSupervisor } from '../agents/supervisor.js';
@@ -97,12 +98,27 @@ export class OrchestratorService {
     return this.policyCache.byId.get(id);
   }
 
+  readonly sessionSupervision: SessionSupervision;
   constructor(
     private db: Db,
     private supervisor: AgentSupervisor,
     private dataDir: string | null,
     private attentionProjects?: () => ProjectSummary[],
-  ) {}
+  ) {
+    this.sessionSupervision = new SessionSupervision(
+      db,
+      supervisor,
+      dataDir,
+      (id) => this.currentPolicy(id),
+      (id, action, message, cardId) =>
+        this.record({
+          orchestratorId: id,
+          action,
+          message,
+          ...(cardId === undefined ? {} : { cardId }),
+        }),
+    );
+  }
   state(): OrchestratorState {
     const saved = getSetting<OrchestratorState>(this.db, KEY) ?? { instances: [], events: [] };
     return {
@@ -720,6 +736,12 @@ export class OrchestratorService {
         // Attention follow-up can revise an existing card without returning its ID.
         invalidateSnapshots();
       }
+      if (generation !== this.generation || !assignments.isLeaseValid(this.owner, epoch)) return;
+      await this.sessionSupervision.tick(
+        initial.id,
+        () => generation === this.generation && assignments.isLeaseValid(this.owner, epoch),
+      );
+      if (generation !== this.generation || !assignments.isLeaseValid(this.owner, epoch)) return;
       const scopeKey = [...new Set(initial.projectIds)].sort((a, b) => a - b).join(',');
       const makeSnapshot = () => ({
         cards: listSchedulableCards(this.db, initial.projectIds),

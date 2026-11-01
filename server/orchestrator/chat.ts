@@ -64,6 +64,27 @@ const cardRef = z.union([
 ]);
 
 export const ORCHESTRATOR_TOOLS = [
+  ...['check_session', 'continue_session', 'wake_session', 'supervise_session'].map((name) => ({
+    name,
+    description:
+      name === 'check_session'
+        ? 'Inspect a scoped worker session: progress, quota and readiness, with reasons it cannot continue or wake. Call before acting.'
+        : name === 'continue_session'
+          ? 'Continue unfinished in-progress card work in an idle worker with fresh quota, no draft or owner question. Deduplicated; check worker_output after sending.'
+          : name === 'wake_session'
+            ? 'Explicitly resume a stopped scoped worker on its in-progress card, respecting quota and worker capacity. Does not blindly send a second prompt.'
+            : 'Enroll or release a scoped worker for automatic card continuation. Requires this orchestrator supervision setting; one orchestrator owns a session at a time.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'integer', minimum: 1 },
+        ...(name === 'supervise_session' ? { enabled: { type: 'boolean' } } : {}),
+      },
+      required: name === 'supervise_session' ? ['sessionId', 'enabled'] : ['sessionId'],
+      additionalProperties: false,
+    },
+  })),
+
   {
     name: 'report_work',
     description:
@@ -232,7 +253,7 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'list_sessions',
     description:
-      'The CLI sessions in your projects: id, project, agent, state (idle = waiting for its next instruction, running = working, input = asking the user), linked card and last output. Use it to find an idle session to hand a card to.',
+      'The CLI sessions in your projects: id, project, agent, state (idle = waiting for its next instruction, running = working, input = asking the user), linked card and last output. Use it to find an idle session to hand a card to. check_session gives quota, wake/continue eligibility and blockers.',
     inputSchema: {
       type: 'object',
       properties: { projectId: { type: 'integer' } },
@@ -710,6 +731,27 @@ export class OrchestratorChat implements OrchestratorToolHost {
         reason: decision?.reason ?? 'Task is outside current scope or not ready',
       };
     };
+
+    if (['check_session', 'continue_session', 'wake_session', 'supervise_session'].includes(name)) {
+      const input = z
+        .object({
+          sessionId: z.number().int().positive(),
+          ...(name === 'supervise_session' ? { enabled: z.boolean() } : {}),
+        })
+        .strict()
+        .parse(args);
+      const control = this.service.sessionSupervision;
+      if (name === 'check_session') return control.check(orchestratorId, input.sessionId);
+      if (name === 'supervise_session')
+        return control.enroll(
+          orchestratorId,
+          input.sessionId,
+          (input as { enabled: boolean }).enabled,
+        );
+      requireDelegation();
+      if (name === 'wake_session') return control.wake(orchestratorId, input.sessionId);
+      return control.continue(orchestratorId, input.sessionId);
+    }
 
     if (name === 'report_work') {
       const input = z
@@ -1249,10 +1291,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
             c.issueUrl,
           )
         : undefined;
+      if (instance.superviseSessions)
+        this.service.sessionSupervision.assertCanEnroll(orchestratorId, s!.id);
       const result = this.supervisor.attachCard(s!.id, c.id, {
         send: true,
         ...(prompt ? { prompt } : {}),
       });
+      if (instance.superviseSessions)
+        this.service.sessionSupervision.enroll(orchestratorId, s!.id, true);
       audit(c.id, 'assign_card', { sessionId: s!.id, instructions: input.instructions ?? null });
       this.record(
         orchestratorId,
@@ -1381,6 +1427,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
         throw error;
       }
       if (input.requestId) requests.started(input.requestId, session.id);
+      if (this.instance(orchestratorId).superviseSessions)
+        this.service.sessionSupervision.enroll(orchestratorId, session.id, true);
       audit(c.id, 'start_session', {
         sessionId: session.id,
         providerId,
@@ -1572,7 +1620,12 @@ export function briefing(
       : 'not a git repo';
     return `- **${p.name}** (project ${p.id}) at \`${p.path}\`${p.missing ? ' (FOLDER MISSING)' : ''}: ${git}. Board: ${c.backlog} backlog, ${c.todo} to do, ${c.in_progress} in progress, ${c.review} review, ${c.done} done.`;
   };
+  const supervision = instance.superviseSessions
+    ? 'Session supervision is enabled. Use check_session to inspect progress and eligibility, supervise_session to enroll/release existing workers, continue_session for unfinished idle card work, and wake_session only for an explicit stopped-session wake request. Assigned and newly started sessions enroll automatically. Never retry an uncertain send without checking worker_output. Quota waits, questions and drafts must remain with their existing owner.'
+    : 'Automatic session supervision is off. check_session can inspect readiness; ask the owner to enable supervision before enrolling sessions.';
   return `# Orchestrator: ${instance.name}
+
+${supervision}
 
 You are this ProjectManager orchestrator. The user chats with you here and you act on
 their requests across the projects below: following up on tasks, checking progress, moving cards

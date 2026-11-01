@@ -95,7 +95,15 @@ function setup(overrides: Partial<OrchestratorConfig> = {}, attachmentsRoot: str
     })),
   };
   const record = vi.fn();
+  const sessionSupervision = {
+    check: vi.fn(async () => ({ canContinue: false, reason: 'test wait' })),
+    enroll: vi.fn(),
+    continue: vi.fn(),
+    wake: vi.fn(),
+    assertCanEnroll: vi.fn(),
+  };
   const service = {
+    sessionSupervision,
     state: () => ({ instances: [instance], events: [] }),
     situation: () => ({ generatedAt: '', needsAttention: [], beingWorkedOn: [] }),
     record,
@@ -111,7 +119,21 @@ function setup(overrides: Partial<OrchestratorConfig> = {}, attachmentsRoot: str
   );
   const call = (name: string, args: Record<string, unknown> = {}) =>
     chat.call('master-1', 5, name, args);
-  return { db, a, b, mine, other, chat, call, sessions, runs, supervisor, record, instance };
+  return {
+    db,
+    a,
+    b,
+    mine,
+    other,
+    chat,
+    call,
+    sessions,
+    runs,
+    supervisor,
+    record,
+    instance,
+    sessionSupervision,
+  };
 }
 
 describe('orchestrator chat tools (PM-89)', () => {
@@ -941,4 +963,22 @@ it('sends one in-scope card to a running, idle chat and refuses every other case
   expect(supervisor.sendInput).toHaveBeenCalledTimes(1);
   expect(getCard(db, mine.id)?.status).toBe('todo');
   db.close();
+});
+
+it('routes scoped supervision tools and allows release when delegation is disabled', async () => {
+  const t = setup({ superviseSessions: true });
+  await t.call('check_session', { sessionId: 7 });
+  expect(t.sessionSupervision.check).toHaveBeenCalledWith('master-1', 7);
+  await t.call('supervise_session', { sessionId: 7, enabled: true });
+  expect(t.sessionSupervision.enroll).toHaveBeenCalledWith('master-1', 7, true);
+  await t.call('continue_session', { sessionId: 7 });
+  expect(t.sessionSupervision.continue).toHaveBeenCalledWith('master-1', 7);
+  await t.call('wake_session', { sessionId: 7 });
+  expect(t.sessionSupervision.wake).toHaveBeenCalledWith('master-1', 7);
+  t.instance.delegateToSessions = false;
+  await t.call('supervise_session', { sessionId: 7, enabled: false });
+  expect(t.sessionSupervision.enroll).toHaveBeenCalledWith('master-1', 7, false);
+  await expect(t.call('continue_session', { sessionId: 7 })).rejects.toThrow(/turned off/);
+  await expect(t.call('check_session', { sessionId: -1 })).rejects.toThrow();
+  t.db.close();
 });

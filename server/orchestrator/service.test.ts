@@ -1345,3 +1345,44 @@ it('bounds retained observation snapshots and rehydrates evicted masters without
     db.close();
   }
 });
+
+it('runs supervision inside the scheduler lease and cancels it when stopped', async () => {
+  const db = openDb(':memory:');
+  const service = new OrchestratorService(
+    db,
+    { listAllSessions: () => [] } as unknown as AgentSupervisor,
+    null,
+  );
+  service.save({
+    name: 'Supervision',
+    enabled: true,
+    superviseSessions: true,
+    strategy: 'autonomous',
+    projectIds: [],
+    providers: ['codex'],
+    maxWorkers: 1,
+    maxWorkersPerProject: 1,
+    maxWorkersPerProvider: 1,
+    reservePercent: 10,
+    allowUnknownQuota: false,
+    quotaMaxAgeMs: 60000,
+  });
+  let release!: () => void;
+  let valid!: () => boolean;
+  const supervision = vi
+    .spyOn(service.sessionSupervision, 'tick')
+    .mockImplementation(async (_owner, alive) => {
+      valid = alive!;
+      expect(valid()).toBe(true);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+  const tick = service.tick();
+  await vi.waitFor(() => expect(supervision).toHaveBeenCalledOnce());
+  const stop = service.stop();
+  expect(valid()).toBe(false);
+  release();
+  await Promise.all([tick, stop]);
+  db.close();
+});

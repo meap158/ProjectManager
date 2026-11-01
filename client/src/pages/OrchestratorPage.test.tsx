@@ -1288,3 +1288,25 @@ it('clears a recovered overview connection warning without retaining a stale act
     vi.useRealTimers();
   }
 });
+
+it('keeps automatic session supervision opt-in and saves the selection', async () => {
+  vi.mocked(api.orchestrators).mockResolvedValue({ instances: [], events: [] });
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  await screen.findByText("Create an orchestrator to look after your projects' boards.");
+  const toggle = screen.getByRole('checkbox', {
+    name: 'Auto-continue enrolled sessions while quota permits',
+  }) as HTMLInputElement;
+  expect(toggle.checked).toBe(false);
+  fireEvent.click(toggle);
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Supervised' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save orchestrator' }));
+  await waitFor(() =>
+    expect(api.saveOrchestrator).toHaveBeenCalledWith(
+      expect.objectContaining({ superviseSessions: true }),
+    ),
+  );
+});

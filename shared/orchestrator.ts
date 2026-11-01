@@ -11,6 +11,8 @@ export interface OrchestratorConfig {
    * start a session within the worker limits (PM-399). Missing means on.
    */
   delegateToSessions?: boolean;
+  /** Automatically continue explicitly enrolled sessions while fresh quota permits. Default off. */
+  superviseSessions?: boolean;
   projectIds: number[];
   providers: string[];
   maxWorkers: number;

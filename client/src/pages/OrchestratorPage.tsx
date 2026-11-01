@@ -1592,6 +1592,19 @@ export function OrchestratorPage() {
                     Chat may hand cards to CLI sessions (an idle one, or a new one within the worker
                     limits)
                   </label>
+                  <label className="orchestrator-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.superviseSessions ?? false}
+                      onChange={(e) => setDraft({ ...draft, superviseSessions: e.target.checked })}
+                    />
+                    Auto-continue enrolled sessions while quota permits
+                  </label>
+                  <p className="faint">
+                    Applies to sessions handed cards by this orchestrator, or enrolled in chat.
+                    Pauses for questions, drafts, quota waits and completed cards. Stopped sessions
+                    need an explicit wake request.
+                  </p>
                 </div>
               </div>
 
