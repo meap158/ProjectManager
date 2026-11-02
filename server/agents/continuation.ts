@@ -54,3 +54,14 @@ export function emptyCodexPrompt(tail: string): boolean {
   const last = prompts.at(-1)?.[1]?.trim();
   return last !== undefined && /^(?:Ask \S+ to do anything)?$/i.test(last);
 }
+
+/**
+ * Whether Grok Build's input box is empty (PM-413). Grok draws its prompt inside a box, so the
+ * line is `│ ❯ … │`, which the Codex check above does not read. Rendered from real Grok logs.
+ */
+export function emptyGrokPrompt(tail: string): boolean {
+  const text = stripTerminal(tail).slice(-8000);
+  const prompts = [...text.matchAll(/(?:^|\n)[ \t]*│[ \t]*❯([^\r\n]*)/g)];
+  const last = prompts.at(-1)?.[1];
+  return last !== undefined && /^[ \t]*│?[ \t]*$/.test(last);
+}

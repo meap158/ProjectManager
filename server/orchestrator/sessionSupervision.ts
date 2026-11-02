@@ -5,7 +5,7 @@ import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { ProviderLimits } from '../../shared/limits.js';
 import { getCard, getSetting, setSetting } from '../store.js';
 import { AgentError, type AgentSupervisor } from '../agents/supervisor.js';
-import { emptyCodexPrompt } from '../agents/continuation.js';
+import { emptyCodexPrompt, emptyGrokPrompt } from '../agents/continuation.js';
 import { stripTerminal } from '../agents/activity.js';
 import { readLimits } from '../agents/limits.js';
 import { planOrchestration } from './planner.js';
@@ -123,6 +123,18 @@ export class SessionSupervision {
     return this.inspect(owner, id);
   }
   private quota(session: AgentSession): ProviderLimits[] {
+    // Grok (PM-413): the live login's billing reading. Grok sessions use the login that was live
+    // when they started; rotation restarts them on a switch, a manual switch asks the user to.
+    if (session.providerId === 'grok') {
+      try {
+        const account = this.supervisor.grokAccounts?.state().defaultAccount;
+        return account?.usageStatus === 'fresh' && account.limits
+          ? [{ ...account.limits, providerId: 'grok' }]
+          : [];
+      } catch {
+        return [];
+      }
+    }
     if (session.providerId !== 'codex' && session.providerId !== 'claude')
       return readLimits(this.dataDir);
     try {
@@ -186,7 +198,10 @@ export class SessionSupervision {
       )
     )
       reason = 'Provider quota/reset continuation owns this wait';
-    else if (!screen || !emptyCodexPrompt(screen))
+    else if (
+      !screen ||
+      !(s.providerId === 'grok' ? emptyGrokPrompt(screen) : emptyCodexPrompt(screen))
+    )
       reason = 'Prompt is unreadable or contains a draft';
     else if (record?.sentAt && now - record.sentAt < 60_000)
       reason = 'Waiting for the previous continuation';
@@ -223,6 +238,8 @@ export class SessionSupervision {
           await this.supervisor.refreshCodexAccountsUsage(session.codexAccountId ?? undefined);
         else if (session.providerId === 'claude')
           await this.supervisor.refreshClaudeAccountsUsage();
+        else if (session.providerId === 'grok')
+          await this.supervisor.grokAccounts?.refresh('default');
       } catch {
         /* A failed refresh cannot authorize continuation. */
       }

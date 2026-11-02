@@ -74,6 +74,14 @@ function setup() {
     }),
     refreshCodexAccountsUsage: vi.fn(async () => undefined),
     refreshClaudeAccountsUsage: vi.fn(async () => undefined),
+    grokAccounts: {
+      state: () => ({
+        available: true,
+        accounts: [],
+        defaultAccount: { usageStatus: 'fresh', limits: { ...limits, providerId: 'grok' } },
+      }),
+      refresh: vi.fn(async () => undefined),
+    },
     sendInput: vi.fn((_id: number, _text: string, _record: boolean) => ({ queued: false })),
     startSession: vi.fn(async () => {
       session.status = 'running';
@@ -265,6 +273,24 @@ it('checks Claude prompts and quota without taking over native waits', async () 
   expect(t.supervisor.sendInput).toHaveBeenCalledTimes(1);
   t.session.usageLimit = { message: 'Usage limit' } as AgentSession['usageLimit'];
   expect(t.control.inspect('master', 7).canContinue).toBe(false);
+});
+
+it('continues Grok sessions from the live login quota and its boxed prompt (PM-413)', async () => {
+  const t = setup();
+  t.session.providerId = 'grok';
+  t.policy.providers.push('grok');
+  t.setScreen('Work remains\n╭────────────╮\n│ ❯          │\n╰────────────╯');
+  t.control.enroll('master', 7, true);
+  await t.control.tick('master');
+  expect(t.supervisor.sendInput).toHaveBeenCalledTimes(1);
+  // A draft in the box, or a stale reading of the live login, stops it.
+  t.setScreen('Work remains\n│ ❯ owner draft │');
+  expect(t.control.inspect('master', 7).reason).toContain('draft');
+  t.setScreen('Next part\n│ ❯          │');
+  t.limits.asOf = new Date(Date.now() - 120000).toISOString();
+  expect(t.control.inspect('master', 7).reason).toContain('stale');
+  await t.control.check('master', 7);
+  expect(t.supervisor.grokAccounts.refresh).toHaveBeenCalledWith('default');
 });
 
 it('allows taking over enrollment left by a deleted orchestrator', () => {

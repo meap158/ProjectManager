@@ -40,6 +40,13 @@ Disable the setting or pause the master to stop automatic continuation. Native p
 remain in control; a reset timestamp alone never proves quota is available. Unknown quota blocks
 supervision even when the separate unknown-quota worker-start option is selected.
 
+Where quota comes from: Codex reads the session's own saved account, Claude its live login, and
+Grok (PM-413) the live login's Grok billing reading, refreshed when a check finds it missing or
+stale. Grok sessions keep the login they started with until restarted; automatic Grok rotation
+restarts them, a manual switch does not. OpenCode and Antigravity have no account reading yet, so
+their sessions stay blocked as unknown quota. Grok draws its input inside a box (`│ ❯ … │`), so its
+empty-prompt check is its own (`emptyGrokPrompt`), checked against real rendered Grok screens.
+
 The existing scheduler checks every 30 seconds, inspects at most 50 enrolled sessions per master
 in rotating order, and requires at least 60 seconds between sends. Delivery fingerprints survive
 restarts, repeated enrollment and transfer from a released owner. Explicit wakes count in-flight

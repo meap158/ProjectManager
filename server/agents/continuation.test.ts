@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { allowanceReset, emptyCodexPrompt, usageLimitShown } from './continuation.js';
+import {
+  allowanceReset,
+  emptyCodexPrompt,
+  emptyGrokPrompt,
+  usageLimitShown,
+} from './continuation.js';
 
 describe('allowance continuation', () => {
   const windows = [
@@ -74,5 +79,26 @@ describe('a /goal footer after the limit message scrolled away', () => {
   });
   it('does not once the login has quota again', () => {
     expect(usageLimitShown(footer, [], Date.now())).toBeUndefined();
+  });
+});
+
+describe('Grok prompt (PM-413)', () => {
+  // The bottom of a real Grok Build screen at idle, as the server renders it from a session log.
+  const box = (typed: string) =>
+    [
+      'Coming from Claude Code? Resume your session from 7m ago using ctrl+u',
+      '╭' + '─'.repeat(60) + '╮',
+      '│ ❯ ' + typed.padEnd(57) + '│',
+      '╰' + '─'.repeat(40) + ' Grok 4.7 (high) ─╯',
+      ' Ctrl+x:shortcuts            Grok Build  1.0.62 [stable]',
+    ].join('\n');
+  it('reads an empty input box and refuses one holding a draft', () => {
+    expect(emptyGrokPrompt(box(''))).toBe(true);
+    expect(emptyGrokPrompt(box('half-typed instruction'))).toBe(false);
+    // The Codex check does not see Grok's boxed prompt at all.
+    expect(emptyCodexPrompt(box(''))).toBe(false);
+  });
+  it('does not read a working screen as an empty prompt', () => {
+    expect(emptyGrokPrompt(' ┃  ◆ Thinking…\n ┃\n   ⠼ Thinking… 23s')).toBe(false);
   });
 });
