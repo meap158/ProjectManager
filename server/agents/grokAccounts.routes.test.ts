@@ -59,3 +59,15 @@ it('returns safe validation errors and preserves the existing Host gate', async 
   expect((await call('PUT', '/active', { accountId: '../auth' })).status).toBe(400);
   expect((await call('POST', '', { authJson: 42 })).status).toBe(400);
 });
+
+it('keeps Grok automatic rotation off until chosen and reports it with every state (PM-412)', async () => {
+  const call = setup();
+  expect((await (await call('GET')).json()).autoSwitch).toBe(false);
+  const on = await call('PUT', '/auto-switch', { autoSwitch: true });
+  expect(on.status).toBe(200);
+  expect((await on.json()).autoSwitch).toBe(true);
+  expect((await (await call('GET')).json()).autoSwitch).toBe(true);
+  expect((await call('PUT', '/auto-switch', { autoSwitch: 'yes' })).status).toBe(400);
+  const off = await call('PUT', '/auto-switch', { autoSwitch: false });
+  expect((await off.json()).autoSwitch).toBe(false);
+});

@@ -15,6 +15,7 @@ vi.mock('../api', () => ({
     switchGrokAccount: vi.fn(),
     renameGrokAccount: vi.fn(),
     removeGrokAccount: vi.fn(),
+    setGrokAutoSwitch: vi.fn(),
   },
 }));
 afterEach(() => {
@@ -79,4 +80,24 @@ it('requires confirmation for switching and reports unknown usage without a fabr
   expect(screen.queryByRole('meter')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
   await waitFor(() => expect(api.switchGrokAccount).toHaveBeenCalledWith(account.id));
+});
+
+it('offers opt-in automatic rotation with an explanation (PM-412)', async () => {
+  const state: NativeAccountsState = {
+    available: true,
+    accounts: [account],
+    defaultAccount: { ...account, active: true },
+    autoSwitch: false,
+  };
+  vi.mocked(api.getGrokAccounts).mockResolvedValue(state);
+  vi.mocked(api.setGrokAutoSwitch).mockResolvedValue({ ...state, autoSwitch: true });
+  render(<NativeAccountsPanel providerId="grok" />);
+  const box = (await screen.findByRole('checkbox', {
+    name: 'Automatically switch accounts when credits run out',
+  })) as HTMLInputElement;
+  expect(box.checked).toBe(false);
+  fireEvent.click(box);
+  await waitFor(() => expect(api.setGrokAutoSwitch).toHaveBeenCalledWith(true));
+  await waitFor(() => expect(box.checked).toBe(true));
+  expect(screen.getByRole('button', { name: 'How Grok auto-switch works' })).toBeTruthy();
 });

@@ -133,6 +133,13 @@ import { resolveArgv } from './resolve.js';
 import { renderScreen } from './screen.js';
 import { logBase, logicalSize, physicalSize, removeLog } from './logFile.js';
 import { ClaudeAccounts, CodexAccountError, CodexAccounts } from './codexAccounts.js';
+import { GrokAccountError, GrokAccounts } from './grokAccounts.js';
+import {
+  grokCurrentExhausted,
+  grokLimitOnScreen,
+  grokSkipUntil,
+  nextGrokAccount,
+} from './grokRotation.js';
 
 const now = () => new Date().toISOString();
 
@@ -369,6 +376,9 @@ const renameKey = (id: number) => `session-rename:${id}`;
 /** The CLI name last seen or sent, so a change made in the CLI is told apart from ours. */
 const seenTitleKey = (id: number) => `session-cli-title:${id}`;
 
+/** Grok automatic account rotation, off until chosen (PM-412). */
+const GROK_AUTO_SWITCH_KEY = 'grok-accounts-auto-switch';
+
 export class AgentSupervisor {
   private live = new Map<string, LiveProc>();
   private sessionSizes = new Map<number, { cols: number; rows: number }>();
@@ -421,6 +431,8 @@ export class AgentSupervisor {
   private readonly installRecipes: Partial<Record<string, InstallRecipe>>;
   private readonly codexAccounts: CodexAccounts | null;
   private readonly claudeAccounts: ClaudeAccounts | null;
+  /** Native Grok logins (PM-254); the routes and the rotation tick share this one instance. */
+  readonly grokAccounts: GrokAccounts | null;
   /**
    * Accounts already tried in the current Codex usage-limit rotation, with when each was left.
    * One list for every Codex CLI. An account drops out once its quota is back (`codexTried`).
@@ -457,6 +469,11 @@ export class AgentSupervisor {
   private claudeRotationTried = new Map<string, number>();
   private claudeRotating = false;
   private claudeLimitSeen = new Map<number, { at: number; shown: boolean }>();
+  private grokRotating = false;
+  private grokLimitSeen = new Map<number, { at: number; shown: boolean }>();
+  /** Grok logins rotation left, each skipped until its own credit reset (PM-412). */
+  private grokSkipped = new Map<string, number>();
+  private grokRefreshedAt = 0;
   /** Resolves once boot reconciliation (re-attach / relaunch) is done. */
   readonly ready: Promise<void>;
 
@@ -499,6 +516,7 @@ export class AgentSupervisor {
     if (this.dataDir) persistModes(path.join(this.dataDir, 'claude-modes.json'));
     this.codexAccounts = this.dataDir ? new CodexAccounts(this.dataDir, db) : null;
     this.claudeAccounts = this.dataDir ? new ClaudeAccounts(this.dataDir, db) : null;
+    this.grokAccounts = this.dataDir ? new GrokAccounts(this.dataDir) : null;
     this.managedRuns = options.managedRuns ?? false;
     this.maxParallelRuns = options.maxParallelRuns ?? MAX_PARALLEL_RUNS;
     this.cpuBudget = options.cpuBudget ?? false;
@@ -526,6 +544,11 @@ export class AgentSupervisor {
           this.tickClaudeRotation();
         } catch (e) {
           console.error('[agents] claude account rotation:', e);
+        }
+        try {
+          this.tickGrokRotation();
+        } catch (e) {
+          console.error('[agents] grok account rotation:', e);
         }
       }
     }, 10_000);
@@ -737,6 +760,16 @@ export class AgentSupervisor {
 
   setClaudeAutoSwitch(enabled: boolean): CodexAccountsState {
     return this.withClaudeAccounts((accounts) => accounts.setAutoSwitch(enabled));
+  }
+
+  /** Off until chosen: Grok rotation restarts sessions, so it is never a surprise (PM-412). */
+  grokAutoSwitchEnabled(): boolean {
+    return getSetting<boolean>(this.db, GROK_AUTO_SWITCH_KEY) === true;
+  }
+
+  setGrokAutoSwitch(enabled: boolean): void {
+    setSetting(this.db, GROK_AUTO_SWITCH_KEY, enabled);
+    if (!enabled) this.grokSkipped.clear();
   }
 
   /**
@@ -1823,6 +1856,92 @@ export class AgentSupervisor {
         console.error('[agents] claude account rotation:', e);
       } finally {
         this.claudeRotating = false;
+      }
+    })();
+  }
+
+  /**
+   * Switches the Grok login when it runs out of credits (opt-in, Grok accounts panel). Only a fresh
+   * billing reading of the login in use at 99% or more authorizes it (`grokRotation.ts`); the
+   * CLI's own message on a session asks for that reading sooner. Sessions that are idle, or
+   * showing the message, restart on the new login with their conversation resumed; the ones
+   * showing it also get Continue. A session that is mid-turn is left alone. A login left is skipped
+   * until its own credit reset (a day when unknown). Rotation never waits for the network: the
+   * readings it asks for are used by a later tick.
+   */
+  private tickGrokRotation(): void {
+    const accounts = this.grokAccounts;
+    if (!accounts || this.grokRotating || !this.grokAutoSwitchEnabled()) return;
+    const rows = this.db
+      .prepare(`SELECT * FROM agent_sessions WHERE provider_id = 'grok' AND status = 'running'`)
+      .all() as unknown as SessionRow[];
+    const now = Date.now();
+    for (const id of this.grokLimitSeen.keys())
+      if (!rows.some((r) => r.id === id)) this.grokLimitSeen.delete(id);
+    if (!rows.length) return;
+    const blocked = new Set<number>();
+    for (const row of rows) {
+      if (this.noTurnSinceStart.has(row.id)) continue;
+      let seen = this.grokLimitSeen.get(row.id);
+      if (!seen || now - seen.at >= 15_000) {
+        seen = { at: now, shown: grokLimitOnScreen(this.sessionScreen(row.id, 3000) ?? '') };
+        this.grokLimitSeen.set(row.id, seen);
+      }
+      if (seen.shown) blocked.add(row.id);
+    }
+    for (const [id, until] of this.grokSkipped) if (until <= now) this.grokSkipped.delete(id);
+    let state: ReturnType<GrokAccounts['state']>;
+    try {
+      state = accounts.state();
+    } catch {
+      return;
+    }
+    const exhausted = grokCurrentExhausted(state, now);
+    // The login in use every five minutes, every 15 s while a session shows the message; once it
+    // is verified out, every saved login each minute so the candidates have readings too.
+    const interval = exhausted ? 60_000 : blocked.size ? 15_000 : 5 * 60_000;
+    if (now - this.grokRefreshedAt >= interval) {
+      this.grokRefreshedAt = now;
+      void accounts.refresh(exhausted ? undefined : 'default').catch(() => undefined);
+    }
+    const next = nextGrokAccount(state, this.grokSkipped, now);
+    if (!next) return;
+    const restartable = rows.filter(
+      (row) =>
+        this.live.has(`session:${row.id}`) &&
+        row.desired_state === 'running' &&
+        !this.queuedInputBytes(row.id) &&
+        !(this.restarting.get(row.id) && this.restarting.get(row.id)?.phase !== 'failed') &&
+        (blocked.has(row.id) ||
+          this.sessionActivity(row, this.fileModifiedAt(row.log_path)) === 'idle'),
+    );
+    const leaving = state.defaultAccount ?? null;
+    this.grokRotating = true;
+    void (async () => {
+      try {
+        await accounts.switch(next.id);
+        if (leaving) this.grokSkipped.set(leaving.id, grokSkipUntil(leaving, now));
+        this.grokRefreshedAt = 0;
+        for (const row of restartable) {
+          this.outputFor(`session:${row.id}`, row.log_path).append(
+            `
+[supervisor] Grok credits used up: switching to ${next.name}
+`,
+          );
+          await this.restartSession(row.id, { continuePrompt: blocked.has(row.id) }).catch(
+            (e: Error) => console.error('[agents] grok rotation restart:', e.message),
+          );
+          this.grokLimitSeen.delete(row.id);
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        // Another account operation (a refresh) holds the lock: the next tick tries again. Any
+        // other failure sets that candidate aside for a while instead of retrying every tick.
+        if (!(e instanceof GrokAccountError && /already running/.test(message)))
+          this.grokSkipped.set(next.id, now + 15 * 60_000);
+        console.error('[agents] grok account rotation:', message);
+      } finally {
+        this.grokRotating = false;
       }
     })();
   }

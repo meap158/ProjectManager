@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { GrokAccounts } from './grokAccounts.js';
 import {
   antigravityAccounts,
   switchAntigravityAccount,
@@ -23,6 +22,7 @@ import {
   type WorkspaceLayout,
 } from '../../shared/types.js';
 import type { Db } from '../db.js';
+import type { NativeAccountsState } from '../../shared/nativeAccounts.js';
 import { sessionUsage } from './usage.js';
 import { getProjectRow, getSetting, setSetting } from '../store.js';
 import { providerStatuses } from './providers.js';
@@ -229,11 +229,15 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
 
   // ---- Codex accounts (PM-164: saved auth.json profiles + automatic usage-limit rotation) ----
   app.get('/agents/antigravity-accounts', async (c) => c.json(await antigravityAccounts()));
-  const grokService = supervisor.dataDir ? new GrokAccounts(supervisor.dataDir) : null;
   const grokAccounts = () => {
-    if (!grokService) throw new AgentError(400, 'Account storage is unavailable');
-    return grokService;
+    if (!supervisor.grokAccounts) throw new AgentError(400, 'Account storage is unavailable');
+    return supervisor.grokAccounts;
   };
+  // Every Grok answer carries the rotation setting, which lives with the supervisor (PM-412).
+  const grokState = async (state: NativeAccountsState | Promise<NativeAccountsState>) => ({
+    ...(await state),
+    autoSwitch: supervisor.grokAutoSwitchEnabled(),
+  });
   const grokId = (id: string) =>
     z
       .string()
@@ -246,8 +250,8 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
       throw new AgentError(400, 'Request body must be valid JSON.');
     }
   };
-  app.get('/agents/grok-accounts', (c) =>
-    c.json(grokAccounts().state(c.req.query('refresh') === 'stale')),
+  app.get('/agents/grok-accounts', async (c) =>
+    c.json(await grokState(grokAccounts().state(c.req.query('refresh') === 'stale'))),
   );
   app.post('/agents/grok-accounts', async (c) => {
     const body = z
@@ -257,29 +261,40 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
       })
       .parse(await grokBody(c));
     return c.json(
-      await (body.authJson !== undefined
-        ? grokAccounts().import(body.authJson, body.name)
-        : grokAccounts().saveCurrent(body.name)),
+      await grokState(
+        body.authJson !== undefined
+          ? grokAccounts().import(body.authJson, body.name)
+          : grokAccounts().saveCurrent(body.name),
+      ),
     );
   });
-  app.post('/agents/grok-accounts/usage', async (c) => c.json(await grokAccounts().refresh()));
+  app.post('/agents/grok-accounts/usage', async (c) =>
+    c.json(await grokState(grokAccounts().refresh())),
+  );
+  app.put('/agents/grok-accounts/auto-switch', async (c) => {
+    const body = z.object({ autoSwitch: z.boolean() }).parse(await grokBody(c));
+    supervisor.setGrokAutoSwitch(body.autoSwitch);
+    return c.json(await grokState(grokAccounts().state()));
+  });
   app.post('/agents/grok-accounts/:id/usage', async (c) =>
     c.json(
-      await grokAccounts().refresh(
-        c.req.param('id') === 'default' ? 'default' : grokId(c.req.param('id')),
+      await grokState(
+        grokAccounts().refresh(
+          c.req.param('id') === 'default' ? 'default' : grokId(c.req.param('id')),
+        ),
       ),
     ),
   );
   app.put('/agents/grok-accounts/active', async (c) => {
     const body = z.object({ accountId: z.string() }).parse(await grokBody(c));
-    return c.json(await grokAccounts().switch(grokId(body.accountId)));
+    return c.json(await grokState(grokAccounts().switch(grokId(body.accountId))));
   });
   app.patch('/agents/grok-accounts/:id', async (c) => {
     const body = z.object({ name: z.string().trim().min(1).max(160) }).parse(await grokBody(c));
-    return c.json(await grokAccounts().rename(grokId(c.req.param('id')), body.name));
+    return c.json(await grokState(grokAccounts().rename(grokId(c.req.param('id')), body.name)));
   });
   app.delete('/agents/grok-accounts/:id', async (c) =>
-    c.json(await grokAccounts().remove(grokId(c.req.param('id')))),
+    c.json(await grokState(grokAccounts().remove(grokId(c.req.param('id'))))),
   );
   app.post('/agents/antigravity-accounts/:id/usage', async (c) =>
     c.json(

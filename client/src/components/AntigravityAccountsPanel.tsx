@@ -4,7 +4,7 @@ import { api } from '../api';
 import { serialPoll } from '../lib/serialPoll';
 import { useViewPreference } from '../useViewPreference';
 import { AccountActionIcon } from './CodexAccountsPanel';
-import { ProviderIcon } from './icons';
+import { InfoIcon, ProviderIcon } from './icons';
 import { UsageLimits } from './UsageLimits';
 import { ConfirmDelete } from './ConfirmDelete';
 
@@ -72,7 +72,8 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const acting = useRef(false),
-    fileRef = useRef<HTMLInputElement>(null);
+    fileRef = useRef<HTMLInputElement>(null),
+    switchHelpRef = useRef<HTMLDialogElement>(null);
   const actionRevision = useRef(0);
   const [chosen, setChosen] = useState<string | null>(null),
     [renaming, setRenaming] = useState<string | null>(null),
@@ -369,6 +370,79 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
             Switching changes the login for new {title} launches. Existing sessions keep their login
             until restarted.
           </p>
+          {isGrok && (
+            <div className="codex-accounts-toolbar">
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={state.autoSwitch === true}
+                  disabled={busy}
+                  onChange={() => void act(() => api.setGrokAutoSwitch(state.autoSwitch !== true))}
+                />
+                <span>Automatically switch accounts when credits run out</span>
+              </label>
+              <button
+                type="button"
+                className="icon-btn info-btn"
+                title="Switches only when Grok's billing service confirms the current login is out of credits. Click for details."
+                aria-label="How Grok auto-switch works"
+                aria-haspopup="dialog"
+                onClick={() => switchHelpRef.current?.showModal()}
+              >
+                <InfoIcon size={14} />
+              </button>
+              <dialog
+                ref={switchHelpRef}
+                className="confirm-dialog sessions-info-dialog"
+                aria-label="How Grok auto-switch works"
+                onClick={(event) => {
+                  if (event.target === event.currentTarget) event.currentTarget.close();
+                }}
+              >
+                <div className="dialog-body">
+                  <h2>How Grok auto-switch works</h2>
+                  <ul style={{ paddingLeft: 18, margin: '0 0 8px' }}>
+                    <li>
+                      It switches only when a billing reading from the last minute shows the current
+                      login at 99% or more of its credits. The CLI&apos;s &quot;You hit your weekly
+                      limit&quot; message only makes it check sooner.
+                    </li>
+                    <li>
+                      It picks the saved login with the least credit used, then the one saved first.
+                      A login whose usage can&apos;t be read (its saved token has expired) is tried
+                      last.
+                    </li>
+                    <li>
+                      A login it leaves is skipped until its credits reset, or for a day when the
+                      reset time is unknown. If no login qualifies, it stays and waits.
+                    </li>
+                    <li>
+                      Idle sessions and sessions showing the limit restart on the new login with
+                      their conversation resumed; the blocked ones get Continue. A session that is
+                      working keeps its old login until you restart it.
+                    </li>
+                  </ul>
+                </div>
+                <div className="dialog-footer">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => switchHelpRef.current?.close()}
+                  >
+                    Close
+                  </button>
+                </div>
+              </dialog>
+            </div>
+          )}
           <div className="codex-accounts-toolbar">
             <span className="faint">Saved logins are encrypted locally.</span>
             <span className="actions codex-accounts-toolbar-actions">

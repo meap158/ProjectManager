@@ -15,4 +15,6 @@ export interface NativeAccountsState {
   available: boolean;
   accounts: NativeAccount[];
   defaultAccount?: NativeAccount | null;
+  /** Grok only: automatic rotation when the login in use runs out of credits (PM-412). */
+  autoSwitch?: boolean;
 }
