@@ -371,7 +371,11 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
             until restarted.
           </p>
           {isGrok && (
-            <div className="codex-accounts-toolbar">
+            // The info button sits beside its label, as in the Codex panel (no actions on this row).
+            <div
+              className="codex-accounts-toolbar"
+              style={{ justifyContent: 'flex-start', flexWrap: 'nowrap' }}
+            >
               <label
                 style={{
                   display: 'inline-flex',
