@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
@@ -1150,15 +1151,15 @@ function SourceView({ content }: { content: string }) {
 }
 
 /** The app's resolved theme ("light" / "dark"), following switches so a frame can redraw. */
+// An external store rather than state plus an effect: React reads the theme again once it has
+// subscribed, so a switch between the first render and the subscription is not missed.
+const readTheme = () => document.documentElement.dataset.theme ?? 'light';
+const subscribeTheme = (onChange: () => void) => {
+  window.addEventListener(THEME_EVENT, onChange);
+  return () => window.removeEventListener(THEME_EVENT, onChange);
+};
 function useDocumentTheme(): string {
-  const read = () => document.documentElement.dataset.theme ?? 'light';
-  const [theme, setTheme] = useState(read);
-  useEffect(() => {
-    const update = () => setTheme(read());
-    window.addEventListener(THEME_EVENT, update);
-    return () => window.removeEventListener(THEME_EVENT, update);
-  }, []);
-  return theme;
+  return useSyncExternalStore(subscribeTheme, readTheme);
 }
 
 /**
