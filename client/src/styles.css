@@ -5499,14 +5499,18 @@ span.path-link:hover .path-icon {
     min-height: 20px;
     gap: 4px;
     font-size: 11px;
+    line-height: 20px;
   }
   .workspace .pane-identity > .inline-rename {
     font-size: 12px;
   }
+  /* The 24px tap target overhangs the 20px line instead of growing it: a taller row put the
+     baseline-aligned text at its top and left the centred unlink button 4px low (PM-373). */
   .workspace .pane-head .pane-meta .icon-btn-sm {
     width: 24px;
     min-width: 24px;
     height: 24px;
+    margin-block: -2px;
   }
   .workspace .pane-head .pane-meta svg {
     width: 14px;
