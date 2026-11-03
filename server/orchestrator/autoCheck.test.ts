@@ -229,3 +229,23 @@ it('a restart neither repeats a sent check nor loses a change made while down', 
   await t.make().tick();
   expect(t.state.checks).toBe(2);
 });
+
+it('does not repeat the fallback on a board that has not changed since its last check', async () => {
+  const t = setup();
+  await t.auto.tick();
+  t.state.now += AUTO_CHECK_FALLBACK_MS;
+  await t.auto.tick();
+  expect(t.state.checks).toBe(1);
+  // Everything is still waiting on the owner: hours pass, no more checks.
+  for (let i = 0; i < 4; i++) {
+    t.state.now += AUTO_CHECK_FALLBACK_MS;
+    await t.auto.tick();
+  }
+  expect(t.state.checks).toBe(1);
+  // A new To do card changes the board; the next fallback looks again.
+  insertCard(t.db, t.project, { title: 'New work', description: '', status: 'todo' });
+  t.state.now += AUTO_CHECK_FALLBACK_MS;
+  await t.auto.tick();
+  expect(t.state.checks).toBe(2);
+  expect(t.state.events[1]).toContain('board changed');
+});

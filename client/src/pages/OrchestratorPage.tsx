@@ -1615,8 +1615,8 @@ export function OrchestratorPage() {
                   </label>
                   <p className="faint">
                     Automatic checks run only while the chat is open and idle, at most 4 an hour and
-                    5 minutes apart, plus a 30-minute fallback. Pause stops them. Each one shows in
-                    Activity with its trigger.
+                    5 minutes apart, plus a 30-minute fallback when the board changed. Pause stops
+                    them. Each one shows in Activity with its trigger.
                   </p>
                 </div>
               </div>

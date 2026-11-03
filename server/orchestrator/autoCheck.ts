@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Db } from '../db.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { AgentSession } from '../../shared/types.js';
@@ -23,6 +24,12 @@ interface AutoCheckState {
   review: number[];
   /** Providers whose quota was usable (above the reserve). */
   quotaOk: string[];
+  /**
+   * The board (To do, In progress and Review cards in scope) when the last automatic check was
+   * sent. The fallback skips a board that has not changed since: everything left is waiting on
+   * the owner, and asking again only spends quota on the same answer.
+   */
+  checkedBoard?: string;
 }
 
 interface Deps {
@@ -91,9 +98,10 @@ export class AutoCheck {
     const current = this.observe(policy, now);
     const previous = getSetting<AutoCheckState>(db, key(id));
     if (!previous) {
-      this.save(id, { ...current.state, sent: [], lastCheckAt: now });
+      this.save(id, { ...current.state, sent: [], lastCheckAt: now, checkedBoard: '' });
       return;
     }
+    const checkedBoard = previous.checkedBoard ?? '';
     const triggers: string[] = [];
     for (const sessionId of previous.running)
       if (!current.state.running.includes(sessionId))
@@ -102,13 +110,18 @@ export class AutoCheck {
       if (!previous.review.includes(cardId)) triggers.push(`card ${cardId} moved to Review`);
     for (const p of current.state.quotaOk)
       if (!previous.quotaOk.includes(p)) triggers.push(`${p} quota recovered`);
-    if (!triggers.length && current.pending && now - previous.lastCheckAt >= AUTO_CHECK_FALLBACK_MS)
-      triggers.push('slow fallback, work is pending');
+    if (
+      !triggers.length &&
+      current.pending &&
+      current.board !== checkedBoard &&
+      now - previous.lastCheckAt >= AUTO_CHECK_FALLBACK_MS
+    )
+      triggers.push('slow fallback, the board changed and work is pending');
 
     const sent = previous.sent.filter((t) => now - t < HOUR_MS);
     if (!triggers.length) {
       // Nothing to report: follow the present, so a later change is measured against it.
-      this.save(id, { ...current.state, sent, lastCheckAt: previous.lastCheckAt });
+      this.save(id, { ...current.state, sent, lastCheckAt: previous.lastCheckAt, checkedBoard });
       return;
     }
     // Deferred triggers stay visible in the baseline until a check goes out.
@@ -118,6 +131,7 @@ export class AutoCheck {
       running: [...new Set([...previous.running, ...current.state.running])],
       review: previous.review.filter((c) => current.state.review.includes(c)),
       quotaOk: previous.quotaOk.filter((p) => current.state.quotaOk.includes(p)),
+      checkedBoard,
     };
     const chat = this.deps.chatSession(id);
     if (
@@ -143,7 +157,12 @@ export class AutoCheck {
       id,
       `Automatic check (${triggers.slice(0, 3).join('; ')}${triggers.length > 3 ? `; +${triggers.length - 3} more` : ''})`,
     );
-    this.save(id, { ...current.state, sent: [...sent, now], lastCheckAt: now });
+    this.save(id, {
+      ...current.state,
+      sent: [...sent, now],
+      lastCheckAt: now,
+      checkedBoard: current.board,
+    });
   }
 
   private save(id: string, state: AutoCheckState) {
@@ -161,9 +180,19 @@ export class AutoCheck {
     const review = cards.filter((c) => c.status === 'review').map((c) => c.id);
     const limits = readLimits(this.deps.dataDir);
     const quotaOk = policy.providers.filter((p) => sessionQuota(policy, p, limits, now) === null);
+    const todo = listSchedulableCards(db, policy.projectIds).filter((c) => c.status === 'todo');
+    const board = createHash('sha256')
+      .update(
+        [...cards, ...todo]
+          .map((c) => `${c.id}:${c.status}:${c.updatedAt}`)
+          .sort()
+          .join('|'),
+      )
+      .digest('hex');
     return {
       state: { running, review, quotaOk },
-      pending: cards.length > 0 || listSchedulableCards(db, policy.projectIds).length > 0,
+      pending: cards.length > 0 || todo.length > 0,
+      board,
     };
   }
 }

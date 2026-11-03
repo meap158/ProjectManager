@@ -119,7 +119,9 @@ starting workers. The check is refused (409) while the chat is working or asking
 enabled, autonomous orchestrator ask its own chat for this same check (`chat.check`, so the same
 409 guards) when something changed in scope: a session it owns or supervises stopped working, a
 card moved to Review, or a provider's quota came back above the reserve. A slow fallback fires
-after 30 minutes when any card is pending. Bounds: at most 4 automatic checks an hour, 5 minutes
+after 30 minutes when any card is pending and the board (To do, In progress and Review cards
+in scope) changed since the last automatic check, so work that only waits on you is not
+checked again and again. Bounds: at most 4 automatic checks an hour, 5 minutes
 apart; never while the chat is working, asking you, or has queued input; a stopped or unopened
 chat is never started. Paused, watch-only or off forgets the baseline, so Pause stops it at
 once and turning it on starts from a fresh look. Each check is recorded in Activity as
