@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { openDb } from '../db.js';
 import { setSetting } from '../store.js';
 import type { AgentSession } from '../../shared/types.js';
-import { enrollmentKey, ownedSessionIds, recordOwnedSession } from './ownedWorkers.js';
+import {
+  enrollmentKey,
+  ownedCardIds,
+  ownedSessionIds,
+  recordOwnedSession,
+} from './ownedWorkers.js';
 
 const session = (id: number, cardId: number | null, orchestratorId: string | null = null) =>
   ({ id, cardId, orchestratorId, status: 'running' }) as AgentSession;
@@ -40,6 +45,34 @@ describe('orchestrator-owned sessions (PM-417)', () => {
     const db = openDb(':memory:');
     recordOwnedSession(db, 'm1', 3, 30);
     expect(ownedSessionIds(db, 'm1', [session(3, 30, 'm1')]).size).toBe(0);
+    db.close();
+  });
+});
+
+describe('cards an orchestrator has worked on (PM-420)', () => {
+  it('collects its runs, its handed sessions and its supervised sessions, not others', () => {
+    const db = openDb(':memory:');
+    const now = new Date().toISOString();
+    db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (1, ?, ?, ?)').run(
+      'P',
+      '/p',
+      now,
+    );
+    for (const id of [10, 11, 12, 13, 14])
+      db.prepare(
+        "INSERT INTO cards (id, project_id, title, description, status, position, created_at, updated_at) VALUES (?, 1, 't', '', 'in_progress', 0, ?, ?)",
+      ).run(id, now, now);
+    const run = db.prepare(
+      "INSERT INTO agent_runs (project_id, card_id, name, provider_id, command_json, prompt, status, attempts, max_attempts, created_at, log_path, orchestrator_id) VALUES (1, ?, 'r', 'codex', '{}', '', 'succeeded', 1, 1, ?, 'l', ?)",
+    );
+    run.run(10, now, 'm1');
+    run.run(11, now, 'm2');
+    run.run(12, now, null);
+    recordOwnedSession(db, 'm1', 5, 13);
+    setSetting(db, enrollmentKey(6), { owner: 'm1', cardId: 14, enabled: true });
+    setSetting(db, enrollmentKey(7), { owner: 'm1', cardId: 12, enabled: false });
+    expect([...ownedCardIds(db, 'm1')].sort()).toEqual([10, 13, 14]);
+    expect([...ownedCardIds(db, 'm2')]).toEqual([11]);
     db.close();
   });
 });

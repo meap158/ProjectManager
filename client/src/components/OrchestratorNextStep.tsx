@@ -13,6 +13,11 @@ const steps: Record<
     label: 'View workers',
     target: 'workers',
   },
+  foreign_work: {
+    text: 'Someone else is working on this card. Ask the chat to check if it should take over.',
+    label: 'Open task',
+    target: 'card',
+  },
   review_required: {
     text: 'Review the finished run and accept or reject its changes.',
     label: 'Review runs',

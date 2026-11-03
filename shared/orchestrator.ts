@@ -36,6 +36,8 @@ export interface OrchestratorEvent {
 
 export type OrchestratorWaitReason =
   | 'active_worker'
+  /** In progress under work this orchestrator did not start (PM-420): its chat decides. */
+  | 'foreign_work'
   | 'review_required'
   | 'assignment_reserved'
   | 'retry_cooldown'

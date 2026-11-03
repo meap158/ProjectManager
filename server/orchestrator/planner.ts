@@ -53,6 +53,13 @@ export interface OrchestratorPlanningSnapshot {
    * global safety cap. Without it every live worker counts, as before.
    */
   ownedSessionIds?: ReadonlySet<number>;
+  /**
+   * Cards this orchestrator has worked on (PM-420, `ownedCardIds`). When given, an In progress
+   * card with no live worker is only recovered when it is one of these: other In progress cards
+   * belong to work it did not start (often a session not linked to the card), and its chat
+   * decides about them.
+   */
+  ownedCardIds?: ReadonlySet<number>;
 }
 
 /** Pure scheduling: execution must revalidate the snapshot before dispatching. */
@@ -168,6 +175,19 @@ export function planOrchestration(
         'Completion or failure needs review before more work is assigned',
         undefined,
         'review_required',
+      );
+      continue;
+    }
+    if (
+      card.status === 'in_progress' &&
+      snapshot.ownedCardIds &&
+      !snapshot.ownedCardIds.has(card.id)
+    ) {
+      decide(
+        'wait',
+        'In progress under work this orchestrator did not start; its chat decides',
+        undefined,
+        'foreign_work',
       );
       continue;
     }

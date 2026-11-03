@@ -292,3 +292,32 @@ describe('orchestrator worker limits count its own workers (PM-417)', () => {
     expect(planOrchestration(own, crowded, now)[0]?.waitReason).toBe('global_capacity');
   });
 });
+
+describe('orchestrator recovers only In progress cards that were its own work (PM-420)', () => {
+  const own = { ...policy, id: 'm1', maxWorkers: 2, maxWorkersPerProvider: 2 };
+  const inProgress = (id: number) => ({ ...card(id), status: 'in_progress' }) as Card;
+  const state = (ownedCardIds?: ReadonlySet<number>) => ({
+    ...snapshot(),
+    cards: [inProgress(1), card(2)],
+    ownedSessionIds: new Set<number>(),
+    ...(ownedCardIds ? { ownedCardIds } : {}),
+  });
+
+  it('leaves a foreign In progress card to the chat and still starts To do work', () => {
+    const decisions = planOrchestration(own, state(new Set()), now);
+    expect(decisions[0]).toMatchObject({ cardId: 1, action: 'wait', waitReason: 'foreign_work' });
+    expect(decisions[1]).toMatchObject({ cardId: 2, action: 'dispatch' });
+  });
+
+  it('recovers an In progress card it worked on before', () => {
+    expect(planOrchestration(own, state(new Set([1])), now)[0]).toMatchObject({
+      cardId: 1,
+      action: 'dispatch',
+      reason: 'Recover work with no live worker',
+    });
+  });
+
+  it('recovers every In progress card when ownership is not given, as before', () => {
+    expect(planOrchestration(own, state(), now)[0]?.action).toBe('dispatch');
+  });
+});

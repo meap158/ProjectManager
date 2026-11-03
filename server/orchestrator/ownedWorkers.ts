@@ -37,6 +37,35 @@ export function recordOwnedSession(
   setSetting(db, key(orchestratorId), records.slice(-KEEP));
 }
 
+/**
+ * Cards this orchestrator has worked on (PM-420): any run it dispatched, a session it started
+ * or handed the card to (kept records), or a session it supervises on that card.
+ */
+export function ownedCardIds(db: Db, orchestratorId: string): Set<number> {
+  const cards = new Set<number>(
+    (
+      db
+        .prepare(
+          'SELECT DISTINCT card_id AS cardId FROM agent_runs WHERE orchestrator_id = ? AND card_id IS NOT NULL',
+        )
+        .all(orchestratorId) as { cardId: number }[]
+    ).map((r) => r.cardId),
+  );
+  for (const r of getSetting<OwnedSession[]>(db, key(orchestratorId)) ?? []) cards.add(r.cardId);
+  const enrollments = db
+    .prepare("SELECT value FROM settings WHERE key LIKE 'orchestrator-session-supervision:%'")
+    .all() as { value: string }[];
+  for (const { value } of enrollments) {
+    try {
+      const e = JSON.parse(value) as Enrollment;
+      if (e.enabled && e.owner === orchestratorId && e.cardId) cards.add(e.cardId);
+    } catch {
+      // A malformed record owns nothing.
+    }
+  }
+  return cards;
+}
+
 /** The ids of the given sessions that this orchestrator owns right now. */
 export function ownedSessionIds(
   db: Db,
