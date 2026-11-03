@@ -241,10 +241,15 @@ export function buildDispatchArgv(
   prompt: string,
   autonomy: AgentAutonomy = 'edit',
   images: string[] = [],
+  /** Claude only: a `--permission-mode` that replaces the autonomy's own (PM-419, 'auto'). */
+  permissionMode: string | null = null,
 ): string[] {
   if (provider.id === 'shell') return defaultShell();
   if (!provider.binary) return [];
-  const extra = provider.autonomyArgs?.[autonomy] ?? [];
+  const extra =
+    permissionMode && provider.id === 'claude'
+      ? ['--permission-mode', permissionMode]
+      : (provider.autonomyArgs?.[autonomy] ?? []);
   const hasPlaceholder = provider.argsTemplate.includes(PROMPT_PLACEHOLDER);
   const template = hasPlaceholder
     ? provider.argsTemplate

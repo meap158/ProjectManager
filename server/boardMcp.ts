@@ -189,8 +189,18 @@ export function boardConnection(
             }),
           ]
         : [];
+    // A one-shot run has nobody to approve a tool (PM-419): its own board tools, limited to its
+    // card and audited, are allowed up front, or every add_note and update_status is denied.
+    const allow = owner.kind === 'run' ? ['--allowedTools', 'mcp__projectmanager'] : [];
     return {
-      command: [command[0]!, '--mcp-config', JSON.stringify(config), ...hook, ...command.slice(1)],
+      command: [
+        command[0]!,
+        '--mcp-config',
+        JSON.stringify(config),
+        ...allow,
+        ...hook,
+        ...command.slice(1),
+      ],
       env: nextEnv,
     };
   }

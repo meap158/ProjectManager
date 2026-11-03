@@ -244,6 +244,8 @@ describe('orchestrator chat tools (PM-89)', () => {
     expect(result.dispatched.runId).toBe(77);
     expect(supervisor.dispatchCard).toHaveBeenCalledWith(a, mine.id, {
       providerId: 'codex',
+      // Settings decide a run's level (PM-419); Codex has no override, so edit.
+      autonomy: 'edit',
       maxAttempts: 1,
       dispatchKey: expect.any(String),
       orchestratorId: 'master-1',

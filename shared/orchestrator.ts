@@ -79,7 +79,9 @@ export interface OrchestratorPlanDecision {
     blocker: string | null;
   };
   execution?: {
-    autonomy: 'edit' | 'read';
+    autonomy: 'edit' | 'read' | 'full';
+    /** 'auto': the run uses Claude's auto mode, from Settings (PM-419). */
+    permissionMode?: 'auto';
     supervisorAttempts: number;
     requiresReview: boolean;
   };

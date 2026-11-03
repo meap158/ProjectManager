@@ -606,6 +606,8 @@ export interface AgentRun {
   command: string[];
   prompt: string;
   autonomy: AgentAutonomy;
+  /** Set when the CLI ran in another permission mode than its autonomy's flag: 'auto' (PM-419). */
+  permissionMode?: string;
   /** What the run changed in the project's git working tree (null if not a repo or unknown). */
   changes: RunChanges | null;
   status: AgentRunStatus;

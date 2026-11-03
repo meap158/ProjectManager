@@ -150,6 +150,8 @@ export function RunCard({
             <span aria-hidden="true">·</span>
             <span title="What the agent was allowed to do">
               {AGENT_AUTONOMY_LABELS[run.autonomy]}
+              {/* Claude's auto mode from Settings: safe commands run, risky ones are blocked. */}
+              {run.permissionMode === 'auto' && ' · auto mode'}
             </span>
             <span aria-hidden="true">·</span>
             <span className="num">{elapsed(run, now)}</span>

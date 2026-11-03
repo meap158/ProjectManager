@@ -112,3 +112,18 @@ it('restarts an active manual card run as an interactive session after stop is c
   });
   expect(changed).toHaveBeenCalledWith({ ...item, status: 'killed' });
 });
+
+it("says when a run used Claude's auto mode (PM-419)", () => {
+  const item: AgentRun = {
+    ...run(),
+    autonomy: 'edit',
+    permissionMode: 'auto',
+    status: 'succeeded',
+    executionState: 'complete',
+    error: null,
+  };
+  render(<RunCard run={item} now={Date.now()} onChanged={vi.fn()} onDeleted={vi.fn()} />);
+  expect(screen.getByTitle('What the agent was allowed to do').textContent).toBe(
+    'Edit files · auto mode',
+  );
+});

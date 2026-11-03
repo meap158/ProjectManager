@@ -31,6 +31,7 @@ import {
 } from './workspaceRuns.js';
 import { planOrchestration, type OrchestratorPlanningSnapshot } from './planner.js';
 import { ownedSessionIds } from './ownedWorkers.js';
+import { orchestratorRunLevel } from './runLevel.js';
 import { planningRuns } from './planningRuns.js';
 import { pendingDatabasePage } from './pendingPage.js';
 import { liveRunProjects } from './liveProjects.js';
@@ -339,6 +340,10 @@ export class OrchestratorService {
       Date.now(),
       page.map((decision) => decision.cardId),
     );
+    // The level each provider's run would get from Settings (PM-419), looked up once per provider.
+    const levels = new Map<string, Awaited<ReturnType<typeof orchestratorRunLevel>>>();
+    for (const providerId of new Set(page.map((d) => d.providerId).filter(Boolean)))
+      levels.set(providerId!, await orchestratorRunLevel(this.db, providerId!));
     return {
       at: new Date().toISOString(),
       enabled: instance.enabled,
@@ -383,7 +388,13 @@ export class OrchestratorService {
             : {}),
           ...(explainRetry ? { waitReason, reason: retry.blocker ?? decision.reason } : {}),
           retry,
-          execution: { autonomy: 'edit' as const, supervisorAttempts: 1, requiresReview: true },
+          execution: {
+            ...((decision.providerId && levels.get(decision.providerId)) || {
+              autonomy: 'edit' as const,
+            }),
+            supervisorAttempts: 1,
+            requiresReview: true,
+          },
         };
       }),
     };
@@ -870,6 +881,8 @@ export class OrchestratorService {
           const situation = this.situation(initial.id);
           const run = await this.supervisor.dispatchCard(fresh.projectId, fresh.cardId, {
             providerId: fresh.providerId,
+            // The Settings permission level, as a session would get (PM-419).
+            ...(await orchestratorRunLevel(this.db, fresh.providerId!)),
             orchestratorId: initial.id,
             context: situation ? cardContext(situation, fresh.cardId, fresh.projectId) : undefined,
             maxAttempts: 1,

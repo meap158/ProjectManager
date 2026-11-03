@@ -335,6 +335,7 @@ interface RunRow {
   ended_at: string | null;
   log_path: string;
   autonomy: AgentAutonomy;
+  permission_mode?: string | null;
   execution_state?: 'active' | 'unknown' | 'complete' | null;
   execution_resolution_json?: string | null;
   changes_json: string | null;
@@ -2225,6 +2226,11 @@ export class AgentSupervisor {
       timeoutMin?: number;
       maxAttempts?: number;
       autonomy?: AgentAutonomy;
+      /**
+       * 'auto' runs Claude in auto mode instead of the autonomy's own flag (PM-419): the level
+       * orchestrator runs take from Settings. Ignored for other CLIs.
+       */
+      permissionMode?: 'auto';
       dispatchKey?: string;
       orchestratorId?: string;
       /** Extra context for the default prompt (e.g. what the orchestrator knows, PM-70). */
@@ -2238,6 +2244,8 @@ export class AgentSupervisor {
     const card = getCard(this.db, cardId);
     if (!card || card.projectId !== projectId) throw new AgentError(404, 'Card not found');
     const providerId = input.providerId ?? (input.command ? 'custom' : 'claude');
+    const permissionMode =
+      input.permissionMode === 'auto' && providerId === 'claude' && !input.command ? 'auto' : null;
     const prompt = this.withImages(
       input.prompt ??
         defaultPrompt(card.key, card.title, card.description, input.context, card.issueUrl),
@@ -2260,13 +2268,20 @@ export class AgentSupervisor {
       const requestedCommand =
         input.command ??
         (provider
-          ? buildDispatchArgv(provider, prompt, input.autonomy ?? 'edit', this.imagePaths(card.id))
+          ? buildDispatchArgv(
+              provider,
+              prompt,
+              input.autonomy ?? 'edit',
+              this.imagePaths(card.id),
+              permissionMode,
+            )
           : []);
 
       if (
         run.provider_id !== providerId ||
         run.prompt !== prompt ||
         run.autonomy !== (input.autonomy ?? 'edit') ||
+        (run.permission_mode ?? null) !== permissionMode ||
         run.max_attempts !== (input.maxAttempts ?? 3) ||
         stored.timeoutMs !==
           (input.timeoutMin === undefined ? RUN_DEFAULT_TIMEOUT_MS : input.timeoutMin * 60_000) ||
@@ -2314,7 +2329,7 @@ export class AgentSupervisor {
     }
     const command = input.command
       ? validateCommand(input.command)
-      : buildDispatchArgv(provider, prompt, autonomy, this.imagePaths(card.id));
+      : buildDispatchArgv(provider, prompt, autonomy, this.imagePaths(card.id), permissionMode);
     if (command.length === 0) throw new AgentError(400, 'Command is empty');
     const timeoutMs =
       input.timeoutMin === undefined ? RUN_DEFAULT_TIMEOUT_MS : input.timeoutMin * 60_000;
@@ -2345,8 +2360,9 @@ export class AgentSupervisor {
         .prepare(
           `INSERT INTO agent_runs
              (project_id, card_id, name, provider_id, command_json, prompt, status,
-              attempts, max_attempts, created_at, log_path, autonomy, dispatch_key, orchestrator_id)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?, ?)`,
+              attempts, max_attempts, created_at, log_path, autonomy, dispatch_key, orchestrator_id,
+              permission_mode)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           projectId,
@@ -2365,6 +2381,7 @@ export class AgentSupervisor {
           autonomy,
           input.dispatchKey ?? null,
           input.orchestratorId ?? null,
+          permissionMode,
         ).lastInsertRowid,
     );
     // Dispatching work starts it: backlog/todo cards move to In progress.
@@ -2478,8 +2495,9 @@ export class AgentSupervisor {
           .prepare(
             `INSERT INTO agent_runs
              (project_id, card_id, name, provider_id, command_json, prompt, status,
-              attempts, max_attempts, created_at, log_path, autonomy, orchestrator_id)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)`,
+              attempts, max_attempts, created_at, log_path, autonomy, orchestrator_id,
+              permission_mode)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             row.project_id,
@@ -2493,6 +2511,7 @@ export class AgentSupervisor {
             logPath,
             row.autonomy,
             row.orchestrator_id,
+            row.permission_mode ?? null,
           ).lastInsertRowid,
       );
       this.db.exec('COMMIT');
@@ -3960,6 +3979,7 @@ export class AgentSupervisor {
       command,
       prompt: row.prompt,
       autonomy: row.autonomy,
+      ...(row.permission_mode ? { permissionMode: row.permission_mode } : {}),
       changes: row.changes_json ? (JSON.parse(row.changes_json) as RunChanges) : null,
       status: row.status,
       ...(row.execution_state ? { executionState: row.execution_state } : {}),

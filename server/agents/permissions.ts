@@ -145,6 +145,25 @@ export function setPermissions(db: Db, value: AgentPermissions): AgentPermission
   return value;
 }
 
+/**
+ * How a run an orchestrator starts follows Settings (PM-419), as an interactive session would:
+ * Claude's auto mode becomes `--permission-mode auto` on an edit run (when this Claude Code has
+ * it), read/edit/full map onto the run autonomy of the same name, and 'cli' keeps edit. A run has
+ * nobody to approve a command, so without this every shell command was denied.
+ */
+export function runLevel(
+  perms: AgentPermissions,
+  providerId: string,
+  claudeAuto: boolean | null,
+): { autonomy: AgentAutonomy; permissionMode?: 'auto' } {
+  const level = effectiveLevel(perms, providerId);
+  if (level === 'auto')
+    return providerId === 'claude' && claudeAuto !== false
+      ? { autonomy: 'edit', permissionMode: 'auto' }
+      : { autonomy: 'edit' };
+  return level === 'read' || level === 'full' ? { autonomy: level } : { autonomy: 'edit' };
+}
+
 /** The level that applies to one CLI: its own override, else the global level. */
 export function effectiveLevel(perms: AgentPermissions, providerId: string): PermissionLevel {
   const own = perms.providers[providerId];

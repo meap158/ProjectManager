@@ -237,6 +237,9 @@ export const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL,
     PRIMARY KEY (project_id, sop_id)
   );`,
+  // The CLI permission mode a run used when it differs from its autonomy's own flag (PM-419):
+  // 'auto' for a Claude run in auto mode, the Settings level orchestrator runs follow.
+  `ALTER TABLE agent_runs ADD COLUMN permission_mode TEXT;`,
 ];
 
 export function openDb(dataDir: string): Db {

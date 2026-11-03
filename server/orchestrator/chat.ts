@@ -36,6 +36,7 @@ import type { OrchestratorToolHost } from '../boardMcp.js';
 import { cardContext } from './situation.js';
 import { planOrchestration } from './planner.js';
 import { ownedSessionIds, recordOwnedSession } from './ownedWorkers.js';
+import { orchestratorRunLevel } from './runLevel.js';
 import { planningRuns } from './planningRuns.js';
 import { OrchestratorAssignments } from './assignments.js';
 import { readLimits } from '../agents/limits.js';
@@ -1149,6 +1150,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
           .join('\n\n');
         const run = await this.supervisor.dispatchCard(c.projectId, c.id, {
           providerId,
+          // The Settings permission level, as a session would get (PM-419).
+          ...(await orchestratorRunLevel(this.db, providerId)),
           ...(context ? { context } : {}),
           dispatchKey: intent.key,
           orchestratorId,

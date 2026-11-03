@@ -5,6 +5,7 @@ import {
   claudeModeOnScreen,
   effectiveLevel,
   helpOffersAuto,
+  runLevel,
   withPermissions,
 } from './permissions.js';
 import { buildDispatchArgv, getProvider } from './providers.js';
@@ -203,5 +204,43 @@ describe('remembered Claude mode', () => {
     rememberMode(901, 'plan');
     expect(rememberedMode(901)).toBe('plan');
     expect(rememberedMode(902)).toBeNull();
+  });
+});
+
+describe('orchestrator runs follow the Settings level (PM-419)', () => {
+  const perms = (global: string, providers: Record<string, string> = {}) =>
+    ({ global, providers }) as Parameters<typeof runLevel>[0];
+
+  it('maps each level onto a run', () => {
+    expect(runLevel(perms('cli', { claude: 'auto' }), 'claude', true)).toEqual({
+      autonomy: 'edit',
+      permissionMode: 'auto',
+    });
+    // A Claude Code without auto mode gets edit, as a session would.
+    expect(runLevel(perms('cli', { claude: 'auto' }), 'claude', false)).toEqual({
+      autonomy: 'edit',
+    });
+    // Auto mode is Claude's own: another CLI under a global auto keeps edit.
+    expect(runLevel(perms('auto'), 'codex', null)).toEqual({ autonomy: 'edit' });
+    expect(runLevel(perms('full'), 'codex', null)).toEqual({ autonomy: 'full' });
+    expect(runLevel(perms('read'), 'claude', true)).toEqual({ autonomy: 'read' });
+    expect(runLevel(perms('edit'), 'claude', true)).toEqual({ autonomy: 'edit' });
+    expect(runLevel(perms('cli'), 'codex', null)).toEqual({ autonomy: 'edit' });
+    expect(runLevel(perms('full', { codex: 'inherit' }), 'codex', null)).toEqual({
+      autonomy: 'full',
+    });
+  });
+
+  it("puts Claude's auto mode in place of the autonomy flag, and only for Claude", () => {
+    expect(buildDispatchArgv(getProvider('claude')!, 'task', 'edit', [], 'auto')).toEqual([
+      'claude',
+      '--permission-mode',
+      'auto',
+      '-p',
+      'task',
+    ]);
+    expect(buildDispatchArgv(getProvider('codex')!, 'task', 'edit', [], 'auto')).toEqual(
+      buildDispatchArgv(getProvider('codex')!, 'task', 'edit'),
+    );
   });
 });

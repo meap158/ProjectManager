@@ -128,4 +128,28 @@ describe('card-scoped board MCP', () => {
       rmSync(dataDir, { recursive: true, force: true });
     }
   });
+
+  it('allows its own board tools up front for a one-shot Claude run, not a session (PM-419)', () => {
+    const { db } = setup();
+    const dataDir = mkdtempSync(path.join(os.tmpdir(), 'pm-board-allow-'));
+    const previous = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = path.join(dataDir, 'claude-home');
+    try {
+      const command = (kind: 'run' | 'session') =>
+        boardConnection(db, dataDir, { kind, id: 1, logPath: `log-${kind}` }, 'claude', [
+          'claude',
+          '-p',
+          'task',
+        ]).command;
+      const run = command('run');
+      expect(run[run.indexOf('--allowedTools') + 1]).toBe('mcp__projectmanager');
+      expect(run.slice(-2)).toEqual(['-p', 'task']);
+      expect(command('session')).not.toContain('--allowedTools');
+    } finally {
+      db.close();
+      if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = previous;
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
 });
