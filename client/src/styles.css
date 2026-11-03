@@ -6336,8 +6336,9 @@ span.path-link:hover .path-icon {
    Filters: status + Filters toggle on one row; when expanded, agent / project / kind side by side,
    then search with an inline Clear. (The extras sit in .work-filter-extras, so rules aimed at
    direct children of .work-filters never reached them.)
-   Rows: two lines instead of three: identity, then state word, facts (cut with "…") and the
-   actions at the right, still 40px touch targets. */
+   Rows: identity, then the state word with the actions at the right (44px touch targets), then
+   one line of facts cut with "…" and the card tag at its right end, so tags line up from row to
+   row (PM-242). Uptime and last message keep their width; restarts and tokens give way first. */
 @media (max-width: 768px) {
   .workspace .work-filters.is-expanded {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -6376,43 +6377,57 @@ span.path-link:hover .path-icon {
 
   .work-list > li {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
-    column-gap: 8px;
     row-gap: 2px;
     padding: 6px 0;
   }
-  .work-list .work-row,
-  .work-list .work-side {
+  .work-list .work-row {
     display: contents;
   }
   .work-list .work-line {
-    grid-column: 1 / -1;
     grid-row: 1;
   }
-  .work-list .work-state {
-    grid-column: 1;
+  /* The state and the actions share one flex line, so the actions end at the row's right edge
+     whatever the state word's width. */
+  .workspace .work-list .work-side,
+  .work-list .work-side {
+    display: flex;
     grid-row: 2;
-    padding-left: 16px;
+    flex-wrap: nowrap;
+  }
+  .work-list .work-state {
     white-space: nowrap;
   }
   .work-list .work-facts {
-    grid-column: 2;
-    grid-row: 2;
-    display: block;
+    grid-row: 3;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0 6px;
     min-width: 0;
-    padding-left: 0;
-    clip-path: none;
+    padding-left: 22px;
     overflow: hidden;
     white-space: nowrap;
-    text-overflow: ellipsis;
+  }
+  .work-list .work-facts:empty {
+    display: none;
   }
   .work-list .work-facts > span {
-    margin-right: 10px;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .work-list .work-actions {
-    grid-column: 3;
-    grid-row: 2;
+  .work-list .work-facts > span:nth-child(-n + 3) {
+    flex-shrink: 0;
+  }
+  .work-list .work-facts > .work-fact-minor {
+    display: none;
+  }
+  .work-list .work-facts > .work-card-mobile {
+    flex: none;
+    margin-left: auto;
   }
 }
 

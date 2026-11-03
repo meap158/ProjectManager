@@ -230,14 +230,6 @@
     grid-column: 2;
     grid-row: 1;
   }
-  .workspace .work-list .work-side {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .workspace .work-list .work-actions {
-    grid-column: 1;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-  }
 }
 
 /* Agents list toolbar (PM-94): every control is 32px tall on one centre line (chips, pickers,

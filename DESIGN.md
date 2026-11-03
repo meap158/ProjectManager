@@ -49,7 +49,8 @@ viewport-bounded menus and a 44px mobile trigger, matching other app selectors.
 
 PM-242: desktop agent rows align the card tag, state and action buttons with the session title;
 secondary facts sit below. Action groups size to their visible controls without a reserved
-minimum width, including ended sessions. Mobile retains its compact two-row arrangement.
+minimum width, including ended sessions. On phones the card tag ends the facts line, so tags
+line up from row to row (see Agents on a phone).
 Terminal header session names use their natural width, truncating only under actual space
 pressure. Desktop project/card metadata gives way first; mobile metadata can wrap beneath the
 name. Rename and terminal controls remain available, with full names exposed in tooltips.
@@ -624,7 +625,7 @@ tokens and touch targets.
   12px gutter and panel padding; stat tiles three across without hints; dashboard lists show five
   rows and a "Show all N" link. Agents: the sentence labels hide so New session is one row
   (project, agent, Start); status chips scroll on one line; pickers share a row, search is full
-  width; work rows drop the "started …" fact and keep card · state · actions on one line, with
+  width; work rows drop the "started …" fact and keep state · actions on one line, with
   "Open"/"Show" short labels (full names stay in `aria-label`). Fact separators never start a
   wrapped line (clipped at the row's inset).
 - **Reachability:** phones use **LAN access** (opt-in, `server/lan.ts`, README): same app, same
@@ -816,8 +817,10 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   menu (⋯), and the Agents tab stays highlighted while on Orchestrators.
 - **Agents on a phone** (PM-62): the filter bar is one row (status picker, Filters toggle);
   expanded, agent / project / kind sit side by side in three columns, then search with an inline
-  Clear. Each work row is two lines: identity (dot, agent, name, project), then the state word,
-  the facts (one line, cut with "…") and the actions at the right (40px targets).
+  Clear. Each work row has up to three lines: identity (dot, agent, name, project); the state
+  word with the actions ending at the row's right edge (44px targets); then one line of facts
+  cut with "…", with the card tag at its right end (PM-242). Uptime and last message keep their
+  width and restarts and tokens give way first; "started …" is dropped.
 - **Closing an empty pane** (`closeEmptyPane`, PM-63): an empty pane's header has
   "Show a session here" on the left and ✕ at the far right. It removes that pane and steps the
   layout down one size (2×2 → three columns → two → one), keeping every session in order. No ✕
