@@ -293,6 +293,9 @@
   border-radius: var(--radius) var(--radius) 0 0;
   color: var(--text-2);
   font-size: 12.5px;
+  /* Its own width decides whether the close button fits (below). Width is set above, so the
+     containment never changes the tab's size. */
+  container: preview-tab / inline-size;
 }
 .preview-tab:hover {
   background: color-mix(in srgb, var(--surface) 55%, transparent);
@@ -408,6 +411,23 @@
 .preview-tab-close:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+/* As in Chrome, a squeezed tab keeps its close button only while active, and the active one gives
+   up its icon instead, so no title is reduced to a letter or nothing. Middle-click, the tab menu
+   and the keyboard still close any tab. Touch close buttons are larger, so this starts sooner. */
+@container preview-tab (max-width: 104px) {
+  .preview-tab:not(.is-active) .preview-tab-close,
+  .preview-tab.is-active .preview-tab-main > :first-child:not(.preview-tab-title) {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  @container preview-tab (max-width: 132px) {
+    .preview-tab:not(.is-active) .preview-tab-close,
+    .preview-tab.is-active .preview-tab-main > :first-child:not(.preview-tab-title) {
+      display: none;
+    }
+  }
 }
 .preview-tab-new {
   flex: none;
