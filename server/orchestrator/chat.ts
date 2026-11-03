@@ -888,11 +888,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
           providers: instance.providers,
         },
         capacity: {
-          // Your own workers count toward the limits; the owner's sessions do not (PM-417).
-          liveWorkers: sessions.length + runs.length,
-          otherLiveWorkers: all.sessions.length + all.runs.length - sessions.length - runs.length,
+          // Your own workers count toward the limits; the owner's sessions do not (PM-417). Named
+          // so a reader cannot compare the uncounted workers with the limit (a chat once did).
+          yourWorkers: sessions.length + runs.length,
           maxWorkers: instance.maxWorkers,
+          freeWorkerSlots: Math.max(0, instance.maxWorkers - sessions.length - runs.length),
           maxWorkersPerProject: instance.maxWorkersPerProject,
+          notCountedWorkers: all.sessions.length + all.runs.length - sessions.length - runs.length,
+          note: "Only yourWorkers count toward maxWorkers. notCountedWorkers are the owner's own sessions and other runs: they never block you, though a card one of them is on stays theirs.",
         },
         projects: projects.map(projectBrief),
         todo: { total: todo.length, cards: todo.slice(0, 60).map(brief) },
@@ -1671,7 +1674,7 @@ ${
 }
 - Background scheduler settings below are separate from this chat's direct work:
 - Providers for workers: ${instance.providers.join(', ')}
-- Worker limits: ${instance.maxWorkers} in total, ${instance.maxWorkersPerProject} per project
+- Worker limits: ${instance.maxWorkers} in total, ${instance.maxWorkersPerProject} per project, counting only the workers you started, handed a card or supervise; the owner's own sessions never use them up
 
 ## Projects in your scope (snapshot when this chat opened; call overview for live state)
 

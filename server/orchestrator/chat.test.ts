@@ -564,6 +564,22 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     providerId: 'codex',
     ...s,
   });
+  it("reports capacity so the owner's sessions cannot read as a full limit (PM-417)", async () => {
+    const { call, sessions, a } = setup();
+    sessions.push(
+      live({ id: 40, projectId: a, name: 'owner idle' }),
+      live({ id: 41, projectId: a, name: 'owner busy', tailState: 'running' }),
+    );
+    const { capacity } = (await call('overview')) as { capacity: Record<string, unknown> };
+    expect(capacity).toMatchObject({
+      yourWorkers: 0,
+      maxWorkers: 2,
+      freeWorkerSlots: 2,
+      notCountedWorkers: 2,
+    });
+    expect(capacity).not.toHaveProperty('liveWorkers');
+    expect(capacity.note).toMatch(/never block you/);
+  });
   const withSessionTools = (supervisor: Record<string, unknown>) => {
     const attachCard = vi.fn((id: number, cardId: number) => ({
       session: { id, cardId } as AgentSession,
