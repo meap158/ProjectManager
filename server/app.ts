@@ -6,6 +6,7 @@ import { jsonEtag } from './jsonEtag.js';
 import { OrchestratorService } from './orchestrator/service.js';
 import { registerOrchestratorRoutes } from './orchestrator/routes.js';
 import { OrchestratorChat } from './orchestrator/chat.js';
+import { AutoCheck } from './orchestrator/autoCheck.js';
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -171,6 +172,7 @@ export type AppWithAgents = Hono & {
   supervisor: AgentSupervisor;
   scanner: Scanner;
   orchestrator: OrchestratorService;
+  autoCheck: AutoCheck;
 };
 
 export function createApp(
@@ -353,6 +355,17 @@ export function createApp(
     sopStore,
     attachmentsRoot,
   );
+  const autoCheck = new AutoCheck({
+    db,
+    dataDir: options.dataDir ?? null,
+    listSessions: () => supervisor.listAllSessions(),
+    policy: (id) => orchestrator.state().instances.find((i) => i.id === id),
+    instances: () => orchestrator.state().instances,
+    chatSession: (id) => orchestratorChat.session(id),
+    check: (id) => orchestratorChat.check(id),
+    record: (id, message) =>
+      orchestrator.record({ orchestratorId: id, action: 'auto-check', message }),
+  });
   registerOrchestratorRoutes(app, orchestrator, orchestratorChat);
   registerAttachmentRoutes(app, db, attachmentsRoot);
   registerSessionImageRoutes(app, db, attachmentsRoot);
@@ -1000,7 +1013,7 @@ export function createApp(
     return c.json(browse(db, requested ? resolveFolder(requested) : os.homedir()));
   });
 
-  return Object.assign(app, { supervisor, scanner, orchestrator });
+  return Object.assign(app, { supervisor, scanner, orchestrator, autoCheck });
 }
 
 function resolveFolder(input: string): string {

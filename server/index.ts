@@ -114,6 +114,7 @@ async function main() {
   // Session names follow /rename in the CLIs, and renames here reach the CLIs.
   api.supervisor.syncTitlesPeriodically();
   api.orchestrator.start();
+  api.autoCheck.start();
 
   const server = createServer();
   server.prependListener('upgrade', (req, socket, head) => {
@@ -216,6 +217,7 @@ async function main() {
   const shutdown = () => {
     void (async () => {
       try {
+        api.autoCheck.stop();
         await api.orchestrator.stop();
         await api.supervisor.shutdown();
       } finally {

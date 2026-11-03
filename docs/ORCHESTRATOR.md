@@ -113,6 +113,18 @@ Review (what is ready to accept), To do (start workers for ready tasks within th
 large ones, note questions) and Needs attention. Watch-only orchestrators recommend instead of
 starting workers. The check is refused (409) while the chat is working or asking you something.
 
+**Checking on its own (PM-418).** The opt-in setting `autoCheck` ("Check on its own") makes an
+enabled, autonomous orchestrator ask its own chat for this same check (`chat.check`, so the same
+409 guards) when something changed in scope: a session it owns or supervises stopped working, a
+card moved to Review, or a provider's quota came back above the reserve. A slow fallback fires
+after 30 minutes when any card is pending. Bounds: at most 4 automatic checks an hour, 5 minutes
+apart; never while the chat is working, asking you, or has queued input; a stopped or unopened
+chat is never started. Paused, watch-only or off forgets the baseline, so Pause stops it at
+once and turning it on starts from a fresh look. Each check is recorded in Activity as
+`auto-check` with its trigger. State lives in `orchestrator-auto-check:<id>` and only advances
+when a check is sent, so a deferred trigger stays pending and a restart neither repeats nor
+loses one. Code: `server/orchestrator/autoCheck.ts`.
+
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open
 chat opens it in Agents; "Ask it to check" buttons, plus a "Project alerts" row with "All alerts" and per-kind chips that run the Needs attention check
 for one alert kind: `POST /orchestrators/:id/check` with `focus: "attention"` and `attentionKinds`), and orchestrators, their sections and

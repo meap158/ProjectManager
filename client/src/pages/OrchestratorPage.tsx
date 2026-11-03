@@ -1605,6 +1605,19 @@ export function OrchestratorPage() {
                     Pauses for questions, drafts, quota waits and completed cards. Stopped sessions
                     need an explicit wake request.
                   </p>
+                  <label className="orchestrator-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.autoCheck ?? false}
+                      onChange={(e) => setDraft({ ...draft, autoCheck: e.target.checked })}
+                    />
+                    Check on its own (ask the chat to check pending work when something changes)
+                  </label>
+                  <p className="faint">
+                    Automatic checks run only while the chat is open and idle, at most 4 an hour and
+                    5 minutes apart, plus a 30-minute fallback. Pause stops them. Each one shows in
+                    Activity with its trigger.
+                  </p>
                 </div>
               </div>
 

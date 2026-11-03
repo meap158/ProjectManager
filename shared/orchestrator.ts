@@ -13,6 +13,8 @@ export interface OrchestratorConfig {
   delegateToSessions?: boolean;
   /** Automatically continue explicitly enrolled sessions while fresh quota permits. Default off. */
   superviseSessions?: boolean;
+  /** Ask the chat for its check when something changed in scope, within bounds (PM-418). Default off. */
+  autoCheck?: boolean;
   projectIds: number[];
   providers: string[];
   maxWorkers: number;

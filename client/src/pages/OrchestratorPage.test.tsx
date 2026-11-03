@@ -1310,3 +1310,21 @@ it('keeps automatic session supervision opt-in and saves the selection', async (
     ),
   );
 });
+
+it('keeps checking on its own opt-in and saves the selection (PM-418)', async () => {
+  vi.mocked(api.orchestrators).mockResolvedValue({ instances: [], events: [] });
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  await screen.findByText("Create an orchestrator to look after your projects' boards.");
+  const toggle = screen.getByRole('checkbox', { name: /Check on its own/ }) as HTMLInputElement;
+  expect(toggle.checked).toBe(false);
+  fireEvent.click(toggle);
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Self-checking' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save orchestrator' }));
+  await waitFor(() =>
+    expect(api.saveOrchestrator).toHaveBeenCalledWith(expect.objectContaining({ autoCheck: true })),
+  );
+});
