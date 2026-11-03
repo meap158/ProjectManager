@@ -8,6 +8,8 @@ import { AgentError, type AgentSupervisor } from '../agents/supervisor.js';
 import { emptyCodexPrompt, emptyGrokPrompt } from '../agents/continuation.js';
 import { stripTerminal } from '../agents/activity.js';
 import { readLimits } from '../agents/limits.js';
+import { antigravityAccounts, refreshAntigravityAccount } from '../agents/antigravityAccounts.js';
+import type { AntigravityAccountsState } from '../../shared/antigravityAccounts.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
 
@@ -64,16 +66,33 @@ export function sessionQuota(
     return `Quota is at the ${policy.reservePercent}% reserve`;
   return null;
 }
+/** The live Antigravity login's quota, when its reading is fresh. */
+function agyReading(state: AntigravityAccountsState): ProviderLimits | null {
+  const account = state.defaultAccount;
+  return account?.usageStatus === 'fresh' && account.limits
+    ? { ...account.limits, providerId: 'antigravity' }
+    : null;
+}
 export class SessionSupervision {
   private quotaReads = new Map<string, number>();
   private waking = new Set<number>();
   private cursors = new Map<string, number>();
+  // The live Antigravity login's last fresh reading (PM-415). Reading it spawns a credential
+  // bridge, so check() fetches it at most once a minute and inspect() uses the copy.
+  private agyLimits: ProviderLimits | null = null;
   constructor(
     private db: Db,
     private supervisor: AgentSupervisor,
     private dataDir: string | null,
     private policy: (id: string) => OrchestratorConfig | undefined,
     private event: (id: string, action: string, message: string, cardId?: number) => void,
+    private antigravity: {
+      state(): Promise<AntigravityAccountsState>;
+      refresh(): Promise<AntigravityAccountsState>;
+    } = {
+      state: () => antigravityAccounts(),
+      refresh: () => refreshAntigravityAccount('default'),
+    },
   ) {}
   private scoped(owner: string, id: number) {
     const policy = this.policy(owner);
@@ -135,6 +154,8 @@ export class SessionSupervision {
         return [];
       }
     }
+    // Antigravity (PM-415): likewise the live login, as check() last read it.
+    if (session.providerId === 'antigravity') return this.agyLimits ? [this.agyLimits] : [];
     if (session.providerId !== 'codex' && session.providerId !== 'claude')
       return readLimits(this.dataDir);
     try {
@@ -193,7 +214,8 @@ export class SessionSupervision {
     else if (
       s.usageLimit ||
       s.autoContinue?.resumesAt ||
-      /(?:hit.{0,20}(?:usage|rate|weekly|daily).{0,10}limit|auto.?continue.{0,30}(?:wait|reset)|usage limit)/i.test(
+      // "quota reached" is Antigravity's ("⚠ Individual quota reached. … Resets in 25h…").
+      /(?:hit.{0,20}(?:usage|rate|weekly|daily).{0,10}limit|auto.?continue.{0,30}(?:wait|reset)|usage limit|quota reached)/i.test(
         progress,
       )
     )
@@ -240,8 +262,13 @@ export class SessionSupervision {
           await this.supervisor.refreshClaudeAccountsUsage();
         else if (session.providerId === 'grok')
           await this.supervisor.grokAccounts?.refresh('default');
+        else if (session.providerId === 'antigravity') {
+          this.agyLimits = agyReading(await this.antigravity.state());
+          if (!this.agyLimits) this.agyLimits = agyReading(await this.antigravity.refresh());
+        }
       } catch {
         /* A failed refresh cannot authorize continuation. */
+        if (session.providerId === 'antigravity') this.agyLimits = null;
       }
     }
     return this.inspect(owner, id);

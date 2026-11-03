@@ -89,6 +89,16 @@ function setup() {
     }),
   };
   const events = vi.fn();
+  // The live Antigravity login (PM-415): unread until a test refreshes it.
+  const agy = (usageStatus: string) => ({
+    available: true,
+    accounts: [],
+    defaultAccount: { usageStatus, limits: { ...limits, providerId: 'antigravity' } },
+  });
+  const antigravity = {
+    state: vi.fn(async () => agy('not_loaded') as never),
+    refresh: vi.fn(async () => agy('fresh') as never),
+  };
   const make = () =>
     new SessionSupervision(
       db,
@@ -96,6 +106,7 @@ function setup() {
       null,
       (id) => (['master', 'second'].includes(id) ? { ...policy, id } : undefined),
       events,
+      antigravity,
     );
   return {
     db,
@@ -106,6 +117,7 @@ function setup() {
     session,
     limits,
     supervisor,
+    antigravity,
     events,
     control: make(),
     make,
@@ -291,6 +303,37 @@ it('continues Grok sessions from the live login quota and its boxed prompt (PM-4
   expect(t.control.inspect('master', 7).reason).toContain('stale');
   await t.control.check('master', 7);
   expect(t.supervisor.grokAccounts.refresh).toHaveBeenCalledWith('default');
+});
+
+it('continues Antigravity sessions from the live login quota (PM-415)', async () => {
+  const t = setup();
+  t.session.providerId = 'antigravity';
+  t.policy.providers.push('antigravity');
+  // The bottom of a real idle Antigravity CLI 1.4.12 screen.
+  const rule = '─'.repeat(60);
+  const idle = (above: string) =>
+    `${above}\n ┃ esc to dismiss\n${rule}\n>\n${rule}\n? for shortcuts      Gemini 4 Argon · low`;
+  t.setScreen(idle('Work remains'));
+  t.control.enroll('master', 7, true);
+  // Nothing read yet: blocked, not assumed healthy.
+  expect(t.control.inspect('master', 7).reason).toContain('missing');
+  await t.control.tick('master');
+  // The cached reading was not fresh, so it asked for a fresh one, then continued.
+  expect(t.antigravity.state).toHaveBeenCalledTimes(1);
+  expect(t.antigravity.refresh).toHaveBeenCalledTimes(1);
+  expect(t.supervisor.sendInput).toHaveBeenCalledTimes(1);
+  // A fresh reading in hand is not read again on the next check.
+  await t.control.check('master', 7);
+  expect(t.antigravity.state).toHaveBeenCalledTimes(1);
+});
+
+it('leaves an Antigravity quota message to the provider wait (PM-415)', () => {
+  const t = setup();
+  t.setScreen(
+    'Work\n⚠ Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 25h44m54s.\n› ',
+  );
+  t.control.enroll('master', 7, true);
+  expect(t.control.inspect('master', 7).reason).toContain('Provider quota');
 });
 
 it('allows taking over enrollment left by a deleted orchestrator', () => {
