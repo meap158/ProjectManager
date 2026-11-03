@@ -19,7 +19,11 @@ the main image and remains visible through navigation and resizing; scroll only 
 Project Overview shows a compact Git branches panel. Current branch and upstream tracking remain
 visible; other local and known remote branches expand into a bounded scrollable list. Long branch
 names wrap, phone rows stack, and refresh controls retain 44px touch targets. Reads never fetch or
-change branches.
+change branches. From four other branches the list gets filters (PM-422, `branchFilter.ts`): a
+search where every word must match the name, upstream, hash or commit message (case and accent
+insensitive, Escape clears it), `FilterChips` for the branch kind with counts that follow the search
+(only kinds the list has are offered), a sort `Dropdown` (newest commit or natural name order), and a
+"Showing N of M" line with Clear filters, repeated in the empty state. Filters reset per project.
 
 Folder previews reuse metadata snapshots for thirty seconds across pages and type filters.
 Focus revalidation is throttled; Refresh always requests a new scan. Recursive batches appear

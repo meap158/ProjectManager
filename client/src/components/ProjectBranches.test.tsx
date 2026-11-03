@@ -82,3 +82,41 @@ it('starts collapsed and filters a large branch list by name', async () => {
   expect(screen.getByText('feature/topic-7')).toBeTruthy();
   expect(screen.queryByText('feature/topic-6')).toBeNull();
 });
+
+it('narrows by kind with counts, clears with Escape and Clear filters, and resets per project', async () => {
+  read.mockResolvedValue({
+    isRepo: true,
+    current: 'main',
+    detached: false,
+    branches: [
+      { ...branch, name: 'main', current: true },
+      { ...branch, name: 'feature/a', worktree: false },
+      { ...branch, name: 'feature/b', worktree: false, tracking: '[behind 2]' },
+      { ...branch, name: 'origin/main', remote: true, worktree: false },
+      { ...branch, name: 'origin/feature/a', remote: true, worktree: false },
+    ],
+  });
+  const view = render(<ProjectBranches projectId={1} visible />);
+  await screen.findByText('main');
+  const chip = (name: RegExp) => screen.getByRole('button', { name, hidden: true });
+  expect(chip(/^Remote \(2\)/)).toBeTruthy();
+  expect(chip(/^Ahead or behind \(1\)/)).toBeTruthy();
+  // No branch is gone upstream, so that kind is not offered.
+  expect(screen.queryByRole('button', { name: /Upstream gone/, hidden: true })).toBeNull();
+  fireEvent.click(chip(/^Remote/));
+  expect(screen.getByText('Showing 2 of 4')).toBeTruthy();
+  expect(screen.queryByText('feature/b')).toBeNull();
+  const search = screen.getByRole('searchbox', { hidden: true });
+  fireEvent.change(search, { target: { value: 'feature' } });
+  await waitFor(() => expect(screen.getByText('Showing 1 of 4')).toBeTruthy());
+  expect(chip(/^All \(3\)/)).toBeTruthy();
+  fireEvent.keyDown(search, { key: 'Escape' });
+  expect((search as HTMLInputElement).value).toBe('');
+  fireEvent.change(search, { target: { value: 'nothing-like-this' } });
+  await screen.findByText('No branches match these filters.');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters', hidden: true })[0]!);
+  await waitFor(() => expect(screen.getByText('4 branches')).toBeTruthy());
+  fireEvent.click(chip(/^Local/));
+  view.rerender(<ProjectBranches projectId={2} visible />);
+  await waitFor(() => expect(chip(/^All/).getAttribute('aria-pressed')).toBe('true'));
+});

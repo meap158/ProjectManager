@@ -71,8 +71,27 @@
   padding: 9px 0;
   border-top: 1px solid var(--border);
 }
-.project-branches .input {
-  width: 100%;
+.branch-filters {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.branch-filter-row {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.branch-filter-row .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.branch-count {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
 }
 @media (max-width: 768px) {
   .branch-heading .btn {
@@ -89,5 +108,12 @@
   }
   .branch-list {
     max-height: 50dvh;
+  }
+  .branch-filter-row {
+    flex-wrap: wrap;
+  }
+  .branch-filter-row .input {
+    flex-basis: 100%;
+    min-height: 44px;
   }
 }
