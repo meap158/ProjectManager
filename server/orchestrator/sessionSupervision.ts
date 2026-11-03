@@ -12,6 +12,7 @@ import { antigravityAccounts, refreshAntigravityAccount } from '../agents/antigr
 import type { AntigravityAccountsState } from '../../shared/antigravityAccounts.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
+import { enrollmentKey, ownedSessionIds } from './ownedWorkers.js';
 
 interface Enrollment {
   owner: string;
@@ -35,7 +36,7 @@ export interface SessionReadiness {
   reason: string;
   progress: string;
 }
-const key = (id: number) => `orchestrator-session-supervision:${id}`;
+const key = enrollmentKey;
 export function sessionQuota(
   policy: OrchestratorConfig,
   providerId: string,
@@ -339,14 +340,17 @@ export class SessionSupervision {
     if (!initial.canWake) throw new AgentError(409, initial.reason);
     const { policy, session } = this.scoped(owner, id);
     const card = getCard(this.db, session.cardId!)!;
+    const sessions = this.supervisor
+      .listAllSessions()
+      .filter((s) => !s.orchestratorId)
+      .map((s) => (this.waking.has(s.id) ? { ...s, status: 'running' as const } : s));
     const decision = planOrchestration(
       { ...policy, providers: [session.providerId], allowUnknownQuota: false },
       {
         cards: [card],
         runs: planningRuns(this.db, policy.projectIds),
-        sessions: this.supervisor
-          .listAllSessions()
-          .map((s) => (this.waking.has(s.id) ? { ...s, status: 'running' as const } : s)),
+        sessions,
+        ownedSessionIds: ownedSessionIds(this.db, owner, sessions),
         availableProviders: [session.providerId],
         limits: this.quota(session),
       },

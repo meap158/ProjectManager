@@ -30,6 +30,7 @@ import {
   workspaceLiveAssignments,
 } from './workspaceRuns.js';
 import { planOrchestration, type OrchestratorPlanningSnapshot } from './planner.js';
+import { ownedSessionIds } from './ownedWorkers.js';
 import { planningRuns } from './planningRuns.js';
 import { pendingDatabasePage } from './pendingPage.js';
 import { liveRunProjects } from './liveProjects.js';
@@ -323,10 +324,12 @@ export class OrchestratorService {
       )
         activeRuns.set(run.cardId, run);
     }
+    const sessions = this.supervisor.listAllSessions().filter((s) => !s.orchestratorId);
     const decisions = planOrchestration(instance, {
       cards: listSchedulableCards(this.db, instance.projectIds),
       runs,
-      sessions: this.supervisor.listAllSessions(),
+      sessions,
+      ownedSessionIds: ownedSessionIds(this.db, instance.id, sessions),
       availableProviders: providers.filter((p) => p.available).map((p) => p.id),
       limits: readLimits(this.dataDir),
       blockedCardIds: new OrchestratorAssignments(this.db).blockedCards(),
@@ -743,14 +746,19 @@ export class OrchestratorService {
       );
       if (generation !== this.generation || !assignments.isLeaseValid(this.owner, epoch)) return;
       const scopeKey = [...new Set(initial.projectIds)].sort((a, b) => a - b).join(',');
-      const makeSnapshot = () => ({
-        cards: listSchedulableCards(this.db, initial.projectIds),
-        runs: planningRuns(this.db, initial.projectIds),
-        sessions: this.supervisor.listAllSessions(),
-        availableProviders: providers,
-        limits: readLimits(this.dataDir),
-        blockedCardIds: assignments.blockedCards(),
-      });
+      const makeSnapshot = () => {
+        // Orchestrator chats are not workers; the limits count only this master's own (PM-417).
+        const sessions = this.supervisor.listAllSessions().filter((s) => !s.orchestratorId);
+        return {
+          cards: listSchedulableCards(this.db, initial.projectIds),
+          runs: planningRuns(this.db, initial.projectIds),
+          sessions,
+          ownedSessionIds: ownedSessionIds(this.db, initial.id, sessions),
+          availableProviders: providers,
+          limits: readLimits(this.dataDir),
+          blockedCardIds: assignments.blockedCards(),
+        };
+      };
       const snapshot = (fresh = false) => {
         if (fresh) return makeSnapshot();
         const cached = snapshotCache.get(scopeKey);

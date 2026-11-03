@@ -64,7 +64,9 @@ export interface OrchestratorPlanDecision {
   reason: string;
   waitReason?: OrchestratorWaitReason;
   occupancy?: {
+    /** Workers counted toward this orchestrator's limits: its own (PM-417). */
     managedWorkers: number;
+    /** Every other live worker: the owner's sessions and other orchestrators' workers. */
     externalWorkers: number;
     projectWorkers: number;
   };

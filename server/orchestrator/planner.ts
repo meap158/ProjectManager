@@ -11,6 +11,8 @@ export type PlanningRun = Pick<
 > & { orchestratorId?: string | null; executionState?: AgentRun['executionState'] | null };
 
 export interface OrchestratorPolicy {
+  /** The orchestrator's id: its own runs carry it (`agent_runs.orchestrator_id`). */
+  id?: string;
   projectIds: number[];
   providers: string[];
   maxWorkers: number;
@@ -44,6 +46,13 @@ export interface OrchestratorPlanningSnapshot {
   availableProviders: string[];
   limits: ProviderLimits[];
   blockedCardIds?: ReadonlySet<number>;
+  /**
+   * Sessions this orchestrator started or handed a card to (PM-417, `ownedSessionIds` in
+   * ownedWorkers.ts). When given, the worker limits count only its own workers: those sessions
+   * and the runs carrying its id. Every live worker still blocks its card and counts toward the
+   * global safety cap. Without it every live worker counts, as before.
+   */
+  ownedSessionIds?: ReadonlySet<number>;
 }
 
 /** Pure scheduling: execution must revalidate the snapshot before dispatching. */
@@ -58,20 +67,34 @@ export function planOrchestration(
     ...snapshot.runs.filter((r) => r.status === 'running' || r.status === 'queued'),
     ...snapshot.sessions.filter((s) => s.status === 'running'),
   ];
-  const scopedWorkers = workers.filter((w) => scope(w.projectId));
-  const externalWorkers = workers.filter((w) => !scope(w.projectId));
-  let totalScoped = scopedWorkers.length;
+  const owned = snapshot.ownedSessionIds;
+  // The workers the limits count: with ownership known, only this orchestrator's own.
+  const managed = owned
+    ? [
+        ...snapshot.runs.filter(
+          (r) =>
+            (r.status === 'running' || r.status === 'queued') &&
+            policy.id != null &&
+            r.orchestratorId === policy.id,
+        ),
+        ...snapshot.sessions.filter((s) => s.status === 'running' && owned.has(s.id)),
+      ].filter((w) => scope(w.projectId))
+    : workers.filter((w) => scope(w.projectId));
+  const externalWorkers = owned
+    ? workers.filter((w) => !managed.includes(w))
+    : workers.filter((w) => !scope(w.projectId));
+  let totalScoped = managed.length;
   let totalWorkers = workers.length;
   const GLOBAL_SAFETY_CAP = 32;
 
   const projectCounts = new Map<number, number>();
   const providerCounts = new Map<string, number>();
   const liveCards = new Set<number>();
-  for (const worker of workers) {
+  for (const worker of owned ? managed : workers) {
     projectCounts.set(worker.projectId, (projectCounts.get(worker.projectId) ?? 0) + 1);
     providerCounts.set(worker.providerId, (providerCounts.get(worker.providerId) ?? 0) + 1);
-    if (worker.cardId != null) liveCards.add(worker.cardId);
   }
+  for (const worker of workers) if (worker.cardId != null) liveCards.add(worker.cardId);
   const latestRuns = new Map<number, PlanningRun>();
   for (const run of snapshot.runs) {
     if (run.cardId != null && run.id > (latestRuns.get(run.cardId)?.id ?? -1))

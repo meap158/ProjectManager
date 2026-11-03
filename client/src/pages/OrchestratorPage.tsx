@@ -1124,7 +1124,7 @@ export function OrchestratorPage() {
                                       className="faint plan-decision-meta"
                                       style={{ fontSize: '11px' }}
                                     >
-                                      Managed: {d.occupancy.managedWorkers} · External:{' '}
+                                      Own workers: {d.occupancy.managedWorkers} · Others:{' '}
                                       {d.occupancy.externalWorkers}
                                     </span>
                                   )}

@@ -35,6 +35,7 @@ import type {
 import type { OrchestratorToolHost } from '../boardMcp.js';
 import { cardContext } from './situation.js';
 import { planOrchestration } from './planner.js';
+import { ownedSessionIds, recordOwnedSession } from './ownedWorkers.js';
 import { planningRuns } from './planningRuns.js';
 import { OrchestratorAssignments } from './assignments.js';
 import { readLimits } from '../agents/limits.js';
@@ -631,6 +632,20 @@ export class OrchestratorChat implements OrchestratorToolHost {
         .filter((r) => (r.status === 'running' || r.status === 'queued') && inScope(r.projectId));
       return { sessions, runs };
     };
+    /**
+     * This orchestrator's own live workers (PM-417): the sessions it started, handed a card to or
+     * supervises, and the runs it dispatched. Only these count toward its worker limits; the
+     * owner's own sessions do not.
+     */
+    const ownWorkers = () => {
+      const { sessions, runs } = workers();
+      const owned = ownedSessionIds(this.db, orchestratorId, sessions);
+      return {
+        sessions: sessions.filter((s) => owned.has(s.id)),
+        runs: runs.filter((r) => r.orchestratorId === orchestratorId),
+        all: { sessions, runs },
+      };
+    };
     const audit = (cardId: number, action: string, detail: unknown) =>
       this.db
         .prepare(
@@ -686,19 +701,20 @@ export class OrchestratorChat implements OrchestratorToolHost {
             'work on it directly in this chat, or move it to a project first',
         );
       if (c.status === 'done') fail(`${c.key} is done; move it back first if it needs more work`);
-      const { sessions, runs } = workers();
+      const { sessions, runs, all } = ownWorkers();
+      // Any live worker on the card blocks it, whoever started it.
+      if (all.runs.some((r) => r.cardId === c.id) || all.sessions.some((s) => s.cardId === c.id))
+        fail(`${c.key} already has a live worker; check it with get_card / worker_output`);
       const live = sessions.length + runs.length;
       if (live >= instance.maxWorkers)
-        fail(`At capacity: ${live} of ${instance.maxWorkers} workers are busy in your scope`);
+        fail(`At capacity: ${live} of your ${instance.maxWorkers} workers are busy`);
       const inProject =
         sessions.filter((s) => s.projectId === c.projectId).length +
         runs.filter((r) => r.projectId === c.projectId).length;
       if (inProject >= instance.maxWorkersPerProject)
         fail(
-          `${projectName(c.projectId)} already has ${inProject} of ${instance.maxWorkersPerProject} workers`,
+          `${projectName(c.projectId)} already has ${inProject} of your ${instance.maxWorkersPerProject} workers`,
         );
-      if (runs.some((r) => r.cardId === c.id) || sessions.some((s) => s.cardId === c.id))
-        fail(`${c.key} already has a live worker; check it with get_card / worker_output`);
       const available = new Set(
         (await providerStatuses()).filter((p) => p.available).map((p) => p.id),
       );
@@ -714,12 +730,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const policy = this.instance(orchestratorId);
       const blockedCardIds = new OrchestratorAssignments(this.db).blockedCards();
       if (mine !== undefined) blockedCardIds.delete(mine);
+      const sessions = this.supervisor.listAllSessions().filter((s) => !s.orchestratorId);
       const decision = planOrchestration(
         { ...policy, providers: [providerId] },
         {
           cards: [latest],
           runs: planningRuns(this.db, policy.projectIds),
-          sessions: this.supervisor.listAllSessions().filter((s) => !s.orchestratorId),
+          sessions,
+          ownedSessionIds: ownedSessionIds(this.db, orchestratorId, sessions),
           availableProviders:
             available.has(providerId) && policy.providers.includes(providerId) ? [providerId] : [],
           limits: readLimits(this.dataDir),
@@ -854,7 +872,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     if (name === 'overview') {
       z.object({}).strict().parse(args);
       const situation = this.service.situation(orchestratorId)!;
-      const { sessions, runs } = workers();
+      const { sessions, runs, all } = ownWorkers();
       const todo = [
         ...projects.flatMap((p) => listCards(this.db, p.id)),
         ...(inScope(0) ? listProjectlessCards(this.db) : []),
@@ -869,7 +887,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
           providers: instance.providers,
         },
         capacity: {
+          // Your own workers count toward the limits; the owner's sessions do not (PM-417).
           liveWorkers: sessions.length + runs.length,
+          otherLiveWorkers: all.sessions.length + all.runs.length - sessions.length - runs.length,
           maxWorkers: instance.maxWorkers,
           maxWorkersPerProject: instance.maxWorkersPerProject,
         },
@@ -1264,12 +1284,17 @@ export class OrchestratorChat implements OrchestratorToolHost {
       if (s!.status !== 'running') fail(`Session ${s!.id} is not running`);
       if (s!.cardId !== null && s!.cardId !== c.id)
         fail(`Session ${s!.id} is working on ${s!.cardKey}; pick an idle session without a card`);
-      const { sessions, runs } = workers();
+      const own = ownWorkers();
+      const { sessions, runs } = own.all;
       if (
         runs.some((r) => r.cardId === c.id) ||
         sessions.some((other) => other.cardId === c.id && other.id !== s!.id)
       )
         fail(`${c.key} already has a live worker; check it with get_card / worker_output`);
+      // Handing a card to a session makes it one of your workers (PM-417), unless it already is.
+      const ownLive = own.sessions.length + own.runs.length;
+      if (!own.sessions.some((o) => o.id === s!.id) && ownLive >= instance.maxWorkers)
+        fail(`At capacity: ${ownLive} of your ${instance.maxWorkers} workers are busy`);
       // Typing into a session mid-turn or mid-question would mix into its work: re-read the
       // state right before sending.
       const fresh = this.supervisor.getSession(s!.id);
@@ -1297,6 +1322,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         send: true,
         ...(prompt ? { prompt } : {}),
       });
+      recordOwnedSession(this.db, orchestratorId, s!.id, c.id);
       if (instance.superviseSessions)
         this.service.sessionSupervision.enroll(orchestratorId, s!.id, true);
       audit(c.id, 'assign_card', { sessionId: s!.id, instructions: input.instructions ?? null });
@@ -1427,6 +1453,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         throw error;
       }
       if (input.requestId) requests.started(input.requestId, session.id);
+      recordOwnedSession(this.db, orchestratorId, session.id, c.id);
       if (this.instance(orchestratorId).superviseSessions)
         this.service.sessionSupervision.enroll(orchestratorId, session.id, true);
       audit(c.id, 'start_session', {

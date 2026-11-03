@@ -250,9 +250,17 @@ describe('orchestrator chat tools (PM-89)', () => {
       canCommit: expect.any(Function),
       context: 'Instructions from the orchestrator:\nCheck the tests first',
     });
-    // The project now has a live worker: its per-project limit (1) refuses another.
-    runs.push({ id: 77, projectId: a, cardId: 999, status: 'running' });
-    await expect(call('dispatch_worker', { card: mine.key })).rejects.toThrow(/already has 1 of 1/);
+    // A run the owner started elsewhere in the project is not this orchestrator's (PM-417).
+    // Capacity lets it through; only the card's own reservation from the first dispatch remains.
+    runs.push({ id: 76, projectId: a, cardId: 998, status: 'running' });
+    await expect(call('dispatch_worker', { card: mine.key })).rejects.toThrow(
+      /Assignment reserved/,
+    );
+    // Its own run fills its per-project limit (1), which refuses another.
+    runs.push({ id: 77, projectId: a, cardId: 999, status: 'running', orchestratorId: 'master-1' });
+    await expect(call('dispatch_worker', { card: mine.key })).rejects.toThrow(
+      /already has 1 of your 1/,
+    );
     await expect(call('dispatch_worker', { card: mine.key, providerId: 'claude' })).rejects.toThrow(
       /already has|one of your providers/,
     );
@@ -638,7 +646,9 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     await expect(
       call('start_session', { card: mine.key, requestId: 'r1', instructions: 'other' }),
     ).rejects.toThrow(/different work/);
-    await expect(call('start_session', { card: mine.key })).rejects.toThrow(/already has 1 of 1/);
+    await expect(call('start_session', { card: mine.key })).rejects.toThrow(
+      /already has a live worker/,
+    );
     expect(createSession).toHaveBeenCalledTimes(1);
     db.close();
   });

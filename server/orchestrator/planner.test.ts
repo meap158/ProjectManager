@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rollOver } from '../agents/limits.js';
-import type { Card, AgentRun } from '../../shared/types.js';
+import type { Card, AgentRun, AgentSession } from '../../shared/types.js';
 import { planOrchestration, type OrchestratorPolicy } from './planner.js';
 const now = Date.parse('2026-10-10T12:00:00Z');
 const policy: OrchestratorPolicy = {
@@ -205,4 +205,90 @@ it('requires fresh verification after estimated quota rollover unless unknown qu
   );
   state.limits = [limits('codex', 20)];
   expect(planOrchestration(scoped, state, now)[0]?.action).toBe('dispatch');
+});
+describe('orchestrator worker limits count its own workers (PM-417)', () => {
+  const session = (id: number, projectId: number, providerId: string, cardId: number | null) =>
+    ({ id, projectId, providerId, cardId, status: 'running' }) as AgentSession;
+  const own = { ...policy, id: 'm1', maxWorkers: 1, maxWorkersPerProject: 1 };
+  const dispatched = (state: ReturnType<typeof snapshot>, p = own) =>
+    planOrchestration(p, state, now)
+      .filter((d) => d.action === 'dispatch')
+      .map((d) => d.cardId);
+
+  it('ignores the owner sessions for every limit', () => {
+    const state = {
+      ...snapshot(),
+      sessions: [
+        session(1, 1, 'codex', null),
+        session(2, 1, 'codex', 50),
+        session(3, 2, 'codex', 51),
+      ],
+      ownedSessionIds: new Set<number>(),
+    };
+    // Without ownership, those sessions fill the limit of 1 as before.
+    expect(dispatched({ ...state, ownedSessionIds: undefined })).toEqual([]);
+    expect(dispatched(state)).toEqual([1]);
+  });
+
+  it('counts sessions it owns and runs carrying its id', () => {
+    const state = {
+      ...snapshot(),
+      sessions: [session(1, 1, 'codex', 50)],
+      ownedSessionIds: new Set([1]),
+    };
+    const decisions = planOrchestration(own, state, now);
+    expect(decisions[0]?.waitReason).toBe('managed_capacity');
+    expect(decisions[0]?.occupancy).toMatchObject({ managedWorkers: 1, externalWorkers: 0 });
+
+    const runs = [
+      {
+        id: 7,
+        projectId: 1,
+        cardId: 60,
+        providerId: 'codex',
+        status: 'running',
+        orchestratorId: 'm1',
+      },
+      {
+        id: 8,
+        projectId: 1,
+        cardId: 61,
+        providerId: 'codex',
+        status: 'running',
+        orchestratorId: 'm2',
+      },
+    ] as AgentRun[];
+    const byRuns = planOrchestration(own, { ...snapshot(), runs, ownedSessionIds: new Set() }, now);
+    expect(byRuns[0]?.waitReason).toBe('managed_capacity');
+    expect(byRuns[0]?.occupancy).toMatchObject({ managedWorkers: 1, externalWorkers: 1 });
+  });
+
+  it('applies the per-provider limit to its own workers only', () => {
+    const state = {
+      ...snapshot(),
+      sessions: [session(1, 1, 'codex', 50)],
+      ownedSessionIds: new Set<number>(),
+    };
+    const p = { ...own, maxWorkers: 2, maxWorkersPerProject: 2, maxWorkersPerProvider: 1 };
+    expect(dispatched(state, p)).toEqual([1]);
+    expect(dispatched({ ...state, ownedSessionIds: new Set([1]) }, p)).toEqual([]);
+  });
+
+  it('still waits on a card any session works on, and keeps the global cap', () => {
+    const state = {
+      ...snapshot(),
+      cards: [card(1)],
+      sessions: [session(1, 1, 'codex', 1)],
+      ownedSessionIds: new Set<number>(),
+    };
+    expect(planOrchestration(own, state, now)[0]?.waitReason).toBe('active_worker');
+
+    const crowded = {
+      ...snapshot(),
+      cards: [card(1)],
+      sessions: Array.from({ length: 32 }, (_, i) => session(i + 1, 2, 'other', null)),
+      ownedSessionIds: new Set<number>(),
+    };
+    expect(planOrchestration(own, crowded, now)[0]?.waitReason).toBe('global_capacity');
+  });
 });

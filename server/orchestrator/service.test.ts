@@ -135,12 +135,17 @@ describe('orchestrator service', () => {
       cardId: number;
       providerId: string;
       status: string;
+      orchestratorId?: string;
     }[] = [];
     vi.spyOn(planning, 'planningRuns').mockImplementation(
       () => runs as ReturnType<typeof planning.planningRuns>,
     );
     const dispatch = vi.fn(
-      async (projectId: number, cardId: number, input: { canCommit?: () => boolean }) => {
+      async (
+        projectId: number,
+        cardId: number,
+        input: { canCommit?: () => boolean; orchestratorId?: string },
+      ) => {
         expect(input.canCommit?.()).toBe(true);
         const run = {
           id: runs.length + 1,
@@ -148,6 +153,7 @@ describe('orchestrator service', () => {
           cardId,
           providerId: 'codex',
           status: 'running',
+          orchestratorId: input.orchestratorId,
         };
         runs.push(run);
         return run;
@@ -177,10 +183,14 @@ describe('orchestrator service', () => {
     });
     try {
       await service.tick();
-      expect(dispatch).toHaveBeenCalledTimes(1);
-      // Initial planning, the mandatory pre-insertion snapshot, then the next master's
-      // fresh view of the worker that was just started.
-      expect(planning.planningRuns).toHaveBeenCalledTimes(3);
+      // Each master has its own limit of one (PM-417). The second sees the first's fresh
+      // worker on the first card and takes the other card, never the same one.
+      expect(dispatch).toHaveBeenCalledTimes(2);
+      expect(new Set(dispatch.mock.calls.map((call) => call[1])).size).toBe(2);
+      expect(runs.map((r) => r.orchestratorId)).toEqual(service.state().instances.map((i) => i.id));
+      // Per master: planning, then the mandatory pre-insertion snapshot. The second master plans
+      // from a fresh view after the first master's dispatch, not the cached one.
+      expect(planning.planningRuns).toHaveBeenCalledTimes(4);
     } finally {
       await service.stop();
       db.close();
@@ -328,6 +338,7 @@ describe('orchestrator service', () => {
       projectId: number;
       providerId: string;
       status: string;
+      orchestratorId?: string;
     }[] = [];
     const dispatch = vi.fn(
       async (projectId: number, cardId: number, input: { canCommit?: () => boolean }) => {
@@ -342,9 +353,24 @@ describe('orchestrator service', () => {
         expect(input.canCommit?.()).toBe(false);
         db.prepare('UPDATE cards SET updated_at = created_at WHERE id = ?').run(cardId);
         expect(input.canCommit?.()).toBe(true);
+        // Two more of this master's own workers fill its limit (PM-417: only its own count).
         runs.push(
-          { id: 90, projectId, cardId: 90, providerId: 'codex', status: 'running' },
-          { id: 91, projectId, cardId: 91, providerId: 'codex', status: 'running' },
+          {
+            id: 90,
+            projectId,
+            cardId: 90,
+            providerId: 'codex',
+            status: 'running',
+            orchestratorId: saved.id,
+          },
+          {
+            id: 91,
+            projectId,
+            cardId: 91,
+            providerId: 'codex',
+            status: 'running',
+            orchestratorId: saved.id,
+          },
         );
         expect(input.canCommit?.()).toBe(false);
         runs.length = 0;
