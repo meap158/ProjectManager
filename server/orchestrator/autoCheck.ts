@@ -108,12 +108,16 @@ export class AutoCheck {
         triggers.push(`session ${sessionId} stopped working`);
     for (const cardId of current.state.review)
       if (!previous.review.includes(cardId)) triggers.push(`card ${cardId} moved to Review`);
-    for (const p of current.state.quotaOk)
-      if (!previous.quotaOk.includes(p)) triggers.push(`${p} quota recovered`);
+    const boardMoved = current.board !== checkedBoard;
+    // Recovered quota only helps with work to hand out (To do) or a board that moved since the
+    // last check. Otherwise every 5-hour reset would ask again for the same answer.
+    if (current.assignable || boardMoved)
+      for (const p of current.state.quotaOk)
+        if (!previous.quotaOk.includes(p)) triggers.push(`${p} quota recovered`);
     if (
       !triggers.length &&
       current.pending &&
-      current.board !== checkedBoard &&
+      boardMoved &&
       now - previous.lastCheckAt >= AUTO_CHECK_FALLBACK_MS
     )
       triggers.push('slow fallback, the board changed and work is pending');
@@ -192,6 +196,7 @@ export class AutoCheck {
     return {
       state: { running, review, quotaOk },
       pending: cards.length > 0 || todo.length > 0,
+      assignable: todo.length > 0,
       board,
     };
   }

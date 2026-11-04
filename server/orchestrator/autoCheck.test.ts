@@ -249,3 +249,41 @@ it('does not repeat the fallback on a board that has not changed since its last 
   expect(t.state.checks).toBe(2);
   expect(t.state.events[1]).toContain('board changed');
 });
+
+it('skips quota recovery when nothing is to do and the board has not moved since its last check', async () => {
+  const t = setup({ allowUnknownQuota: false });
+  const quota = (used: number) =>
+    [
+      {
+        providerId: 'codex',
+        asOf: new Date(t.state.now).toISOString(),
+        windows: [{ label: '5h', usedPercent: used }],
+      },
+    ] as unknown as ProviderLimits[];
+  limits = quota(10);
+  await t.auto.tick();
+  t.state.now += AUTO_CHECK_FALLBACK_MS;
+  limits = quota(10);
+  await t.auto.tick(); // the fallback looks once and records the board
+  expect(t.state.checks).toBe(1);
+  // Quota runs out and comes back, twice: the same board, nothing to hand out.
+  for (let i = 0; i < 2; i++) {
+    t.state.now += AUTO_CHECK_MIN_GAP_MS;
+    limits = quota(99);
+    await t.auto.tick();
+    t.state.now += AUTO_CHECK_MIN_GAP_MS;
+    limits = quota(10);
+    await t.auto.tick();
+  }
+  expect(t.state.checks).toBe(1);
+  // With a To do card waiting, recovered quota is worth a look.
+  insertCard(t.db, t.project, { title: 'Ready', description: '', status: 'todo' });
+  t.state.now += AUTO_CHECK_MIN_GAP_MS;
+  limits = quota(99);
+  await t.auto.tick();
+  t.state.now += AUTO_CHECK_MIN_GAP_MS;
+  limits = quota(10);
+  await t.auto.tick();
+  expect(t.state.checks).toBe(2);
+  expect(t.state.events[1]).toContain('codex quota recovered');
+});

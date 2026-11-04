@@ -118,7 +118,8 @@ starting workers. The check is refused (409) while the chat is working or asking
 **Checking on its own (PM-418).** The opt-in setting `autoCheck` ("Check on its own") makes an
 enabled, autonomous orchestrator ask its own chat for this same check (`chat.check`, so the same
 409 guards) when something changed in scope: a session it owns or supervises stopped working, a
-card moved to Review, or a provider's quota came back above the reserve. A slow fallback fires
+card moved to Review, or a provider's quota came back above the reserve (only while a To do card
+waits or the board changed since the last check, so a 5-hour reset alone asks nothing). A slow fallback fires
 after 30 minutes when any card is pending and the board (To do, In progress and Review cards
 in scope) changed since the last automatic check, so work that only waits on you is not
 checked again and again. Bounds: at most 4 automatic checks an hour, 5 minutes
