@@ -174,6 +174,15 @@ recorded in Activity as `git`. With the setting on, the briefing and the Needs a
 the chat to push verified unpushed work and merge ready pull requests; off, they keep the "never
 push or merge without authorization" rule and the tool refuses.
 
+**Serve first (PM-430).** `priorityProjectIds` ("Serve first" on the edit form) names projects whose
+work goes before everyone else's. The planner splits the scoped projects into two groups, priority
+and the rest, and takes the priority group in full before the other gets a turn; within each group
+it keeps the least-recently-served rotation, and the worker limits (per project, per provider,
+total) are unchanged, so a priority project at its per-project limit lets the next project's card
+through. The briefing marks those projects "(priority)" with a rule to hand out, work on, review and
+plan their cards first, and `overview` marks them with `priority: true` and lists their To do cards
+first. Empty means fair rotation only.
+
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open
 chat opens it in Agents; "Ask it to check" buttons, plus a "Project alerts" row with "All alerts" and per-kind chips that run the Needs attention check
 for one alert kind: `POST /orchestrators/:id/check` with `focus: "attention"` and `attentionKinds`), and orchestrators, their sections and

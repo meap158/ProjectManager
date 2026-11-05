@@ -912,13 +912,19 @@ export class OrchestratorChat implements OrchestratorToolHost {
     if (name === 'overview') {
       z.object({}).strict().parse(args);
       const situation = this.service.situation(orchestratorId)!;
+      // Priority projects (PM-430) are marked, and their To do cards listed first.
+      const priority = new Set(instance.priorityProjectIds ?? []);
       const { sessions, runs, all } = ownWorkers();
       const todo = [
         ...projects.flatMap((p) => listCards(this.db, p.id)),
         ...(inScope(0) ? listProjectlessCards(this.db) : []),
       ]
         .filter((c) => c.status === 'todo')
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        .sort(
+          (a, b) =>
+            Number(priority.has(b.projectId)) - Number(priority.has(a.projectId)) ||
+            b.updatedAt.localeCompare(a.updatedAt),
+        );
       return {
         orchestrator: {
           name: instance.name,
@@ -936,7 +942,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
           notCountedWorkers: all.sessions.length + all.runs.length - sessions.length - runs.length,
           note: "Only yourWorkers count toward maxWorkers. notCountedWorkers are the owner's own sessions and other runs: they never block you, though a card one of them is on stays theirs.",
         },
-        projects: projects.map(projectBrief),
+        projects: projects.map((p) =>
+          priority.has(p.id) ? { ...projectBrief(p), priority: true } : projectBrief(p),
+        ),
         todo: { total: todo.length, cards: todo.slice(0, 60).map(brief) },
         needsAttention: situation.needsAttention.slice(0, 80),
         beingWorkedOn: situation.beingWorkedOn.slice(0, 80),
@@ -1722,6 +1730,10 @@ ${notes.length > 1500 ? `${notes.slice(0, 1500)}…` : notes}`
     .join('\n\n');
 }
 
+/** Cross-project priority (PM-430): the chat follows the order the scheduler uses. */
+const PRIORITY_RULE =
+  'Priority projects (marked "(priority)" below and in overview) go first: hand out, work on, review and plan their cards before those of any other project, then share your time fairly among the rest.';
+
 export function checkPrompt(
   instance: OrchestratorConfig,
   focus: CheckFocus,
@@ -1770,12 +1782,13 @@ export function briefing(
   projects: ProjectSummary[],
   recent: readonly OrchestratorEvent[] = [],
 ): string {
+  const priority = new Set(instance.priorityProjectIds ?? []);
   const project = (p: ProjectSummary) => {
     const c = p.cardCounts;
     const git = p.git?.isRepo
       ? `branch ${p.git.branch ?? '?'}, ${p.git.dirtyFiles ?? 0} uncommitted, ${p.git.ahead ?? 0} unpushed, last commit ${p.git.lastCommitAt ?? 'never'}`
       : 'not a git repo';
-    return `- **${p.name}** (project ${p.id}) at \`${p.path}\`${p.missing ? ' (FOLDER MISSING)' : ''}: ${git}. Board: ${c.backlog} backlog, ${c.todo} to do, ${c.in_progress} in progress, ${c.review} review, ${c.done} done.`;
+    return `- **${p.name}** (project ${p.id})${priority.has(p.id) ? ' (priority)' : ''} at \`${p.path}\`${p.missing ? ' (FOLDER MISSING)' : ''}: ${git}. Board: ${c.backlog} backlog, ${c.todo} to do, ${c.in_progress} in progress, ${c.review} review, ${c.done} done.`;
   };
   const supervision = instance.superviseSessions
     ? 'Session supervision is enabled. Use check_session to inspect progress and eligibility, supervise_session to enroll/release existing workers, continue_session for unfinished idle card work, and wake_session only for an explicit stopped-session wake request. Assigned and newly started sessions enroll automatically. Never retry an uncertain send without checking worker_output. Quota waits, questions and drafts must remain with their existing owner.'
@@ -1799,7 +1812,7 @@ ${
 - Background scheduler settings below are separate from this chat's direct work:
 - Providers for workers: ${instance.providers.join(', ')}
 - Worker limits: ${instance.maxWorkers} in total, ${instance.maxWorkersPerProject} per project, counting only the workers you started, handed a card or supervise; the owner's own sessions never use them up
-
+${priority.size ? `- ${PRIORITY_RULE}\n` : ''}
 ## Projects in your scope (snapshot when this chat opened; call overview for live state)
 
 ${projects.map(project).join('\n') || '- (none)'}

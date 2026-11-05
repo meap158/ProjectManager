@@ -14,6 +14,8 @@ export interface OrchestratorPolicy {
   /** The orchestrator's id: its own runs carry it (`agent_runs.orchestrator_id`). */
   id?: string;
   projectIds: number[];
+  /** Projects served before the rest (PM-430); rotation still applies within each group. */
+  priorityProjectIds?: number[];
   providers: string[];
   maxWorkers: number;
   maxWorkersPerProject: number;
@@ -128,21 +130,25 @@ export function planOrchestration(
     queue.push(card);
     queues.set(card.projectId, queue);
   }
-  // Prefer projects least recently served, then alternate their board-ordered tasks.
+  // Prefer projects least recently served, then alternate their board-ordered tasks. Priority
+  // projects (PM-430) form their own group, taken in full before the rest get a turn.
   const lastServed = new Map<number, number>();
   for (const run of snapshot.runs)
     if (scope(run.projectId) && run.cardId != null)
       lastServed.set(run.projectId, Math.max(lastServed.get(run.projectId) ?? 0, run.id));
-  const projects = [...queues.keys()].sort(
-    (a, b) => (lastServed.get(a) ?? 0) - (lastServed.get(b) ?? 0),
-  );
+  const priority = new Set(policy.priorityProjectIds ?? []);
+  const byService = (a: number, b: number) => (lastServed.get(a) ?? 0) - (lastServed.get(b) ?? 0);
+  const all = [...queues.keys()];
   const cards: Card[] = [];
-  const longest = Math.max(0, ...[...queues.values()].map((queue) => queue.length));
-  for (let index = 0; index < longest; index++)
-    for (const project of projects) {
-      const card = queues.get(project)?.[index];
-      if (card) cards.push(card);
-    }
+  for (const group of [all.filter((p) => priority.has(p)), all.filter((p) => !priority.has(p))]) {
+    group.sort(byService);
+    const longest = Math.max(0, ...group.map((p) => queues.get(p)!.length));
+    for (let index = 0; index < longest; index++)
+      for (const project of group) {
+        const card = queues.get(project)?.[index];
+        if (card) cards.push(card);
+      }
+  }
   for (const card of cards) {
     const decide = (
       action: OrchestratorDecision['action'],

@@ -1443,6 +1443,33 @@ export function OrchestratorPage() {
                       ]}
                     />
                   </label>
+                  <label>
+                    Serve first
+                    <Dropdown
+                      label="Serve first"
+                      value={0}
+                      onChange={() => {}}
+                      multiple={{
+                        values: (draft.priorityProjectIds ?? []).filter(
+                          (id) => !draft.projectIds.length || draft.projectIds.includes(id),
+                        ),
+                        allValue: 0,
+                        onChange: (priorityProjectIds) =>
+                          setDraft({ ...draft, priorityProjectIds }),
+                      }}
+                      options={[
+                        { value: 0, label: 'No priority (take turns)' },
+                        ...projects
+                          .filter(
+                            (p) => !draft.projectIds.length || draft.projectIds.includes(p.id),
+                          )
+                          .map((p) => ({ value: p.id, label: p.name })),
+                      ]}
+                    />
+                    <span className="faint">
+                      Their cards get workers before any other project's. The rest take turns.
+                    </span>
+                  </label>
                 </div>
               </div>
 

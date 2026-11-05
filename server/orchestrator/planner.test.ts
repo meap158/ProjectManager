@@ -54,6 +54,19 @@ describe('orchestrator planning', () => {
       )?.cardId,
     ).toBe(3);
   });
+  it('serves priority projects before the rest, rotating within each group (PM-430)', () => {
+    const state = snapshot();
+    state.cards = [card(1), card(2), card(3, 2), card(4, 2), card(5, 3), card(6, 3)];
+    const base = { ...policy, projectIds: [], maxWorkers: 3, maxWorkersPerProvider: 4 };
+    const dispatched = (p: typeof base) =>
+      planOrchestration(p, state, now)
+        .filter((d) => d.action === 'dispatch')
+        .map((d) => d.cardId);
+    expect(dispatched(base)).toEqual([1, 3, 5]);
+    // Project 3 first; per-project capacity (2) still holds, then the others rotate.
+    expect(dispatched({ ...base, priorityProjectIds: [3] })).toEqual([5, 6, 1]);
+    expect(dispatched({ ...base, priorityProjectIds: [2, 3] })).toEqual([3, 5, 4]);
+  });
   it('counts proposed dispatches against the global safety cap', () => {
     const state = snapshot();
     state.runs = Array.from({ length: 31 }, (_, i) => ({

@@ -1087,3 +1087,35 @@ it('routes scoped supervision tools and allows release when delegation is disabl
   await expect(t.call('check_session', { sessionId: -1 })).rejects.toThrow();
   t.db.close();
 });
+
+describe('cross-project priority (PM-430)', () => {
+  it('marks priority projects in overview and lists their To do cards first', async () => {
+    const { call, other, db } = setup({ projectIds: [1, 2], priorityProjectIds: [2] });
+    const view = (await call('overview', {})) as {
+      projects: { id: number; priority?: boolean }[];
+      todo: { cards: { key: string }[] };
+    };
+    expect(view.projects.find((p) => p.id === 2)?.priority).toBe(true);
+    expect(view.projects.find((p) => p.id === 1)?.priority).toBeUndefined();
+    expect(view.todo.cards[0]?.key).toBe(other.key);
+    db.close();
+  });
+
+  it('tells the chat to serve priority projects first only when some are set', () => {
+    const base = {
+      name: 'X',
+      providers: ['codex'],
+      projectIds: [],
+    } as unknown as OrchestratorConfig;
+    const project = {
+      id: 3,
+      name: 'Sparkline',
+      path: 'S:/Sparkline',
+      cardCounts: { backlog: 0, todo: 1, in_progress: 0, review: 0, done: 0 },
+    } as unknown as ProjectSummary;
+    expect(briefing(base, [project])).not.toContain('Priority projects');
+    const text = briefing({ ...base, priorityProjectIds: [3] }, [project]);
+    expect(text).toContain('Priority projects');
+    expect(text).toContain('**Sparkline** (project 3) (priority)');
+  });
+});

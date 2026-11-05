@@ -31,6 +31,11 @@ export interface OrchestratorConfig {
    */
   gitAutonomy?: boolean;
   projectIds: number[];
+  /**
+   * Projects whose work goes first (PM-430): the scheduler hands out their cards before any
+   * other project's, and the chat is told to do the same. Empty or absent: fair rotation only.
+   */
+  priorityProjectIds?: number[];
   providers: string[];
   maxWorkers: number;
   maxWorkersPerProject: number;
