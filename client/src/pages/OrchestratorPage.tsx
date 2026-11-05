@@ -1645,6 +1645,20 @@ export function OrchestratorPage() {
                     with the evidence, which accepts its finished runs, or back to To do with what
                     is missing. Anything that needs your judgment stays in Review.
                   </p>
+                  <label className="orchestrator-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.gitAutonomy ?? false}
+                      onChange={(e) => setDraft({ ...draft, gitAutonomy: e.target.checked })}
+                    />
+                    Git on its own: push, pull requests, merges and branches
+                  </label>
+                  <p className="faint">
+                    The chat pushes verified work and merges pull requests whose checks pass without
+                    asking, as each project's own commit author and GitHub account. Force pushes,
+                    discarding uncommitted work, deleting the main branch, skipping hooks and
+                    deleting repositories are always refused.
+                  </p>
                 </div>
               </div>
 

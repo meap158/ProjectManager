@@ -25,6 +25,11 @@ export interface OrchestratorConfig {
    * note also accepts its finished runs, and sending it back to To do rejects them. Default off.
    */
   acceptReviews?: boolean;
+  /**
+   * The chat may push, open and merge pull requests and manage branches on its own through its
+   * guarded git tool, as each project's own git identity (PM-428). Default off.
+   */
+  gitAutonomy?: boolean;
   projectIds: number[];
   providers: string[];
   maxWorkers: number;

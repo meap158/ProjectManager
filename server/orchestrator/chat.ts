@@ -43,6 +43,7 @@ import { planningRuns } from './planningRuns.js';
 import { OrchestratorAssignments } from './assignments.js';
 import { readLimits } from '../agents/limits.js';
 import { ChatDispatchIntent } from './chatIntent.js';
+import { gitCommandWrites, runProjectGit } from './gitTool.js';
 import type { OrchestratorService } from './service.js';
 import { type SopStore, checkProject, sopCardText, sopInfo, sopReport } from '../sops.js';
 
@@ -164,6 +165,26 @@ export const ORCHESTRATOR_TOOLS = [
         status: { type: 'string', enum: CARD_STATUSES },
       },
       required: ['projectId', 'title'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'git',
+    description:
+      'Run git or gh in one of your projects, as that project\'s own commit author and GitHub account. Only while Git on its own is on (Orchestrators page). Push, pull requests, merges and branch work; force pushes, discarding uncommitted work, deleting the main branch, skipping hooks and deleting repositories are refused. Give the arguments as a list, e.g. ["push", "origin", "main"].',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'integer', minimum: 1 },
+        program: { type: 'string', enum: ['git', 'gh'] },
+        args: {
+          type: 'array',
+          items: { type: 'string', maxLength: 500 },
+          minItems: 1,
+          maxItems: 40,
+        },
+      },
+      required: ['projectId', 'program', 'args'],
       additionalProperties: false,
     },
   },
@@ -345,6 +366,11 @@ export function plans(instance: OrchestratorConfig): boolean {
 /** Whether this orchestrator accepts finished work itself (PM-427). */
 export function accepts(instance: OrchestratorConfig): boolean {
   return instance.strategy !== 'observe' && instance.acceptReviews === true;
+}
+
+/** Whether this orchestrator may push, merge and manage branches itself (PM-428). */
+export function doesGit(instance: OrchestratorConfig): boolean {
+  return instance.strategy !== 'observe' && instance.gitAutonomy === true;
 }
 
 export function delegates(instance: OrchestratorConfig): boolean {
@@ -1065,6 +1091,29 @@ export class OrchestratorChat implements OrchestratorToolHost {
       return brief(updated ?? c);
     }
 
+    if (name === 'git') {
+      const input = z
+        .object({
+          projectId: z.number().int().positive(),
+          program: z.enum(['git', 'gh']),
+          args: z.array(z.string().max(500)).min(1).max(40),
+        })
+        .strict()
+        .parse(args);
+      if (!doesGit(instance))
+        fail('Git on its own is off for this orchestrator; the owner turns it on in its settings');
+      const project = projects.find((p) => p.id === input.projectId);
+      if (!project) fail(`Project ${input.projectId} is not in this orchestrator's scope`);
+      const result = await runProjectGit(this.db, project!, input.program, input.args);
+      if (gitCommandWrites(input.program, input.args))
+        this.record(
+          orchestratorId,
+          'git',
+          `${project!.name}: ${input.program} ${input.args.join(' ').slice(0, 160)} (exit ${result.exitCode}, chat)`,
+        );
+      return result;
+    }
+
     if (name === 'create_card') {
       const input = z
         .object({
@@ -1633,6 +1682,12 @@ const CHECKS_DELEGATING: Partial<Record<CheckFocus, string>> = {
     "In progress: check each card's progress (get_card, worker_output, list_sessions and the project's git log). Nudge an idle session that stopped short with message_worker; continue work directly only when its session is gone, preserving its changes. Move finished work to Review with evidence. Record concrete blockers on stalled cards.",
 };
 
+/** The Needs attention step's last rule, by whether git work is the orchestrator's own (PM-428). */
+const ATTENTION_GIT_OFF =
+  'Do not push, merge, discard files or delete branches without explicit authorization for that action.';
+const ATTENTION_GIT_ON =
+  'Git on its own is on: push verified unpushed work and merge ready pull requests with the git tool. Do not discard files without explicit authorization.';
+
 const CHECKS: Record<CheckFocus, string> = {
   todo: 'To do: go through each To do task. Decide whether it is ready to work on. Implement ready tasks directly in this chat session, most important first. Inspect the project instructions and existing changes, complete the work and verify it before moving cards to Review. Do not dispatch workers or delegate; record concrete blockers on unclear tasks.',
   in_progress:
@@ -1640,7 +1695,8 @@ const CHECKS: Record<CheckFocus, string> = {
   review:
     'Review: for each card in Review, check the evidence (latest run outcome, commits, notes) and tell me which are ready for me to accept and which need more work (note why on the card).',
   attention:
-    'Needs attention: inspect the live All projects dashboard alerts in overview, including uncommitted and unpushed work. Read the affected project instructions and diffs; address safe, authorized fixes directly here and verify them. Preserve unrelated changes. Do not dismiss unresolved alerts or mark work complete without evidence. Report the exact project, remaining work and any action requiring owner input. Do not push, merge, discard files or delete branches without explicit authorization for that action.',
+    'Needs attention: inspect the live All projects dashboard alerts in overview, including uncommitted and unpushed work. Read the affected project instructions and diffs; address safe, authorized fixes directly here and verify them. Preserve unrelated changes. Do not dismiss unresolved alerts or mark work complete without evidence. Report the exact project, remaining work and any action requiring owner input. ' +
+    ATTENTION_GIT_OFF,
   plan: PLAN_STEP,
   all: '',
 };
@@ -1676,10 +1732,15 @@ export function checkPrompt(
       ? ` Handle only these alert kinds: ${attentionKinds.join(', ')}; leave every other alert untouched and say so.`
       : '';
   const delegating = delegates(instance);
+  const attention = doesGit(instance)
+    ? CHECKS.attention.replace(ATTENTION_GIT_OFF, ATTENTION_GIT_ON)
+    : CHECKS.attention;
   const step = (f: Exclude<CheckFocus, 'all'>) =>
-    f === 'review' && accepts(instance)
-      ? ACCEPT_STEP
-      : ((delegating ? CHECKS_DELEGATING[f] : undefined) ?? CHECKS[f]);
+    f === 'attention'
+      ? attention
+      : f === 'review' && accepts(instance)
+        ? ACCEPT_STEP
+        : ((delegating ? CHECKS_DELEGATING[f] : undefined) ?? CHECKS[f]);
   const steps =
     focus === 'all'
       ? [
@@ -1689,7 +1750,7 @@ export function checkPrompt(
           step('attention'),
           ...(plans(instance) ? [step('plan')] : []),
         ]
-      : [focus === 'attention' ? CHECKS.attention + only : step(focus)];
+      : [focus === 'attention' ? attention + only : step(focus)];
   const observe =
     instance.strategy === 'observe'
       ? '\nWatch only: inspect and recommend changes; do not edit files or move cards unless the user explicitly authorizes the work.'
@@ -1756,7 +1817,7 @@ ${projects.map(project).join('\n') || '- (none)'}
 - \`list_sessions\`: the CLI sessions in your projects, with their state and linked card.
 - \`assign_card\`: hand a card to an idle session in its project (links it, moves it to In progress, types the task in). Delivery is not confirmed: check with worker_output, never resend blindly.
 - \`start_session\`: start a new CLI session on a card in its project, within your worker limits and the quota reserve. Use a unique requestId and reuse it after a lost response.
-- \`sop_report\`, \`sop_card\`: audit your projects against our SOPs (Settings > SOPs) and turn a gap into a card. Waivers are the owner's decision; suggest one with a reason instead of treating a gap as fine.
+${doesGit(instance) ? '- `git`: git or gh in a project, as its own identity (Git on its own is on).\n' : ''}- \`sop_report\`, \`sop_card\`: audit your projects against our SOPs (Settings > SOPs) and turn a gap into a card. Waivers are the owner's decision; suggest one with a reason instead of treating a gap as fine.
 
 ## How to work
 
@@ -1782,7 +1843,11 @@ ${
       : `- Review: check the evidence and tell the user what's ready to accept. Move to Done only when
   the requirements are clearly met; the user accepts or rejects finished runs.`
   }
-- Read scoped project folders and make authorized changes directly in this chat. Follow each project's instructions, preserve unrelated changes, and run appropriate checks. Never push, merge, delete branches or run destructive commands without explicit authorization for that action.
+- Read scoped project folders and make authorized changes directly in this chat. Follow each project's instructions, preserve unrelated changes, and run appropriate checks. ${
+    doesGit(instance)
+      ? "Git on its own is on: push, open and merge pull requests and manage branches yourself with the `git` tool, which acts as each project's own commit author and GitHub account (never push from your shell: it may use the wrong account). Push only verified work, merge a pull request only when it is mergeable and its checks pass, and follow a project's own branch and release rules where it states them. The tool refuses force pushes, discarding uncommitted work, deleting the main branch and skipping hooks; never work around it. Other destructive commands still need explicit authorization."
+      : 'Never push, merge, delete branches or run destructive commands without explicit authorization for that action.'
+  }
 - Keep the board truthful: every move gets a short note saying why.
 - Report concisely: what you did, what's blocked, what needs the user.
 

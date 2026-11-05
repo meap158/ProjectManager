@@ -733,6 +733,31 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     expect(checkPrompt(off.instance, 'review')).toContain('ready for me to accept');
   });
 
+  it('runs git only with Git on its own, in scope, and says so in its rules (PM-428)', async () => {
+    const off = setup();
+    await expect(
+      off.call('git', { projectId: off.a, program: 'git', args: ['status'] }),
+    ).rejects.toThrow(/Git on its own is off/);
+    expect(briefing(off.instance, [])).toContain('Never push, merge');
+    expect(checkPrompt(off.instance, 'attention')).toContain('Do not push, merge');
+
+    const on = setup({ gitAutonomy: true });
+    await expect(
+      on.call('git', { projectId: on.b, program: 'git', args: ['status'] }),
+    ).rejects.toThrow(/not in this/);
+    await expect(
+      on.call('git', { projectId: on.a, program: 'git', args: ['push', '--force'] }),
+    ).rejects.toThrow(/Force/);
+    expect(briefing(on.instance, [])).toContain('Git on its own is on');
+    expect(briefing(on.instance, [])).not.toContain('Never push, merge');
+    expect(checkPrompt(on.instance, 'attention')).toContain('push verified unpushed work');
+    expect(checkPrompt(on.instance, 'all')).not.toContain('Do not push, merge');
+    const watch = setup({ gitAutonomy: true, strategy: 'observe' });
+    await expect(
+      watch.call('git', { projectId: watch.a, program: 'git', args: ['status'] }),
+    ).rejects.toThrow(/off/);
+  });
+
   it('plans idle projects only with planFromGoals, never watch-only (PM-426)', () => {
     const base = {
       name: 'X',

@@ -24,6 +24,7 @@ const config = z.object({
   autoCheck: z.boolean().optional(),
   planFromGoals: z.boolean().optional(),
   acceptReviews: z.boolean().optional(),
+  gitAutonomy: z.boolean().optional(),
   projectIds: z.array(z.number().int().positive()).max(500),
   providers: z
     .array(z.enum(['claude', 'codex', 'grok', 'antigravity', 'opencode']))

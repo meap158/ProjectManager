@@ -99,6 +99,12 @@ anything.
   the pid a fresh detection still sees on that port, never this server or its launcher, this app's
   ports or system services, after the user confirms, and on this computer only (LAN and remote get
   403).
+  **Git on its own** (PM-428, the owner's decision on 2026-11-05) is an orchestrator setting, off by
+  default and ignored in Watch only. With it on, that orchestrator's chat may push, open and merge
+  pull requests and manage branches in its projects without asking, only through its `git` tool
+  (`server/orchestrator/gitTool.ts`): argument arrays, the project's own git identity, and refused
+  force pushes, pushes to a URL, deleting the main branch, discarding uncommitted work, skipped hooks,
+  gh's `--delete-branch` and `--admin`, and repository deletion. Keep those refusals.
 - **DB changes** go in a new migration appended to `MIGRATIONS` in `server/db.ts`. Never edit a
   migration that has shipped: real databases have already run the old text (this happened once, and
   `repairSchema()` exists to clean up after it).

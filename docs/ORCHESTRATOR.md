@@ -157,6 +157,23 @@ with the run ids. Work that needs the owner's judgment (visual or product decisi
 accounts, payments) stays in Review with a note. Off, moves never touch runs and the owner still
 accepts or rejects them.
 
+**Git on its own (PM-428).** The opt-in setting `gitAutonomy` ("Git on its own") lets the chat push,
+open and merge pull requests and manage branches without asking. It does so only through the `git`
+tool (`server/orchestrator/gitTool.ts`), which runs `git` or `gh` with an argument array in a
+project in scope, as that project's own commit author and GitHub account (`projectGitEnv`, the
+environment its agent sessions get), with prompts disabled, a 3-minute timeout and tokens redacted
+from the output. The briefing tells the chat never to push from its shell, which may use the wrong
+account. Whatever the setting, the tool refuses force pushes (`--force*`, `-f`, `+refspec`,
+`--mirror`), pushes to a URL instead of a configured remote, deleting `main`, `master`, `trunk` or
+`develop`, discarding uncommitted work (`reset --hard`, file checkout or restore, forced switch or
+rm, `stash drop`), skipped hooks, options that run another program, global options and config,
+interactive rebases, deleting tags, changing remotes, gh's `--delete-branch` and `--admin`, and gh
+commands that delete, transfer, archive or rename. Only `pr`, `issue`, `run`, `workflow`, `repo`
+(read), `release`, `label` and `status` are offered from gh. Commands that change something are
+recorded in Activity as `git`. With the setting on, the briefing and the Needs attention step tell
+the chat to push verified unpushed work and merge ready pull requests; off, they keep the "never
+push or merge without authorization" rule and the tool refuses.
+
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open
 chat opens it in Agents; "Ask it to check" buttons, plus a "Project alerts" row with "All alerts" and per-kind chips that run the Needs attention check
 for one alert kind: `POST /orchestrators/:id/check` with `focus: "attention"` and `attentionKinds`), and orchestrators, their sections and
