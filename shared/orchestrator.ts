@@ -20,6 +20,11 @@ export interface OrchestratorConfig {
    * ROADMAP.md and Backlog (PM-426). Asked by the automatic check. Default off.
    */
   planFromGoals?: boolean;
+  /**
+   * The chat accepts finished work itself (PM-427): moving a Review card to Done with an evidence
+   * note also accepts its finished runs, and sending it back to To do rejects them. Default off.
+   */
+  acceptReviews?: boolean;
   projectIds: number[];
   providers: string[];
   maxWorkers: number;

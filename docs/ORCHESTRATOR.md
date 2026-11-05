@@ -146,6 +146,17 @@ and a roadmap with nothing left is not asked about again until it or the board c
 fingerprints live in the same `orchestrator-auto-check:<id>` state. `POST /check` accepts
 `focus: "plan"` for a check on demand.
 
+**Accepting finished work (PM-427).** The opt-in setting `acceptReviews` ("Accept finished work
+itself") changes the Review step of every check: the chat verifies each Review card itself (its
+notes, the commits and diff, the project's quick checks) instead of reporting what is ready for
+the owner. `update_card` then carries the verdict to the card's finished runs: moving a card to
+Done needs an evidence note and accepts its succeeded, unvalidated runs (`validateRun`, as the
+owner's Accept does, so they leave Needs attention), and sending a Review card back to To do needs
+a note saying what is missing and rejects them. Activity records each as `accepted` or `rejected`
+with the run ids. Work that needs the owner's judgment (visual or product decisions, real devices,
+accounts, payments) stays in Review with a note. Off, moves never touch runs and the owner still
+accepts or rejects them.
+
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open
 chat opens it in Agents; "Ask it to check" buttons, plus a "Project alerts" row with "All alerts" and per-kind chips that run the Needs attention check
 for one alert kind: `POST /orchestrators/:id/check` with `focus: "attention"` and `attentionKinds`), and orchestrators, their sections and

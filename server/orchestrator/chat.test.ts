@@ -699,6 +699,40 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     expect(briefing(off, [])).toContain('Do not dispatch workers or delegate');
   });
 
+  it('accepts or rejects finished runs with the card, with evidence, only when on (PM-427)', async () => {
+    const run = { id: 3, status: 'succeeded', validation: null };
+    const withRuns = (t: ReturnType<typeof setup>) => {
+      const validateRun = vi.fn();
+      Object.assign(t.supervisor, { listRuns: () => [run], validateRun });
+      return validateRun;
+    };
+    const off = setup();
+    const offValidate = withRuns(off);
+    await off.call('update_card', { card: off.mine.key, status: 'done', note: 'Looks done' });
+    expect(offValidate).not.toHaveBeenCalled();
+
+    const on = setup({ acceptReviews: true });
+    const validate = withRuns(on);
+    await expect(on.call('update_card', { card: on.mine.key, status: 'done' })).rejects.toThrow(
+      /evidence/,
+    );
+    await on.call('update_card', { card: on.mine.key, status: 'review', note: 'Built' });
+    await expect(on.call('update_card', { card: on.mine.key, status: 'todo' })).rejects.toThrow(
+      /missing/,
+    );
+    await on.call('update_card', { card: on.mine.key, status: 'todo', note: 'No test' });
+    expect(validate).toHaveBeenLastCalledWith(3, 'rejected', undefined);
+    await on.call('update_card', {
+      card: on.mine.key,
+      status: 'done',
+      note: 'Tests pass, 4caa321',
+    });
+    expect(validate).toHaveBeenLastCalledWith(3, 'accepted', 'done');
+    expect(getCard(on.db, on.mine.id)?.status).toBe('done');
+    expect(checkPrompt(on.instance, 'review')).toContain('verify it against its requirements');
+    expect(checkPrompt(off.instance, 'review')).toContain('ready for me to accept');
+  });
+
   it('plans idle projects only with planFromGoals, never watch-only (PM-426)', () => {
     const base = {
       name: 'X',

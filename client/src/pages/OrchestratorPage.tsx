@@ -1632,6 +1632,19 @@ export function OrchestratorPage() {
                     roadmap gives Backlog cards only. It asks again only after the roadmap or the
                     board changes, at most 6 times a day.
                   </p>
+                  <label className="orchestrator-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.acceptReviews ?? false}
+                      onChange={(e) => setDraft({ ...draft, acceptReviews: e.target.checked })}
+                    />
+                    Accept finished work itself
+                  </label>
+                  <p className="faint">
+                    The chat verifies each Review card against its requirements and moves it to Done
+                    with the evidence, which accepts its finished runs, or back to To do with what
+                    is missing. Anything that needs your judgment stays in Review.
+                  </p>
                 </div>
               </div>
 

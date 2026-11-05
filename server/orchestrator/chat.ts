@@ -342,6 +342,11 @@ export function plans(instance: OrchestratorConfig): boolean {
   return instance.strategy !== 'observe' && instance.planFromGoals === true;
 }
 
+/** Whether this orchestrator accepts finished work itself (PM-427). */
+export function accepts(instance: OrchestratorConfig): boolean {
+  return instance.strategy !== 'observe' && instance.acceptReviews === true;
+}
+
 export function delegates(instance: OrchestratorConfig): boolean {
   return instance.strategy !== 'observe' && instance.delegateToSessions !== false;
 }
@@ -1012,6 +1017,21 @@ export class OrchestratorChat implements OrchestratorToolHost {
         .parse(args);
       if (!input.status && !input.note) fail('Give a status, a note, or both');
       const c = card(input.card);
+      // Accepting work (PM-427): the verdict on its finished runs follows the card, with evidence.
+      const verdict =
+        accepts(instance) && input.status && input.status !== c.status
+          ? input.status === 'done'
+            ? ('accepted' as const)
+            : input.status === 'todo' && c.status === 'review'
+              ? ('rejected' as const)
+              : null
+          : null;
+      if (verdict && !input.note)
+        fail(
+          verdict === 'accepted'
+            ? 'Accepting work needs a note with the evidence'
+            : 'Sending work back needs a note saying what is missing',
+        );
       const patch: { status?: CardStatus; description?: string } = {};
       if (input.status) patch.status = input.status;
       if (input.note) {
@@ -1021,6 +1041,20 @@ export class OrchestratorChat implements OrchestratorToolHost {
       }
       const updated = updateCard(this.db, c.id, patch);
       audit(c.id, 'update_card', { status: input.status, note: input.note });
+      if (verdict) {
+        const settled = this.supervisor
+          .listRuns(c.projectId, c.id)
+          .filter((r) => r.status === 'succeeded' && !r.validation);
+        for (const r of settled)
+          this.supervisor.validateRun(r.id, verdict, verdict === 'accepted' ? 'done' : undefined);
+        if (settled.length)
+          this.record(
+            orchestratorId,
+            verdict,
+            `${c.key}: ${verdict} run${settled.length > 1 ? 's' : ''} ${settled.map((r) => r.id).join(', ')} (chat)`,
+            c.id,
+          );
+      }
       if (input.status && input.status !== c.status)
         this.record(
           orchestratorId,
@@ -1589,6 +1623,10 @@ const HAND_OVER =
 export const PLAN_CARDS_PER_PROJECT = 3;
 const PLAN_STEP = `Plan next work: for each project in your scope with nothing in To do or In progress, read its ROADMAP.md (the current phase and its exit criteria), its handover or notes file if it has one, and its Backlog cards. Call list_cards for the project first (every status, Done included) so you never duplicate a card. Then move up to ${PLAN_CARDS_PER_PROJECT} ready Backlog cards from the current phase to To do, or create up to ${PLAN_CARDS_PER_PROJECT} new cards: each one small and verifiable, with acceptance criteria and its source (file and section) in the notes. Draft only what the roadmap or the owner has committed to; when ROADMAP.md is missing or marked Draft, create cards in Backlog, not To do, and say so. Skip work only the owner can do (accounts, credentials, payments, decisions, real-device checks) and list it in your report instead. When a roadmap has nothing left, say so and draft nothing.`;
 
+/** Accepting finished work (PM-427): verified against the card, never on the worker's word alone. */
+const ACCEPT_STEP =
+  "Review: for each card in Review, verify it against its requirements yourself: read its notes, the commits and diff in the project folder, and run the project's checks when they are quick. Clearly met: update_card to done with a note giving the evidence (this accepts its finished runs). Not met: update_card to todo with a note saying exactly what is missing (this rejects them). Leave in Review, with a note, only what needs the owner's judgment: visual or product decisions, real devices, accounts or payments.";
+
 const CHECKS_DELEGATING: Partial<Record<CheckFocus, string>> = {
   todo: `To do: go through each To do task and decide whether it is ready to work on. ${HAND_OVER} Record concrete blockers on unclear tasks.`,
   in_progress:
@@ -1639,7 +1677,9 @@ export function checkPrompt(
       : '';
   const delegating = delegates(instance);
   const step = (f: Exclude<CheckFocus, 'all'>) =>
-    (delegating ? CHECKS_DELEGATING[f] : undefined) ?? CHECKS[f];
+    f === 'review' && accepts(instance)
+      ? ACCEPT_STEP
+      : ((delegating ? CHECKS_DELEGATING[f] : undefined) ?? CHECKS[f]);
   const steps =
     focus === 'all'
       ? [
@@ -1736,8 +1776,12 @@ ${
     ? `- Plan: when a project has nothing in To do or In progress, draft its next cards from its ROADMAP.md and Backlog (at most ${PLAN_CARDS_PER_PROJECT} per project per check, no duplicates, the source in each card's notes). A missing or Draft roadmap gives Backlog cards only.
 `
     : ''
-}- Review: check the evidence and tell the user what's ready to accept. Move to Done only when
-  the requirements are clearly met; the user accepts or rejects finished runs.
+}${
+    accepts(instance)
+      ? `- Review: accepting finished work is on. Verify each Review card yourself (notes, commits and diff, quick checks); move it to Done with an evidence note when clearly met, which accepts its finished runs, or back to To do with what is missing, which rejects them. Leave only what needs the owner's judgment in Review, with a note.`
+      : `- Review: check the evidence and tell the user what's ready to accept. Move to Done only when
+  the requirements are clearly met; the user accepts or rejects finished runs.`
+  }
 - Read scoped project folders and make authorized changes directly in this chat. Follow each project's instructions, preserve unrelated changes, and run appropriate checks. Never push, merge, delete branches or run destructive commands without explicit authorization for that action.
 - Keep the board truthful: every move gets a short note saying why.
 - Report concisely: what you did, what's blocked, what needs the user.
