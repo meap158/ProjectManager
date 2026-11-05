@@ -153,3 +153,41 @@ describe('card-scoped board MCP', () => {
     }
   });
 });
+
+describe('message_orchestrator (PM-432)', () => {
+  it('passes the grant owner as the sender, whatever the arguments say', async () => {
+    const db = openDb(':memory:');
+    const project = insertProject(db, 'Test', process.cwd());
+    db.prepare(
+      `INSERT INTO agent_sessions (project_id, card_id, name, provider_id, command_json, cwd, status, desired_state, supervise, created_at, started_at, log_path)
+      VALUES (?, NULL, 'Agent', 'codex', '{}', ?, 'running', 'running', 1, '2026-10-06', '2026-10-06', 'test-log')`,
+    ).run(project, process.cwd());
+    const token = issueBoardGrant(db, { kind: 'session', id: 1, logPath: 'test-log' });
+    const calls: [number, Record<string, unknown>][] = [];
+    const app = new Hono();
+    registerBoardMcp(app, db, 'unused', {
+      tools: [],
+      call: async () => null,
+      fromWorker: (sessionId, args) => {
+        calls.push([sessionId, args]);
+        return { sent: true };
+      },
+    });
+    const res = await app.request('/board-mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'message_orchestrator',
+          arguments: { kind: 'question', text: 'Which DB?' },
+        },
+      }),
+    });
+    expect((await res.json()).result.isError).toBeUndefined();
+    expect(calls).toEqual([[1, { kind: 'question', text: 'Which DB?' }]]);
+    db.close();
+  });
+});
