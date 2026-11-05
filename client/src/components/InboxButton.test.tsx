@@ -9,6 +9,7 @@ vi.mock('../api', () => ({
   api: {
     listAllSessions: vi.fn(async () => state.list),
     listProjects: vi.fn(async () => [{ id: 1, name: 'Alpha' }]),
+    goalEvents: vi.fn(async () => []),
     // Each read takes the next screen; the last one repeats.
     sessionScreen: vi.fn(async () => ({
       text: state.screens.length > 1 ? state.screens.shift()! : (state.screens[0] ?? ''),

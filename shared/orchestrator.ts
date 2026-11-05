@@ -256,3 +256,15 @@ export interface OrchestratorGoal {
   /** Automatic checks since the chat last reported progress on it. */
   nudgesWithoutProgress?: number;
 }
+
+/** A goal that reached achieved or blocked recently (PM-436), for the owner's notifications. */
+export interface GoalEvent {
+  orchestratorId: string;
+  orchestratorName: string;
+  goalId: number;
+  title: string;
+  status: 'achieved' | 'blocked';
+  updatedAt: string;
+  /** The latest progress note: the evidence, or what only the owner can do. */
+  note: string | null;
+}

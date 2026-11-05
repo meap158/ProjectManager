@@ -107,3 +107,9 @@ automatic check carries the goal step too. The step tells the chat to compare th
 within the limits, a one-time run, or itself. Each check that carries the step counts toward a stall
 limit; four checks without an `update_goal` set the goal to blocked with a note, so a stuck loop
 stops spending quota. At most 5 goals are active at once. Watch only orchestrators have none.
+
+**Goal notifications (PM-436).** `GET /orchestrators/goals/recent` lists goals across orchestrators that
+reached achieved or blocked in the last day, with the latest note. With the Inbox desktop
+notifications on, the app reads it every 30 seconds and notifies each change once ("Goal achieved:"
+or "Goal blocked:" with the orchestrator and note), so a goal that ran on its own reaches the owner
+when it ends or needs them.

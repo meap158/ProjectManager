@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import type { AgentSession, ProjectSummary } from '../../../shared/types';
+import type { GoalEvent } from '../../../shared/orchestrator';
 import { api } from '../api';
 import { formatRelative, formatReset } from '../format';
 import { sendAttentionCommand } from '../lib/attentionCommands';
@@ -131,6 +132,8 @@ const CHIP: Record<InboxReason, string> = {
 };
 
 const POLL_MS = 5_000;
+/** Goal events are read on every sixth poll (30 s) while notifications are on. */
+const GOAL_EVERY = 6;
 /** Rows whose screen or reply is read when the panel opens. */
 const DETAIL_ROWS = 12;
 const SEEN_KEY = 'pm.inbox.seen';
@@ -202,6 +205,9 @@ export function InboxButton() {
   /** Keys already notified; null until the first look after turning notifications on. */
   const sent = useRef<string[] | null>(loadSent());
   const names = useRef<Map<number, string>>(new Map());
+  /** Orchestrator goals that ended recently (PM-436), read every few polls while notifying. */
+  const goalEvents = useRef<GoalEvent[]>([]);
+  const polls = useRef(0);
 
   const refresh = async () => {
     const sessions = await api.listAllSessions();
@@ -209,11 +215,20 @@ export function InboxButton() {
     const list = inboxItems(sessions, at);
     setNow(at);
     setItems(list);
-    if (notify) notifyNew(list, sessions);
+    if (notify) {
+      if (polls.current++ % GOAL_EVERY === 0)
+        goalEvents.current = await Promise.resolve()
+          .then(() => api.goalEvents())
+          .catch(() => goalEvents.current);
+      notifyNew(list, sessions);
+    }
   };
 
   function notifyNew(list: InboxItem[], sessions: AgentSession[]) {
-    const next = freshAlerts(inboxAlerts(list, sessions, names.current), sent.current);
+    const next = freshAlerts(
+      inboxAlerts(list, sessions, names.current, goalEvents.current),
+      sent.current,
+    );
     sent.current = next.sent;
     saveSent(next.sent);
     // A focused app already shows the bell; notify only when the owner is elsewhere.

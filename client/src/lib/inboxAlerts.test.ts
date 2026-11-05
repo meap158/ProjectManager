@@ -51,3 +51,28 @@ describe('inboxAlerts (PM-429)', () => {
     expect(freshAlerts([a, b], second.sent).show).toEqual([]);
   });
 });
+
+describe('goal alerts (PM-436)', () => {
+  it('notifies an achieved or blocked goal once per change, linking to the orchestrators', () => {
+    const event = {
+      orchestratorId: 'trial',
+      orchestratorName: 'Trial',
+      goalId: 2,
+      title: 'Ship login',
+      status: 'blocked' as const,
+      updatedAt: '2026-11-06T12:00:00.000Z',
+      note: 'Needs the OAuth client secret',
+    };
+    const [alert] = inboxAlerts([], [], new Map(), [event]);
+    expect(alert).toMatchObject({
+      title: 'Goal blocked: Ship login',
+      body: 'Trial: Needs the OAuth client secret',
+      path: '/orchestrators',
+    });
+    const resumed = inboxAlerts([], [], new Map(), [
+      { ...event, status: 'achieved', updatedAt: '2026-11-06T13:00:00.000Z', note: 'Merged' },
+    ])[0]!;
+    expect(resumed.key).not.toBe(alert!.key);
+    expect(resumed.title).toBe('Goal achieved: Ship login');
+  });
+});

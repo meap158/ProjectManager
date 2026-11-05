@@ -10,6 +10,7 @@ import type {
   OrchestratorPlanDecision,
   OrchestratorState,
   OrchestratorGoal,
+  GoalEvent,
 } from '../../shared/orchestrator';
 import type {
   AgentAutonomy,
@@ -154,6 +155,8 @@ export const api = {
   orchestratorSituation: (id: string) =>
     request<OrchestratorSituation>('GET', `/orchestrators/${encodeURIComponent(id)}/situation`),
   orchestrators: () => request<OrchestratorState>('GET', '/orchestrators'),
+  /** Goals achieved or blocked in the last day, across orchestrators (PM-436). */
+  goalEvents: () => request<GoalEvent[]>('GET', '/orchestrators/goals/recent'),
   /** Goals (PM-433): newest first. */
   orchestratorGoals: (id: string) =>
     request<OrchestratorGoal[]>('GET', `/orchestrators/${encodeURIComponent(id)}/goals`),

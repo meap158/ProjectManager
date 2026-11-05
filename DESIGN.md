@@ -411,7 +411,8 @@ adjacent-pair CVD separation in both modes).
   It polls every 5 s while the tab is visible, and also in a background tab while desktop
   notifications are on. **Notify me** in the panel header (PM-429, shown only in a secure context:
   localhost or the remote address) asks the browser for permission and then notifies once per
-  occurrence of a decision, a question, a failed restart or an orchestrator chat asking something,
+  occurrence of a decision, a question, a failed restart, an orchestrator chat asking something
+  or an orchestrator goal reaching achieved or blocked (PM-436, read every 30 s),
   only while the app is not focused; clicking one opens that session. What was already waiting when
   it was turned on does not notify. The choice and the notified keys are per browser. The panel (420px; Escape or an outside click closes it)
   has a sticky header (counts, Mark all seen) with **filter chips** under it (All, New, then one per

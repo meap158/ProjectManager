@@ -1,11 +1,12 @@
 import type { AgentSession } from '../../../shared/types';
+import type { GoalEvent } from '../../../shared/orchestrator';
 import type { InboxItem } from '../components/InboxButton';
 
 /*
  * Desktop notifications for what needs a person (PM-429), so work that runs on its own can reach
  * the owner while the app is in a background tab. Off by default and per browser. Only the urgent
  * Inbox reasons notify (a decision, a question, a failed restart), plus an orchestrator chat that
- * is asking something; finished replies and usage limits stay in the Inbox. Each occurrence
+ * is asking something and an orchestrator goal that was achieved or blocked (PM-436); finished replies and usage limits stay in the Inbox. Each occurrence
  * notifies once: its key is remembered, and the notification's tag lets the system replace a
  * duplicate from a second tab.
  */
@@ -76,6 +77,8 @@ export function inboxAlerts(
   items: readonly InboxItem[],
   sessions: readonly AgentSession[],
   names: ReadonlyMap<number, string> = new Map(),
+  /** Orchestrator goals achieved or blocked (PM-436): work that ran on its own reaching an end. */
+  goals: readonly GoalEvent[] = [],
 ): InboxAlert[] {
   const alerts: InboxAlert[] = [];
   for (const item of items) {
@@ -98,6 +101,13 @@ export function inboxAlerts(
         body: 'Open its chat on the Orchestrators page.',
         path: '/orchestrators',
       });
+  for (const g of goals)
+    alerts.push({
+      key: `goal:${g.orchestratorId}:${g.goalId}:${g.status}:${g.updatedAt}`,
+      title: `Goal ${g.status === 'achieved' ? 'achieved' : 'blocked'}: ${g.title}`,
+      body: [g.orchestratorName, g.note].filter(Boolean).join(': ').slice(0, 200),
+      path: '/orchestrators',
+    });
   return alerts;
 }
 

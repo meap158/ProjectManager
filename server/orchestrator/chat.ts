@@ -33,6 +33,7 @@ import type {
   OrchestratorConfig,
   OrchestratorEvent,
   OrchestratorChatWork,
+  GoalEvent,
 } from '../../shared/orchestrator.js';
 import type { OrchestratorToolHost } from '../boardMcp.js';
 import { cardContext } from './situation.js';
@@ -718,6 +719,27 @@ export class OrchestratorChat implements OrchestratorToolHost {
   goals(id: string): OrchestratorGoal[] {
     this.instance(id);
     return [...listGoals(this.db, id)].reverse();
+  }
+
+  /** Goals across orchestrators that were achieved or blocked in the last day (PM-436). */
+  goalEvents(now = Date.now()): GoalEvent[] {
+    const events: GoalEvent[] = [];
+    for (const instance of this.service.state().instances)
+      for (const g of listGoals(this.db, instance.id))
+        if (
+          (g.status === 'achieved' || g.status === 'blocked') &&
+          now - Date.parse(g.updatedAt) < 24 * 3_600_000
+        )
+          events.push({
+            orchestratorId: instance.id,
+            orchestratorName: instance.name,
+            goalId: g.id,
+            title: g.title,
+            status: g.status,
+            updatedAt: g.updatedAt,
+            note: g.progress.at(-1)?.note ?? null,
+          });
+    return events.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.goalId - a.goalId);
   }
 
   /** The owner sets a goal from the page; the chat picks it up at its next check. */

@@ -1218,3 +1218,21 @@ describe('worker messages and goals (PM-432, PM-433)', () => {
     db.close();
   });
 });
+
+describe('goal events for notifications (PM-436)', () => {
+  it('lists goals achieved or blocked in the last day, newest first', async () => {
+    const { chat, call, db } = setup({ autoCheck: true });
+    for (const title of ['A', 'B', 'C'])
+      await call('set_goal', { title, objective: 'o', doneWhen: 'd' });
+    await call('update_goal', { goalId: 1, note: 'Merged PR #2', status: 'achieved' });
+    await call('update_goal', { goalId: 2, note: 'Needs a secret', status: 'blocked' });
+    const events = chat.goalEvents();
+    expect(events.map((e) => [e.title, e.status])).toEqual([
+      ['B', 'blocked'],
+      ['A', 'achieved'],
+    ]);
+    expect(events[0]).toMatchObject({ orchestratorName: 'Games', note: 'Needs a secret' });
+    expect(chat.goalEvents(Date.now() + 25 * 3_600_000)).toEqual([]);
+    db.close();
+  });
+});

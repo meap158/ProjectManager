@@ -92,6 +92,7 @@ export function registerOrchestratorRoutes(
       })
       .strict()
       .refine((v) => v.status || v.note, 'Give a status or a note');
+    app.get('/orchestrators/goals/recent', (c) => c.json(chat.goalEvents()));
     app.get('/orchestrators/:id/goals', (c) => c.json(chat.goals(c.req.param('id'))));
     app.post('/orchestrators/:id/goals', async (c) => {
       const parsed = goalInput.safeParse(await c.req.json().catch(() => null));
