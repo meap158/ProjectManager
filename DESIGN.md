@@ -63,7 +63,9 @@ Agents list rows offer Continue for running AI CLIs in every status filter excep
 before the Show in pane icon, submitting a message without restarting. Ended sessions never offer it.
 Continue shows pending/sent/queued feedback and prevents duplicate in-flight sends. Show in pane
 uses a pane icon with an accessible name and tooltip. On phones Continue is icon-only and row
-actions retain 44px touch targets with compact gaps; desktop keeps the Continue label.
+actions retain 44px touch targets with compact gaps; desktop keeps the Continue label. A project's
+Agents tab uses the same row actions in the same order (PM-425): Continue, then the same pane icon,
+which opens the session in the Agents workspace.
 The docked CLI header offers icon-only Continue between image and restart actions for supported
 live sessions in every status filter except Ended, matching the list-row rule.
 Mobile keeps header Continue inside the compact session actions menu.
@@ -834,7 +836,7 @@ reboot persistence) and held to [pstack](https://github.com/backnotprop/pstack) 
   replaces the last pane. Entry points:
   - `?open=<sessionId>` from a card's "Work on it in a terminal"
   - the card dialog's "Open live terminal"
-  - "Open in workspace" in a project's Agents tab
+  - the pane icon ("Open in workspace") in a project's Agents tab
 - **Persistence:** the layout (preset, pane → session ids, maximised pane) is stored server-side
   (`settings` table, `GET/PUT /api/workspace`), so it survives reloads, restarts and reboots.
   Panes whose session was deleted heal to empty on load.

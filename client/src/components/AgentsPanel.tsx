@@ -237,13 +237,26 @@ export function AgentsPanel({
     const s = w.item;
     return (
       <>
+        {/* The same row actions, in the same order and look, as the global Agents list. */}
+        <SessionContinue session={s} onError={setError} />
         <Link
-          className="btn btn-sm"
+          className="btn btn-sm btn-icon session-show-pane"
           to={`/workspace?open=${s.id}`}
-          title="Show this session in the multi-pane Agents workspace"
+          title="Open in the Agents workspace"
           aria-label="Open in workspace"
         >
-          Open<span className="phone-hide">in workspace</span>
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden="true"
+          >
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M14 4v16M3 9h11" />
+          </svg>
         </Link>
         <SessionToggle
           session={s}
