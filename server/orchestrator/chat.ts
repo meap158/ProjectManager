@@ -57,7 +57,7 @@ const CHAT_PROVIDERS = ['claude', 'codex', 'opencode', 'antigravity'];
 const NOTE_LIMIT = 20_000;
 const LIST_LIMIT = 200;
 
-export type CheckFocus = 'all' | 'todo' | 'in_progress' | 'review' | 'attention';
+export type CheckFocus = 'all' | 'todo' | 'in_progress' | 'review' | 'attention' | 'plan';
 
 const cardRef = z.union([
   z.number().int().positive(),
@@ -337,6 +337,11 @@ export function pruneArtifacts(
 export const MCP_CONTENT = 'mcpContent';
 
 /** Whether an orchestrator's chat may hand work to CLI sessions and workers (PM-399). */
+/** Whether this orchestrator drafts the next cards for idle projects (PM-426). */
+export function plans(instance: OrchestratorConfig): boolean {
+  return instance.strategy !== 'observe' && instance.planFromGoals === true;
+}
+
 export function delegates(instance: OrchestratorConfig): boolean {
   return instance.strategy !== 'observe' && instance.delegateToSessions !== false;
 }
@@ -1576,6 +1581,14 @@ function openingPrompt(instance: OrchestratorConfig): string {
  */
 const HAND_OVER =
   "Hand ready work to a CLI session: assign_card to an idle session in the card's project with no card (list_sessions), or start_session within your worker limits when none fits. Work directly here only when no session can take it or the task is about this orchestrator itself. Never type into a session that is working or asking the user; check hand-overs with worker_output instead of resending.";
+/**
+ * Drafting the next work for a project with nothing to do (PM-426). Only from what the owner has
+ * committed to: a missing or Draft roadmap yields Backlog cards, never To do, because the
+ * scheduler starts workers on To do cards by itself.
+ */
+export const PLAN_CARDS_PER_PROJECT = 3;
+const PLAN_STEP = `Plan next work: for each project in your scope with nothing in To do or In progress, read its ROADMAP.md (the current phase and its exit criteria), its handover or notes file if it has one, and its Backlog cards. Call list_cards for the project first (every status, Done included) so you never duplicate a card. Then move up to ${PLAN_CARDS_PER_PROJECT} ready Backlog cards from the current phase to To do, or create up to ${PLAN_CARDS_PER_PROJECT} new cards: each one small and verifiable, with acceptance criteria and its source (file and section) in the notes. Draft only what the roadmap or the owner has committed to; when ROADMAP.md is missing or marked Draft, create cards in Backlog, not To do, and say so. Skip work only the owner can do (accounts, credentials, payments, decisions, real-device checks) and list it in your report instead. When a roadmap has nothing left, say so and draft nothing.`;
+
 const CHECKS_DELEGATING: Partial<Record<CheckFocus, string>> = {
   todo: `To do: go through each To do task and decide whether it is ready to work on. ${HAND_OVER} Record concrete blockers on unclear tasks.`,
   in_progress:
@@ -1590,6 +1603,7 @@ const CHECKS: Record<CheckFocus, string> = {
     'Review: for each card in Review, check the evidence (latest run outcome, commits, notes) and tell me which are ready for me to accept and which need more work (note why on the card).',
   attention:
     'Needs attention: inspect the live All projects dashboard alerts in overview, including uncommitted and unpushed work. Read the affected project instructions and diffs; address safe, authorized fixes directly here and verify them. Preserve unrelated changes. Do not dismiss unresolved alerts or mark work complete without evidence. Report the exact project, remaining work and any action requiring owner input. Do not push, merge, discard files or delete branches without explicit authorization for that action.',
+  plan: PLAN_STEP,
   all: '',
 };
 
@@ -1628,7 +1642,13 @@ export function checkPrompt(
     (delegating ? CHECKS_DELEGATING[f] : undefined) ?? CHECKS[f];
   const steps =
     focus === 'all'
-      ? [step('in_progress'), step('review'), step('todo'), step('attention')]
+      ? [
+          step('in_progress'),
+          step('review'),
+          step('todo'),
+          step('attention'),
+          ...(plans(instance) ? [step('plan')] : []),
+        ]
       : [focus === 'attention' ? CHECKS.attention + only : step(focus)];
   const observe =
     instance.strategy === 'observe'
@@ -1711,7 +1731,12 @@ ${
 - In progress: check progress (get_card, worker_output, the project's \`git log\`/\`git status\`).
   Continue unfinished work directly here without overwriting active sessions' changes. Move finished work to Review with evidence; note concrete blockers.`
 }
-- Review: check the evidence and tell the user what's ready to accept. Move to Done only when
+${
+  plans(instance)
+    ? `- Plan: when a project has nothing in To do or In progress, draft its next cards from its ROADMAP.md and Backlog (at most ${PLAN_CARDS_PER_PROJECT} per project per check, no duplicates, the source in each card's notes). A missing or Draft roadmap gives Backlog cards only.
+`
+    : ''
+}- Review: check the evidence and tell the user what's ready to accept. Move to Done only when
   the requirements are clearly met; the user accepts or rejects finished runs.
 - Read scoped project folders and make authorized changes directly in this chat. Follow each project's instructions, preserve unrelated changes, and run appropriate checks. Never push, merge, delete branches or run destructive commands without explicit authorization for that action.
 - Keep the board truthful: every move gets a short note saying why.

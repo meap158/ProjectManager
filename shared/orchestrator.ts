@@ -15,6 +15,11 @@ export interface OrchestratorConfig {
   superviseSessions?: boolean;
   /** Ask the chat for its check when something changed in scope, within bounds (PM-418). Default off. */
   autoCheck?: boolean;
+  /**
+   * When a project in scope has nothing to do, its chat drafts the next cards from the project's
+   * ROADMAP.md and Backlog (PM-426). Asked by the automatic check. Default off.
+   */
+  planFromGoals?: boolean;
   projectIds: number[];
   providers: string[];
   maxWorkers: number;

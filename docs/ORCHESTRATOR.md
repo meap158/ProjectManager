@@ -131,6 +131,21 @@ once and turning it on starts from a fresh look. Each check is recorded in Activ
 when a check is sent, so a deferred trigger stays pending and a restart neither repeats nor
 loses one. Code: `server/orchestrator/autoCheck.ts`.
 
+**Drafting the next cards (PM-426).** The opt-in setting `planFromGoals` ("Draft the next cards
+when a project has nothing to do") works with Check on its own. A project in scope is idle when it
+has no To do and no In progress card. The automatic check fingerprints each idle project (its
+`ROADMAP.md` plus every card's id, status and update time) and asks the chat for a `plan` check
+when a fingerprint differs from the one it had at the last planning check. With other triggers
+pending, the plan step joins the full check instead. The chat reads the roadmap's current phase,
+any handover or notes file and the Backlog, lists every card first so it never duplicates one,
+and moves up to 3 ready Backlog cards to To do or creates up to 3 small cards with acceptance
+criteria and their source in the notes. A missing or Draft roadmap gives Backlog cards only,
+because the scheduler starts workers on To do cards by itself. Work only the owner can do goes
+in its report, not on the board. Bounds: the hourly bounds above, at most 6 planning checks a day,
+and a roadmap with nothing left is not asked about again until it or the board changes. The
+fingerprints live in the same `orchestrator-auto-check:<id>` state. `POST /check` accepts
+`focus: "plan"` for a check on demand.
+
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open
 chat opens it in Agents; "Ask it to check" buttons, plus a "Project alerts" row with "All alerts" and per-kind chips that run the Needs attention check
 for one alert kind: `POST /orchestrators/:id/check` with `focus: "attention"` and `attentionKinds`), and orchestrators, their sections and

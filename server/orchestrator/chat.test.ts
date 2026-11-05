@@ -698,6 +698,22 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     expect(checkPrompt(off, 'todo')).toContain('do not dispatch workers or delegate');
     expect(briefing(off, [])).toContain('Do not dispatch workers or delegate');
   });
+
+  it('plans idle projects only with planFromGoals, never watch-only (PM-426)', () => {
+    const base = {
+      name: 'X',
+      providers: ['codex'],
+      projectIds: [],
+    } as unknown as OrchestratorConfig;
+    expect(checkPrompt(base, 'all')).not.toContain('Plan next work');
+    expect(briefing(base, [])).not.toContain('- Plan:');
+    const on = { ...base, planFromGoals: true };
+    expect(checkPrompt(on, 'all')).toContain('Plan next work');
+    expect(checkPrompt(on, 'plan')).toMatch(/Backlog, not To do/);
+    expect(briefing(on, [])).toContain('- Plan:');
+    const watch = { ...on, strategy: 'observe' as const };
+    expect(checkPrompt(watch, 'all')).not.toContain('Plan next work');
+  });
 });
 
 describe('board tools endpoint (PM-89)', () => {

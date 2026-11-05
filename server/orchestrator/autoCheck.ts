@@ -1,17 +1,30 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { Db } from '../db.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { AgentSession } from '../../shared/types.js';
-import { getSetting, listCardsInFlight, listSchedulableCards, setSetting } from '../store.js';
+import {
+  getSetting,
+  listCards,
+  listCardsInFlight,
+  listProjectFolders,
+  listSchedulableCards,
+  setSetting,
+} from '../store.js';
 import { readLimits } from '../agents/limits.js';
 import { ownedSessionIds } from './ownedWorkers.js';
 import { sessionQuota } from './sessionSupervision.js';
+import { plans, type CheckFocus } from './chat.js';
 
 /** Bounds on automatic checks (PM-418). */
 export const AUTO_CHECK_MAX_PER_HOUR = 4;
 export const AUTO_CHECK_MIN_GAP_MS = 5 * 60_000;
 export const AUTO_CHECK_FALLBACK_MS = 30 * 60_000;
+/** Planning checks (PM-426) in any 24 hours, on top of the hourly bound. */
+export const PLAN_MAX_PER_DAY = 6;
 const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
 
 /** What the last look saw; a trigger is a change against it. */
 interface AutoCheckState {
@@ -30,6 +43,14 @@ interface AutoCheckState {
    * the owner, and asking again only spends quota on the same answer.
    */
   checkedBoard?: string;
+  /**
+   * Idle projects (nothing in To do or In progress) and their fingerprint (ROADMAP.md plus every
+   * card) when the chat was last asked to plan them (PM-426). A project is planned again only
+   * when that changes, so a roadmap with nothing left is not asked about again and again.
+   */
+  planned?: Record<string, string>;
+  /** Timestamps (ms) of checks that asked for planning, within the last day. */
+  planSent?: number[];
 }
 
 interface Deps {
@@ -41,7 +62,7 @@ interface Deps {
   /** The chat's newest session, live or stopped. */
   chatSession: (id: string) => AgentSession | null;
   /** chat.check: it keeps its own 409 guards. */
-  check: (id: string) => Promise<unknown>;
+  check: (id: string, focus: CheckFocus) => Promise<unknown>;
   record: (id: string, message: string) => void;
   now?: () => number;
 }
@@ -114,6 +135,16 @@ export class AutoCheck {
     if (current.assignable || boardMoved)
       for (const p of current.state.quotaOk)
         if (!previous.quotaOk.includes(p)) triggers.push(`${p} quota recovered`);
+    const planned = previous.planned ?? {};
+    const planSent = (previous.planSent ?? []).filter((t) => now - t < DAY_MS);
+    const planDue = Object.entries(current.idle).filter(([pid, print]) => planned[pid] !== print);
+    const planning = planDue.length > 0 && planSent.length < PLAN_MAX_PER_DAY;
+    // Only planning to ask for: a narrow check, so the chat does not re-review the whole board.
+    const focus: CheckFocus = planning && !triggers.length ? 'plan' : 'all';
+    if (planning)
+      triggers.push(
+        ...planDue.map(([pid]) => `${current.names[pid] ?? `project ${pid}`} has nothing to do`),
+      );
     if (
       !triggers.length &&
       current.pending &&
@@ -125,7 +156,14 @@ export class AutoCheck {
     const sent = previous.sent.filter((t) => now - t < HOUR_MS);
     if (!triggers.length) {
       // Nothing to report: follow the present, so a later change is measured against it.
-      this.save(id, { ...current.state, sent, lastCheckAt: previous.lastCheckAt, checkedBoard });
+      this.save(id, {
+        ...current.state,
+        sent,
+        lastCheckAt: previous.lastCheckAt,
+        checkedBoard,
+        planned,
+        planSent,
+      });
       return;
     }
     // Deferred triggers stay visible in the baseline until a check goes out.
@@ -136,6 +174,8 @@ export class AutoCheck {
       review: previous.review.filter((c) => current.state.review.includes(c)),
       quotaOk: previous.quotaOk.filter((p) => current.state.quotaOk.includes(p)),
       checkedBoard,
+      planned,
+      planSent,
     };
     const chat = this.deps.chatSession(id);
     if (
@@ -152,7 +192,7 @@ export class AutoCheck {
       return;
     }
     try {
-      await this.deps.check(id);
+      await this.deps.check(id, focus);
     } catch {
       this.save(id, deferred); // chat.check's own guards said no; the trigger stays pending.
       return;
@@ -166,6 +206,9 @@ export class AutoCheck {
       sent: [...sent, now],
       lastCheckAt: now,
       checkedBoard: current.board,
+      // A check with the plan step covers every idle project, so each is now planned as it is.
+      planned: plans(policy) ? { ...planned, ...current.idle } : planned,
+      planSent: planning ? [...planSent, now] : planSent,
     });
   }
 
@@ -193,8 +236,35 @@ export class AutoCheck {
           .join('|'),
       )
       .digest('hex');
+    // Projects with nothing to do, fingerprinted for planning (PM-426).
+    const idle: Record<string, string> = {};
+    const names: Record<string, string> = {};
+    if (plans(policy))
+      for (const project of listProjectFolders(db)) {
+        if (policy.projectIds.length && !policy.projectIds.includes(project.id)) continue;
+        const projectCards = listCards(db, project.id);
+        if (projectCards.some((c) => c.status === 'todo' || c.status === 'in_progress')) continue;
+        let roadmap = '';
+        try {
+          roadmap = readFileSync(path.join(project.path, 'ROADMAP.md'), 'utf8');
+        } catch {
+          // No roadmap: the chat drafts Backlog cards at most, and says so.
+        }
+        idle[project.id] = createHash('sha256')
+          .update(roadmap)
+          .update(
+            projectCards
+              .map((c) => `${c.id}:${c.status}:${c.updatedAt}`)
+              .sort()
+              .join('|'),
+          )
+          .digest('hex');
+        names[project.id] = path.basename(project.path);
+      }
     return {
       state: { running, review, quotaOk },
+      idle,
+      names,
       pending: cards.length > 0 || todo.length > 0,
       assignable: todo.length > 0,
       board,

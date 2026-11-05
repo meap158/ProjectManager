@@ -1618,6 +1618,20 @@ export function OrchestratorPage() {
                     5 minutes apart, plus a 30-minute fallback when the board changed. Pause stops
                     them. Each one shows in Activity with its trigger.
                   </p>
+                  <label className="orchestrator-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.planFromGoals ?? false}
+                      onChange={(e) => setDraft({ ...draft, planFromGoals: e.target.checked })}
+                    />
+                    Draft the next cards when a project has nothing to do
+                  </label>
+                  <p className="faint">
+                    With Check on its own, the chat reads the project's ROADMAP.md and Backlog and
+                    adds up to 3 cards to To do, citing where each came from. A missing or Draft
+                    roadmap gives Backlog cards only. It asks again only after the roadmap or the
+                    board changes, at most 6 times a day.
+                  </p>
                 </div>
               </div>
 

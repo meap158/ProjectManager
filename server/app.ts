@@ -362,7 +362,7 @@ export function createApp(
     policy: (id) => orchestrator.state().instances.find((i) => i.id === id),
     instances: () => orchestrator.state().instances,
     chatSession: (id) => orchestratorChat.session(id),
-    check: (id) => orchestratorChat.check(id),
+    check: (id, focus) => orchestratorChat.check(id, focus),
     record: (id, message) =>
       orchestrator.record({ orchestratorId: id, action: 'auto-check', message }),
   });

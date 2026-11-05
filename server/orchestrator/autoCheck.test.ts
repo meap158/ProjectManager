@@ -1,10 +1,18 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { openDb } from '../db.js';
 import { insertProject, insertCard, updateCard, setSetting } from '../store.js';
 import type { AgentSession } from '../../shared/types.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { ProviderLimits } from '../../shared/limits.js';
-import { AutoCheck, AUTO_CHECK_FALLBACK_MS, AUTO_CHECK_MIN_GAP_MS } from './autoCheck.js';
+import {
+  AutoCheck,
+  AUTO_CHECK_FALLBACK_MS,
+  AUTO_CHECK_MIN_GAP_MS,
+  PLAN_MAX_PER_DAY,
+} from './autoCheck.js';
 
 let limits: ProviderLimits[] = [];
 vi.mock('../agents/limits.js', () => ({ readLimits: () => limits }));
@@ -47,6 +55,7 @@ function setup(over: Partial<OrchestratorConfig> = {}) {
     sessions: [] as AgentSession[],
     chat: idleChat as unknown as AgentSession | null,
     checks: 0,
+    focuses: [] as string[],
     events: [] as string[],
     fail: false,
   };
@@ -58,9 +67,10 @@ function setup(over: Partial<OrchestratorConfig> = {}) {
       policy: () => state.policy,
       instances: () => [state.policy],
       chatSession: () => state.chat,
-      check: async () => {
+      check: async (_id, focus) => {
         if (state.fail) throw new Error('409');
         state.checks++;
+        state.focuses.push(focus);
       },
       record: (_id, message) => state.events.push(message),
       now: () => state.now,
@@ -286,4 +296,52 @@ it('skips quota recovery when nothing is to do and the board has not moved since
   await t.auto.tick();
   expect(t.state.checks).toBe(2);
   expect(t.state.events[1]).toContain('codex quota recovered');
+});
+
+it('asks an idle project to plan once per change of its roadmap or cards (PM-426)', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'pm-plan-'));
+  try {
+    const t = setup({ planFromGoals: true });
+    t.db.prepare('UPDATE projects SET path = ? WHERE id = ?').run(dir, t.project);
+    writeFileSync(path.join(dir, 'ROADMAP.md'), '# Roadmap\n- Phase 1: ship it\n');
+    await t.auto.tick(); // baseline
+    t.state.now += AUTO_CHECK_MIN_GAP_MS;
+    await t.auto.tick();
+    expect(t.state.checks).toBe(0); // a card is in progress: not idle
+    updateCard(t.db, t.card, { status: 'done' });
+    t.state.now += AUTO_CHECK_MIN_GAP_MS;
+    await t.auto.tick();
+    expect(t.state.focuses).toEqual(['plan']);
+    expect(t.state.events.at(-1)).toContain('has nothing to do');
+    // Nothing changed: the same answer is not asked for again.
+    t.state.now += AUTO_CHECK_FALLBACK_MS * 2;
+    await t.auto.tick();
+    expect(t.state.checks).toBe(1);
+    // The roadmap moved on: plan again.
+    writeFileSync(path.join(dir, 'ROADMAP.md'), '# Roadmap\n- Phase 2: grow it\n');
+    t.state.now += AUTO_CHECK_MIN_GAP_MS;
+    await t.auto.tick();
+    expect(t.state.focuses).toEqual(['plan', 'plan']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it('never plans while the setting is off, watch-only, or past the daily bound', async () => {
+  const off = setup();
+  updateCard(off.db, off.card, { status: 'done' });
+  await off.auto.tick();
+  off.state.now += AUTO_CHECK_MIN_GAP_MS;
+  await off.auto.tick();
+  expect(off.state.checks).toBe(0);
+
+  const t = setup({ planFromGoals: true });
+  updateCard(t.db, t.card, { status: 'done' });
+  await t.auto.tick();
+  for (let i = 0; i < PLAN_MAX_PER_DAY + 2; i++) {
+    insertCard(t.db, t.project, { title: `Done ${i}`, description: '', status: 'done' });
+    t.state.now += 16 * MIN; // inside the hourly bound
+    await t.auto.tick();
+  }
+  expect(t.state.checks).toBe(PLAN_MAX_PER_DAY);
 });

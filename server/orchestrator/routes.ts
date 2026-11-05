@@ -22,6 +22,7 @@ const config = z.object({
   delegateToSessions: z.boolean().optional(),
   superviseSessions: z.boolean().optional(),
   autoCheck: z.boolean().optional(),
+  planFromGoals: z.boolean().optional(),
   projectIds: z.array(z.number().int().positive()).max(500),
   providers: z
     .array(z.enum(['claude', 'codex', 'grok', 'antigravity', 'opencode']))
@@ -39,7 +40,7 @@ const chatOpen = z
   .strict();
 const chatCheck = z
   .object({
-    focus: z.enum(['all', 'todo', 'in_progress', 'review', 'attention']).optional(),
+    focus: z.enum(['all', 'todo', 'in_progress', 'review', 'attention', 'plan']).optional(),
     attentionKinds: z
       .array(z.enum(['Folder missing', 'Scan failed', 'Stale', 'Uncommitted', 'Unpushed']))
       .min(1)
