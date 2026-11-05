@@ -115,6 +115,7 @@ async function main() {
   api.supervisor.syncTitlesPeriodically();
   api.orchestrator.start();
   api.autoCheck.start();
+  api.workerMessenger.start();
 
   const server = createServer();
   server.prependListener('upgrade', (req, socket, head) => {
@@ -218,6 +219,7 @@ async function main() {
     void (async () => {
       try {
         api.autoCheck.stop();
+        api.workerMessenger.stop();
         await api.orchestrator.stop();
         await api.supervisor.shutdown();
       } finally {

@@ -62,6 +62,19 @@ export const BOARD_TOOLS = [
     inputSchema: object,
   },
   {
+    name: 'message_orchestrator',
+    description:
+      'Write to the orchestrator that handed you your card or supervises you (PM-432): question (you need a decision or information; the answer is typed in here when you are idle), handoff (part of the work belongs to someone else, or you finished a stage), blocked (you cannot go on, and why), or status (progress worth knowing). A few an hour; routine progress goes on the card with add_note.',
+    inputSchema: {
+      ...object,
+      properties: {
+        kind: { type: 'string', enum: ['question', 'handoff', 'blocked', 'status'] },
+        text: { type: 'string', minLength: 1, maxLength: 2000 },
+      },
+      required: ['kind', 'text'],
+    },
+  },
+  {
     name: 'read_image',
     description:
       'Read an attached image as native MCP image content. Index is zero-based, from get_card.',
@@ -252,6 +265,8 @@ export const boardTaskNote =
  */
 export interface OrchestratorToolHost {
   tools: unknown[];
+  /** A worker session's message to the orchestrator that owns it (PM-432). */
+  fromWorker?(sessionId: number, args: Record<string, unknown>): unknown;
   call(
     orchestratorId: string,
     sessionId: number,
@@ -335,6 +350,13 @@ export function registerBoardMcp(
         return reply({
           content: native ?? [{ type: 'text', text: JSON.stringify(value, null, 1) }],
         });
+      }
+      // Messages to the owning orchestrator (PM-432): sessions only, the sender is this grant.
+      if (call.name === 'message_orchestrator') {
+        if (owner.kind !== 'session' || !orchestratorTools?.fromWorker)
+          throw new Error('Only a CLI session can message its orchestrator');
+        const value = orchestratorTools.fromWorker(owner.id, call.arguments);
+        return reply({ content: [{ type: 'text', text: JSON.stringify(value) }] });
       }
       // SOPs (PM-316): this session's own project only; needs no card.
       if (call.name === 'sop_check') {

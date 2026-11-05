@@ -183,6 +183,13 @@ through. The briefing marks those projects "(priority)" with a rule to hand out,
 plan their cards first, and `overview` marks them with `priority: true` and lists their To do cards
 first. Empty means fair rotation only.
 
+**Worker messages and goals (PM-432, PM-433).** Sessions an orchestrator owns can write to it
+(`message_orchestrator`: question, handoff, blocked, status), and its chat answers with
+`reply_worker`, queues messages for busy sessions and reads answers with `worker_reply`. Goals are
+objectives the chat pursues until a checkable condition holds, brought back by the automatic check
+and shown in a Goals panel under the chat. Details, bounds and the Grok Bot comparison are in
+[ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
+
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open
 chat opens it in Agents; "Ask it to check" buttons, plus a "Project alerts" row with "All alerts" and per-kind chips that run the Needs attention check
 for one alert kind: `POST /orchestrators/:id/check` with `focus: "attention"` and `attentionKinds`), and orchestrators, their sections and

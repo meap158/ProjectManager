@@ -231,3 +231,28 @@ export interface OrchestratorChatWork {
   title: string;
   reportedAt: string;
 }
+
+/** Goals (PM-433): objectives an orchestrator pursues until done. See server/orchestrator/goals.ts. */
+export type GoalStatus = 'active' | 'paused' | 'blocked' | 'achieved' | 'dropped';
+export interface GoalProgress {
+  at: string;
+  note: string;
+  /** Who wrote it: the chat, the owner (page), or the automatic stall guard. */
+  by: 'chat' | 'owner' | 'system';
+}
+
+export interface OrchestratorGoal {
+  id: number;
+  title: string;
+  objective: string;
+  /** The condition that means achieved: checkable, so "done" needs evidence. */
+  doneWhen: string;
+  status: GoalStatus;
+  createdAt: string;
+  updatedAt: string;
+  progress: GoalProgress[];
+  /** The last automatic check that worked on it (ms). */
+  lastNudgeAt?: number;
+  /** Automatic checks since the chat last reported progress on it. */
+  nudgesWithoutProgress?: number;
+}

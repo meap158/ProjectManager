@@ -318,3 +318,74 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+/* Goals (PM-433) */
+.orchestrator-goals {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.orchestrator-goals-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.orchestrator-goals-head p,
+.orchestrator-goals-empty {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+.orchestrator-goal-form {
+  display: grid;
+  gap: 8px;
+}
+.orchestrator-goal-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.orchestrator-goal-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.orchestrator-goal {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.orchestrator-goal[data-status='active'] {
+  border-left-color: var(--accent);
+}
+.orchestrator-goal[data-status='blocked'] {
+  border-left-color: var(--danger);
+}
+.orchestrator-goal-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.orchestrator-goal-done,
+.orchestrator-goal-progress {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.orchestrator-goal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}

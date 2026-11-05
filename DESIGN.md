@@ -105,6 +105,12 @@ the email appear once, with saved time and an Add nickname action.
 Codex usage refresh reports fresh, expired, unavailable or unsupported results explicitly;
 missing usage never appears as zero. Claude usage is shown as unsupported.
 Orchestrator chat open/full-screen state persists per orchestrator in this browser.
+Under each chat a Goals panel (PM-433, `OrchestratorGoals.tsx`) lists open goals and the last
+three closed ones as cards with a status badge (`badge-tracked` active, `badge-attention`
+blocked, `badge-done` achieved), a coloured left edge, the "Done when" condition and the latest
+progress note with who wrote it. Pause, Resume, Mark achieved and Drop are small ghost buttons;
+"Add goal" opens a three-field form (Goal, Objective, Done when). Watch only orchestrators show a
+line instead of the form.
 One-time chat checks work directly in the chat, with a scoped current-task indicator and a
 Needs attention check for dashboard alerts. Board automation retains its configured policy.
 Ended, unsupervised card sessions offer Dispose session with a named confirmation; disposal

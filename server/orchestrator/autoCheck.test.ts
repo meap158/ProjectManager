@@ -345,3 +345,28 @@ it('never plans while the setting is off, watch-only, or past the daily bound', 
   }
   expect(t.state.checks).toBe(PLAN_MAX_PER_DAY);
 });
+
+it('keeps bringing an active goal back until it stalls, with the goal focus (PM-433)', async () => {
+  const { addGoal, listGoals, GOAL_NUDGE_MS, GOAL_STALL_CHECKS } = await import('./goals.js');
+  const t = setup();
+  await t.auto.tick(); // baseline
+  addGoal(t.db, 'm', { title: 'Ship login', objective: 'o', doneWhen: 'd' });
+  t.state.now += AUTO_CHECK_MIN_GAP_MS;
+  await t.auto.tick();
+  expect(t.state.focuses).toEqual(['goal']);
+  expect(t.state.events.at(-1)).toContain('goal "Ship login" continues');
+  // Not again before the interval.
+  t.state.now += AUTO_CHECK_MIN_GAP_MS;
+  await t.auto.tick();
+  expect(t.state.checks).toBe(1);
+  for (let i = 1; i < GOAL_STALL_CHECKS; i++) {
+    t.state.now += GOAL_NUDGE_MS;
+    await t.auto.tick();
+  }
+  expect(t.state.checks).toBe(GOAL_STALL_CHECKS);
+  expect(listGoals(t.db, 'm')[0]!.status).toBe('blocked');
+  expect(t.state.events.some((e) => e.includes('set to blocked'))).toBe(true);
+  t.state.now += GOAL_NUDGE_MS;
+  await t.auto.tick();
+  expect(t.state.checks).toBe(GOAL_STALL_CHECKS); // a blocked goal is left to the owner
+});

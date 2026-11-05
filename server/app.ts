@@ -7,6 +7,7 @@ import { OrchestratorService } from './orchestrator/service.js';
 import { registerOrchestratorRoutes } from './orchestrator/routes.js';
 import { OrchestratorChat } from './orchestrator/chat.js';
 import { AutoCheck } from './orchestrator/autoCheck.js';
+import { WorkerMessenger } from './orchestrator/workerMessages.js';
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -173,6 +174,7 @@ export type AppWithAgents = Hono & {
   scanner: Scanner;
   orchestrator: OrchestratorService;
   autoCheck: AutoCheck;
+  workerMessenger: WorkerMessenger;
 };
 
 export function createApp(
@@ -365,6 +367,22 @@ export function createApp(
     check: (id, focus) => orchestratorChat.check(id, focus),
     record: (id, message) =>
       orchestrator.record({ orchestratorId: id, action: 'auto-check', message }),
+  });
+  // Messages between orchestrators and their worker sessions (PM-432), delivered when idle.
+  const workerMessenger = new WorkerMessenger({
+    db,
+    instances: () => orchestrator.state().instances,
+    getSession: (id) => supervisor.getSession(id),
+    chatSession: (id) => orchestratorChat.session(id),
+    send: (id, text) =>
+      supervisor.sendInput(
+        id,
+        `[200~${text}[201~
+`,
+        false,
+      ),
+    record: (orchestratorId, action, message, cardId) =>
+      orchestrator.record({ orchestratorId, action, message, ...(cardId ? { cardId } : {}) }),
   });
   registerOrchestratorRoutes(app, orchestrator, orchestratorChat);
   registerAttachmentRoutes(app, db, attachmentsRoot);
@@ -1013,7 +1031,7 @@ export function createApp(
     return c.json(browse(db, requested ? resolveFolder(requested) : os.homedir()));
   });
 
-  return Object.assign(app, { supervisor, scanner, orchestrator, autoCheck });
+  return Object.assign(app, { supervisor, scanner, orchestrator, autoCheck, workerMessenger });
 }
 
 function resolveFolder(input: string): string {

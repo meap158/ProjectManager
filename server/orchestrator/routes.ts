@@ -43,7 +43,7 @@ const chatOpen = z
   .strict();
 const chatCheck = z
   .object({
-    focus: z.enum(['all', 'todo', 'in_progress', 'review', 'attention', 'plan']).optional(),
+    focus: z.enum(['all', 'todo', 'in_progress', 'review', 'attention', 'plan', 'goal']).optional(),
     attentionKinds: z
       .array(z.enum(['Folder missing', 'Scan failed', 'Stale', 'Uncommitted', 'Unpushed']))
       .min(1)
@@ -76,6 +76,49 @@ export function registerOrchestratorRoutes(
         .safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) return c.json({ error: 'Invalid card request' }, 400);
       return c.json(chat.sendCard(c.req.param('id'), parsed.data.cardId));
+    });
+    // Goals (PM-433): what the orchestrator pursues until done, and the owner's controls.
+    const goalInput = z
+      .object({
+        title: z.string().trim().min(1).max(120),
+        objective: z.string().trim().min(1).max(4000),
+        doneWhen: z.string().trim().min(1).max(2000),
+      })
+      .strict();
+    const goalChange = z
+      .object({
+        status: z.enum(['active', 'paused', 'blocked', 'achieved', 'dropped']).optional(),
+        note: z.string().trim().min(1).max(2000).optional(),
+      })
+      .strict()
+      .refine((v) => v.status || v.note, 'Give a status or a note');
+    app.get('/orchestrators/:id/goals', (c) => c.json(chat.goals(c.req.param('id'))));
+    app.post('/orchestrators/:id/goals', async (c) => {
+      const parsed = goalInput.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success)
+        return c.json({ error: 'Give a title, the objective and when it is done' }, 400);
+      try {
+        return c.json(chat.addOwnerGoal(c.req.param('id'), parsed.data));
+      } catch (e) {
+        if (e instanceof Error && /already active/.test(e.message))
+          return c.json({ error: e.message }, 409);
+        throw e;
+      }
+    });
+    app.patch('/orchestrators/:id/goals/:goalId', async (c) => {
+      const goalId = Number(c.req.param('goalId'));
+      const parsed = goalChange.safeParse(await c.req.json().catch(() => null));
+      if (!Number.isInteger(goalId) || !parsed.success)
+        return c.json({ error: 'Invalid goal change' }, 400);
+      try {
+        return c.json(chat.updateOwnerGoal(c.req.param('id'), goalId, parsed.data));
+      } catch (e) {
+        if (e instanceof Error && /No goal/.test(e.message))
+          return c.json({ error: e.message }, 404);
+        if (e instanceof Error && /already active/.test(e.message))
+          return c.json({ error: e.message }, 409);
+        throw e;
+      }
     });
     app.post('/orchestrators/:id/check', async (c) => {
       const parsed = chatCheck.safeParse((await c.req.json().catch(() => null)) ?? {});

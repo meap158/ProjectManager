@@ -1119,3 +1119,102 @@ describe('cross-project priority (PM-430)', () => {
     expect(text).toContain('**Sparkline** (project 3) (priority)');
   });
 });
+
+describe('worker messages and goals (PM-432, PM-433)', () => {
+  const worker = (over: Partial<AgentSession> = {}) =>
+    ({
+      id: 7,
+      projectId: 1,
+      cardId: 1,
+      cardKey: 'PM-1',
+      name: 'Login worker',
+      status: 'running',
+      tailState: 'running',
+      queuedInputBytes: 0,
+      orchestratorId: null,
+      ...over,
+    }) as AgentSession;
+
+  it('takes a message from a session it owns, refuses others, and queues the reply', async () => {
+    const { chat, call, sessions, db, mine } = setup();
+    sessions.push(worker({ cardId: mine.id }));
+    expect(() => chat.fromWorker(7, { kind: 'question', text: 'Which DB?' })).toThrow(
+      /No orchestrator looks after this session/,
+    );
+    const { recordOwnedSession } = await import('./ownedWorkers.js');
+    recordOwnedSession(db, 'master-1', 7, mine.id);
+    const sent = chat.fromWorker(7, { kind: 'question', text: 'Which DB?' }) as {
+      messageId: number;
+    };
+    const view = (await call('overview')) as {
+      workerMessages: { new: { id: number; text: string }[]; openQuestions: unknown[] };
+    };
+    expect(view.workerMessages.new.map((m) => m.text)).toEqual(['Which DB?']);
+    expect(view.workerMessages.openQuestions).toHaveLength(1);
+    // Read through overview: not new any more.
+    expect(((await call('overview')) as typeof view).workerMessages.new).toEqual([]);
+    const reply = (await call('reply_worker', { messageId: sent.messageId, text: 'SQLite' })) as {
+      queued: boolean;
+    };
+    expect(reply.queued).toBe(true);
+    expect(((await call('overview')) as typeof view).workerMessages.openQuestions).toEqual([]);
+    await expect(call('reply_worker', { messageId: 999, text: 'x' })).rejects.toThrow(/No message/);
+    for (let i = 1; i < 6; i++) chat.fromWorker(7, { kind: 'status', text: `step ${i}` });
+    expect(() => chat.fromWorker(7, { kind: 'status', text: 'too many' })).toThrow(/this hour/);
+    db.close();
+  });
+
+  it('queues a message for a busy session instead of refusing it, when asked', async () => {
+    const { call, sessions, supervisor, db } = setup();
+    sessions.push(worker());
+    await expect(call('message_worker', { sessionId: 7, text: 'Status?' })).rejects.toThrow(
+      /working/,
+    );
+    const queued = (await call('message_worker', {
+      sessionId: 7,
+      text: 'Status?',
+      queue: true,
+    })) as {
+      queued: boolean;
+    };
+    expect(queued.queued).toBe(true);
+    expect(supervisor.sendInput).not.toHaveBeenCalled();
+    db.close();
+  });
+
+  it('records goals, lists them in overview and adds the goal step to checks', async () => {
+    const { call, db } = setup({ autoCheck: true, delegateToSessions: true });
+    const set = (await call('set_goal', {
+      title: 'Ship login',
+      objective: 'Users can sign in',
+      doneWhen: 'Login e2e test passes on main',
+    })) as { goal: { id: number; status: string }; note: string };
+    expect(set.goal.status).toBe('active');
+    expect(set.note).toContain('automatic checks');
+    await call('update_goal', { goalId: set.goal.id, note: 'PR #3 open' });
+    const view = (await call('overview')) as {
+      goals: { id: number; recentProgress: { note: string }[] }[];
+    };
+    expect(view.goals[0]!.recentProgress.at(-1)!.note).toBe('PR #3 open');
+    const instance = {
+      name: 'X',
+      providers: ['codex'],
+      projectIds: [],
+      delegateToSessions: true,
+    } as unknown as OrchestratorConfig;
+    expect(checkPrompt(instance, 'all')).not.toContain('Goals:');
+    expect(checkPrompt(instance, 'all', [], true)).toContain('Goals:');
+    expect(checkPrompt(instance, 'goal')).toContain('dispatch_worker for a self-contained task');
+    const off = setup({ autoCheck: false });
+    const note = (
+      (await off.call('set_goal', {
+        title: 't',
+        objective: 'o',
+        doneWhen: 'd',
+      })) as { note: string }
+    ).note;
+    expect(note).toContain('"Check on its own" is off');
+    off.db.close();
+    db.close();
+  });
+});

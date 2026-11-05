@@ -35,9 +35,9 @@ import {
 } from './permissions.js';
 import { getCpuBudget, setCpuBudget, totalThreads } from './cpuBudget.js';
 import { slashCommands, suggestFiles } from './completions.js';
-import { findTranscript, readSubagent, readTranscript, transcriptSource } from './transcript.js';
+import { findTranscript, readSubagent, transcriptSource } from './transcript.js';
 import { readSensors } from './sensors.js';
-import { readProviderTranscript } from './providerTranscripts.js';
+import { readSessionTranscript } from './sessionTranscript.js';
 import { AgentError, AgentSupervisor } from './supervisor.js';
 import { removeSessionImages } from '../attachments.js';
 
@@ -558,38 +558,11 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
 
   // Chat view (mobile): the CLI's own transcript, read incrementally from `after`.
   app.get('/agent-sessions/:id/transcript', async (c) => {
-    const resume = supervisor.sessionResume(parseId(c));
-    if (!resume) throw new AgentError(404, 'Session not found');
     const after = c.req.query('after');
     const offset = after === undefined ? undefined : Number(after);
     if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0))
       throw new AgentError(400, 'Invalid offset');
-    if (
-      resume.providerId === 'opencode' ||
-      resume.providerId === 'grok' ||
-      resume.providerId === 'antigravity'
-    ) {
-      const id = parseId(c);
-      const session = supervisor.getSession(id);
-      if (!session) throw new AgentError(404, 'Session not found');
-      let resumeJson = resume.resumeJson;
-      const running = session.status === 'running';
-      // A new OpenCode / Antigravity session: its conversation gets pinned once it exists.
-      if (!resumeJson && running && resume.providerId !== 'grok') {
-        await supervisor.pinConversation(id);
-        resumeJson = supervisor.sessionResume(id)?.resumeJson ?? null;
-        // Nothing sent yet: an empty chat, not "started before pinning" (the first message
-        // starts the conversation, and the next poll finds it).
-        if (!resumeJson) return c.json({ supported: true, items: [], next: 0, reset: false });
-      }
-      return c.json(
-        await readProviderTranscript(resume.providerId, resumeJson, session.cwd, offset),
-      );
-    }
-    const source = transcriptSource(resume.providerId, resume.resumeJson, resume.codexHome);
-    const file = source ? await findTranscript(source) : null;
-    if (!file) return c.json({ supported: !!source, items: [], next: 0, reset: false });
-    return c.json({ supported: true, ...(await readTranscript(file, resume.providerId, offset)) });
+    return c.json(await readSessionTranscript(supervisor, parseId(c), offset));
   });
 
   // A Claude subagent's own steps (PM-123), for the Agent/Task tool call that started it.

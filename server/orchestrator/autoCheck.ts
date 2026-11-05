@@ -16,6 +16,7 @@ import { readLimits } from '../agents/limits.js';
 import { ownedSessionIds } from './ownedWorkers.js';
 import { sessionQuota } from './sessionSupervision.js';
 import { plans, type CheckFocus } from './chat.js';
+import { activeGoals, goalsDue, noteGoalCheck } from './goals.js';
 
 /** Bounds on automatic checks (PM-418). */
 export const AUTO_CHECK_MAX_PER_HOUR = 4;
@@ -140,7 +141,19 @@ export class AutoCheck {
     const planDue = Object.entries(current.idle).filter(([pid, print]) => planned[pid] !== print);
     const planning = planDue.length > 0 && planSent.length < PLAN_MAX_PER_DAY;
     // Only planning to ask for: a narrow check, so the chat does not re-review the whole board.
-    const focus: CheckFocus = planning && !triggers.length ? 'plan' : 'all';
+    // Active goals (PM-433) come back on their own schedule; any other check works on them too.
+    const goals = activeGoals(db, id);
+    const goalDue = goalsDue(goals, now);
+    const focus: CheckFocus =
+      triggers.length || (planning && goalDue.length)
+        ? 'all'
+        : planning
+          ? 'plan'
+          : goalDue.length
+            ? 'goal'
+            : 'all';
+    if (goalDue.length)
+      triggers.push(...goalDue.map((g) => `goal "${g.title.slice(0, 60)}" continues`));
     if (planning)
       triggers.push(
         ...planDue.map(([pid]) => `${current.names[pid] ?? `project ${pid}`} has nothing to do`),
@@ -197,6 +210,13 @@ export class AutoCheck {
       this.save(id, deferred); // chat.check's own guards said no; the trigger stays pending.
       return;
     }
+    // Every check that carried the goal step counts against each active goal's stall limit.
+    if (goals.length && (focus === 'all' || focus === 'goal'))
+      for (const g of noteGoalCheck(db, id, now))
+        this.deps.record(
+          id,
+          `Goal ${g.id} "${g.title}" set to blocked: no progress after several checks`,
+        );
     this.deps.record(
       id,
       `Automatic check (${triggers.slice(0, 3).join('; ')}${triggers.length > 3 ? `; +${triggers.length - 3} more` : ''})`,

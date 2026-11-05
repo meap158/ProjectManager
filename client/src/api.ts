@@ -9,6 +9,7 @@ import type {
   OrchestratorPendingPage,
   OrchestratorPlanDecision,
   OrchestratorState,
+  OrchestratorGoal,
 } from '../../shared/orchestrator';
 import type {
   AgentAutonomy,
@@ -153,6 +154,21 @@ export const api = {
   orchestratorSituation: (id: string) =>
     request<OrchestratorSituation>('GET', `/orchestrators/${encodeURIComponent(id)}/situation`),
   orchestrators: () => request<OrchestratorState>('GET', '/orchestrators'),
+  /** Goals (PM-433): newest first. */
+  orchestratorGoals: (id: string) =>
+    request<OrchestratorGoal[]>('GET', `/orchestrators/${encodeURIComponent(id)}/goals`),
+  addOrchestratorGoal: (id: string, goal: { title: string; objective: string; doneWhen: string }) =>
+    request<OrchestratorGoal>('POST', `/orchestrators/${encodeURIComponent(id)}/goals`, goal),
+  updateOrchestratorGoal: (
+    id: string,
+    goalId: number,
+    change: { status?: OrchestratorGoal['status']; note?: string },
+  ) =>
+    request<OrchestratorGoal>(
+      'PATCH',
+      `/orchestrators/${encodeURIComponent(id)}/goals/${goalId}`,
+      change,
+    ),
   orchestratorOverview: () => request<OrchestratorOverview>('GET', '/orchestrators/overview'),
   previewOrchestrator: (id: string, offset = 0) =>
     request<{

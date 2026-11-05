@@ -60,3 +60,50 @@ and production build. A production launcher with isolated data saved and reloade
 Actual settings markup fits 320px, 390px and 1280px captures. Broad test runs also exposed a pre-existing
 Files iframe dark-scrollbar assertion; this unrelated failure is not claimed as passing. Live CLI
 continuation and credential switching were not exercised, and no real worker received test input.
+
+## Two-way messages and goals (PM-432, PM-433, 2026-11-06)
+
+The owner asked for the Grok Bot features between the orchestrator and its sessions: asking for
+progress, handing out tasks, answers that reach the asker, and working toward an objective until
+it is reached.
+
+| Grok Bot feature                                                               | Here                                                                                                                                                                |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Assign a task to a specialist                                                  | Already there: `assign_card`, `start_session`, `dispatch_worker`                                                                                                    |
+| Ask for progress                                                               | Already there: `message_worker` to an idle session, `worker_output`; new: `worker_reply` reads its answer as text from the CLI's transcript                         |
+| Message a busy agent                                                           | New: `message_worker` with `queue: true` waits and is typed in once the session is idle                                                                             |
+| Asynchronous handoff that wakes the recipient                                  | New: sessions call the board tool `message_orchestrator` (question, handoff, blocked, status); with "Check on its own" on, an idle open chat is handed the messages |
+| Answers route back to the asker                                                | New: `reply_worker` queues the answer for that session, delivered when it is idle                                                                                   |
+| One owner per stage                                                            | Kept: a session reaches only the orchestrator that owns it (handed it its card or supervises it); routing between sessions goes through cards                       |
+| Visible handoffs                                                               | Every message, delivery and drop is recorded in the orchestrator's Activity                                                                                         |
+| Presence                                                                       | Already there: idle, running and input in `list_sessions`                                                                                                           |
+| Routines that run until the job is done                                        | New: goals (below)                                                                                                                                                  |
+| Group chats, voice, drafts, shared logins, a separate review agent, "Stop now" | Not done: not part of this app's local model; interrupting a session mid-edit is left to the owner                                                                  |
+
+**Messages (PM-432).** `server/orchestrator/workerMessages.ts` keeps them per orchestrator in
+settings (`orchestrator-messages:<id>`, last 300), so a restart neither loses nor repeats one. The
+sender of `message_orchestrator` is the session its board grant belongs to, never an argument; it
+is refused when no enabled orchestrator owns the session or that orchestrator is Watch only. Loop
+guards: a session may send 6 an hour, only a question asks for a reply, an orchestrator may queue 3
+undelivered messages per session, and the chat is woken at most 6 times an hour, 2 minutes apart.
+`WorkerMessenger` (a 15-second tick) types a waiting reply into its session only when that session
+is running, idle and has no queued input, never while it is asking the owner something; a message
+for a session that ended is dropped and recorded. Worker messages wake the chat only when the
+orchestrator is enabled, not Watch only, has "Check on its own" on, and its chat is open and idle;
+otherwise they wait in `overview`'s `workerMessages` (reading them there marks them delivered). The
+prompt says they are reports, not the owner's authority. Sessions the chat hands a card to are told
+about the tool in their task text (`WORKER_CHANNEL`).
+
+**Goals (PM-433).** `server/orchestrator/goals.ts` stores goals per orchestrator
+(`orchestrator-goals:<id>`): title, objective, a checkable `doneWhen`, status (active, paused,
+blocked, achieved, dropped) and progress notes. The chat records one with `set_goal` when the owner
+asks it to pursue an objective until done, reports with `update_goal`, and reads them with
+`list_goals` or `overview`. The owner can add, pause, resume, mark achieved or drop goals in the
+Goals panel under each orchestrator's chat (`GET/POST /orchestrators/:id/goals`,
+`PATCH /orchestrators/:id/goals/:goalId`). With "Check on its own" on, the automatic check brings
+an active goal back every 15 minutes (within its hourly bounds) with the `goal` focus, and any other
+automatic check carries the goal step too. The step tells the chat to compare the state with
+`doneWhen`, plan cards, and do each the way it needs: an idle session in the project, a new session
+within the limits, a one-time run, or itself. Each check that carries the step counts toward a stall
+limit; four checks without an `update_goal` set the goal to blocked with a note, so a stuck loop
+stops spending quota. At most 5 goals are active at once. Watch only orchestrators have none.

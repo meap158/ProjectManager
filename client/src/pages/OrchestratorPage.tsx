@@ -19,6 +19,7 @@ import { serialPoll } from '../lib/serialPoll';
 import { RunCard } from '../components/RunCard';
 import { useOrchestratorRuns } from '../components/useOrchestratorRuns';
 import { OrchestratorChat } from '../components/OrchestratorChat';
+import { OrchestratorGoals } from '../components/OrchestratorGoals';
 import { collapseButtonProps, useCollapsed } from '../useCollapsed';
 
 const defaults: Omit<OrchestratorConfig, 'id'> = {
@@ -610,6 +611,7 @@ export function OrchestratorPage() {
                         disabled={busy}
                         onChanged={() => void perform(async () => undefined)}
                       />
+                      <OrchestratorGoals instance={instance} />
 
                       <details
                         className="orchestrator-owned-runs"
