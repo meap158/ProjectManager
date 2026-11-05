@@ -65,6 +65,19 @@ function save(db: Db, orchestratorId: string, messages: WorkerMessage[]) {
   setSetting(db, key(orchestratorId), messages.slice(-KEEP));
 }
 
+/**
+ * Message text without control characters (tab and newline kept). Messages are typed into
+ * terminals inside a bracketed paste, so an ESC or CR from a worker could end the paste early and
+ * submit text of its own outside the framing.
+ */
+export function cleanText(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
+}
+
+/** The chat was asked something moments ago and may not show as busy yet. */
+export const RECENT_INPUT_MS = 60_000;
+
 export function addMessage(
   db: Db,
   message: Omit<WorkerMessage, 'id' | 'at' | 'deliveredAt'>,
@@ -72,7 +85,13 @@ export function addMessage(
 ): WorkerMessage {
   const id = (getSetting<number>(db, SEQ) ?? 0) + 1;
   setSetting(db, SEQ, id);
-  const full: WorkerMessage = { ...message, id, at: now.toISOString(), deliveredAt: null };
+  const full: WorkerMessage = {
+    ...message,
+    text: cleanText(message.text),
+    id,
+    at: now.toISOString(),
+    deliveredAt: null,
+  };
   save(db, message.orchestratorId, [...listMessages(db, message.orchestratorId), full]);
   return full;
 }
@@ -192,7 +211,8 @@ export class WorkerMessenger {
     const delivered = new Set<number>();
     for (const m of waiting) {
       const s = this.deps.getSession(m.sessionId);
-      if (!s || s.status !== 'running') {
+      // A session that is restarting (account rotation, crash recovery) is still wanted: wait.
+      if (!s || (s.status !== 'running' && s.desiredState !== 'running')) {
         updateMessages(db, instance.id, [m.id], { dropped: 'the session ended' });
         this.deps.record(
           instance.id,
@@ -203,7 +223,7 @@ export class WorkerMessenger {
         continue;
       }
       // One message per session per tick, and only into an idle prompt.
-      if (delivered.has(s.id) || !idle(s)) continue;
+      if (delivered.has(s.id) || !idle(s) || s.restartProgress) continue;
       this.deps.send(s.id, workerText(instance.name, m));
       delivered.add(s.id);
       updateMessages(db, instance.id, [m.id], { deliveredAt: at });
@@ -229,6 +249,8 @@ export class WorkerMessenger {
       return;
     const chat = this.deps.chatSession(instance.id);
     if (!idle(chat)) return;
+    // An automatic check may have just been typed in before the chat shows as working.
+    if (chat.lastInputAt && now - Date.parse(chat.lastInputAt) < RECENT_INPUT_MS) return;
     const name = (id: number) => this.deps.getSession(id)?.name ?? `session ${id}`;
     this.deps.send(chat.id, chatText(unread.slice(0, 10), name));
     updateMessages(
