@@ -154,7 +154,9 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
 - **Preview:** a built-in browser lists the apps running on your `localhost` ports. Pick an
   element on the page, mark up a screenshot of it and send both to a CLI session.
 - **Inbox:** a bell in the top bar lists every session that is asking you something, failed, hit
-  a usage limit or finished its reply. Answer from the list.
+  a usage limit or finished its reply. Answer from the list. **Notify me** turns on desktop
+  notifications for decisions, questions, failed restarts and orchestrator questions while the app
+  is in the background.
 - **Account switching:** saved Codex and Claude logins and optional Antigravity accounts, with
   live usage and reset times. Codex, and Claude Code if you turn it on, switch to the login with
   the most quota left when one runs out (see [the account audit](docs/ACCOUNT-SWITCHER-AUDIT.md)).

@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import type { AgentSession, ProjectSummary } from '../../../shared/types';
 import { api } from '../api';
 import { formatRelative, formatReset } from '../format';
 import { sendAttentionCommand } from '../lib/attentionCommands';
+import {
+  freshAlerts,
+  inboxAlerts,
+  loadNotify,
+  loadSent,
+  notificationsSupported,
+  saveNotify,
+  saveSent,
+} from '../lib/inboxAlerts';
 import { serialPoll } from '../lib/serialPoll';
 import { sessionActivity } from '../sessionActivity';
 import {
@@ -183,16 +192,80 @@ export function InboxButton() {
   const [filter, setFilterState] = useState<InboxFilter>(loadFilter);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const navigate = useNavigate();
+  // Desktop notifications (PM-429): on only where this browser can show them and the owner allowed it.
+  const supported = notificationsSupported();
+  const [notify, setNotify] = useState(
+    () => supported && loadNotify() && Notification.permission === 'granted',
+  );
+  const [notifyNote, setNotifyNote] = useState('');
+  /** Keys already notified; null until the first look after turning notifications on. */
+  const sent = useRef<string[] | null>(loadSent());
+  const names = useRef<Map<number, string>>(new Map());
 
   const refresh = async () => {
     const sessions = await api.listAllSessions();
     const at = Date.now();
+    const list = inboxItems(sessions, at);
     setNow(at);
-    setItems(inboxItems(sessions, at));
+    setItems(list);
+    if (notify) notifyNew(list, sessions);
   };
 
-  // Only while the tab is visible, and one request at a time.
-  useEffect(() => serialPoll(refresh, POLL_MS, { pauseWhenHidden: true }), []);
+  function notifyNew(list: InboxItem[], sessions: AgentSession[]) {
+    const next = freshAlerts(inboxAlerts(list, sessions, names.current), sent.current);
+    sent.current = next.sent;
+    saveSent(next.sent);
+    // A focused app already shows the bell; notify only when the owner is elsewhere.
+    if (document.visibilityState === 'visible' && document.hasFocus()) return;
+    for (const a of next.show.slice(0, 3)) {
+      try {
+        const n = new Notification(a.title, { body: a.body, tag: a.key, icon: '/favicon.svg' });
+        n.onclick = () => {
+          window.focus();
+          void navigate(a.path);
+          n.close();
+        };
+      } catch {
+        // Some browsers allow notifications only from a service worker; the Inbox still shows it.
+      }
+    }
+  }
+
+  // One request at a time. While notifications are on it keeps polling in a background tab, so
+  // they can arrive; otherwise only while the tab is visible.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => serialPoll(refresh, POLL_MS, { pauseWhenHidden: !notify }), [notify]);
+
+  useEffect(() => {
+    if (!notify) return;
+    void api.listProjects().then(
+      (list) => (names.current = new Map(list.map((p) => [p.id, p.name]))),
+      () => undefined,
+    );
+  }, [notify]);
+
+  async function toggleNotify() {
+    setNotifyNote('');
+    if (notify) {
+      setNotify(false);
+      saveNotify(false);
+      return;
+    }
+    const permission =
+      Notification.permission === 'default'
+        ? await Notification.requestPermission()
+        : Notification.permission;
+    if (permission !== 'granted') {
+      setNotifyNote(
+        'This browser blocks notifications for the app. Allow them in its site settings.',
+      );
+      return;
+    }
+    sent.current = null; // Whatever is waiting now is in the Inbox already.
+    saveNotify(true);
+    setNotify(true);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -377,15 +450,33 @@ export function InboxButton() {
                         .join(' · ')}
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                disabled={count === 0}
-                onClick={() => markSeen(items.map((i) => i.key))}
-              >
-                Mark all seen
-              </button>
+              <div className="inbox-head-actions">
+                {supported && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    aria-pressed={notify}
+                    title={
+                      notify
+                        ? 'Desktop notifications are on for this browser. Turn them off'
+                        : 'Notify me in this browser when something needs a decision, even in another tab'
+                    }
+                    onClick={() => void toggleNotify()}
+                  >
+                    {notify ? 'Notifications on' : 'Notify me'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  disabled={count === 0}
+                  onClick={() => markSeen(items.map((i) => i.key))}
+                >
+                  Mark all seen
+                </button>
+              </div>
             </header>
+            {notifyNote && <p className="inbox-notify-note">{notifyNote}</p>}
             {items.length > 0 && (
               <div className="inbox-filters">
                 <FilterChips

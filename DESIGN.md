@@ -402,7 +402,12 @@ adjacent-pair CVD separation in both modes).
   address follow the new name.
 - **Inbox (top bar, left of the theme switch):** a bell with a count badge of what is new: red
   (`--danger`) when something needs a decision or failed, `--accent` when only finished replies wait.
-  It polls every 5 s while the tab is visible. The panel (420px; Escape or an outside click closes it)
+  It polls every 5 s while the tab is visible, and also in a background tab while desktop
+  notifications are on. **Notify me** in the panel header (PM-429, shown only in a secure context:
+  localhost or the remote address) asks the browser for permission and then notifies once per
+  occurrence of a decision, a question, a failed restart or an orchestrator chat asking something,
+  only while the app is not focused; clicking one opens that session. What was already waiting when
+  it was turned on does not notify. The choice and the notified keys are per browser. The panel (420px; Escape or an outside click closes it)
   has a sticky header (counts, Mark all seen) with **filter chips** under it (All, New, then one per
   kind with rows: Decisions, Problems, Limits, Your turn; remembered per browser; a chip whose rows
   are gone falls back to All), then sections in urgency order: Needs a decision

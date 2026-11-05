@@ -6759,6 +6759,22 @@ span.path-link:hover .path-icon {
   color: var(--text-2);
   font-size: 12px;
 }
+.inbox-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.inbox-head-actions .btn[aria-pressed='true'] {
+  color: var(--accent);
+}
+.inbox-notify-note {
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 12px;
+}
 .inbox-filters {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);

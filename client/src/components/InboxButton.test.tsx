@@ -203,3 +203,46 @@ describe('InboxButton', () => {
     expect(screen.getByText(/Nothing is waiting/)).toBeTruthy();
   });
 });
+
+describe('desktop notifications (PM-429)', () => {
+  it('turns on with permission, skips what already waits, then notifies a new decision in the background', async () => {
+    const shown: { title: string; tag?: string }[] = [];
+    class FakeNotification {
+      static permission: NotificationPermission = 'default';
+      static requestPermission = vi.fn(async () => {
+        FakeNotification.permission = 'granted';
+        return 'granted' as NotificationPermission;
+      });
+      onclick: (() => void) | null = null;
+      constructor(title: string, options?: NotificationOptions) {
+        shown.push({ title, tag: options?.tag });
+      }
+      close() {}
+    }
+    vi.stubGlobal('Notification', FakeNotification);
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    state.list = [s(1, { tailState: 'input' })];
+    try {
+      show();
+      fireEvent.click(await screen.findByRole('button', { name: /Inbox/ }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Notify me' }));
+      await screen.findByRole('button', { name: 'Notifications on' });
+      expect(localStorage.getItem('pm.inbox.notify')).toBe('1');
+      // The first look only records session 1: it is already in the Inbox.
+      await waitFor(() => expect(localStorage.getItem('pm.inbox.notified')).toContain('1:input'));
+      expect(shown).toEqual([]);
+      state.list = [s(1, { tailState: 'input' }), s(2, { tailState: 'input', name: 'Deploy' })];
+      await waitFor(
+        () => expect(shown.map((n) => n.title)).toEqual(['Deploy needs your decision']),
+        {
+          timeout: 8000,
+        },
+      );
+    } finally {
+      focus.mockRestore();
+      vi.unstubAllGlobals();
+      state.list = [];
+    }
+  }, 15000);
+});
