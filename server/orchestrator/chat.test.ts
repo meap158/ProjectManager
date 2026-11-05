@@ -10,6 +10,8 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+// The machine's own disk and memory must not decide these tests (PM-424 has its own).
+vi.mock('./resources.js', () => ({ resourceBlock: () => undefined }));
 import { openDb } from '../db.js';
 import { getCard, insertCard, insertProject } from '../store.js';
 import { SopStore } from '../sops.js';

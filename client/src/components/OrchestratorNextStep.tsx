@@ -18,6 +18,11 @@ const steps: Record<
     label: 'Open task',
     target: 'card',
   },
+  low_resources: {
+    text: 'Free disk space or memory on this computer; new workers start again once there is room.',
+    label: 'View workers',
+    target: 'workers',
+  },
   review_required: {
     text: 'Review the finished run and accept or reject its changes.',
     label: 'Review runs',

@@ -10,7 +10,9 @@ import {
   listSchedulableCards,
   listCardsInFlight,
   cardKey,
+  scopeFolders,
 } from '../store.js';
+import { resourceBlock } from './resources.js';
 import { providerStatuses } from '../agents/providers.js';
 import { readLimits } from '../agents/limits.js';
 import type {
@@ -335,6 +337,7 @@ export class OrchestratorService {
       availableProviders: providers.filter((p) => p.available).map((p) => p.id),
       limits: readLimits(this.dataDir),
       blockedCardIds: new OrchestratorAssignments(this.db).blockedCards(),
+      resourceBlock: resourceBlock(scopeFolders(this.db, instance.projectIds)),
     });
     const page = decisions.slice(offset, offset + limit);
     const retryPlans = new OrchestratorAssignments(this.db).retryPlans(
@@ -770,6 +773,7 @@ export class OrchestratorService {
           availableProviders: providers,
           limits: readLimits(this.dataDir),
           blockedCardIds: assignments.blockedCards(),
+          resourceBlock: resourceBlock(scopeFolders(this.db, initial.projectIds)),
         };
       };
       const snapshot = (fresh = false) => {

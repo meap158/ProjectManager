@@ -15,7 +15,9 @@ import {
   listCards,
   listProjectlessCards,
   updateCard,
+  scopeFolders,
 } from '../store.js';
+import { resourceBlock } from './resources.js';
 
 /** How a card that belongs to no project is labelled (PM-138). */
 const ALL_PROJECTS = 'All projects';
@@ -743,6 +745,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
             available.has(providerId) && policy.providers.includes(providerId) ? [providerId] : [],
           limits: readLimits(this.dataDir),
           blockedCardIds,
+          resourceBlock: resourceBlock(scopeFolders(this.db, policy.projectIds)),
         },
       )[0];
       return {

@@ -48,7 +48,9 @@ export type OrchestratorWaitReason =
   | 'provider_capacity'
   | 'quota_exceeded'
   | 'quota_unknown'
-  | 'no_provider_available';
+  | 'no_provider_available'
+  /** The machine is low on disk space or memory (PM-424): new workers wait. */
+  | 'low_resources';
 
 export interface OrchestratorExecutionStatus {
   executing: boolean;

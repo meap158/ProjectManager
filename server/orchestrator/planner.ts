@@ -60,6 +60,11 @@ export interface OrchestratorPlanningSnapshot {
    * decides about them.
    */
   ownedCardIds?: ReadonlySet<number>;
+  /**
+   * Why the machine cannot take another worker now (PM-424, `resourceBlock` in resources.ts):
+   * low disk space or memory. Cards that would start a worker wait with this reason.
+   */
+  resourceBlock?: string;
 }
 
 /** Pure scheduling: execution must revalidate the snapshot before dispatching. */
@@ -213,6 +218,10 @@ export function planOrchestration(
       policy.maxWorkersPerProject
     ) {
       decide('wait', 'Worker capacity reached', undefined, 'project_capacity');
+      continue;
+    }
+    if (snapshot.resourceBlock) {
+      decide('wait', snapshot.resourceBlock, undefined, 'low_resources');
       continue;
     }
     const providerBlockers: NonNullable<OrchestratorDecision['providerBlockers']> = [];

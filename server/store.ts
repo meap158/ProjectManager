@@ -61,6 +61,13 @@ export function setRefsCursor(db: Db, projectId: number, cursor: string | null):
   db.prepare('UPDATE projects SET refs_cursor = ? WHERE id = ?').run(cursor, projectId);
 }
 
+/** Folders of the projects in an orchestrator scope (an empty scope is every project). */
+export function scopeFolders(db: Db, projectIds: number[]): string[] {
+  return listProjectFolders(db)
+    .filter((p) => !projectIds.length || projectIds.includes(p.id))
+    .map((p) => p.path);
+}
+
 /** Ids and folders of every tracked project (for background watchers). */
 export function listProjectFolders(db: Db): { id: number; path: string }[] {
   return db.prepare('SELECT id, path FROM projects').all() as { id: number; path: string }[];
