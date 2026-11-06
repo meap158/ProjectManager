@@ -249,14 +249,10 @@ export function OrchestratorPage() {
         <div>
           <h1>Orchestrators</h1>
           <p className="faint orchestrator-intro">
-            An orchestrator looks after a set of projects: it keeps their boards moving, starts
-            agent workers on ready tasks within your limits, and shows what needs you. Chat with one
-            to ask for anything.
+            Each one keeps its projects' boards moving, starts workers within your limits and shows
+            what needs you.
           </p>
         </div>
-        <Link className="btn btn-sm" to="/workspace">
-          Agent terminals
-        </Link>
       </div>
       {error && (
         <div className="error-banner" role="alert">
@@ -372,9 +368,13 @@ export function OrchestratorPage() {
                       ? item.strategy === 'observe'
                         ? 'Watching'
                         : 'Running'
-                      : 'Paused'}{' '}
-                    ?{' '}
-                    {item.projectIds.length ? `${item.projectIds.length} projects` : 'All projects'}
+                      : 'Paused'}
+                    {' · '}
+                    {item.projectIds.length === 1
+                      ? '1 project'
+                      : item.projectIds.length
+                        ? `${item.projectIds.length} projects`
+                        : 'All projects'}
                   </span>
                 </button>
               ))}
@@ -451,7 +451,15 @@ export function OrchestratorPage() {
                   const liveAssignments = liveFeed.liveAssignments ?? activeRuns;
                   const liveWorkersCount =
                     (liveFeed.summary?.live ?? activeRuns.length) + activeSessions.length;
-                  const totalBeingWorkedOnCount = liveWorkersCount + scopedInFlightCards.length;
+                  // Cards in progress with no live worker still count as being worked on; cards
+                  // in Review wait for a person and show in Board, so they are left out here.
+                  const unstaffedCards = scopedInFlightCards.filter(
+                    (c) =>
+                      c.status === 'in_progress' &&
+                      !activeRunCards.has(c.id) &&
+                      !activeSessions.some((s) => s.cardId === c.id),
+                  );
+                  const totalBeingWorkedOnCount = liveWorkersCount + unstaffedCards.length;
 
                   const scopedProjectAttention = scopedProjects.flatMap((p) =>
                     projectAttention(p).map((item) => ({ project: p, ...item })),
@@ -613,65 +621,74 @@ export function OrchestratorPage() {
                       />
                       <OrchestratorGoals instance={instance} />
 
-                      <details
-                        className="orchestrator-owned-runs"
-                        id={`orchestrator-runs-${instance.id}`}
-                        open={Boolean(
-                          search.get('run') &&
-                          runs.some(
-                            (run) =>
-                              run.orchestratorId === instance.id &&
-                              String(run.id) === search.get('run'),
-                          ),
-                        )}
-                      >
-                        <summary>
-                          Dispatched runs (
-                          {runs.filter((run) => run.orchestratorId === instance.id).length} shown)
-                        </summary>
-                        {runs
-                          .filter((run) => run.orchestratorId === instance.id)
-                          .map((run) => (
-                            <RunCard
-                              key={run.id}
-                              run={run}
-                              now={Date.now()}
-                              onChanged={() => void perform(async () => undefined)}
-                              onDeleted={() => void perform(async () => undefined)}
-                            />
-                          ))}
-                        {runFeed.error && (
-                          <p role="alert" className="error-banner">
-                            {runFeed.error}
-                          </p>
-                        )}
-                        <nav className="orchestrator-result-links" aria-label="Run history pages">
-                          <button
-                            type="button"
-                            className="btn btn-sm"
-                            disabled={runFeed.loading || !runFeed.previous}
-                            onClick={runFeed.previous}
-                          >
-                            Previous
-                          </button>
-                          <span>History page {runFeed.page}</span>
-                          <button
-                            type="button"
-                            className="btn btn-sm"
-                            disabled={runFeed.loading || !runFeed.next}
-                            onClick={runFeed.next}
-                          >
-                            Next
-                          </button>
-                        </nav>
-                        {!runFeed.loading &&
-                          !runs.some((run) => run.orchestratorId === instance.id) && (
-                            <p className="faint">
-                              Runs started by this orchestrator appear here, with output and review
-                              controls.
+                      {(runs.some((run) => run.orchestratorId === instance.id) ||
+                        runFeed.error ||
+                        runFeed.previous) && (
+                        <details
+                          className="orchestrator-owned-runs"
+                          id={`orchestrator-runs-${instance.id}`}
+                          open={Boolean(
+                            search.get('run') &&
+                            runs.some(
+                              (run) =>
+                                run.orchestratorId === instance.id &&
+                                String(run.id) === search.get('run'),
+                            ),
+                          )}
+                        >
+                          <summary>
+                            Dispatched runs (
+                            {runs.filter((run) => run.orchestratorId === instance.id).length} shown)
+                          </summary>
+                          {runs
+                            .filter((run) => run.orchestratorId === instance.id)
+                            .map((run) => (
+                              <RunCard
+                                key={run.id}
+                                run={run}
+                                now={Date.now()}
+                                onChanged={() => void perform(async () => undefined)}
+                                onDeleted={() => void perform(async () => undefined)}
+                              />
+                            ))}
+                          {runFeed.error && (
+                            <p role="alert" className="error-banner">
+                              {runFeed.error}
                             </p>
                           )}
-                      </details>
+                          {(runFeed.previous || runFeed.next) && (
+                            <nav
+                              className="orchestrator-result-links"
+                              aria-label="Run history pages"
+                            >
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                disabled={runFeed.loading || !runFeed.previous}
+                                onClick={runFeed.previous}
+                              >
+                                Previous
+                              </button>
+                              <span>History page {runFeed.page}</span>
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                disabled={runFeed.loading || !runFeed.next}
+                                onClick={runFeed.next}
+                              >
+                                Next
+                              </button>
+                            </nav>
+                          )}
+                          {!runFeed.loading &&
+                            !runs.some((run) => run.orchestratorId === instance.id) && (
+                              <p className="faint">
+                                Runs started by this orchestrator appear here, with output and
+                                review controls.
+                              </p>
+                            )}
+                        </details>
+                      )}
 
                       {/* Needs you: issues and failures in scope */}
                       <div
@@ -1318,47 +1335,37 @@ export function OrchestratorPage() {
                                 </div>
                               );
                             })}
-                            {scopedInFlightCards
-                              .filter(
-                                (c) =>
-                                  !activeRunCards.has(c.id) &&
-                                  !activeSessions.some((s) => s.cardId === c.id),
-                              )
-                              .map((card) => (
-                                <div key={`card-${card.id}`} className="orchestrator-worker-card">
-                                  <div className="worker-card-head">
-                                    <span
-                                      className="worker-dot queued"
-                                      title={
-                                        card.status === 'in_progress' ? 'In progress' : 'Review'
-                                      }
-                                    />
-                                    <span className="worker-name truncate" title={card.title}>
-                                      {card.title}
-                                    </span>
-                                    <span className="badge">
-                                      {card.status === 'in_progress' ? 'In progress' : 'Review'}
-                                    </span>
-                                  </div>
-                                  <div className="worker-card-meta">
-                                    <span className="worker-proj truncate">{card.projectName}</span>
-                                    <Link
-                                      to={`/board?project=${card.projectId}&card=${card.id}`}
-                                      className="event-card-link"
-                                      title={`View card ${card.key}`}
-                                    >
-                                      {card.key}
-                                    </Link>
-                                    <Link
-                                      to={`/board?project=${card.projectId}&card=${card.id}`}
-                                      className="worker-action-link"
-                                      title="Open board"
-                                    >
-                                      Board →
-                                    </Link>
-                                  </div>
+                            {unstaffedCards.map((card) => (
+                              <div key={`card-${card.id}`} className="orchestrator-worker-card">
+                                <div className="worker-card-head">
+                                  <span
+                                    className="worker-dot queued"
+                                    title="In progress, no live worker"
+                                  />
+                                  <span className="worker-name truncate" title={card.title}>
+                                    {card.title}
+                                  </span>
+                                  <span className="badge">No worker</span>
                                 </div>
-                              ))}
+                                <div className="worker-card-meta">
+                                  <span className="worker-proj truncate">{card.projectName}</span>
+                                  <Link
+                                    to={`/board?project=${card.projectId}&card=${card.id}`}
+                                    className="event-card-link"
+                                    title={`View card ${card.key}`}
+                                  >
+                                    {card.key}
+                                  </Link>
+                                  <Link
+                                    to={`/board?project=${card.projectId}&card=${card.id}`}
+                                    className="worker-action-link"
+                                    title="Open board"
+                                  >
+                                    Board →
+                                  </Link>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -1752,20 +1759,24 @@ export function OrchestratorPage() {
               >
                 All <span className="work-chip-count num">{allCount}</span>
               </button>
-              <button
-                type="button"
-                className={`work-chip${historyFilter === 'dispatched' ? ' active' : ''}`}
-                onClick={() => setHistoryFilter('dispatched')}
-              >
-                Started work <span className="work-chip-count num">{dispatchedCount}</span>
-              </button>
-              <button
-                type="button"
-                className={`work-chip${historyFilter === 'wait' ? ' active' : ''}`}
-                onClick={() => setHistoryFilter('wait')}
-              >
-                Waiting <span className="work-chip-count num">{waitCount}</span>
-              </button>
+              {(dispatchedCount > 0 || historyFilter === 'dispatched') && (
+                <button
+                  type="button"
+                  className={`work-chip${historyFilter === 'dispatched' ? ' active' : ''}`}
+                  onClick={() => setHistoryFilter('dispatched')}
+                >
+                  Started work <span className="work-chip-count num">{dispatchedCount}</span>
+                </button>
+              )}
+              {(waitCount > 0 || historyFilter === 'wait') && (
+                <button
+                  type="button"
+                  className={`work-chip${historyFilter === 'wait' ? ' active' : ''}`}
+                  onClick={() => setHistoryFilter('wait')}
+                >
+                  Waiting <span className="work-chip-count num">{waitCount}</span>
+                </button>
+              )}
               {prunedCount > 0 && (
                 <button
                   type="button"
@@ -1889,27 +1900,29 @@ function RunFeedPages({
           {feed.error}
         </p>
       )}
-      <nav className="orchestrator-result-links" aria-label={`${label} pages`}>
-        <button
-          type="button"
-          className="btn btn-sm"
-          disabled={feed.loading || !feed.previous}
-          onClick={feed.previous}
-        >
-          Previous
-        </button>
-        <span>
-          {label} page {feed.page}
-        </span>
-        <button
-          type="button"
-          className="btn btn-sm"
-          disabled={feed.loading || !feed.next}
-          onClick={feed.next}
-        >
-          Next
-        </button>
-      </nav>
+      {(feed.previous || feed.next) && (
+        <nav className="orchestrator-result-links" aria-label={`${label} pages`}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={feed.loading || !feed.previous}
+            onClick={feed.previous}
+          >
+            Previous
+          </button>
+          <span>
+            {label} page {feed.page}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={feed.loading || !feed.next}
+            onClick={feed.next}
+          >
+            Next
+          </button>
+        </nav>
+      )}
     </div>
   );
 }

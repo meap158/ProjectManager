@@ -108,9 +108,11 @@ Orchestrator chat open/full-screen state persists per orchestrator in this brows
 Under each chat a Goals panel (PM-433, `OrchestratorGoals.tsx`) lists open goals and the last
 three closed ones as cards with a status badge (`badge-tracked` active, `badge-attention`
 blocked, `badge-done` achieved), a coloured left edge, the "Done when" condition and the latest
-progress note with who wrote it. Pause, Resume, Mark achieved and Drop are small ghost buttons;
-"Add goal" opens a three-field form (Goal, Objective, Done when). Watch only orchestrators show a
-line instead of the form.
+progress note with who wrote it. The condition and note are cut to about four lines; a "Show
+more" text link under them appears only when text is actually cut off (measured, PM-447). Pause,
+Resume (Reopen for achieved, Restore for dropped), Mark achieved (green) and Drop (red) are
+bordered small buttons with icons and tooltips (PM-444). "Add goal" opens a three-field form
+(Goal, Objective, Done when). Watch only orchestrators show a line instead of the form.
 One-time chat checks work directly in the chat, with a scoped current-task indicator and a
 Needs attention check for dashboard alerts. Board automation retains its configured policy.
 Ended, unsupervised card sessions offer Dispose session with a named confirmation; disposal
@@ -124,6 +126,11 @@ Orchestrators speak plainly: each one is "an orchestrator" (never "master") and 
 top to bottom as what it looks after (one sentence), Ask this orchestrator (chat and one-time
 checks), Needs you (issues with Fix / Dismiss, Fix all, on-demand pending list), Board (counts,
 Preview plan) and Working now. Results remain visible with task/run links and queue explanations.
+Screen space (PM-447): Previous/Next controls appear only when a list has another page, Dispatched
+runs only once the orchestrator has started a run, and activity filters only when they have
+entries. Working now counts each live worker once plus in-progress cards with no worker ("No
+worker"); cards in Review wait for a person and stay in Board's counts. The page intro is one
+sentence; the terminals link lives in the nav and in Working now.
 Actions preserve paused/Observe configuration and existing quota, capacity and review policy.
 Plan preview shows aggregate readiness counts with 100-task pages and explicit Previous/Next
 controls. Each page is a fresh inspection; it never starts work.

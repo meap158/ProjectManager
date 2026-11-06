@@ -1205,8 +1205,9 @@ it('shows a failed initial review load instead of claiming nothing needs attenti
   );
   await waitFor(() => expect(screen.getAllByText('Review feed offline').length).toBe(2));
   expect(screen.queryByText('Nothing needs you right now.', { exact: false })).toBeNull();
-  expect(screen.getByRole('navigation', { name: 'Review pages' })).toBeDefined();
-  expect(screen.getByRole('navigation', { name: 'Live workers pages' })).toBeDefined();
+  // A single page shows no Previous/Next controls, but the error still shows.
+  expect(screen.queryByRole('navigation', { name: 'Review pages' })).toBeNull();
+  expect(screen.queryByRole('navigation', { name: 'Live workers pages' })).toBeNull();
 });
 
 it('renders multiple orchestrators in the picker nav for switching', async () => {

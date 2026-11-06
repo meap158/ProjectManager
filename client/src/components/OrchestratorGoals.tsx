@@ -1,4 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import type {
   GoalStatus,
   OrchestratorConfig,
@@ -168,20 +175,22 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
                   <strong>{goal.title}</strong>
                   <span className={TONE[goal.status]}>{LABEL[goal.status]}</span>
                 </div>
-                <p className="orchestrator-goal-done">
-                  <span className="faint">Done when:</span> {goal.doneWhen}
-                </p>
-                {last && (
-                  <p className="orchestrator-goal-progress">
-                    {last.note}{' '}
-                    <span className="faint">
-                      · {last.by === 'system' ? 'automatic' : last.by} · {formatRelative(last.at)}
-                    </span>
+                <ClampedText>
+                  <p className="orchestrator-goal-done">
+                    <span className="faint">Done when:</span> {goal.doneWhen}
                   </p>
-                )}
+                  {last && (
+                    <p className="orchestrator-goal-progress">
+                      {last.note}{' '}
+                      <span className="faint">
+                        · {last.by === 'system' ? 'automatic' : last.by} · {formatRelative(last.at)}
+                      </span>
+                    </p>
+                  )}
+                </ClampedText>
                 {!watchOnly && (
                   <div className="orchestrator-goal-actions" role="group" aria-label="Goal actions">
-                    {goal.status === 'active' ? (
+                    {!watchOnly && goal.status === 'active' ? (
                       <button
                         type="button"
                         className="btn btn-sm"
@@ -191,7 +200,7 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
                       >
                         <PauseIcon size={12} /> Pause
                       </button>
-                    ) : (
+                    ) : !watchOnly ? (
                       <button
                         type="button"
                         className="btn btn-sm"
@@ -206,8 +215,8 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
                         )}
                         {RESUME[goal.status]}
                       </button>
-                    )}
-                    {open.includes(goal) && (
+                    ) : null}
+                    {!watchOnly && open.includes(goal) && (
                       <>
                         <button
                           type="button"
@@ -237,5 +246,42 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * A goal's condition and latest note, cut to about four lines. "Show more" appears right under
+ * the text only when something is actually cut off, measured on the rendered text.
+ */
+function ClampedText({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [cut, setCut] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || open) return;
+    const check = () => setCut(el.scrollHeight > el.clientHeight + 1);
+    check();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [children, open]);
+  return (
+    <>
+      <div ref={ref} className={open ? 'orchestrator-goal-text' : 'orchestrator-goal-text clamped'}>
+        {children}
+      </div>
+      {(cut || open) && (
+        <button
+          type="button"
+          className="orchestrator-goal-more"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </>
   );
 }
