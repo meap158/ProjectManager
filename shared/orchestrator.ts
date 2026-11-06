@@ -52,6 +52,8 @@ export interface OrchestratorEvent {
   action: string;
   message: string;
   count?: number;
+  /** The full text behind a cut-off message (PM-452): GET /orchestrators/event-details/:id. */
+  detailId?: number;
 }
 
 export type OrchestratorWaitReason =

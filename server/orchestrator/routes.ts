@@ -107,6 +107,11 @@ export function registerOrchestratorRoutes(
         'Give a status, a note, cards or projects',
       );
     app.get('/orchestrators/goals/recent', (c) => c.json(chat.goalEvents()));
+    // The full text behind a cut-off Activity entry (PM-452).
+    app.get('/orchestrators/event-details/:id', (c) => {
+      const text = chat.eventDetail(Number(c.req.param('id')));
+      return text === null ? c.json({ error: 'No such detail' }, 404) : c.json({ text });
+    });
     app.get('/orchestrators/:id/goals', (c) => c.json(chat.goals(c.req.param('id'))));
     app.post('/orchestrators/:id/goals', async (c) => {
       const parsed = goalInput.safeParse(await c.req.json().catch(() => null));

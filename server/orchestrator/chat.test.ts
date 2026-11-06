@@ -1239,6 +1239,22 @@ describe('worker messages and goals (PM-432, PM-433)', () => {
   });
 });
 
+describe('Activity details (PM-452)', () => {
+  it('keeps the full text behind a cut-off entry, readable by its detailId', async () => {
+    const { call, chat, record, db } = setup({ autoCheck: true });
+    await call('set_goal', { title: 'G', objective: 'o', doneWhen: 'd' });
+    const note = 'Merged #573. '.repeat(30).trim();
+    await call('update_goal', { goalId: 1, note });
+    const event = record.mock.calls
+      .map((c) => c[0] as { action: string; detailId?: number; message: string })
+      .find((e) => e.action === 'goal-progress')!;
+    expect(event.message.length).toBeLessThan(note.length);
+    expect(chat.eventDetail(event.detailId!)).toBe(note);
+    expect(chat.eventDetail(999)).toBeNull();
+    db.close();
+  });
+});
+
 describe('goals as epics (PM-448)', () => {
   it('tags projects, links cards (named in the text too) and reports how many are done', async () => {
     const { call, chat, mine, other, a, db } = setup({ autoCheck: true });

@@ -137,7 +137,11 @@ Screen space (PM-447): Previous/Next controls appear only when a list has anothe
 runs only once the orchestrator has started a run, and activity filters only when they have
 entries. Working now counts each live worker once plus in-progress cards with no worker ("No
 worker"); cards in Review wait for a person and stay in Board's counts. The page intro is one
-sentence; the terminals link lives in the nav and in Working now.
+sentence; the terminals link lives in the nav and in Working now. Plan preview rows (PM-451) are a three-column grid: action
+badge, card key and agent; the reason with the next step under it; worker and try counts on the
+right (stacked on phones). Activity rows open their entry in a dialog (PM-452) with the time,
+orchestrator, action, card and the full text the orchestrator wrote, read on demand by the
+entry's `detailId` (the list keeps a one-line summary).
 Actions preserve paused/Observe configuration and existing quota, capacity and review policy.
 Plan preview shows aggregate readiness counts with 100-task pages and explicit Previous/Next
 controls. Each page is a fresh inspection; it never starts work.

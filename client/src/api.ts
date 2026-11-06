@@ -156,6 +156,9 @@ export const api = {
   orchestratorSituation: (id: string) =>
     request<OrchestratorSituation>('GET', `/orchestrators/${encodeURIComponent(id)}/situation`),
   orchestrators: () => request<OrchestratorState>('GET', '/orchestrators'),
+  /** The full text behind a cut-off Activity entry (PM-452). */
+  orchestratorEventDetail: (id: number) =>
+    request<{ text: string }>('GET', `/orchestrators/event-details/${id}`),
   /** Goals achieved or blocked in the last day, across orchestrators (PM-436). */
   goalEvents: () => request<GoalEvent[]>('GET', '/orchestrators/goals/recent'),
   /** Goals (PM-433): newest first. */

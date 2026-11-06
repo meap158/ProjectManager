@@ -556,6 +556,58 @@
   color: var(--text-3);
   line-height: 1.4;
 }
+/* Activity rows open their entry in full (PM-452). */
+.event-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.event-open:hover {
+  background: var(--surface-hover);
+}
+dialog.confirm-dialog.activity-event-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-width: none;
+}
+.activity-event-dialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.activity-event-when {
+  margin: 4px 0 10px;
+  font-size: 12px;
+}
+.activity-event-summary {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.activity-event-text {
+  max-height: 50vh;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .orchestrator-plan-decisions-list {
   display: flex;
   flex-direction: column;

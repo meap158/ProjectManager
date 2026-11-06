@@ -36,6 +36,9 @@ vi.mock('../api', () => ({
       };
     }),
     orchestrators: vi.fn(async () => ({ instances: [], events: [] })),
+    orchestratorEventDetail: vi.fn(async () => ({
+      text: 'Full message: (1) merge #573, then (2) start PM-443.',
+    })),
     listProjects: vi.fn(async () => [{ id: 1, name: 'Project one' }]),
     saveOrchestrator: vi.fn(async () => ({})),
     tickOrchestrators: vi.fn(),
@@ -1208,6 +1211,45 @@ it('shows a failed initial review load instead of claiming nothing needs attenti
   // A single page shows no Previous/Next controls, but the error still shows.
   expect(screen.queryByRole('navigation', { name: 'Review pages' })).toBeNull();
   expect(screen.queryByRole('navigation', { name: 'Live workers pages' })).toBeNull();
+});
+
+it('opens an Activity entry to read its full text (PM-452)', async () => {
+  vi.mocked(api.orchestrators).mockResolvedValue({
+    instances: [
+      {
+        id: 'orch-1',
+        name: 'Game Dev',
+        enabled: false,
+        projectIds: [1],
+        providers: ['codex'],
+        maxWorkers: 2,
+        maxWorkersPerProject: 1,
+        maxWorkersPerProvider: 1,
+        reservePercent: 10,
+        allowUnknownQuota: false,
+        quotaMaxAgeMs: 60000,
+      },
+    ],
+    events: [
+      {
+        at: '2026-11-06T07:40:05.000Z',
+        orchestratorId: 'orch-1',
+        action: 'messaged',
+        cardId: 397,
+        message: 'Session 131 "Neon Steps": Full message: (1) merge #573, then',
+        detailId: 9,
+      },
+    ],
+  });
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: /Session 131 "Neon Steps"/ }));
+  expect(await screen.findByText(/then \(2\) start PM-443/)).toBeDefined();
+  expect(api.orchestratorEventDetail).toHaveBeenCalledWith(9);
+  vi.mocked(api.orchestrators).mockResolvedValue({ instances: [], events: [] });
 });
 
 it('renders multiple orchestrators in the picker nav for switching', async () => {

@@ -12,6 +12,7 @@ import type {
   OrchestratorConfig,
   OrchestratorState,
   OrchestratorCardSummary,
+  OrchestratorEvent,
 } from '../../../shared/orchestrator';
 import { projectAttention } from '../../../shared/projectAttention';
 import './orchestrator.css';
@@ -129,6 +130,8 @@ export function OrchestratorPage() {
     'all' | 'dispatched' | 'wait' | 'pruned' | 'error'
   >('all');
   const [historyLimit, setHistoryLimit] = useState(25);
+  /** The Activity entry open in a dialog (PM-452). */
+  const [openEvent, setOpenEvent] = useState<OrchestratorEvent | null>(null);
   const refreshEpoch = useRef(0);
   const performing = useRef(false);
 
@@ -1836,12 +1839,17 @@ export function OrchestratorPage() {
                           </span>
                         )}
                       </div>
-                      <div className="event-body">
+                      <button
+                        type="button"
+                        className="event-body event-open"
+                        title="Open to read it in full"
+                        onClick={() => setOpenEvent(event)}
+                      >
                         <span className="event-msg">{event.message}</span>
                         {state.instances.length > 1 && owner && (
                           <span className="event-orchestrator-name faint">({owner.name})</span>
                         )}
-                      </div>
+                      </button>
                     </li>
                   );
                 })}
@@ -1862,7 +1870,86 @@ export function OrchestratorPage() {
           </>
         )}
       </section>
+      {openEvent && (
+        <ActivityEventDialog
+          event={openEvent}
+          orchestratorName={
+            state.instances.find((i) => i.id === openEvent.orchestratorId)?.name ?? null
+          }
+          onClose={() => setOpenEvent(null)}
+        />
+      )}
     </main>
+  );
+}
+
+/**
+ * One Activity entry in full (PM-452): when and which orchestrator, the action and card, and the
+ * whole text. The list shows a one-line summary; the text the orchestrator actually wrote (a
+ * message to a session, a goal note, a git command) is read on demand by the entry's detailId.
+ */
+function ActivityEventDialog({
+  event,
+  orchestratorName,
+  onClose,
+}: {
+  event: OrchestratorEvent;
+  orchestratorName: string | null;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [detail, setDetail] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+  useEffect(() => {
+    if (!event.detailId) return;
+    let active = true;
+    api
+      .orchestratorEventDetail(event.detailId)
+      .then((r) => active && setDetail(r.text))
+      .catch(() => active && setMissing(true));
+    return () => {
+      active = false;
+    };
+  }, [event.detailId]);
+  const loading = Boolean(event.detailId) && detail === null && !missing;
+  return (
+    <dialog
+      ref={ref}
+      className="confirm-dialog activity-event-dialog"
+      aria-labelledby="activity-event-title"
+      onClose={onClose}
+    >
+      <div className="dialog-body">
+        <h2 id="activity-event-title">
+          <span className={actionBadgeClass(event.action)}>{event.action}</span>
+          {event.cardId && (
+            <Link to={`/board?card=${event.cardId}`} className="event-card-link">
+              PM-{event.cardId}
+            </Link>
+          )}
+        </h2>
+        <p className="faint activity-event-when">
+          <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
+          {orchestratorName ? ` · ${orchestratorName}` : ''}
+          {event.count && event.count > 1 ? ` · repeated ${event.count} times` : ''}
+        </p>
+        <p className="activity-event-summary">{event.message}</p>
+        {loading && <p className="faint">Loading the full text…</p>}
+        {detail !== null && <pre className="activity-event-text">{detail}</pre>}
+        {missing && (
+          <p className="faint">The full text has aged out; only the summary above is kept.</p>
+        )}
+      </div>
+      <div className="dialog-footer">
+        <button type="button" className="btn btn-sm" autoFocus onClick={() => ref.current?.close()}>
+          Close
+        </button>
+      </div>
+    </dialog>
   );
 }
 

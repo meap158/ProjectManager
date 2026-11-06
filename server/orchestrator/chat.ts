@@ -48,6 +48,7 @@ import { readLimits } from '../agents/limits.js';
 import { ChatDispatchIntent } from './chatIntent.js';
 import { gitCommandWrites, runProjectGit } from './gitTool.js';
 import { lastReply, readSessionTranscript } from '../agents/sessionTranscript.js';
+import { addEventDetail, eventDetail } from './eventDetails.js';
 import {
   activeGoals,
   addGoal,
@@ -732,6 +733,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
     }
   }
 
+  /** The full text behind a cut-off Activity entry (PM-452), or null once it has aged out. */
+  eventDetail(id: number): string | null {
+    return Number.isInteger(id) && id > 0 ? eventDetail(this.db, id) : null;
+  }
+
   /** The owner's view of an orchestrator's goals (PM-433), newest first, with linked cards. */
   goals(id: string): OrchestratorGoalView[] {
     const instance = this.instance(id);
@@ -964,6 +970,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       kind === 'reply' ? 'replied' : 'messaged',
       `${kind === 'reply' ? `Reply to #${replyTo}` : 'Message'} queued for session ${s.id} "${s.name}": ${text.slice(0, 120)}`,
       s.cardId ?? undefined,
+      text,
     );
     return {
       queued: true,
@@ -1037,6 +1044,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       `worker-${input.kind}`,
       `#${message.id} from session ${s!.id} "${s!.name}": ${input.text.slice(0, 160)}`,
       s!.cardId ?? undefined,
+      input.text,
     );
     return {
       sent: true,
@@ -1049,9 +1057,18 @@ export class OrchestratorChat implements OrchestratorToolHost {
     };
   }
 
-  private record(orchestratorId: string, action: string, message: string, cardId?: number) {
+  /** An Activity entry; `detail` is the full text when the message is a cut-off summary. */
+  private record(
+    orchestratorId: string,
+    action: string,
+    message: string,
+    cardId?: number,
+    detail?: string,
+  ) {
     const event: Omit<OrchestratorEvent, 'at'> = { orchestratorId, action, message };
     if (cardId !== undefined) event.cardId = cardId;
+    if (detail && !message.includes(detail.trim()))
+      event.detailId = addEventDetail(this.db, detail);
     this.service.record(event);
   }
 
@@ -1538,6 +1555,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
           orchestratorId,
           'git',
           `${project!.name}: ${input.program} ${input.args.join(' ').slice(0, 160)} (exit ${result.exitCode}, chat)`,
+          undefined,
+          `${input.program} ${input.args.join(' ')}`,
         );
       return result;
     }
@@ -1773,6 +1792,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         'messaged',
         `Session ${s!.id} "${s!.name}": ${input.text.slice(0, 120)}`,
         s!.cardId ?? undefined,
+        input.text,
       );
       return { sent: true, sessionId: s!.id };
     }
@@ -1808,6 +1828,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
         orchestratorId,
         'goal-set',
         `Goal ${goal.id} "${goal.title}": ${goal.doneWhen.slice(0, 120)}`,
+        undefined,
+        `${goal.objective}\n\nDone when: ${goal.doneWhen}`,
       );
       return {
         goal: goalBrief(this.goalView(instance, goal)),
@@ -1840,6 +1862,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
         orchestratorId,
         input.status && input.status !== 'active' ? `goal-${input.status}` : 'goal-progress',
         `Goal ${goal.id} "${goal.title}"${input.status ? ` (${input.status})` : ''}: ${input.note.slice(0, 160)}`,
+        undefined,
+        input.note,
       );
       return { goal: goalBrief(this.goalView(instance, goal)) };
     }
