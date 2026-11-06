@@ -525,13 +525,13 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
 
   // Token usage per session (?ids=1,2,3), read from the CLIs' own transcripts. Registered before
   // /agent-sessions/:id so "usage" is never taken for an id.
-  app.get('/agent-sessions/usage', (c) => {
+  app.get('/agent-sessions/usage', async (c) => {
     const ids = (c.req.query('ids') ?? '')
       .split(',')
       .map(Number)
       .filter((n) => Number.isInteger(n) && n > 0)
       .slice(0, 200);
-    return c.json(sessionUsage(db, ids));
+    return c.json(await sessionUsage(db, ids));
   });
 
   // ---- Workspace layout (persisted server-side so it survives reloads, restarts, reboots) ----

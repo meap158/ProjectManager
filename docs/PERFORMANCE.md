@@ -188,4 +188,6 @@ event loop for 8 to 19 seconds and once ran the server out of memory, so other p
 load meanwhile. `server/agents/usage.ts` now reads in 4 MB chunks under a 32 MB budget per request
 (a large file is counted over a few polls), caches each Codex rollout's first line and each found
 rollout file. A cold request over every session fell from 19 s to about 1.3 s, and repeat requests
-take about 0.2 s, with heap flat at about 90 MB.
+take about 0.2 s, with heap flat at about 90 MB. The request yields to the event loop between sessions
+and between 4 MB slices, so other requests keep answering while a cold count runs (one waited
+1.7 s during the one-time Codex scan after a restart; the rest stayed under 40 ms).

@@ -437,17 +437,26 @@ export function readOpenCodeUsage(
   }
 }
 
-/** Usage per session id across supported providers (Claude, Codex, Grok, OpenCode). */
-export function sessionUsage(
+/** Bytes read between yields to the event loop, so other requests run during a long count. */
+const SLICE_BYTES = 4 * 1024 * 1024;
+const yieldLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/**
+ * Usage per session id across supported providers (Claude, Codex, Grok, OpenCode). It yields to
+ * the event loop between sessions and between transcript slices: a single blocking pass over the
+ * 32 MB budget still held the server for about 2 s.
+ */
+export async function sessionUsage(
   db: DatabaseSync,
   ids: number[],
-): Record<number, AgentTokenUsage | null> {
+): Promise<Record<number, AgentTokenUsage | null>> {
   const result: Record<number, AgentTokenUsage | null> = {};
   const budget = { bytes: USAGE_READ_BUDGET };
   const query = db.prepare(
     'SELECT provider_id, command_json, resume_json, cwd, started_at FROM agent_sessions WHERE id = ?',
   );
   for (const id of ids) {
+    await yieldLoop();
     const row = query.get(id) as
       | {
           provider_id: string;
@@ -487,7 +496,15 @@ export function sessionUsage(
       if (row.provider_id === 'claude') {
         const sessionId = claudeSessionId(command, resume);
         const file = sessionId ? transcriptPath(row.cwd, sessionId) : null;
-        if (file) result[id] = readTranscriptUsage(file, budget);
+        while (file) {
+          const slice = { bytes: Math.min(SLICE_BYTES, budget.bytes) };
+          const given = slice.bytes;
+          result[id] = readTranscriptUsage(file, slice);
+          budget.bytes -= given - slice.bytes;
+          // Slice left over: the file is fully read. No budget left: the rest waits for next poll.
+          if (slice.bytes > 0 || budget.bytes <= 0) break;
+          await yieldLoop();
+        }
       } else if (row.provider_id === 'codex') {
         const resumeId =
           resume && resume[0] === 'codex' && resume[1] === 'resume' ? resume[2] : null;

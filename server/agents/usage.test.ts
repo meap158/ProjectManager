@@ -251,7 +251,7 @@ describe('OpenCode session usage', () => {
 });
 
 describe('sessionUsage multi-provider', () => {
-  it('handles multiple provider rows and returns null for unknown/empty', () => {
+  it('handles multiple provider rows and returns null for unknown/empty', async () => {
     const memDb = new DatabaseSync(':memory:');
     memDb.exec(`
       CREATE TABLE agent_sessions (
@@ -272,7 +272,7 @@ describe('sessionUsage multi-provider', () => {
       )
       .run(1, 'unknown', JSON.stringify(['other']), null, home, new Date().toISOString());
 
-    const result = sessionUsage(memDb, [1]);
+    const result = await sessionUsage(memDb, [1]);
     expect(result[1]).toBeNull();
     memDb.close();
   });
