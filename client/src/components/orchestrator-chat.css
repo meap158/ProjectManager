@@ -398,6 +398,13 @@
   color: var(--text-3);
   font-size: 11px;
 }
+/* Project chips in a goal title match the status badge beside them (PM-453). */
+.orchestrator-goal-title .project-tag {
+  height: 20px;
+  padding: 0 7px 0 6px;
+  font-size: 12px;
+  font-weight: 550;
+}
 .orchestrator-goal-cards {
   display: grid;
   gap: 6px;
