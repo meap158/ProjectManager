@@ -387,5 +387,13 @@
 .orchestrator-goal-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
+  margin-top: 2px;
+}
+/* Closing a goal as done reads as the positive action. */
+.orchestrator-goal-achieve {
+  color: var(--good);
+}
+.orchestrator-goal-achieve:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--good) 14%, var(--surface));
 }

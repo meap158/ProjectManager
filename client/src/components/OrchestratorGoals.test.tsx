@@ -60,3 +60,14 @@ it('adds a goal from the form', async () => {
     }),
   );
 });
+
+it('offers Restore for a dropped goal, so Drop can be undone', async () => {
+  vi.mocked(api.orchestratorGoals).mockResolvedValueOnce([{ ...goals[0]!, status: 'dropped' }]);
+  render(<OrchestratorGoals instance={instance} />);
+  const restore = await screen.findByRole('button', { name: 'Restore' });
+  expect(screen.queryByRole('button', { name: 'Drop' })).toBeNull();
+  fireEvent.click(restore);
+  await waitFor(() =>
+    expect(api.updateOrchestratorGoal).toHaveBeenCalledWith('o', 1, { status: 'active' }),
+  );
+});

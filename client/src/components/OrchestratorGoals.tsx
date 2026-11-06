@@ -7,6 +7,7 @@ import type {
 import { api } from '../api';
 import { formatRelative } from '../format';
 import { serialPoll } from '../lib/serialPoll';
+import { CheckIcon, CloseIcon, PauseIcon, PlayIcon, RefreshIcon } from './icons';
 import './orchestrator-chat.css';
 
 // Goals (PM-433): objectives the orchestrator pursues until they are done. The chat records them
@@ -26,6 +27,14 @@ const TONE: Record<GoalStatus, string> = {
   blocked: 'badge badge-attention',
   achieved: 'badge badge-done',
   dropped: 'badge',
+};
+/** The label of the button that makes a goal active again. */
+const RESUME: Record<GoalStatus, string> = {
+  active: 'Resume',
+  paused: 'Resume',
+  blocked: 'Resume',
+  achieved: 'Reopen',
+  dropped: 'Restore',
 };
 const POLL_MS = 15_000;
 const SHOWN_CLOSED = 3;
@@ -170,45 +179,53 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
                     </span>
                   </p>
                 )}
-                {!watchOnly && (open.includes(goal) || goal.status !== 'dropped') && (
-                  <div className="orchestrator-goal-actions">
-                    {goal.status === 'active' && (
+                {!watchOnly && (
+                  <div className="orchestrator-goal-actions" role="group" aria-label="Goal actions">
+                    {goal.status === 'active' ? (
                       <button
                         type="button"
-                        className="btn btn-sm btn-ghost"
+                        className="btn btn-sm"
                         disabled={busy}
+                        title="Stop working on it for now; automatic checks skip it until you resume"
                         onClick={() => set(goal, 'paused')}
                       >
-                        Pause
+                        <PauseIcon size={12} /> Pause
                       </button>
-                    )}
-                    {goal.status !== 'active' && (
+                    ) : (
                       <button
                         type="button"
-                        className="btn btn-sm btn-ghost"
+                        className="btn btn-sm"
                         disabled={busy}
+                        title="Make it active again, so the orchestrator works on it until it is done"
                         onClick={() => set(goal, 'active')}
                       >
-                        {goal.status === 'achieved' ? 'Reopen' : 'Resume'}
+                        {goal.status === 'achieved' || goal.status === 'dropped' ? (
+                          <RefreshIcon size={12} />
+                        ) : (
+                          <PlayIcon size={12} />
+                        )}
+                        {RESUME[goal.status]}
                       </button>
                     )}
                     {open.includes(goal) && (
                       <>
                         <button
                           type="button"
-                          className="btn btn-sm btn-ghost"
+                          className="btn btn-sm orchestrator-goal-achieve"
                           disabled={busy}
+                          title="Close it as done"
                           onClick={() => set(goal, 'achieved')}
                         >
-                          Mark achieved
+                          <CheckIcon size={12} /> Mark achieved
                         </button>
                         <button
                           type="button"
-                          className="btn btn-sm btn-ghost"
+                          className="btn btn-sm btn-danger"
                           disabled={busy}
+                          title="Give it up; you can restore it later"
                           onClick={() => set(goal, 'dropped')}
                         >
-                          Drop
+                          <CloseIcon size={12} /> Drop
                         </button>
                       </>
                     )}

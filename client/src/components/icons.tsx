@@ -335,3 +335,22 @@ export function MoreIcon(props: IconProps) {
     </Base>
   );
 }
+
+/** Pause (two bars). */
+export function PauseIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="4" y="3.5" width="2.5" height="9" rx="0.75" fill="currentColor" stroke="none" />
+      <rect x="9.5" y="3.5" width="2.5" height="9" rx="0.75" fill="currentColor" stroke="none" />
+    </Base>
+  );
+}
+
+/** Done / confirm: a check mark. */
+export function CheckIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M3.5 8.5l3 3 6-7" />
+    </Base>
+  );
+}
