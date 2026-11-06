@@ -690,8 +690,8 @@ it('renders Plan Preview with typed wait reasons, occupancy metrics, and shows l
   expect(screen.getByText('Project busy')).toBeDefined();
   expect(screen.getByText('PM-10')).toBeDefined();
   expect(screen.getByText('PM-20')).toBeDefined();
-  expect(screen.getByText(/Own workers: 1 · Others: 2/)).toBeDefined();
-  expect(screen.getByText(/1\/3 used/)).toBeDefined();
+  expect(screen.getByText(/Workers: 1 own · 2 others/)).toBeDefined();
+  expect(screen.getByText(/Tries: 1 of 3/)).toBeDefined();
 
   expect(screen.getByRole('button', { name: 'Previous tasks' }).hasAttribute('disabled')).toBe(
     true,

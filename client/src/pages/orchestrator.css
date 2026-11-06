@@ -564,21 +564,52 @@
   padding: 0;
   margin: 0;
 }
+/* A plan row (PM-451): what happens and to which card, then why and what to do, then how busy
+   and how many tries. A grid, so the reason keeps its width instead of wrapping a word a line. */
 .orchestrator-plan-decision-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(170px, max-content) minmax(0, 1fr) max-content;
+  align-items: start;
+  gap: 4px 14px;
   padding: 8px 10px;
   background: var(--surface-1);
   border: 1px solid var(--border-subtle, transparent);
   border-radius: var(--radius-sm, 6px);
   font-size: 13px;
 }
+.plan-decision-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.plan-decision-head .event-card-link {
+  white-space: nowrap;
+}
+.plan-decision-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .orchestrator-plan-decision-item .plan-decision-reason {
   color: var(--text-2);
   font-size: 12.5px;
-  flex: 1;
-  min-width: 0;
+}
+.plan-decision-next {
+  font-size: 12px;
+}
+.plan-decision-body > ul {
+  margin: 2px 0 0;
+  padding-inline-start: 18px;
+  font-size: 12px;
+}
+.plan-decision-meta {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 .orchestrator-preview-empty {
   margin: 4px 0 0;
@@ -809,14 +840,12 @@ dialog.orchestrator-form-dialog > .orchestrator-form-panel {
     min-height: 44px;
   }
   .orchestrator-plan-decision-item {
-    flex-wrap: wrap;
+    grid-template-columns: minmax(0, 1fr);
     row-gap: 6px;
   }
-  .orchestrator-plan-decision-item .plan-decision-reason {
-    flex: 1 1 100%;
-    min-width: 0;
-    overflow-wrap: anywhere;
-    word-break: break-word;
+  .plan-decision-meta {
+    justify-items: start;
+    white-space: normal;
   }
   .orchestrator-workspace {
     grid-template-columns: minmax(0, 1fr);
@@ -928,11 +957,7 @@ dialog.orchestrator-form-dialog > .orchestrator-form-panel {
     min-width: 0;
     max-width: 100%;
   }
-  .orchestrator-page .orchestrator-plan-decision-item > ul {
-    flex: 1 1 100%;
-    padding-inline-start: 20px;
-    overflow-wrap: anywhere;
-  }
+
   .orchestrator-page .orchestrator-result-links .btn {
     max-width: 100%;
     white-space: normal;

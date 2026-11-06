@@ -108,7 +108,7 @@ export function OrchestratorNextStep({ decision }: { decision: OrchestratorPlanD
           ? '/settings'
           : '/agents';
   return (
-    <span className="faint" style={{ flexBasis: '100%', fontSize: 12 }}>
+    <span className="faint plan-decision-next">
       {step.text} <Link to={href}>{step.label}</Link>
     </span>
   );

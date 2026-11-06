@@ -1100,68 +1100,72 @@ export function OrchestratorPage() {
                             <ul className="orchestrator-plan-decisions-list">
                               {preview.data.decisions.map((d) => (
                                 <li key={d.cardId} className="orchestrator-plan-decision-item">
-                                  <span
-                                    className={
-                                      d.action === 'dispatch'
-                                        ? 'badge badge-done'
+                                  {/* What happens, which card and agent; why and what to do; how
+                                      busy and how many tries (PM-451). */}
+                                  <div className="plan-decision-head">
+                                    <span
+                                      className={
+                                        d.action === 'dispatch'
+                                          ? 'badge badge-done'
+                                          : d.action === 'review'
+                                            ? 'badge badge-attention'
+                                            : 'badge'
+                                      }
+                                    >
+                                      {d.action === 'dispatch'
+                                        ? 'Will dispatch'
                                         : d.action === 'review'
-                                          ? 'badge badge-attention'
-                                          : 'badge'
-                                    }
-                                  >
-                                    {d.action === 'dispatch'
-                                      ? 'Will dispatch'
-                                      : d.action === 'review'
-                                        ? 'Review'
-                                        : d.waitReason
-                                          ? (WAIT_REASON_LABELS[d.waitReason] ?? 'Wait')
-                                          : 'Wait'}
-                                  </span>
-                                  <Link
-                                    to={`/board?project=${d.projectId}&card=${d.cardId}`}
-                                    className="event-card-link"
-                                    title={`Open card PM-${d.cardId}`}
-                                  >
-                                    PM-{d.cardId}
-                                  </Link>
-                                  {d.providerId && (
-                                    <span className="badge">
-                                      {PROVIDER_LABELS[d.providerId] ?? d.providerId}
+                                          ? 'Review'
+                                          : d.waitReason
+                                            ? (WAIT_REASON_LABELS[d.waitReason] ?? 'Wait')
+                                            : 'Wait'}
                                     </span>
-                                  )}
-                                  <span className="plan-decision-reason">{d.reason}</span>
-                                  <OrchestratorNextStep decision={d} />
-                                  {d.providerBlockers?.length ? (
-                                    <ul>
-                                      {d.providerBlockers.map((blocker) => (
-                                        <li key={blocker.providerId}>
-                                          {PROVIDER_LABELS[blocker.providerId] ??
-                                            blocker.providerId}
-                                          : <OrchestratorProviderRecovery blocker={blocker} />
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : null}
-                                  {d.occupancy && d.occupancy.externalWorkers > 0 && (
-                                    <span
-                                      className="faint plan-decision-meta"
-                                      style={{ fontSize: '11px' }}
+                                    <Link
+                                      to={`/board?project=${d.projectId}&card=${d.cardId}`}
+                                      className="event-card-link"
+                                      title={`Open card PM-${d.cardId}`}
                                     >
-                                      Own workers: {d.occupancy.managedWorkers} · Others:{' '}
-                                      {d.occupancy.externalWorkers}
-                                    </span>
-                                  )}
-                                  {d.retry && (
-                                    <span
-                                      className="faint plan-decision-meta"
-                                      style={{ fontSize: '11px' }}
-                                    >
-                                      {d.retry.attemptsUsed}/3 used
-                                      {d.retry.blocker ? ` · ${d.retry.blocker}` : ''}
-                                      {d.retry.retryAt
-                                        ? ` (cooldown until ${formatEventTime(d.retry.retryAt)})`
-                                        : ''}
-                                    </span>
+                                      PM-{d.cardId}
+                                    </Link>
+                                    {d.providerId && (
+                                      <span className="badge">
+                                        {PROVIDER_LABELS[d.providerId] ?? d.providerId}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="plan-decision-body">
+                                    <span className="plan-decision-reason">{d.reason}</span>
+                                    <OrchestratorNextStep decision={d} />
+                                    {d.providerBlockers?.length ? (
+                                      <ul>
+                                        {d.providerBlockers.map((blocker) => (
+                                          <li key={blocker.providerId}>
+                                            {PROVIDER_LABELS[blocker.providerId] ??
+                                              blocker.providerId}
+                                            : <OrchestratorProviderRecovery blocker={blocker} />
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : null}
+                                  </div>
+                                  {(Boolean(d.occupancy?.externalWorkers) || Boolean(d.retry)) && (
+                                    <div className="plan-decision-meta faint">
+                                      {d.occupancy && d.occupancy.externalWorkers > 0 && (
+                                        <span>
+                                          Workers: {d.occupancy.managedWorkers} own ·{' '}
+                                          {d.occupancy.externalWorkers} others
+                                        </span>
+                                      )}
+                                      {d.retry && (
+                                        <span>
+                                          Tries: {d.retry.attemptsUsed} of 3
+                                          {d.retry.blocker ? ` · ${d.retry.blocker}` : ''}
+                                          {d.retry.retryAt
+                                            ? ` · cooldown until ${formatEventTime(d.retry.retryAt)}`
+                                            : ''}
+                                        </span>
+                                      )}
+                                    </div>
                                   )}
                                 </li>
                               ))}
