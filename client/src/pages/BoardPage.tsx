@@ -9,6 +9,7 @@ import {
   type ProjectSummary,
 } from '../../../shared/types';
 import { serialPoll } from '../lib/serialPoll';
+import { projectTagColors } from '../lib/projectColors';
 import { api } from '../api';
 import { useBoardView, useStoredChoice } from '../boardView';
 import { BoardListView, BoardViewTabs } from '../components/BoardListView';
@@ -34,7 +35,6 @@ const SHOW_OPTIONS: { value: Show; label: string; title: string }[] = [
   { value: 'planned', label: 'Planned', title: 'Backlog and To do' },
   { value: 'active', label: 'Being worked on', title: 'In progress and Review' },
 ];
-const SERIES_SLOTS = 7;
 
 const parseShow = (v: string | null): Show => (v === 'planned' || v === 'active' ? v : 'all');
 
@@ -113,12 +113,11 @@ export function BoardPage() {
   }, []);
 
   // A project keeps its tag colour: categorical slots in fixed order by project id.
-  const colorOf = useMemo(() => {
-    const ids = [
-      ...new Set([...projects.map((p) => p.id), ...(cards ?? []).map((c) => c.projectId)]),
-    ].sort((a, b) => a - b);
-    return new Map(ids.map((id, i) => [id, `var(--series-${(i % SERIES_SLOTS) + 1})`]));
-  }, [projects, cards]);
+  const colorOf = useMemo(
+    () =>
+      projectTagColors([...projects.map((p) => p.id), ...(cards ?? []).map((c) => c.projectId)]),
+    [projects, cards],
+  );
 
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params);

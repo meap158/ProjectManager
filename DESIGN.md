@@ -111,12 +111,14 @@ blocked, `badge-done` achieved), a coloured left edge, the "Done when" condition
 progress note with who wrote it. The condition and note are cut to about four lines; a "Show
 more" text link under them appears only when text is actually cut off (measured, PM-447). Pause,
 Resume (Reopen for achieved, Restore for dropped), Mark achieved (green) and Drop (red) are
-bordered small buttons with icons and tooltips (PM-444). Goals work like epics (PM-448): a pill
-after the status names the goal's projects (the orchestrator's single project, or "All projects"),
+bordered small buttons with icons and tooltips (PM-444). Goals work like epics (PM-448): after
+the status, the goal's projects show as the Board's `project-tag` chips, in the same colour per
+project (`lib/projectColors.ts`, PM-449), or an "All projects" pill,
 and below the text an "N of M cards done" bar (`--status-done`) leads a row of linked card chips,
-each with a status-coloured dot, opening the card on the board, with an × to unlink. "Link cards"
-opens an inline field for keys like PM-12, PM-15. "Add goal" opens a form (Goal, Objective, Done
-when, plus Project when there are several and optional Cards). Watch only orchestrators show a
+each with a status-coloured dot, opening the card on the board, with an × to unlink. "Link a card"
+is a searchable dropdown of the orchestrator's cards (key and title, column and project under
+it, open cards first, PM-449). "Add goal" opens a form (Goal, Objective, Done
+when, plus a Project dropdown when there are several and an optional multi-select Cards picker). Watch only orchestrators show a
 line instead of the form.
 One-time chat checks work directly in the chat, with a scoped current-task indicator and a
 Needs attention check for dashboard alerts. Board automation retains its configured policy.

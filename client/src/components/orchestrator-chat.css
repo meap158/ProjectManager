@@ -480,14 +480,28 @@
 .orchestrator-goal-card-unlink:hover:not(:disabled) {
   color: var(--danger);
 }
-.orchestrator-goal-link {
-  display: flex;
-  gap: 6px;
-  max-width: 420px;
+/* Link picker (PM-449): a compact trigger in the action row, a wide searchable menu. */
+.orchestrator-goal-linker {
+  width: 150px;
 }
-.orchestrator-goal-link .input {
-  flex: 1;
-  height: 26px;
+.orchestrator-goal-linker .dropdown-list {
+  width: min(440px, calc(100vw - 32px));
+}
+.orchestrator-goal-card-dot[data-status='todo'] {
+  background: var(--status-todo);
+}
+.orchestrator-goal-card-dot[data-status='in_progress'] {
+  background: var(--status-in_progress);
+}
+.orchestrator-goal-card-dot[data-status='review'] {
+  background: var(--status-review);
+}
+.orchestrator-goal-card-dot[data-status='done'] {
+  background: var(--status-done);
+}
+.orchestrator-goal-card-dot {
+  display: inline-block;
+  flex: none;
 }
 .orchestrator-goal-form-row {
   display: grid;

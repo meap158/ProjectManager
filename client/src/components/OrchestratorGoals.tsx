@@ -2,6 +2,7 @@ import { Link } from 'react-router';
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -13,7 +14,10 @@ import type {
   OrchestratorGoal,
   OrchestratorGoalView,
 } from '../../../shared/orchestrator';
+import type { CardStatus, CardWithProject } from '../../../shared/types';
 import { api } from '../api';
+import { Dropdown, type DropdownOption } from './Dropdown';
+import { projectTagColors } from '../lib/projectColors';
 import { formatRelative } from '../format';
 import { serialPoll } from '../lib/serialPoll';
 import { CheckIcon, CloseIcon, LinkIcon, PauseIcon, PlayIcon, RefreshIcon } from './icons';
@@ -48,33 +52,78 @@ const RESUME: Record<GoalStatus, string> = {
 const POLL_MS = 15_000;
 const SHOWN_CLOSED = 3;
 
-/** Card keys typed as "PM-12, PM-15" or one per line. */
-const cardKeys = (text: string) =>
-  text
-    .split(/[\s,]+/)
-    .map((k) => k.trim())
-    .filter(Boolean);
+const EMPTY_DRAFT = {
+  title: '',
+  objective: '',
+  doneWhen: '',
+  projectId: 0,
+  cards: [] as number[],
+};
+const STATUS_LABEL: Record<CardStatus, string> = {
+  backlog: 'Backlog',
+  todo: 'To do',
+  in_progress: 'In progress',
+  review: 'Review',
+  done: 'Done',
+};
+/** Cards offered in a picker: open work first, newest first, then done ones. */
+const PICKER_LIMIT = 300;
 
-const EMPTY_DRAFT = { title: '', objective: '', doneWhen: '', projectId: 0, cards: '' };
+/** A card as a picker row (PM-449): key and title, with its column and project under it. */
+function cardOption(c: CardWithProject): DropdownOption<number> {
+  return {
+    value: c.id,
+    label: `${c.key}  ${c.title}`,
+    sub: `${STATUS_LABEL[c.status]} · ${c.projectName || 'All projects'}`,
+    icon: <span className="orchestrator-goal-card-dot" data-status={c.status} aria-hidden="true" />,
+    title: `${c.key}: ${c.title}`,
+  };
+}
 
 export function OrchestratorGoals({
   instance,
   projects = [],
+  allProjectIds = [],
 }: {
   instance: OrchestratorConfig;
   /** The orchestrator's projects, to tag a new goal with one (PM-448). */
   projects?: readonly { id: number; name: string }[];
+  /** Every project id, so tags take the same colour as on the Board (PM-449). */
+  allProjectIds?: readonly number[];
 }) {
   const [goals, setGoals] = useState<OrchestratorGoalView[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
-  /** The goal whose "Link cards" field is open, and what is typed in it. */
-  const [linking, setLinking] = useState<{ goalId: number; text: string } | null>(null);
+  /** Every card, for the link pickers and the project colours; read with the goals. */
+  const [allCards, setAllCards] = useState<CardWithProject[]>([]);
   const watchOnly = instance.strategy === 'observe';
 
-  const load = async () => setGoals(await api.orchestratorGoals(instance.id));
+  const load = async () => {
+    const [next, cards] = await Promise.all([
+      api.orchestratorGoals(instance.id),
+      api.listAllCards().catch(() => null),
+    ]);
+    setGoals(next);
+    if (cards) setAllCards(cards);
+  };
+  const colorOf = useMemo(
+    () => projectTagColors([...allProjectIds, ...allCards.map((c) => c.projectId)]),
+    [allProjectIds, allCards],
+  );
+  /** Cards in this orchestrator's projects, open ones first. */
+  const scopedCards = useMemo(() => {
+    const inScope = (c: CardWithProject) =>
+      instance.projectIds?.length ? instance.projectIds.includes(c.projectId) : true;
+    return allCards
+      .filter(inScope)
+      .sort(
+        (a, b) =>
+          Number(a.status === 'done') - Number(b.status === 'done') ||
+          b.updatedAt.localeCompare(a.updatedAt),
+      );
+  }, [allCards, instance.projectIds]);
   useEffect(
     () => serialPoll(load, POLL_MS, { pauseWhenHidden: true }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,13 +147,12 @@ export function OrchestratorGoals({
   function add(e: FormEvent) {
     e.preventDefault();
     void act(async () => {
-      const cards = cardKeys(draft.cards);
       await api.addOrchestratorGoal(instance.id, {
         title: draft.title,
         objective: draft.objective,
         doneWhen: draft.doneWhen,
         ...(draft.projectId ? { projectIds: [draft.projectId] } : {}),
-        ...(cards.length ? { cards } : {}),
+        ...(draft.cards.length ? { cards: draft.cards.map(String) } : {}),
       });
       setDraft(EMPTY_DRAFT);
       setAdding(false);
@@ -113,16 +161,32 @@ export function OrchestratorGoals({
 
   const set = (goal: OrchestratorGoal, status: GoalStatus) =>
     void act(() => api.updateOrchestratorGoal(instance.id, goal.id, { status }));
-  const link = (e: FormEvent) => {
-    e.preventDefault();
-    if (!linking) return;
-    const keys = cardKeys(linking.text);
-    if (!keys.length) return;
-    void act(async () => {
-      await api.updateOrchestratorGoal(instance.id, linking.goalId, { linkCards: keys });
-      setLinking(null);
-    });
+  const link = (goal: OrchestratorGoal, cardId: number) =>
+    void act(() =>
+      api.updateOrchestratorGoal(instance.id, goal.id, { linkCards: [String(cardId)] }),
+    );
+  /** Picker rows for a goal: in-scope cards it does not link yet. */
+  const linkOptions = (goal: OrchestratorGoalView): DropdownOption<number>[] => {
+    const linked = new Set((goal.cards ?? []).map((c) => c.id));
+    return [
+      {
+        value: 0,
+        label: 'Link a card',
+        icon: <LinkIcon size={12} />,
+        disabled: true,
+        title: 'Search by key or title, then pick a card to link',
+      },
+      ...scopedCards
+        .filter((c) => !linked.has(c.id))
+        .slice(0, PICKER_LIMIT)
+        .map(cardOption),
+    ];
   };
+  const projectTag = (id: number, name: string) => (
+    <span key={id} className="project-tag" style={{ ['--tag' as string]: colorOf.get(id) }}>
+      {name}
+    </span>
+  );
   const unlink = (goal: OrchestratorGoal, key: string) =>
     void act(() => api.updateOrchestratorGoal(instance.id, goal.id, { unlinkCards: [key] }));
 
@@ -196,31 +260,40 @@ export function OrchestratorGoals({
           </label>
           <div className="orchestrator-goal-form-row">
             {projects.length > 1 && (
-              <label>
-                Project
-                <select
-                  className="input"
+              <div className="field">
+                <span>Project</span>
+                <Dropdown
+                  label="Project"
                   value={draft.projectId}
-                  onChange={(e) => setDraft({ ...draft, projectId: Number(e.target.value) })}
-                >
-                  <option value={0}>All of its projects</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  options={[
+                    { value: 0, label: 'All of its projects' },
+                    ...projects.map((p) => ({ value: p.id, label: p.name })),
+                  ]}
+                  onChange={(projectId) => setDraft({ ...draft, projectId })}
+                />
+              </div>
             )}
-            <label>
-              Cards (optional)
-              <input
-                className="input"
-                placeholder="PM-12, PM-15"
-                value={draft.cards}
-                onChange={(e) => setDraft({ ...draft, cards: e.target.value })}
+            <div className="field">
+              <span>Cards (optional)</span>
+              <Dropdown
+                label="Cards"
+                value={0}
+                searchable
+                options={[
+                  { value: 0, label: 'No cards' },
+                  ...scopedCards
+                    .filter((c) => !draft.projectId || c.projectId === draft.projectId)
+                    .slice(0, PICKER_LIMIT)
+                    .map(cardOption),
+                ]}
+                onChange={() => undefined}
+                multiple={{
+                  values: draft.cards,
+                  allValue: 0,
+                  onChange: (cards) => setDraft({ ...draft, cards }),
+                }}
               />
-            </label>
+            </div>
           </div>
           <div>
             <button type="submit" className="btn btn-sm btn-primary" disabled={busy}>
@@ -242,16 +315,12 @@ export function OrchestratorGoals({
                   <strong>{goal.title}</strong>
                   <span className={TONE[goal.status]}>{LABEL[goal.status]}</span>
                   {(goal.projects ?? []).length ? (
-                    goal.projects.map((p) => (
-                      <span key={p.id} className="orchestrator-goal-project">
-                        {p.name}
-                      </span>
-                    ))
+                    goal.projects.map((p) => projectTag(p.id, p.name))
+                  ) : projects.length === 1 ? (
+                    // No projects named: all of the orchestrator's, here just one.
+                    projectTag(projects[0]!.id, projects[0]!.name)
                   ) : (
-                    // No projects named: all of the orchestrator's, which may be just one.
-                    <span className="orchestrator-goal-project">
-                      {projects.length === 1 ? projects[0]!.name : 'All projects'}
-                    </span>
+                    <span className="orchestrator-goal-project">All projects</span>
                   )}
                 </div>
                 <ClampedText>
@@ -303,20 +372,16 @@ export function OrchestratorGoals({
                     ) : null}
                     {!watchOnly && open.includes(goal) && (
                       <>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          disabled={busy}
-                          aria-expanded={linking?.goalId === goal.id}
-                          title="Link the cards that deliver this goal"
-                          onClick={() =>
-                            setLinking((l) =>
-                              l?.goalId === goal.id ? null : { goalId: goal.id, text: '' },
-                            )
-                          }
-                        >
-                          <LinkIcon size={12} /> Link cards
-                        </button>
+                        <div className="orchestrator-goal-linker">
+                          <Dropdown
+                            label={`Link a card to ${goal.title}`}
+                            value={0}
+                            searchable
+                            disabled={busy}
+                            options={linkOptions(goal)}
+                            onChange={(cardId) => cardId && link(goal, cardId)}
+                          />
+                        </div>
                         <button
                           type="button"
                           className="btn btn-sm orchestrator-goal-achieve"
@@ -338,21 +403,6 @@ export function OrchestratorGoals({
                       </>
                     )}
                   </div>
-                )}
-                {linking?.goalId === goal.id && (
-                  <form className="orchestrator-goal-link" onSubmit={link}>
-                    <input
-                      className="input"
-                      autoFocus
-                      aria-label={`Cards to link to ${goal.title}`}
-                      placeholder="PM-12, PM-15"
-                      value={linking.text}
-                      onChange={(e) => setLinking({ goalId: goal.id, text: e.target.value })}
-                    />
-                    <button type="submit" className="btn btn-sm btn-primary" disabled={busy}>
-                      Link
-                    </button>
-                  </form>
                 )}
               </li>
             );

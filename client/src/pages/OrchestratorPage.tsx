@@ -622,6 +622,7 @@ export function OrchestratorPage() {
                       <OrchestratorGoals
                         instance={instance}
                         projects={scopedProjects.map((p) => ({ id: p.id, name: p.name }))}
+                        allProjectIds={projects.map((p) => p.id)}
                       />
 
                       {(runs.some((run) => run.orchestratorId === instance.id) ||

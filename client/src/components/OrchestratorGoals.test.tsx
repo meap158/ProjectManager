@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import type { OrchestratorConfig, OrchestratorGoalView } from '../../../shared/orchestrator';
@@ -23,6 +23,17 @@ vi.mock('../api', () => ({
     orchestratorGoals: vi.fn(async () => goals),
     addOrchestratorGoal: vi.fn(async () => goals[0]),
     updateOrchestratorGoal: vi.fn(async () => goals[0]),
+    listAllCards: vi.fn(async () => [
+      {
+        id: 20,
+        key: 'PM-20',
+        title: 'Session timeout',
+        status: 'todo',
+        projectId: 7,
+        projectName: 'TiemNet',
+        updatedAt: '2026-11-06T09:00:00Z',
+      },
+    ]),
   },
 }));
 
@@ -97,15 +108,17 @@ it('shows a goal like an epic: its project, linked cards and how many are done (
   await waitFor(() =>
     expect(api.updateOrchestratorGoal).toHaveBeenCalledWith('o', 1, { unlinkCards: ['PM-12'] }),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Link cards' }));
-  fireEvent.change(screen.getByLabelText('Cards to link to Ship login'), {
-    target: { value: 'PM-20, PM-21' },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Link' }));
+  // The picker lists in-scope cards by key and title, with the column and project under each.
+  const picker = screen.getByRole('button', { name: 'Link a card to Ship login' });
+  await waitFor(() => expect((picker as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(picker);
+  fireEvent.click(
+    within(await screen.findByRole('option', { name: /PM-20.*Session timeout/ })).getByRole(
+      'button',
+    ),
+  );
   await waitFor(() =>
-    expect(api.updateOrchestratorGoal).toHaveBeenCalledWith('o', 1, {
-      linkCards: ['PM-20', 'PM-21'],
-    }),
+    expect(api.updateOrchestratorGoal).toHaveBeenCalledWith('o', 1, { linkCards: ['20'] }),
   );
   vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
 });
