@@ -69,7 +69,9 @@ are limited to the orchestrator's projects at call time:
 - `list_sessions`: the CLI sessions in scope, with project, agent, state and linked card.
 - `assign_card`: hand a card to a running CLI session in the card's project, the card dialog's
   Send to session (`supervisor.attachCard` with `send`): links it, moves it to In progress and
-  types the task in. Only an idle session with no other live card and no undelivered input;
+  types the task in. Only an idle session with no other live card and no undelivered input (a
+  session still linked to a card in Review or Done counts as free: the link moves and the result
+  names the card it left, PM-437);
   never the orchestrator's own chat or another project's session. The state is re-read right
   before typing, and the result says the delivery is unconfirmed, so the chat checks with
   `worker_output` instead of resending.

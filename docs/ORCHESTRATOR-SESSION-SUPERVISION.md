@@ -113,3 +113,11 @@ reached achieved or blocked in the last day, with the latest note. With the Inbo
 notifications on, the app reads it every 30 seconds and notifies each change once ("Goal achieved:"
 or "Goal blocked:" with the orchestrator and note), so a goal that ran on its own reaches the owner
 when it ends or needs them.
+
+**Goals nothing continues (PM-437).** The same list carries an active goal with status `stuck` when
+nothing will bring the chat back to it (the orchestrator is paused, "Check on its own" is off, or
+its chat is closed) and it has not moved for two nudge intervals (30 minutes). It notifies as
+"Goal not moving:" with the reason. The Goals panel and `set_goal` also say when the orchestrator is
+paused. The first live goal (Game Dev, 2026-11-05) showed the need: the orchestrator was never
+started, so no automatic check ran, and the goal sat active with its last note at 22:03 while the
+owner drove every step by hand until the chat closed.

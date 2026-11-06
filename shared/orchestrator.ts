@@ -263,8 +263,9 @@ export interface GoalEvent {
   orchestratorName: string;
   goalId: number;
   title: string;
-  status: 'achieved' | 'blocked';
+  /** stuck: still active, but nothing brings the chat back to it (paused, checks off, chat closed). */
+  status: 'achieved' | 'blocked' | 'stuck';
   updatedAt: string;
-  /** The latest progress note: the evidence, or what only the owner can do. */
+  /** The latest progress note: the evidence, or what only the owner can do. For stuck, why. */
   note: string | null;
 }

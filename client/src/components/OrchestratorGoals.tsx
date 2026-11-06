@@ -84,9 +84,11 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
           <p className="faint">
             {watchOnly
               ? 'Watch only orchestrators do not pursue goals.'
-              : instance.autoCheck
-                ? 'Ask the chat to keep at an objective until it is done, or add one here. Automatic checks keep it going.'
-                : 'Ask the chat to keep at an objective, or add one here. Turn on "Check on its own" so it keeps going without you.'}
+              : !instance.enabled
+                ? 'This orchestrator is paused, so goals only move when you write in its chat. Press Start, with "Check on its own" on, to keep them going.'
+                : instance.autoCheck
+                  ? 'Ask the chat to keep at an objective until it is done, or add one here. Automatic checks keep it going.'
+                  : 'Ask the chat to keep at an objective, or add one here. Turn on "Check on its own" so it keeps going without you.'}
           </p>
         </div>
         {!watchOnly && (

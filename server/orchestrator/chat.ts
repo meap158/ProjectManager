@@ -53,6 +53,7 @@ import {
   updateGoal,
   type GoalStatus,
   type OrchestratorGoal,
+  GOAL_NUDGE_MS,
 } from './goals.js';
 import {
   addMessage,
@@ -369,7 +370,7 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'assign_card',
     description:
-      "Hand a card to a running CLI session in the card's project, like the card dialog's Send to session: links the card, moves it to In progress and types the task in. Only an idle session with no other live card; the delivery is not confirmed, so check it with worker_output rather than sending again.",
+      "Hand a card to a running CLI session in the card's project, like the card dialog's Send to session: links the card, moves it to In progress and types the task in. Only an idle session with no other live card (one still linked to a card in Review or Done is free, and that link moves); the delivery is not confirmed, so check it with worker_output rather than sending again.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -721,11 +722,27 @@ export class OrchestratorChat implements OrchestratorToolHost {
     return [...listGoals(this.db, id)].reverse();
   }
 
-  /** Goals across orchestrators that were achieved or blocked in the last day (PM-436). */
+  /**
+   * Goals across orchestrators that were achieved or blocked in the last day (PM-436), and active
+   * goals nothing will bring the chat back to (PM-437): the orchestrator is paused, its automatic
+   * checks are off or its chat is closed, and the goal has not moved for two nudge intervals.
+   */
   goalEvents(now = Date.now()): GoalEvent[] {
     const events: GoalEvent[] = [];
-    for (const instance of this.service.state().instances)
-      for (const g of listGoals(this.db, instance.id))
+    for (const instance of this.service.state().instances) {
+      const goals = listGoals(this.db, instance.id);
+      const why = goals.some((g) => g.status === 'active') ? this.goalStuck(instance) : null;
+      for (const g of goals) {
+        if (why && g.status === 'active' && now - Date.parse(g.updatedAt) >= 2 * GOAL_NUDGE_MS)
+          events.push({
+            orchestratorId: instance.id,
+            orchestratorName: instance.name,
+            goalId: g.id,
+            title: g.title,
+            status: 'stuck',
+            updatedAt: g.updatedAt,
+            note: why,
+          });
         if (
           (g.status === 'achieved' || g.status === 'blocked') &&
           now - Date.parse(g.updatedAt) < 24 * 3_600_000
@@ -739,7 +756,21 @@ export class OrchestratorChat implements OrchestratorToolHost {
             updatedAt: g.updatedAt,
             note: g.progress.at(-1)?.note ?? null,
           });
+      }
+    }
     return events.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.goalId - a.goalId);
+  }
+
+  /** Why nothing brings this orchestrator's chat back to its goals, or null when checks will. */
+  private goalStuck(instance: OrchestratorConfig): string | null {
+    if (!instance.enabled)
+      return 'the orchestrator is paused, so the goal only moves when you write in its chat. Press Start to keep it going.';
+    if (!instance.autoCheck)
+      return '"Check on its own" is off, so the goal only moves when you write in its chat.';
+    const chat = this.session(instance.id);
+    if (!chat || chat.status !== 'running')
+      return 'its chat is closed, so nothing continues the goal. Open the chat to resume it.';
+    return null;
   }
 
   /** The owner sets a goal from the page; the chat picks it up at its next check. */
@@ -1616,9 +1647,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
       );
       return {
         goal: goalBrief(goal),
-        note: instance.autoCheck
-          ? 'Active: automatic checks will bring you back to it until you mark it achieved or blocked. Start on it now.'
-          : 'Active, but "Check on its own" is off for this orchestrator, so you only work on it when the owner asks. Tell the owner they can turn it on to keep it going by itself.',
+        note: !instance.enabled
+          ? 'Active, but this orchestrator is paused, so nothing brings you back to it; you only work on it when the owner writes. Tell the owner to press Start on the Orchestrators page (with "Check on its own" on) to keep it going by itself. Start on it now.'
+          : instance.autoCheck
+            ? 'Active: automatic checks will bring you back to it until you mark it achieved or blocked. Start on it now.'
+            : 'Active, but "Check on its own" is off for this orchestrator, so you only work on it when the owner asks. Tell the owner they can turn it on to keep it going by itself.',
       };
     }
 
@@ -1737,7 +1770,16 @@ export class OrchestratorChat implements OrchestratorToolHost {
           `Session ${s!.id} works in ${projectName(s!.projectId)}, not ${projectName(c.projectId)}; pick a session in the card's project or start one`,
         );
       if (s!.status !== 'running') fail(`Session ${s!.id} is not running`);
-      if (s!.cardId !== null && s!.cardId !== c.id)
+      // A session still linked to a card in Review or Done has finished it (PM-437): the link is
+      // stale, and refusing left the chat messaging the session about a card it was not linked to.
+      const linked =
+        s!.cardId !== null && s!.cardId !== c.id ? (getCard(this.db, s!.cardId) ?? null) : null;
+      if (
+        s!.cardId !== null &&
+        s!.cardId !== c.id &&
+        linked?.status !== 'review' &&
+        linked?.status !== 'done'
+      )
         fail(`Session ${s!.id} is working on ${s!.cardKey}; pick an idle session without a card`);
       const own = ownWorkers();
       const { sessions, runs } = own.all;
@@ -1793,6 +1835,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
       );
       return {
         assigned: true,
+        ...(linked
+          ? {
+              unlinked: `${linked.key} (${linked.status === 'review' ? 'Review' : 'Done'}) is no longer linked to session ${s!.id}`,
+            }
+          : {}),
         delivery: result.sent
           ? result.queued
             ? 'queued: the session is down; it gets the task when it comes back'

@@ -645,6 +645,26 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     db.close();
   });
 
+  it('treats a session whose linked card is in Review or Done as free (PM-437)', async () => {
+    const { call, mine, sessions, supervisor, a, db } = setup();
+    const { attachCard } = withSessionTools(supervisor);
+    const reviewed = insertCard(db, a, { title: 'Old', description: '', status: 'review' });
+    const working = insertCard(db, a, { title: 'Busy', description: '', status: 'in_progress' });
+    sessions.push(
+      live({ id: 41, projectId: a, name: 'busy', cardId: working.id, cardKey: working.key }),
+      live({ id: 42, projectId: a, name: 'finished', cardId: reviewed.id, cardKey: reviewed.key }),
+    );
+    await expect(call('assign_card', { card: mine.key, sessionId: 41 })).rejects.toThrow(
+      new RegExp(`working on ${working.key}`),
+    );
+    const result = (await call('assign_card', { card: mine.key, sessionId: 42 })) as {
+      unlinked: string;
+    };
+    expect(result.unlinked).toBe(`${reviewed.key} (Review) is no longer linked to session 42`);
+    expect(attachCard).toHaveBeenCalledWith(42, mine.id, expect.anything());
+    db.close();
+  });
+
   it('starts a session on a card within its limits, and replays a request ID', async () => {
     const { call, mine, sessions, supervisor, a, db } = setup();
     const { createSession } = withSessionTools(supervisor);
@@ -1232,7 +1252,31 @@ describe('goal events for notifications (PM-436)', () => {
       ['A', 'achieved'],
     ]);
     expect(events[0]).toMatchObject({ orchestratorName: 'Games', note: 'Needs a secret' });
-    expect(chat.goalEvents(Date.now() + 25 * 3_600_000)).toEqual([]);
+    // A day on, the closed goals are old news; C is still active and nothing continues it.
+    expect(chat.goalEvents(Date.now() + 25 * 3_600_000).map((e) => [e.title, e.status])).toEqual([
+      ['C', 'stuck'],
+    ]);
     db.close();
+  });
+
+  it('flags an active goal nothing continues, once it has sat for two nudge intervals (PM-437)', async () => {
+    const paused = setup({ autoCheck: true, enabled: false });
+    const set = (await paused.call('set_goal', { title: 'G', objective: 'o', doneWhen: 'd' })) as {
+      note: string;
+    };
+    expect(set.note).toContain('paused');
+    expect(paused.chat.goalEvents()).toEqual([]); // just set
+    const later = Date.now() + 31 * 60_000;
+    expect(paused.chat.goalEvents(later)).toMatchObject([
+      { title: 'G', status: 'stuck', note: expect.stringContaining('paused') },
+    ]);
+    paused.db.close();
+
+    const running = setup({ autoCheck: true });
+    await running.call('set_goal', { title: 'G', objective: 'o', doneWhen: 'd' });
+    expect(running.chat.goalEvents(later)[0]!.note).toContain('chat is closed');
+    vi.spyOn(running.chat, 'session').mockReturnValue({ status: 'running' } as AgentSession);
+    expect(running.chat.goalEvents(later)).toEqual([]);
+    running.db.close();
   });
 });

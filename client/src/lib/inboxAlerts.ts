@@ -6,7 +6,7 @@ import type { InboxItem } from '../components/InboxButton';
  * Desktop notifications for what needs a person (PM-429), so work that runs on its own can reach
  * the owner while the app is in a background tab. Off by default and per browser. Only the urgent
  * Inbox reasons notify (a decision, a question, a failed restart), plus an orchestrator chat that
- * is asking something and an orchestrator goal that was achieved or blocked (PM-436); finished replies and usage limits stay in the Inbox. Each occurrence
+ * is asking something and an orchestrator goal that was achieved, blocked (PM-436) or left with nothing to continue it (PM-437); finished replies and usage limits stay in the Inbox. Each occurrence
  * notifies once: its key is remembered, and the notification's tag lets the system replace a
  * duplicate from a second tab.
  */
@@ -104,7 +104,7 @@ export function inboxAlerts(
   for (const g of goals)
     alerts.push({
       key: `goal:${g.orchestratorId}:${g.goalId}:${g.status}:${g.updatedAt}`,
-      title: `Goal ${g.status === 'achieved' ? 'achieved' : 'blocked'}: ${g.title}`,
+      title: `Goal ${g.status === 'stuck' ? 'not moving' : g.status}: ${g.title}`,
       body: [g.orchestratorName, g.note].filter(Boolean).join(': ').slice(0, 200),
       path: '/orchestrators',
     });

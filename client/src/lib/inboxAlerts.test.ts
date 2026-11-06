@@ -74,5 +74,10 @@ describe('goal alerts (PM-436)', () => {
     ])[0]!;
     expect(resumed.key).not.toBe(alert!.key);
     expect(resumed.title).toBe('Goal achieved: Ship login');
+    const stuck = inboxAlerts([], [], new Map(), [
+      { ...event, status: 'stuck', note: 'the orchestrator is paused' },
+    ])[0]!;
+    expect(stuck.title).toBe('Goal not moving: Ship login');
+    expect(stuck.body).toBe('Trial: the orchestrator is paused');
   });
 });
