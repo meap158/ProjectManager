@@ -82,6 +82,17 @@ describe('Claude session usage', () => {
     expect(readTranscriptUsage(file)).toMatchObject({ input: 6, output: 57, replies: 2 });
   });
 
+  it('reads a large transcript in chunks within a byte budget, across split characters', () => {
+    const file = path.join(home, 'large.jsonl');
+    // A 5 MB line of multibyte text crosses the 4 MB chunk boundary mid-character.
+    const filler = JSON.stringify({ type: 'user', message: { content: 'é'.repeat(2_600_000) } });
+    writeFileSync(file, reply('a', 1, 10) + filler + '\n' + reply('b', 2, 20));
+    const budget = { bytes: 4 * 1024 * 1024 };
+    expect(readTranscriptUsage(file, budget)).toMatchObject({ input: 1, replies: 1 });
+    expect(budget.bytes).toBeLessThanOrEqual(0); // spent: the rest waits for the next poll
+    expect(readTranscriptUsage(file)).toMatchObject({ input: 3, output: 30, replies: 2 });
+  });
+
   it('finds the Codex conversation a session started (main thread, this folder)', () => {
     const day = path.join(home, '.codex', 'sessions', '2026', '10', '06');
     mkdirSync(day, { recursive: true });

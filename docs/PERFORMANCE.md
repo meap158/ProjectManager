@@ -179,3 +179,13 @@ A steady 60 fps either way; the cap removes the two dropped frames. The Board al
 The Codex CLI keeps every conversation in `~/.codex/sessions` (21 GB on 2026-10-26, three
 long-running conversations of 8.4, 4.6 and 2.6 GB) plus an 8.5 GB `thread_history_1.sqlite`. That
 filled the `C:` drive during this audit. Archiving old conversations is the owner's call.
+
+## Token usage reads (PM-438)
+
+`GET /api/agent-sessions/usage` reads the CLIs' own transcripts. Claude transcripts reach hundreds
+of MB (432 MB seen), and reading one whole on first sight, and again after every restart, held the
+event loop for 8 to 19 seconds and once ran the server out of memory, so other pages failed to
+load meanwhile. `server/agents/usage.ts` now reads in 4 MB chunks under a 32 MB budget per request
+(a large file is counted over a few polls), caches each Codex rollout's first line and each found
+rollout file. A cold request over every session fell from 19 s to about 1.3 s, and repeat requests
+take about 0.2 s, with heap flat at about 90 MB.

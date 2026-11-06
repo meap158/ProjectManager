@@ -10,6 +10,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { StringDecoder } from 'node:string_decoder';
 import type { AgentTokenUsage } from '../../shared/types.js';
 
 // Token usage for Claude Code sessions, read (never written) from Claude's own transcript:
@@ -29,8 +30,20 @@ export function codexResumeId(argv: readonly string[] | null): string | null {
 interface CacheEntry {
   offset: number;
   partial: string;
+  decoder: StringDecoder;
   seen: Map<string, AgentTokenUsage>;
 }
+
+/**
+ * Transcripts reach hundreds of MB (432 MB seen). Reading one whole on the first look, and again
+ * after every server restart, held the event loop for 8 to 13 s and once ran the server out of
+ * memory. They are read in chunks, with a byte budget per request: a large file is counted over a
+ * few polls, and each poll stays short.
+ */
+const CHUNK_BYTES = 4 * 1024 * 1024;
+export const USAGE_READ_BUDGET = 32 * 1024 * 1024;
+/** A line longer than this (an inline image) cannot hold the small usage record: drop it. */
+const MAX_LINE = 16 * 1024 * 1024;
 
 const cache = new Map<string, CacheEntry>();
 
@@ -85,42 +98,35 @@ const empty = (): AgentTokenUsage => ({
 });
 
 /** Sum of usage across replies in a transcript; reads only what was appended since last time. */
-export function readTranscriptUsage(file: string): AgentTokenUsage {
+export function readTranscriptUsage(
+  file: string,
+  budget: { bytes: number } = { bytes: Infinity },
+): AgentTokenUsage {
   const size = statSync(file).size;
   let entry = cache.get(file);
   if (!entry || size < entry.offset) {
-    entry = { offset: 0, partial: '', seen: new Map() };
+    entry = { offset: 0, partial: '', decoder: new StringDecoder('utf8'), seen: new Map() };
     cache.set(file, entry);
   }
-  if (size > entry.offset) {
+  if (size > entry.offset && budget.bytes > 0) {
     const fd = openSync(file, 'r');
+    const buffer = Buffer.alloc(Math.min(CHUNK_BYTES, size - entry.offset));
     try {
-      const buffer = Buffer.alloc(size - entry.offset);
-      readSync(fd, buffer, 0, buffer.length, entry.offset);
-      entry.offset = size;
-      const lines = (entry.partial + buffer.toString('utf8')).split('\n');
-      entry.partial = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.includes('"usage"')) continue;
-        try {
-          const record = JSON.parse(line) as {
-            type?: string;
-            message?: { id?: string; usage?: Record<string, unknown> };
-          };
-          const usage = record.message?.usage;
-          const id = record.message?.id;
-          if (record.type !== 'assistant' || !usage || !id) continue;
-          const n = (key: string) => (typeof usage[key] === 'number' ? (usage[key] as number) : 0);
-          entry.seen.set(id, {
-            input: n('input_tokens'),
-            output: n('output_tokens'),
-            cacheRead: n('cache_read_input_tokens'),
-            cacheWrite: n('cache_creation_input_tokens'),
-            replies: 1,
-          });
-        } catch {
-          // A malformed line is skipped; the rest of the transcript still counts.
-        }
+      while (entry.offset < size && budget.bytes > 0) {
+        const n = readSync(
+          fd,
+          buffer,
+          0,
+          Math.min(buffer.length, size - entry.offset),
+          entry.offset,
+        );
+        if (n <= 0) break;
+        entry.offset += n;
+        budget.bytes -= n;
+        const lines = (entry.partial + entry.decoder.write(buffer.subarray(0, n))).split('\n');
+        entry.partial = lines.pop() ?? '';
+        if (entry.partial.length > MAX_LINE) entry.partial = '';
+        countUsage(entry, lines);
       }
     } finally {
       closeSync(fd);
@@ -135,6 +141,31 @@ export function readTranscriptUsage(file: string): AgentTokenUsage {
     total.replies += 1;
   }
   return total;
+}
+
+function countUsage(entry: CacheEntry, lines: string[]) {
+  for (const line of lines) {
+    if (!line.includes('"usage"')) continue;
+    try {
+      const record = JSON.parse(line) as {
+        type?: string;
+        message?: { id?: string; usage?: Record<string, unknown> };
+      };
+      const usage = record.message?.usage;
+      const id = record.message?.id;
+      if (record.type !== 'assistant' || !usage || !id) continue;
+      const n = (key: string) => (typeof usage[key] === 'number' ? (usage[key] as number) : 0);
+      entry.seen.set(id, {
+        input: n('input_tokens'),
+        output: n('output_tokens'),
+        cacheRead: n('cache_read_input_tokens'),
+        cacheWrite: n('cache_creation_input_tokens'),
+        replies: 1,
+      });
+    } catch {
+      // A malformed line is skipped; the rest of the transcript still counts.
+    }
+  }
 }
 
 /** Reads the latest cumulative token usage from a Codex session rollout. */
@@ -184,8 +215,61 @@ export function readCodexRolloutUsage(file: string): AgentTokenUsage | null {
   }
 }
 
+interface RolloutMeta {
+  type?: string;
+  payload?: { id?: string; cwd?: string; timestamp?: string; source?: unknown };
+}
+/**
+ * A rollout's first line never changes, so each file's head is read once per process. Without
+ * this every Codex session re-read 256 KB of every rollout in three days on every usage poll
+ * (35 s for one cold request on 2026-11-06).
+ */
+const metaCache = new Map<string, RolloutMeta | null>();
+function rolloutMeta(full: string): RolloutMeta | null {
+  if (metaCache.has(full)) return metaCache.get(full)!;
+  let meta: RolloutMeta | null = null;
+  try {
+    const fd = openSync(full, 'r');
+    try {
+      const buf = Buffer.alloc(256 * 1024);
+      const n = readSync(fd, buf, 0, buf.length, 0);
+      const text = buf.subarray(0, n).toString('utf8');
+      const end = text.indexOf('\n');
+      // A short file with no line end yet is still being written: look again next time.
+      if (end < 0 && n < buf.length) return null;
+      if (end >= 0) meta = JSON.parse(text.slice(0, end)) as RolloutMeta;
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    meta = null;
+  }
+  metaCache.set(full, meta);
+  return meta;
+}
+
+/** Found rollout files stay found; a miss is retried after a minute. */
+const rolloutCache = new Map<string, { file: string | null; at: number }>();
+const ROLLOUT_MISS_MS = 60_000;
+
 /** Locates the rollout file for a Codex session by its resume id or cwd/startedAt. */
 export function findCodexRolloutFile(
+  cwd: string,
+  startedAt?: string | null,
+  resumeId?: string | null,
+  home = os.homedir(),
+  codexHome?: string,
+): string | null {
+  const key = [cwd, startedAt ?? '', resumeId ?? '', home, codexHome ?? ''].join('\0');
+  const hit = rolloutCache.get(key);
+  if (hit && (hit.file ? existsSync(hit.file) : Date.now() - hit.at < ROLLOUT_MISS_MS))
+    return hit.file;
+  const file = scanCodexRollouts(cwd, startedAt, resumeId, home, codexHome);
+  rolloutCache.set(key, { file, at: Date.now() });
+  return file;
+}
+
+function scanCodexRollouts(
   cwd: string,
   startedAt?: string | null,
   resumeId?: string | null,
@@ -225,15 +309,8 @@ export function findCodexRolloutFile(
         if (!file.startsWith('rollout-') || !file.endsWith('.jsonl')) continue;
         const full = path.join(dir, file);
         try {
-          const fd = openSync(full, 'r');
-          const buf = Buffer.alloc(256 * 1024);
-          const n = readSync(fd, buf, 0, buf.length, 0);
-          closeSync(fd);
-          const first = buf.subarray(0, n).toString('utf8').split('\n')[0] ?? '';
-          const meta = JSON.parse(first) as {
-            type?: string;
-            payload?: { id?: string; cwd?: string; timestamp?: string; source?: unknown };
-          };
+          const meta = rolloutMeta(full);
+          if (!meta) continue;
           const p = meta.payload;
           if (meta.type !== 'session_meta' || !p?.id || !p.cwd || !p.timestamp) continue;
           if (p.source && typeof p.source === 'object') continue;
@@ -366,6 +443,7 @@ export function sessionUsage(
   ids: number[],
 ): Record<number, AgentTokenUsage | null> {
   const result: Record<number, AgentTokenUsage | null> = {};
+  const budget = { bytes: USAGE_READ_BUDGET };
   const query = db.prepare(
     'SELECT provider_id, command_json, resume_json, cwd, started_at FROM agent_sessions WHERE id = ?',
   );
@@ -409,7 +487,7 @@ export function sessionUsage(
       if (row.provider_id === 'claude') {
         const sessionId = claudeSessionId(command, resume);
         const file = sessionId ? transcriptPath(row.cwd, sessionId) : null;
-        if (file) result[id] = readTranscriptUsage(file);
+        if (file) result[id] = readTranscriptUsage(file, budget);
       } else if (row.provider_id === 'codex') {
         const resumeId =
           resume && resume[0] === 'codex' && resume[1] === 'resume' ? resume[2] : null;
