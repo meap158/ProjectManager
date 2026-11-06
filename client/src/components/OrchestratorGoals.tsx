@@ -279,6 +279,7 @@ export function OrchestratorGoals({
                 label="Cards"
                 value={0}
                 searchable
+                searchPlaceholder="Search cards by key or title…"
                 options={[
                   { value: 0, label: 'No cards' },
                   ...scopedCards
@@ -377,6 +378,7 @@ export function OrchestratorGoals({
                             label={`Link a card to ${goal.title}`}
                             value={0}
                             searchable
+                            searchPlaceholder="Search cards by key or title…"
                             disabled={busy}
                             options={linkOptions(goal)}
                             onChange={(cardId) => cardId && link(goal, cardId)}

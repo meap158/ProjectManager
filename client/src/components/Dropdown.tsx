@@ -35,6 +35,7 @@ export function Dropdown<T extends string | number>({
   disabled,
   multiple,
   searchable,
+  searchPlaceholder,
 }: {
   label: string;
   value: T;
@@ -46,6 +47,8 @@ export function Dropdown<T extends string | number>({
   /** Defaults to search for lists with eight or more options. */
   searchable?: boolean;
   multiple?: { values: T[]; allValue: T; onChange: (values: T[]) => void };
+  /** Placeholder for the search box when the label is too long to read as one. */
+  searchPlaceholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -248,7 +251,7 @@ export function Dropdown<T extends string | number>({
               aria-label={`Search ${label}`}
               aria-controls={listId}
               autoComplete="off"
-              placeholder={`Search ${label.toLocaleLowerCase()}…`}
+              placeholder={searchPlaceholder ?? `Search ${label.toLocaleLowerCase()}…`}
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);

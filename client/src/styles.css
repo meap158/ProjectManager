@@ -6592,7 +6592,12 @@ span.path-link:hover .path-icon {
 }
 .dropdown-search {
   position: sticky;
-  top: 0;
+  /* Flush with the menu's top edge, over its 4px padding, and a ring in the menu colour above
+     and below: scrolled options never show around the search box. */
+  top: -4px;
+  box-shadow:
+    0 -4px 0 0 var(--surface-raised),
+    0 4px 0 0 var(--surface-raised);
   z-index: 1;
   box-sizing: border-box;
   width: 100%;
