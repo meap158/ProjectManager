@@ -189,7 +189,11 @@ first. Empty means fair rotation only.
 (`message_orchestrator`: question, handoff, blocked, status), and its chat answers with
 `reply_worker`, queues messages for busy sessions and reads answers with `worker_reply`. Goals are
 objectives the chat pursues until a checkable condition holds, brought back by the automatic check
-and shown in a Goals panel under the chat. Details, bounds and the Grok Bot comparison are in
+and shown in a Goals panel under the chat. Like an epic, a goal names its projects (none means all
+of the orchestrator's) and links the cards that deliver it (PM-448): `set_goal` takes `projects`
+and `cards` and also links card keys named in its own text, `create_card` takes `goalId`,
+`update_goal` takes `linkCards`/`unlinkCards`, and the briefs show each card's status and
+"N of M" done. Every link is checked against the orchestrator's projects. Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open

@@ -390,6 +390,110 @@
   gap: 6px;
   margin-top: 2px;
 }
+/* Goals as epics (PM-448): project tags, linked cards and how many are done. */
+.orchestrator-goal-project {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.orchestrator-goal-cards {
+  display: grid;
+  gap: 6px;
+}
+.orchestrator-goal-cards-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.orchestrator-goal-bar {
+  flex: 0 1 160px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+.orchestrator-goal-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--status-done);
+}
+.orchestrator-goal-card-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.orchestrator-goal-card {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+}
+.orchestrator-goal-card a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+.orchestrator-goal-card a:hover {
+  text-decoration: underline;
+}
+.orchestrator-goal-card[data-status='done'] a {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.orchestrator-goal-card-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-backlog);
+}
+.orchestrator-goal-card[data-status='todo'] .orchestrator-goal-card-dot {
+  background: var(--status-todo);
+}
+.orchestrator-goal-card[data-status='in_progress'] .orchestrator-goal-card-dot {
+  background: var(--status-in_progress);
+}
+.orchestrator-goal-card[data-status='review'] .orchestrator-goal-card-dot {
+  background: var(--status-review);
+}
+.orchestrator-goal-card[data-status='done'] .orchestrator-goal-card-dot {
+  background: var(--status-done);
+}
+.orchestrator-goal-card-unlink {
+  display: inline-flex;
+  padding: 3px 6px 3px 2px;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.orchestrator-goal-card-unlink:hover:not(:disabled) {
+  color: var(--danger);
+}
+.orchestrator-goal-link {
+  display: flex;
+  gap: 6px;
+  max-width: 420px;
+}
+.orchestrator-goal-link .input {
+  flex: 1;
+  height: 26px;
+}
+.orchestrator-goal-form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
 /* Long conditions and notes take about four lines until the owner asks for more. */
 .orchestrator-goal-text {
   display: grid;

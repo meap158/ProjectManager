@@ -10,6 +10,7 @@ import type {
   OrchestratorPlanDecision,
   OrchestratorState,
   OrchestratorGoal,
+  OrchestratorGoalView,
   GoalEvent,
 } from '../../shared/orchestrator';
 import type {
@@ -159,13 +160,29 @@ export const api = {
   goalEvents: () => request<GoalEvent[]>('GET', '/orchestrators/goals/recent'),
   /** Goals (PM-433): newest first. */
   orchestratorGoals: (id: string) =>
-    request<OrchestratorGoal[]>('GET', `/orchestrators/${encodeURIComponent(id)}/goals`),
-  addOrchestratorGoal: (id: string, goal: { title: string; objective: string; doneWhen: string }) =>
-    request<OrchestratorGoal>('POST', `/orchestrators/${encodeURIComponent(id)}/goals`, goal),
+    request<OrchestratorGoalView[]>('GET', `/orchestrators/${encodeURIComponent(id)}/goals`),
+  /** Projects (none: all of the orchestrator's) and cards to link, as keys like PM-12 (PM-448). */
+  addOrchestratorGoal: (
+    id: string,
+    goal: {
+      title: string;
+      objective: string;
+      doneWhen: string;
+      projectIds?: number[];
+      cards?: string[];
+    },
+  ) =>
+    request<OrchestratorGoalView>('POST', `/orchestrators/${encodeURIComponent(id)}/goals`, goal),
   updateOrchestratorGoal: (
     id: string,
     goalId: number,
-    change: { status?: OrchestratorGoal['status']; note?: string },
+    change: {
+      status?: OrchestratorGoal['status'];
+      note?: string;
+      linkCards?: string[];
+      unlinkCards?: string[];
+      projectIds?: number[];
+    },
   ) =>
     request<OrchestratorGoal>(
       'PATCH',

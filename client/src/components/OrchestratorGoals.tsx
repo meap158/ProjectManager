@@ -1,3 +1,4 @@
+import { Link } from 'react-router';
 import {
   useEffect,
   useLayoutEffect,
@@ -10,11 +11,12 @@ import type {
   GoalStatus,
   OrchestratorConfig,
   OrchestratorGoal,
+  OrchestratorGoalView,
 } from '../../../shared/orchestrator';
 import { api } from '../api';
 import { formatRelative } from '../format';
 import { serialPoll } from '../lib/serialPoll';
-import { CheckIcon, CloseIcon, PauseIcon, PlayIcon, RefreshIcon } from './icons';
+import { CheckIcon, CloseIcon, LinkIcon, PauseIcon, PlayIcon, RefreshIcon } from './icons';
 import './orchestrator-chat.css';
 
 // Goals (PM-433): objectives the orchestrator pursues until they are done. The chat records them
@@ -46,12 +48,30 @@ const RESUME: Record<GoalStatus, string> = {
 const POLL_MS = 15_000;
 const SHOWN_CLOSED = 3;
 
-export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }) {
-  const [goals, setGoals] = useState<OrchestratorGoal[] | null>(null);
+/** Card keys typed as "PM-12, PM-15" or one per line. */
+const cardKeys = (text: string) =>
+  text
+    .split(/[\s,]+/)
+    .map((k) => k.trim())
+    .filter(Boolean);
+
+const EMPTY_DRAFT = { title: '', objective: '', doneWhen: '', projectId: 0, cards: '' };
+
+export function OrchestratorGoals({
+  instance,
+  projects = [],
+}: {
+  instance: OrchestratorConfig;
+  /** The orchestrator's projects, to tag a new goal with one (PM-448). */
+  projects?: readonly { id: number; name: string }[];
+}) {
+  const [goals, setGoals] = useState<OrchestratorGoalView[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState({ title: '', objective: '', doneWhen: '' });
+  const [draft, setDraft] = useState(EMPTY_DRAFT);
+  /** The goal whose "Link cards" field is open, and what is typed in it. */
+  const [linking, setLinking] = useState<{ goalId: number; text: string } | null>(null);
   const watchOnly = instance.strategy === 'observe';
 
   const load = async () => setGoals(await api.orchestratorGoals(instance.id));
@@ -78,14 +98,33 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
   function add(e: FormEvent) {
     e.preventDefault();
     void act(async () => {
-      await api.addOrchestratorGoal(instance.id, draft);
-      setDraft({ title: '', objective: '', doneWhen: '' });
+      const cards = cardKeys(draft.cards);
+      await api.addOrchestratorGoal(instance.id, {
+        title: draft.title,
+        objective: draft.objective,
+        doneWhen: draft.doneWhen,
+        ...(draft.projectId ? { projectIds: [draft.projectId] } : {}),
+        ...(cards.length ? { cards } : {}),
+      });
+      setDraft(EMPTY_DRAFT);
       setAdding(false);
     });
   }
 
   const set = (goal: OrchestratorGoal, status: GoalStatus) =>
     void act(() => api.updateOrchestratorGoal(instance.id, goal.id, { status }));
+  const link = (e: FormEvent) => {
+    e.preventDefault();
+    if (!linking) return;
+    const keys = cardKeys(linking.text);
+    if (!keys.length) return;
+    void act(async () => {
+      await api.updateOrchestratorGoal(instance.id, linking.goalId, { linkCards: keys });
+      setLinking(null);
+    });
+  };
+  const unlink = (goal: OrchestratorGoal, key: string) =>
+    void act(() => api.updateOrchestratorGoal(instance.id, goal.id, { unlinkCards: [key] }));
 
   const open = (goals ?? []).filter(
     (g) => g.status === 'active' || g.status === 'blocked' || g.status === 'paused',
@@ -155,6 +194,34 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
               onChange={(e) => setDraft({ ...draft, doneWhen: e.target.value })}
             />
           </label>
+          <div className="orchestrator-goal-form-row">
+            {projects.length > 1 && (
+              <label>
+                Project
+                <select
+                  className="input"
+                  value={draft.projectId}
+                  onChange={(e) => setDraft({ ...draft, projectId: Number(e.target.value) })}
+                >
+                  <option value={0}>All of its projects</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label>
+              Cards (optional)
+              <input
+                className="input"
+                placeholder="PM-12, PM-15"
+                value={draft.cards}
+                onChange={(e) => setDraft({ ...draft, cards: e.target.value })}
+              />
+            </label>
+          </div>
           <div>
             <button type="submit" className="btn btn-sm btn-primary" disabled={busy}>
               Start goal
@@ -174,6 +241,18 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
                 <div className="orchestrator-goal-title">
                   <strong>{goal.title}</strong>
                   <span className={TONE[goal.status]}>{LABEL[goal.status]}</span>
+                  {(goal.projects ?? []).length ? (
+                    goal.projects.map((p) => (
+                      <span key={p.id} className="orchestrator-goal-project">
+                        {p.name}
+                      </span>
+                    ))
+                  ) : (
+                    // No projects named: all of the orchestrator's, which may be just one.
+                    <span className="orchestrator-goal-project">
+                      {projects.length === 1 ? projects[0]!.name : 'All projects'}
+                    </span>
+                  )}
                 </div>
                 <ClampedText>
                   <p className="orchestrator-goal-done">
@@ -188,6 +267,12 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
                     </p>
                   )}
                 </ClampedText>
+                <GoalCards
+                  goal={goal}
+                  canEdit={!watchOnly}
+                  busy={busy}
+                  onUnlink={(key) => unlink(goal, key)}
+                />
                 {!watchOnly && (
                   <div className="orchestrator-goal-actions" role="group" aria-label="Goal actions">
                     {!watchOnly && goal.status === 'active' ? (
@@ -220,6 +305,20 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
                       <>
                         <button
                           type="button"
+                          className="btn btn-sm"
+                          disabled={busy}
+                          aria-expanded={linking?.goalId === goal.id}
+                          title="Link the cards that deliver this goal"
+                          onClick={() =>
+                            setLinking((l) =>
+                              l?.goalId === goal.id ? null : { goalId: goal.id, text: '' },
+                            )
+                          }
+                        >
+                          <LinkIcon size={12} /> Link cards
+                        </button>
+                        <button
+                          type="button"
                           className="btn btn-sm orchestrator-goal-achieve"
                           disabled={busy}
                           title="Close it as done"
@@ -239,6 +338,21 @@ export function OrchestratorGoals({ instance }: { instance: OrchestratorConfig }
                       </>
                     )}
                   </div>
+                )}
+                {linking?.goalId === goal.id && (
+                  <form className="orchestrator-goal-link" onSubmit={link}>
+                    <input
+                      className="input"
+                      autoFocus
+                      aria-label={`Cards to link to ${goal.title}`}
+                      placeholder="PM-12, PM-15"
+                      value={linking.text}
+                      onChange={(e) => setLinking({ goalId: goal.id, text: e.target.value })}
+                    />
+                    <button type="submit" className="btn btn-sm btn-primary" disabled={busy}>
+                      Link
+                    </button>
+                  </form>
                 )}
               </li>
             );
@@ -283,5 +397,69 @@ function ClampedText({ children }: { children: ReactNode }) {
         </button>
       )}
     </>
+  );
+}
+
+/**
+ * The cards that deliver a goal (PM-448), like an epic's tracked issues: a bar of how many are
+ * done, then one chip per card (its status as a coloured dot) that opens it on the board.
+ */
+function GoalCards({
+  goal,
+  canEdit,
+  busy,
+  onUnlink,
+}: {
+  goal: OrchestratorGoalView;
+  canEdit: boolean;
+  busy: boolean;
+  onUnlink: (key: string) => void;
+}) {
+  const cards = goal.cards ?? [];
+  if (!cards.length) return null;
+  const done = cards.filter((c) => c.status === 'done').length;
+  return (
+    <div className="orchestrator-goal-cards">
+      <div className="orchestrator-goal-cards-progress">
+        <span className="faint num">
+          {done} of {cards.length} cards done
+        </span>
+        <span
+          className="orchestrator-goal-bar"
+          role="progressbar"
+          aria-label={`${goal.title}: cards done`}
+          aria-valuemin={0}
+          aria-valuemax={cards.length}
+          aria-valuenow={done}
+        >
+          <span style={{ width: `${Math.round((done / cards.length) * 100)}%` }} />
+        </span>
+      </div>
+      <ul className="orchestrator-goal-card-list">
+        {cards.map((c) => (
+          <li key={c.id} className="orchestrator-goal-card" data-status={c.status}>
+            <Link
+              to={`/board?project=${c.projectId}&card=${c.id}`}
+              title={`${c.key}: ${c.title} (${c.status.replace('_', ' ')})`}
+            >
+              <span className="orchestrator-goal-card-dot" aria-hidden="true" />
+              {c.key}
+            </Link>
+            {canEdit && (
+              <button
+                type="button"
+                className="orchestrator-goal-card-unlink"
+                disabled={busy}
+                aria-label={`Unlink ${c.key}`}
+                title={`Unlink ${c.key} from this goal`}
+                onClick={() => onUnlink(c.key)}
+              >
+                <CloseIcon size={10} />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

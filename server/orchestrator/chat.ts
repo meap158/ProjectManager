@@ -34,6 +34,8 @@ import type {
   OrchestratorEvent,
   OrchestratorChatWork,
   GoalEvent,
+  GoalCard,
+  OrchestratorGoalView,
 } from '../../shared/orchestrator.js';
 import type { OrchestratorToolHost } from '../boardMcp.js';
 import { cardContext } from './situation.js';
@@ -176,7 +178,7 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'create_card',
     description:
-      'Create a card in one of your projects: split a large task, or record follow-up work.',
+      'Create a card in one of your projects: split a large task, or record follow-up work. Give goalId when the card delivers one of your goals, so it is linked to it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -184,6 +186,7 @@ export const ORCHESTRATOR_TOOLS = [
         title: { type: 'string', minLength: 1, maxLength: 200 },
         notes: { type: 'string', maxLength: 4000 },
         status: { type: 'string', enum: CARD_STATUSES },
+        goalId: { type: 'integer', description: 'Link the new card to this goal' },
       },
       required: ['projectId', 'title'],
       additionalProperties: false,
@@ -289,13 +292,23 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'set_goal',
     description:
-      'Record an objective the owner asked you to pursue until it is done (PM-433): a short title, the objective, and doneWhen, the checkable condition that means achieved. While it is active, automatic checks bring you back to it until you mark it achieved or blocked.',
+      'Record an objective the owner asked you to pursue until it is done (PM-433): a short title, the objective, and doneWhen, the checkable condition that means achieved. Like an epic, it names its projects (omit for all of yours) and links the cards that deliver it; card keys named in the text are linked too. While it is active, automatic checks bring you back to it until you mark it achieved or blocked.',
     inputSchema: {
       type: 'object',
       properties: {
         title: { type: 'string', minLength: 1, maxLength: 120 },
         objective: { type: 'string', minLength: 1, maxLength: 4000 },
         doneWhen: { type: 'string', minLength: 1, maxLength: 2000 },
+        projects: {
+          type: 'array',
+          items: { type: ['integer', 'string'] },
+          description: 'Project ids or names it is about; omit for all of your projects',
+        },
+        cards: {
+          type: 'array',
+          items: { type: ['string', 'integer'] },
+          description: 'Cards that deliver it (keys like PM-12)',
+        },
       },
       required: ['title', 'objective', 'doneWhen'],
       additionalProperties: false,
@@ -304,12 +317,14 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'update_goal',
     description:
-      'Report progress on a goal (what moved, what is next) and optionally change its status: achieved (with evidence that doneWhen holds), blocked (what only the owner can do), paused or active. Report after every check that works on it.',
+      'Report progress on a goal (what moved, what is next) and optionally change its status: achieved (with evidence that doneWhen holds), blocked (what only the owner can do), paused or active. Link the cards that deliver it as you plan them (linkCards), unlink ones that no longer belong. Report after every check that works on it.',
     inputSchema: {
       type: 'object',
       properties: {
         goalId: { type: 'integer' },
         note: { type: 'string', minLength: 1, maxLength: 2000 },
+        linkCards: { type: 'array', items: { type: ['string', 'integer'] } },
+        unlinkCards: { type: 'array', items: { type: ['string', 'integer'] } },
         status: { type: 'string', enum: ['active', 'paused', 'blocked', 'achieved', 'dropped'] },
       },
       required: ['goalId', 'note'],
@@ -318,7 +333,8 @@ export const ORCHESTRATOR_TOOLS = [
   },
   {
     name: 'list_goals',
-    description: 'Your goals with their status, done-when condition and recent progress.',
+    description:
+      'Your goals with their status, projects, done-when condition, linked cards (and how many are done) and recent progress.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -716,10 +732,98 @@ export class OrchestratorChat implements OrchestratorToolHost {
     }
   }
 
-  /** The owner's view of an orchestrator's goals (PM-433), newest first. */
-  goals(id: string): OrchestratorGoal[] {
-    this.instance(id);
-    return [...listGoals(this.db, id)].reverse();
+  /** The owner's view of an orchestrator's goals (PM-433), newest first, with linked cards. */
+  goals(id: string): OrchestratorGoalView[] {
+    const instance = this.instance(id);
+    return [...listGoals(this.db, id)].reverse().map((g) => this.goalView(instance, g));
+  }
+
+  /** A goal with project names and its linked cards as they are now (PM-448). */
+  private goalView(instance: OrchestratorConfig, g: OrchestratorGoal): OrchestratorGoalView {
+    const names = new Map(this.scope(instance).map((p) => [p.id, p.name]));
+    const cards: GoalCard[] = [];
+    for (const id of g.cardIds ?? []) {
+      const c = getCard(this.db, id);
+      if (c)
+        cards.push({
+          id: c.id,
+          key: c.key,
+          title: c.title,
+          status: c.status,
+          projectId: c.projectId,
+        });
+    }
+    return {
+      ...g,
+      projects: (g.projectIds ?? []).map((id) => ({ id, name: names.get(id) ?? `Project ${id}` })),
+      cards,
+    };
+  }
+
+  /** A card reference (key like PM-12, or id) in this orchestrator's scope, or an error. */
+  private scopedCardId(instance: OrchestratorConfig, ref: unknown): number {
+    const text = String(ref).trim();
+    const match = /^(?:[A-Za-z]+-)?(\d+)$/.exec(text);
+    const found = match ? getCard(this.db, Number(match[1])) : undefined;
+    if (!found || !this.inScope(instance, found.projectId))
+      throw new AgentError(400, `Card ${text} is not in this orchestrator's projects`);
+    return found.id;
+  }
+
+  /**
+   * Projects and cards for a new goal (PM-448), checked against this orchestrator's scope. Card
+   * keys named in the goal's own text (PM-12) are linked as well, when they are in scope. A goal
+   * with named projects also covers the projects of its linked cards.
+   */
+  private goalLinks(
+    instance: OrchestratorConfig,
+    projects: readonly (number | string)[] | undefined,
+    cards: readonly unknown[] | undefined,
+    text = '',
+  ): { projectIds: number[]; cardIds: number[] } {
+    const scope = this.scope(instance);
+    const projectIds = (projects ?? []).map((ref) => {
+      const p = scope.find(
+        (s) => s.id === Number(ref) || s.name.toLowerCase() === String(ref).trim().toLowerCase(),
+      );
+      if (!p)
+        throw new AgentError(400, `Project ${String(ref)} is not in this orchestrator's projects`);
+      return p.id;
+    });
+    const cardIds = (cards ?? []).map((ref) => this.scopedCardId(instance, ref));
+    for (const [key] of text.matchAll(/\b[A-Z]{1,10}-\d+\b/g)) {
+      try {
+        cardIds.push(this.scopedCardId(instance, key));
+      } catch {
+        // A key outside this orchestrator's projects is only text.
+      }
+    }
+    const linked = [...new Set(cardIds)];
+    if (projectIds.length)
+      for (const id of linked) {
+        const projectId = getCard(this.db, id)?.projectId;
+        if (projectId && !projectIds.includes(projectId)) projectIds.push(projectId);
+      }
+    return { projectIds, cardIds: linked };
+  }
+
+  private goalCardChange(
+    instance: OrchestratorConfig,
+    link: readonly unknown[] | undefined,
+    unlink: readonly unknown[] | undefined,
+  ): { link?: number[]; unlink?: number[] } {
+    return {
+      ...(link?.length ? { link: link.map((ref) => this.scopedCardId(instance, ref)) } : {}),
+      ...(unlink?.length
+        ? {
+            unlink: unlink.map((ref) => {
+              const match = /(\d+)$/.exec(String(ref).trim());
+              if (!match) throw new AgentError(400, `Card ${String(ref)} is not a card key`);
+              return Number(match[1]);
+            }),
+          }
+        : {}),
+    };
   }
 
   /**
@@ -774,19 +878,57 @@ export class OrchestratorChat implements OrchestratorToolHost {
   }
 
   /** The owner sets a goal from the page; the chat picks it up at its next check. */
-  addOwnerGoal(id: string, input: { title: string; objective: string; doneWhen: string }) {
+  addOwnerGoal(
+    id: string,
+    input: {
+      title: string;
+      objective: string;
+      doneWhen: string;
+      projectIds?: number[];
+      cards?: (string | number)[];
+    },
+  ) {
     const instance = this.instance(id);
     if (instance.strategy === 'observe')
       throw new AgentError(400, 'Watch only orchestrators cannot pursue goals');
-    const goal = addGoal(this.db, id, input);
+    const goal = addGoal(this.db, id, {
+      title: input.title,
+      objective: input.objective,
+      doneWhen: input.doneWhen,
+      ...this.goalLinks(
+        instance,
+        input.projectIds,
+        input.cards,
+        `${input.objective}\n${input.doneWhen}`,
+      ),
+    });
     this.record(id, 'goal-set', `Goal ${goal.id} "${goal.title}" set by the owner`);
-    return goal;
+    return this.goalView(instance, goal);
   }
 
   /** The owner pauses, resumes, drops or closes a goal, optionally with a note. */
-  updateOwnerGoal(id: string, goalId: number, change: { status?: GoalStatus; note?: string }) {
-    this.instance(id);
-    const goal = updateGoal(this.db, id, goalId, { ...change, by: 'owner' });
+  updateOwnerGoal(
+    id: string,
+    goalId: number,
+    change: {
+      status?: GoalStatus;
+      note?: string;
+      linkCards?: (string | number)[];
+      unlinkCards?: (string | number)[];
+      projectIds?: number[];
+    },
+  ) {
+    const instance = this.instance(id);
+    const projectIds = change.projectIds
+      ? this.goalLinks(instance, change.projectIds, []).projectIds
+      : undefined;
+    const goal = updateGoal(this.db, id, goalId, {
+      ...(change.status ? { status: change.status } : {}),
+      ...(change.note ? { note: change.note } : {}),
+      ...this.goalCardChange(instance, change.linkCards, change.unlinkCards),
+      ...(projectIds ? { projectIds } : {}),
+      by: 'owner',
+    });
     this.record(
       id,
       change.status ? `goal-${change.status}` : 'goal-progress',
@@ -1225,7 +1367,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         workerMessages: this.readWorkerMessages(orchestratorId),
         goals: listGoals(this.db, orchestratorId)
           .filter((g) => g.status === 'active' || g.status === 'blocked' || g.status === 'paused')
-          .map(goalBrief),
+          .map((g) => goalBrief(this.goalView(instance, g))),
       };
     }
 
@@ -1407,11 +1549,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
           title: z.string().trim().min(1).max(200),
           notes: z.string().max(4000).default(''),
           status: z.enum(CARD_STATUSES).default('todo'),
+          goalId: z.number().int().positive().optional(),
         })
         .strict()
         .parse(args);
       if (!inScope(input.projectId))
         fail(`Project ${input.projectId} is not in this orchestrator's scope`);
+      if (input.goalId && !listGoals(this.db, orchestratorId).some((g) => g.id === input.goalId))
+        fail(`No goal ${input.goalId}`);
       const created = insertCard(this.db, input.projectId, {
         title: input.title,
         description: input.notes,
@@ -1419,6 +1564,10 @@ export class OrchestratorChat implements OrchestratorToolHost {
       });
       audit(created.id, 'create_card', input);
       this.record(orchestratorId, 'created', `${created.key}: ${created.title} (chat)`, created.id);
+      if (input.goalId) {
+        updateGoal(this.db, orchestratorId, input.goalId, { by: 'chat', link: [created.id] });
+        return { ...brief(created), goalId: input.goalId };
+      }
       return brief(created);
     }
 
@@ -1634,19 +1783,34 @@ export class OrchestratorChat implements OrchestratorToolHost {
           title: z.string().trim().min(1).max(120),
           objective: z.string().trim().min(1).max(4000),
           doneWhen: z.string().trim().min(1).max(2000),
+          projects: z
+            .array(z.union([z.number().int(), z.string().trim().min(1)]))
+            .max(50)
+            .optional(),
+          cards: z.array(z.unknown()).max(60).optional(),
         })
         .strict()
         .parse(args);
       if (instance.strategy === 'observe')
         fail('Watch only: goals need an orchestrator that may act; the owner changes its mode');
-      const goal = addGoal(this.db, orchestratorId, input);
+      const goal = addGoal(this.db, orchestratorId, {
+        title: input.title,
+        objective: input.objective,
+        doneWhen: input.doneWhen,
+        ...this.goalLinks(
+          instance,
+          input.projects,
+          input.cards,
+          `${input.objective}\n${input.doneWhen}`,
+        ),
+      });
       this.record(
         orchestratorId,
         'goal-set',
         `Goal ${goal.id} "${goal.title}": ${goal.doneWhen.slice(0, 120)}`,
       );
       return {
-        goal: goalBrief(goal),
+        goal: goalBrief(this.goalView(instance, goal)),
         note: !instance.enabled
           ? 'Active, but this orchestrator is paused, so nothing brings you back to it; you only work on it when the owner writes. Tell the owner to press Start on the Orchestrators page (with "Check on its own" on) to keep it going by itself. Start on it now.'
           : instance.autoCheck
@@ -1661,12 +1825,15 @@ export class OrchestratorChat implements OrchestratorToolHost {
           goalId: z.number().int().positive(),
           note: z.string().trim().min(1).max(2000),
           status: z.enum(['active', 'paused', 'blocked', 'achieved', 'dropped']).optional(),
+          linkCards: z.array(z.unknown()).max(60).optional(),
+          unlinkCards: z.array(z.unknown()).max(60).optional(),
         })
         .strict()
         .parse(args);
       const goal = updateGoal(this.db, orchestratorId, input.goalId, {
         note: input.note,
         ...(input.status ? { status: input.status } : {}),
+        ...this.goalCardChange(instance, input.linkCards, input.unlinkCards),
         by: 'chat',
       });
       this.record(
@@ -1674,12 +1841,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
         input.status && input.status !== 'active' ? `goal-${input.status}` : 'goal-progress',
         `Goal ${goal.id} "${goal.title}"${input.status ? ` (${input.status})` : ''}: ${input.note.slice(0, 160)}`,
       );
-      return { goal: goalBrief(goal) };
+      return { goal: goalBrief(this.goalView(instance, goal)) };
     }
 
     if (name === 'list_goals') {
       z.object({}).strict().parse(args);
-      return { goals: listGoals(this.db, orchestratorId).map(goalBrief) };
+      return {
+        goals: listGoals(this.db, orchestratorId).map((g) => goalBrief(this.goalView(instance, g))),
+      };
     }
 
     if (name === 'reply_worker') {
@@ -2028,14 +2197,18 @@ class SessionRequests {
   }
 }
 
-/** A goal for the chat: its condition and the last few progress notes. */
-function goalBrief(g: OrchestratorGoal) {
+/** A goal for the chat: its projects, condition, linked cards and the last few progress notes. */
+function goalBrief(g: OrchestratorGoalView) {
+  const done = g.cards.filter((c) => c.status === 'done').length;
   return {
     id: g.id,
     title: g.title,
     status: g.status,
+    projects: g.projects.length ? g.projects.map((p) => p.name) : 'all of your projects',
     objective: g.objective,
     doneWhen: g.doneWhen,
+    cards: g.cards.map((c) => ({ key: c.key, title: c.title, status: c.status })),
+    cardsDone: g.cards.length ? `${done} of ${g.cards.length}` : 'no cards linked yet',
     updatedAt: g.updatedAt,
     recentProgress: g.progress.slice(-5),
   };
@@ -2104,9 +2277,9 @@ export const WORKER_CHANNEL =
 
 /** Working toward the owner's goals (PM-433): plan, execute by the fitting route, report, repeat. */
 const GOAL_STEP_DIRECT =
-  "Goals: for each active goal (overview's goals), compare the current state with its doneWhen condition. Plan the next concrete steps as cards in the right project, do them yourself here and verify them. Call update_goal with what moved and what is next; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
+  "Goals: for each active goal (overview's goals), compare the current state with its doneWhen condition. Plan the next concrete steps as cards in the right project and link them to the goal (create_card goalId, or update_goal linkCards), do them yourself here and verify them. When every linked card is Done, check doneWhen itself. Call update_goal with what moved and what is next; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
 const GOAL_STEP_DELEGATING =
-  "Goals: for each active goal (overview's goals), compare the current state with its doneWhen condition. Plan the next concrete steps as cards in the right project, then get each done the way it needs: hand it to an idle session already in that project (assign_card) or start one within your limits (start_session) for longer interactive work, dispatch_worker for a self-contained task, or do it yourself here when it is small or about coordination. Follow up on workers already on the goal (worker_output, worker_reply, message_worker) and answer their questions with reply_worker. Call update_goal with what moved and what is next; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
+  "Goals: for each active goal (overview's goals), compare the current state with its doneWhen condition. Plan the next concrete steps as cards in the right project and link them to the goal (create_card goalId, or update_goal linkCards), then get each done the way it needs: hand it to an idle session already in that project (assign_card) or start one within your limits (start_session) for longer interactive work, dispatch_worker for a self-contained task, or do it yourself here when it is small or about coordination. Follow up on workers already on the goal (worker_output, worker_reply, message_worker) and answer their questions with reply_worker. When every linked card is Done, check doneWhen itself. Call update_goal with what moved and what is next; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
 
 /** Accepting finished work (PM-427): verified against the card, never on the worker's word alone. */
 const ACCEPT_STEP =

@@ -255,6 +255,25 @@ export interface OrchestratorGoal {
   lastNudgeAt?: number;
   /** Automatic checks since the chat last reported progress on it. */
   nudgesWithoutProgress?: number;
+  /** Projects it is about (PM-448); empty or missing means all of the orchestrator's projects. */
+  projectIds?: number[];
+  /** Cards that deliver it, like the tracked issues of an epic (PM-448). */
+  cardIds?: number[];
+}
+
+/** A card linked to a goal, as the owner and the chat see it (PM-448). */
+export interface GoalCard {
+  id: number;
+  key: string;
+  title: string;
+  status: CardWithProject['status'];
+  projectId: number;
+}
+
+/** A goal with its projects named and its linked cards resolved (PM-448). */
+export interface OrchestratorGoalView extends OrchestratorGoal {
+  projects: { id: number; name: string }[];
+  cards: GoalCard[];
 }
 
 /** A goal that reached achieved or blocked recently (PM-436), for the owner's notifications. */

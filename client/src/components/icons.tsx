@@ -354,3 +354,14 @@ export function CheckIcon(props: IconProps) {
     </Base>
   );
 }
+
+/** Link two things: a chain of two rounded links. */
+export function LinkIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M6.8 9.2l2.4-2.4" />
+      <path d="M7.6 4.6l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7l-1.2 1.2" />
+      <path d="M8.4 11.4l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7l1.2-1.2" />
+    </Base>
+  );
+}

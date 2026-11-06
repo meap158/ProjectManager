@@ -13,7 +13,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 // The machine's own disk and memory must not decide these tests (PM-424 has its own).
 vi.mock('./resources.js', () => ({ resourceBlock: () => undefined }));
 import { openDb } from '../db.js';
-import { getCard, insertCard, insertProject } from '../store.js';
+import { getCard, insertCard, insertProject, updateCard } from '../store.js';
 import { SopStore } from '../sops.js';
 import type { AgentSupervisor } from '../agents/supervisor.js';
 import type { AgentRun, AgentSession, ProjectSummary } from '../../shared/types.js';
@@ -1235,6 +1235,44 @@ describe('worker messages and goals (PM-432, PM-433)', () => {
     ).note;
     expect(note).toContain('"Check on its own" is off');
     off.db.close();
+    db.close();
+  });
+});
+
+describe('goals as epics (PM-448)', () => {
+  it('tags projects, links cards (named in the text too) and reports how many are done', async () => {
+    const { call, chat, mine, other, a, db } = setup({ autoCheck: true });
+    const set = (await call('set_goal', {
+      title: 'Login',
+      objective: 'Ship login',
+      doneWhen: `${mine.key} is merged`,
+      projects: ['Alpha'],
+    })) as { goal: { projects: string[]; cards: { key: string }[]; cardsDone: string } };
+    expect(set.goal.projects).toEqual(['Alpha']);
+    expect(set.goal.cards.map((c) => c.key)).toEqual([mine.key]); // named in doneWhen
+    expect(set.goal.cardsDone).toBe('0 of 1');
+    await expect(
+      call('update_goal', { goalId: 1, note: 'x', linkCards: [other.key] }),
+    ).rejects.toThrow(/not in this orchestrator/);
+    const created = (await call('create_card', { projectId: a, title: 'API', goalId: 1 })) as {
+      key: string;
+    };
+    updateCard(db, mine.id, { status: 'done' });
+    const view = chat.goals('master-1')[0]!;
+    expect(view.cards.map((c) => [c.key, c.status])).toEqual([
+      [mine.key, 'done'],
+      [created.key, 'todo'],
+    ]);
+    expect(view.projects).toEqual([{ id: a, name: 'Alpha' }]);
+    const after = (await call('update_goal', {
+      goalId: 1,
+      note: 'split',
+      unlinkCards: [created.key],
+    })) as { goal: { cardsDone: string } };
+    expect(after.goal.cardsDone).toBe('1 of 1');
+    await expect(
+      call('set_goal', { title: 'x', objective: 'o', doneWhen: 'd', projects: ['Beta'] }),
+    ).rejects.toThrow(/not in this orchestrator/);
     db.close();
   });
 });

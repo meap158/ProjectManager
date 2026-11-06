@@ -83,15 +83,29 @@ export function registerOrchestratorRoutes(
         title: z.string().trim().min(1).max(120),
         objective: z.string().trim().min(1).max(4000),
         doneWhen: z.string().trim().min(1).max(2000),
+        projectIds: z.array(z.number().int().positive()).max(50).optional(),
+        cards: z
+          .array(z.union([z.string().trim().min(1).max(40), z.number().int().positive()]))
+          .max(60)
+          .optional(),
       })
       .strict();
+    const cardRefs = z
+      .array(z.union([z.string().trim().min(1).max(40), z.number().int().positive()]))
+      .max(60);
     const goalChange = z
       .object({
         status: z.enum(['active', 'paused', 'blocked', 'achieved', 'dropped']).optional(),
         note: z.string().trim().min(1).max(2000).optional(),
+        linkCards: cardRefs.optional(),
+        unlinkCards: cardRefs.optional(),
+        projectIds: z.array(z.number().int().positive()).max(50).optional(),
       })
       .strict()
-      .refine((v) => v.status || v.note, 'Give a status or a note');
+      .refine(
+        (v) => v.status || v.note || v.linkCards || v.unlinkCards || v.projectIds,
+        'Give a status, a note, cards or projects',
+      );
     app.get('/orchestrators/goals/recent', (c) => c.json(chat.goalEvents()));
     app.get('/orchestrators/:id/goals', (c) => c.json(chat.goals(c.req.param('id'))));
     app.post('/orchestrators/:id/goals', async (c) => {
@@ -103,6 +117,8 @@ export function registerOrchestratorRoutes(
       } catch (e) {
         if (e instanceof Error && /already active/.test(e.message))
           return c.json({ error: e.message }, 409);
+        if (e instanceof Error && /not in this orchestrator|at most/.test(e.message))
+          return c.json({ error: e.message }, 400);
         throw e;
       }
     });
@@ -116,6 +132,8 @@ export function registerOrchestratorRoutes(
       } catch (e) {
         if (e instanceof Error && /No goal/.test(e.message))
           return c.json({ error: e.message }, 404);
+        if (e instanceof Error && /not in this orchestrator|at most/.test(e.message))
+          return c.json({ error: e.message }, 400);
         if (e instanceof Error && /already active/.test(e.message))
           return c.json({ error: e.message }, 409);
         throw e;

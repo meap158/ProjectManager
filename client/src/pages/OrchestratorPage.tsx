@@ -619,7 +619,10 @@ export function OrchestratorPage() {
                         disabled={busy}
                         onChanged={() => void perform(async () => undefined)}
                       />
-                      <OrchestratorGoals instance={instance} />
+                      <OrchestratorGoals
+                        instance={instance}
+                        projects={scopedProjects.map((p) => ({ id: p.id, name: p.name }))}
+                      />
 
                       {(runs.some((run) => run.orchestratorId === instance.id) ||
                         runFeed.error ||

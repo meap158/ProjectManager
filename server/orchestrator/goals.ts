@@ -18,6 +18,8 @@ export type { GoalProgress, GoalStatus, OrchestratorGoal };
 export const MAX_ACTIVE_GOALS = 5;
 /** How often an active goal is brought back to the chat when nothing else asks for a check. */
 export const GOAL_NUDGE_MS = 15 * 60_000;
+/** Cards one goal may link (PM-448). */
+export const MAX_GOAL_CARDS = 60;
 /** Checks without reported progress before a goal is set to blocked. */
 export const GOAL_STALL_CHECKS = 4;
 const KEEP_PROGRESS = 40;
@@ -48,7 +50,13 @@ function save(db: Db, orchestratorId: string, goals: OrchestratorGoal[]) {
 export function addGoal(
   db: Db,
   orchestratorId: string,
-  input: { title: string; objective: string; doneWhen: string },
+  input: {
+    title: string;
+    objective: string;
+    doneWhen: string;
+    projectIds?: number[];
+    cardIds?: number[];
+  },
   now = new Date(),
 ): OrchestratorGoal {
   const goals = listGoals(db, orchestratorId);
@@ -59,7 +67,11 @@ export function addGoal(
   const at = now.toISOString();
   const goal: OrchestratorGoal = {
     id: Math.max(0, ...goals.map((g) => g.id)) + 1,
-    ...input,
+    title: input.title,
+    objective: input.objective,
+    doneWhen: input.doneWhen,
+    projectIds: [...new Set(input.projectIds ?? [])],
+    cardIds: [...new Set(input.cardIds ?? [])].slice(0, MAX_GOAL_CARDS),
     status: 'active',
     createdAt: at,
     updatedAt: at,
@@ -75,7 +87,15 @@ export function updateGoal(
   db: Db,
   orchestratorId: string,
   goalId: number,
-  change: { note?: string; status?: GoalStatus; by: GoalProgress['by'] },
+  change: {
+    note?: string;
+    status?: GoalStatus;
+    by: GoalProgress['by'];
+    /** Cards to link and unlink (PM-448). */
+    link?: number[];
+    unlink?: number[];
+    projectIds?: number[];
+  },
   now = new Date(),
 ): OrchestratorGoal {
   const goals = listGoals(db, orchestratorId);
@@ -88,9 +108,17 @@ export function updateGoal(
   )
     throw new Error(`${MAX_ACTIVE_GOALS} goals are already active`);
   const at = now.toISOString();
+  const unlink = new Set(change.unlink ?? []);
+  const cardIds = [...new Set([...(goal.cardIds ?? []), ...(change.link ?? [])])].filter(
+    (id) => !unlink.has(id),
+  );
+  if (cardIds.length > MAX_GOAL_CARDS)
+    throw new Error(`A goal links at most ${MAX_GOAL_CARDS} cards`);
   const next: OrchestratorGoal = {
     ...goal,
     ...(change.status ? { status: change.status } : {}),
+    ...(change.link || change.unlink ? { cardIds } : {}),
+    ...(change.projectIds ? { projectIds: [...new Set(change.projectIds)] } : {}),
     updatedAt: at,
     progress: change.note
       ? [...goal.progress, { at, note: change.note, by: change.by }].slice(-KEEP_PROGRESS)
