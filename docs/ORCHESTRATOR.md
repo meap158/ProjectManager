@@ -211,7 +211,14 @@ only on evidence. Working directly in the chat is a first-class choice (PM-470):
 work, and whenever no worker can take a ready card (worker limits, quota below the reserve or used
 up, every session busy or asking); the hand-over tools say so when they refuse. Each goal carries an acceptance checklist (PM-471): 2 to 8 short checkable criteria,
 each open, passing or failing with its evidence and who checked it; passing needs evidence,
-achieved needs every criterion passing, and routine checks show the checklist to the chat. Details, bounds and the Grok Bot comparison are in
+achieved needs every criterion passing, and routine checks show the checklist to the chat.
+Closing is verified independently (PM-472): when the chat marks a goal achieved, a one-shot run
+on a "Verify goal" card in the goal's project checks each criterion itself (reading code, running
+checks, reading pull requests, changing nothing) and ends with a `VERDICT:` line. The goal stays
+active meanwhile; a tick every 20 seconds reads finished runs, closes the goal when every criterion
+is confirmed, and otherwise turns the unmet ones to failing with the verifier's evidence. The chat
+may close without it only when it cannot run (`closeUnverified` with a reason, kept in the note);
+the owner's Mark achieved is not verified. Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open

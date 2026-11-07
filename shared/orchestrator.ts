@@ -254,6 +254,17 @@ export interface GoalCriterion {
   checkedAt?: string;
 }
 
+/** An independent verification run on a goal (PM-472). */
+export interface GoalVerification {
+  runId: number;
+  cardId: number;
+  providerId: string;
+  startedAt: string;
+  result?: 'passed' | 'failed' | 'error';
+  finishedAt?: string;
+  summary?: string;
+}
+
 export interface OrchestratorGoal {
   id: number;
   title: string;
@@ -279,6 +290,11 @@ export interface OrchestratorGoal {
    * none until the chat adds them.
    */
   criteria?: GoalCriterion[];
+  /**
+   * The independent check before it closes (PM-472): a one-shot run that confirms each criterion.
+   * The goal closes when it passes; a failure turns criteria back to failing.
+   */
+  verification?: GoalVerification;
 }
 
 /** A card linked to a goal, as the owner and the chat see it (PM-448). */

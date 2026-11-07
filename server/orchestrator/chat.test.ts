@@ -25,6 +25,7 @@ import {
   checkPrompt,
   goalFollowUpPrompt,
   goalStatusBlock,
+  parseVerdict,
   pruneArtifacts,
 } from './chat.js';
 import { readLimits } from '../agents/limits.js';
@@ -1299,11 +1300,94 @@ describe('goal acceptance checklist (PM-471)', () => {
       note: 'merged',
       status: 'achieved',
       criteria: [{ id: 2, state: 'passing', evidence: 'PR #9 merged, checks green' }],
+      // Verification runs are covered in their own tests (PM-472).
+      closeUnverified: 'covered by the verification tests',
     })) as { goal: { status: string; criteria: { state: string }[] } };
     expect(closed.goal.status).toBe('achieved');
     expect(closed.goal.criteria.every((c) => c.state === 'passing')).toBe(true);
     expect(chat.goals('master-1')[0]!.criteria![1]!.checkedBy).toBe('chat');
     db.close();
+  });
+});
+
+describe('independent verification before a goal closes (PM-472)', () => {
+  const passAll = async (call: (name: string, args: unknown) => Promise<unknown>) => {
+    await call('set_goal', {
+      title: 'Ship',
+      objective: 'o',
+      doneWhen: 'login works',
+      criteria: ['e2e passes', 'PR merged'],
+    });
+    await call('update_goal', {
+      goalId: 1,
+      note: 'all green',
+      criteria: [
+        { id: 1, state: 'passing', evidence: 'npm run e2e: 12 passed' },
+        { id: 2, state: 'passing', evidence: 'PR #9 merged' },
+      ],
+    });
+  };
+
+  it('starts a verifier run instead of closing, and closes when it confirms every criterion', async () => {
+    const { call, chat, supervisor, db } = setup({ autoCheck: true });
+    await passAll(call);
+    const result = (await call('update_goal', { goalId: 1, note: 'done', status: 'achieved' })) as {
+      goal: { status: string };
+      verification: string;
+    };
+    expect(result.goal.status).toBe('active');
+    expect(result.verification).toContain('Run #77');
+    const prompt = (supervisor.dispatchCard.mock.calls[0]![2] as { prompt: string }).prompt;
+    expect(prompt).toContain('Do not modify, commit, push or merge anything');
+    expect(chat.goals('master-1')[0]!.verification).toMatchObject({ runId: 77 });
+    // A second close attempt waits for the running check.
+    await expect(
+      call('update_goal', { goalId: 1, note: 'again', status: 'achieved' }),
+    ).rejects.toThrow(/still checking/);
+
+    const output =
+      'Checked both.\nVERDICT: {"criteria":[{"id":1,"pass":true,"evidence":"12 passed"},{"id":2,"pass":true,"evidence":"#9 merged"}]}\n';
+    Object.assign(supervisor, {
+      getRun: () => ({ id: 77, status: 'succeeded', validation: null }),
+      readRunOutput: () => ({ data: output, nextOffset: output.length, logBytes: output.length }),
+      validateRun: vi.fn(),
+    });
+    chat.collectVerifications();
+    const goal = chat.goals('master-1')[0]!;
+    expect(goal.status).toBe('achieved');
+    expect(goal.verification?.result).toBe('passed');
+    expect(goal.criteria!.every((c) => c.checkedBy === 'verifier')).toBe(true);
+    db.close();
+  });
+
+  it('keeps the goal going when the verifier finds a criterion not met', async () => {
+    const { call, chat, supervisor, db } = setup({ autoCheck: true });
+    await passAll(call);
+    await call('update_goal', { goalId: 1, note: 'done', status: 'achieved' });
+    const output =
+      'VERDICT: {"criteria":[{"id":1,"pass":true,"evidence":"ok"},{"id":2,"pass":false,"evidence":"PR #9 still open"}]}';
+    Object.assign(supervisor, {
+      getRun: () => ({ id: 77, status: 'succeeded', validation: null }),
+      readRunOutput: () => ({ data: output, nextOffset: output.length, logBytes: output.length }),
+      validateRun: vi.fn(),
+    });
+    chat.collectVerifications();
+    const goal = chat.goals('master-1')[0]!;
+    expect(goal.status).toBe('active');
+    expect(goal.criteria![1]).toMatchObject({ state: 'failing' });
+    expect(goal.criteria![1]!.evidence).toContain('PR #9 still open');
+    expect(goal.progress.at(-1)!.note).toContain('not met: #2');
+    db.close();
+  });
+
+  it('reads the last VERDICT line, past terminal codes, and ignores malformed ones', () => {
+    expect(parseVerdict('no verdict here')).toBeNull();
+    expect(
+      parseVerdict('VERDICT: {"criteria":[{"id":1,"pass":false,"evidence":"x"}]}\nVERDICT: oops'),
+    ).toEqual([{ id: 1, pass: false, evidence: 'x' }]);
+    expect(parseVerdict('[1mVERDICT: {"criteria":[{"id":2,"pass":true}]}[0m')).toEqual([
+      { id: 2, pass: true, evidence: '' },
+    ]);
   });
 });
 
@@ -1338,6 +1422,12 @@ describe('closing goals with linked cards (PM-454)', () => {
       objective: 'o',
       doneWhen: 'd',
       cards: [mine.key, review.key],
+      criteria: ['works'],
+    });
+    await call('update_goal', {
+      goalId: 1,
+      note: 'checked',
+      criteria: [{ id: 1, state: 'passing', evidence: 'seen working' }],
     });
     await expect(
       call('update_goal', { goalId: 1, note: 'done', status: 'achieved' }),
@@ -1349,12 +1439,20 @@ describe('closing goals with linked cards (PM-454)', () => {
     expect(getCard(db, review.id)!.status).toBe('done');
     expect(getCard(db, mine.id)!.status).toBe('todo'); // not in Review: left where it is
     expect(chat.goals('master-1')[0]!.status).toBe('achieved');
-    await call('set_goal', { title: 'H', objective: 'o', doneWhen: 'd', cards: [mine.key] });
+    await call('set_goal', {
+      title: 'H',
+      objective: 'o',
+      doneWhen: 'd',
+      cards: [mine.key],
+      criteria: ['shipped'],
+    });
     const closed = (await call('update_goal', {
       goalId: 2,
       note: 'shipped',
       status: 'achieved',
+      criteria: [{ id: 1, state: 'passing', evidence: 'released' }],
       closeWithOpenCards: 'the card is a follow-up',
+      closeUnverified: 'covered by the verification tests',
     })) as { goal: { status: string } };
     expect(closed.goal.status).toBe('achieved');
     db.close();
@@ -1448,7 +1546,8 @@ describe('goal events for notifications (PM-436)', () => {
     const { chat, call, db } = setup({ autoCheck: true });
     for (const title of ['A', 'B', 'C'])
       await call('set_goal', { title, objective: 'o', doneWhen: 'd' });
-    await call('update_goal', { goalId: 1, note: 'Merged PR #2', status: 'achieved' });
+    // The owner closes it: the chat would need a checklist and a verification run (PM-471/472).
+    chat.updateOwnerGoal('master-1', 1, { status: 'achieved', note: 'Merged PR #2' });
     await call('update_goal', { goalId: 2, note: 'Needs a secret', status: 'blocked' });
     const events = chat.goalEvents();
     expect(events.map((e) => [e.title, e.status])).toEqual([

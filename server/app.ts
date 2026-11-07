@@ -175,6 +175,7 @@ export type AppWithAgents = Hono & {
   orchestrator: OrchestratorService;
   autoCheck: AutoCheck;
   workerMessenger: WorkerMessenger;
+  goalVerifier: { start(): void; stop(): void };
 };
 
 export function createApp(
@@ -368,6 +369,25 @@ export function createApp(
     record: (id, message) =>
       orchestrator.record({ orchestratorId: id, action: 'auto-check', message }),
   });
+  // Independent goal verification (PM-472): finished verifier runs are read every 20 seconds.
+  let verifyTimer: NodeJS.Timeout | undefined;
+  const goalVerifier = {
+    start() {
+      if (verifyTimer) return;
+      verifyTimer = setInterval(() => {
+        try {
+          orchestratorChat.collectVerifications();
+        } catch (e) {
+          console.error('[orchestrator] goal verification:', (e as Error).message);
+        }
+      }, 20_000);
+      verifyTimer.unref();
+    },
+    stop() {
+      clearInterval(verifyTimer);
+      verifyTimer = undefined;
+    },
+  };
   // Messages between orchestrators and their worker sessions (PM-432), delivered when idle.
   const workerMessenger = new WorkerMessenger({
     db,
@@ -1031,7 +1051,14 @@ export function createApp(
     return c.json(browse(db, requested ? resolveFolder(requested) : os.homedir()));
   });
 
-  return Object.assign(app, { supervisor, scanner, orchestrator, autoCheck, workerMessenger });
+  return Object.assign(app, {
+    supervisor,
+    scanner,
+    orchestrator,
+    autoCheck,
+    workerMessenger,
+    goalVerifier,
+  });
 }
 
 function resolveFolder(input: string): string {

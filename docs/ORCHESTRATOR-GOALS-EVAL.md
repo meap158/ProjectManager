@@ -44,7 +44,7 @@ do established harnesses do that ours does not yet?
 1. **Goal acceptance checklist** (PM-471, done 2026-11-07): `doneWhen` becomes a short list of checkable criteria,
    each with a state (open, passing, failing), its evidence and who checked it. The chat drafts it
    with the goal; checks work on the open criteria; "achieved" needs every criterion passing.
-2. **Independent verification before closing** (PM-472): before a goal is marked achieved, a fresh
+2. **Independent verification before closing** (PM-472, done 2026-11-07): before a goal is marked achieved, a fresh
    one-shot worker (or a fresh chat turn with no history) checks each criterion against the repo,
    tests and pull requests and reports pass or fail with evidence; a failure reopens the goal with
    the gap as the next card.

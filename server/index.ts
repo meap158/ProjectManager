@@ -116,6 +116,7 @@ async function main() {
   api.orchestrator.start();
   api.autoCheck.start();
   api.workerMessenger.start();
+  api.goalVerifier.start();
 
   const server = createServer();
   server.prependListener('upgrade', (req, socket, head) => {
@@ -220,6 +221,7 @@ async function main() {
       try {
         api.autoCheck.stop();
         api.workerMessenger.stop();
+        api.goalVerifier.stop();
         await api.orchestrator.stop();
         await api.supervisor.shutdown();
       } finally {

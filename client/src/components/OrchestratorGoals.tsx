@@ -434,6 +434,22 @@ export function OrchestratorGoals({
                         Ready to close
                       </span>
                     )}
+                    {goal.verification && !goal.verification.result && (
+                      <span
+                        className="badge badge-tracked"
+                        title={`Run #${goal.verification.runId} is checking every criterion independently; the goal closes when it confirms them`}
+                      >
+                        Verifying
+                      </span>
+                    )}
+                    {goal.verification?.result === 'passed' && goal.status === 'achieved' && (
+                      <span
+                        className="badge badge-done"
+                        title={`Every criterion confirmed by verifier run #${goal.verification.runId}`}
+                      >
+                        Verified
+                      </span>
+                    )}
                   </div>
                   {!watchOnly && (
                     <div

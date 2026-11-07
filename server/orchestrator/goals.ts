@@ -229,6 +229,23 @@ export function noteClosePrompted(db: Db, orchestratorId: string, goalIds: reado
   );
 }
 
+/** Replaces one goal's fields without touching its progress or stall count (PM-472). */
+export function patchGoal(
+  db: Db,
+  orchestratorId: string,
+  goalId: number,
+  patch: Partial<OrchestratorGoal>,
+): OrchestratorGoal | null {
+  let found: OrchestratorGoal | null = null;
+  const goals = listGoals(db, orchestratorId).map((g) => {
+    if (g.id !== goalId) return g;
+    found = { ...g, ...patch };
+    return found;
+  });
+  if (found) save(db, orchestratorId, goals);
+  return found;
+}
+
 /** Active goals the automatic check should bring back now. */
 export function goalsDue(goals: readonly OrchestratorGoal[], now: number): OrchestratorGoal[] {
   return goals.filter(

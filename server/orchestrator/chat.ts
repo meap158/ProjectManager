@@ -35,6 +35,7 @@ import type {
   OrchestratorChatWork,
   GoalEvent,
   GoalCard,
+  GoalVerification,
   CardGoal,
   OrchestratorGoalView,
 } from '../../shared/orchestrator.js';
@@ -54,6 +55,7 @@ import {
   activeGoals,
   addGoal,
   cardSetKey,
+  patchGoal,
   unmetCriteria,
   isQuiet,
   GOAL_QUIET_NUDGE_MS,
@@ -356,6 +358,12 @@ export const ORCHESTRATOR_TOOLS = [
           type: 'array',
           items: { type: 'string', maxLength: 500 },
           description: 'Add acceptance criteria (a goal without a checklist needs 2 to 8)',
+        },
+        closeUnverified: {
+          type: 'string',
+          maxLength: 1000,
+          description:
+            'With achieved: close without the independent verification run, saying why (only when it cannot run)',
         },
         closeWithOpenCards: {
           type: 'string',
@@ -822,6 +830,121 @@ export class OrchestratorChat implements OrchestratorToolHost {
   goals(id: string): OrchestratorGoalView[] {
     const instance = this.instance(id);
     return [...listGoals(this.db, id)].reverse().map((g) => this.goalView(instance, g));
+  }
+
+  /**
+   * Starts the independent check of a goal (PM-472): a one-shot run on a "Verify goal" card in the
+   * goal's project, told to check each criterion and end with a VERDICT line. It never changes
+   * the project.
+   */
+  private async startVerification(
+    instance: OrchestratorConfig,
+    goal: OrchestratorGoal,
+  ): Promise<GoalVerification> {
+    const firstCard = (goal.cardIds ?? []).map((id) => getCard(this.db, id)).find(Boolean);
+    const projectId =
+      goal.projectIds?.[0] ??
+      (firstCard && firstCard.projectId > 0 ? firstCard.projectId : undefined) ??
+      this.scope(instance)[0]?.id;
+    if (!projectId) throw new Error('the goal names no project and links no card');
+    const available = new Set(
+      (await providerStatuses()).filter((p) => p.available).map((p) => p.id),
+    );
+    const providerId = instance.providers.find((p) => available.has(p));
+    if (!providerId) throw new Error('none of its agents is installed');
+    const card = insertCard(this.db, projectId, {
+      title: `Verify goal ${goal.id}: ${goal.title}`.slice(0, 200),
+      description: `Independent check before the goal closes (PM-472).\n\nCriteria:\n${(goal.criteria ?? []).map((c) => `#${c.id} ${c.text}`).join('\n')}`,
+      status: 'in_progress',
+    });
+    const run = await this.supervisor.dispatchCard(projectId, card.id, {
+      providerId,
+      ...(await orchestratorRunLevel(this.db, providerId)),
+      prompt: verifierPrompt(this.goalView(instance, goal)),
+      orchestratorId: instance.id,
+      maxAttempts: 1,
+      timeoutMin: 20,
+    });
+    return {
+      runId: run.id,
+      cardId: card.id,
+      providerId,
+      startedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Reads finished verification runs and applies their verdicts (PM-472): all criteria passing
+   * closes the goal as verified; a failing criterion turns back to failing with the verifier's
+   * evidence and the goal keeps going; no verdict leaves it active with a note.
+   */
+  collectVerifications(): void {
+    for (const instance of this.service.state().instances)
+      for (const goal of listGoals(this.db, instance.id)) {
+        const v = goal.verification;
+        if (!v || v.result) continue;
+        const run = this.supervisor.getRun(v.runId);
+        if (run && (run.status === 'queued' || run.status === 'running')) continue;
+        const head = this.supervisor.readRunOutput(v.runId, 0);
+        const tail = head
+          ? this.supervisor.readRunOutput(v.runId, Math.max(0, head.logBytes - 120_000))
+          : null;
+        const verdict = parseVerdict(tail?.data ?? '');
+        const at = new Date().toISOString();
+        const card = getCard(this.db, v.cardId);
+        if (card && card.status !== 'done') updateCard(this.db, card.id, { status: 'done' });
+        if (run?.status === 'succeeded' && !run.validation)
+          this.supervisor.validateRun(run.id, 'accepted', 'done');
+        if (!verdict) {
+          patchGoal(this.db, instance.id, goal.id, {
+            verification: { ...v, result: 'error', finishedAt: at, summary: 'no verdict' },
+          });
+          updateGoal(this.db, instance.id, goal.id, {
+            note: `Verification run #${v.runId} ended (${run?.status ?? 'gone'}) without a verdict; the goal stays active. Try closing again, or close with closeUnverified if it cannot run.`,
+            by: 'system',
+          });
+          this.record(
+            instance.id,
+            'goal-verify-error',
+            `Goal ${goal.id} "${goal.title}": verification run #${v.runId} gave no verdict`,
+            v.cardId,
+          );
+          continue;
+        }
+        const known = new Set((goal.criteria ?? []).map((c) => c.id));
+        const checked = verdict.filter((c) => known.has(c.id));
+        const failing = (goal.criteria ?? []).filter(
+          (c) => !checked.some((x) => x.id === c.id && x.pass),
+        );
+        updateGoal(this.db, instance.id, goal.id, {
+          criteria: checked.map((c) => ({
+            id: c.id,
+            state: c.pass ? ('passing' as const) : ('failing' as const),
+            evidence: `Verifier run #${v.runId}: ${c.evidence || (c.pass ? 'confirmed' : 'not met')}`,
+          })),
+          ...(failing.length ? {} : { status: 'achieved' as const }),
+          note: failing.length
+            ? `Verification run #${v.runId} found ${failing.length} criteri${failing.length === 1 ? 'on' : 'a'} not met: ${failing.map((c) => `#${c.id}`).join(', ')}. The goal stays active; fix those and close it again.`
+            : `Verified by run #${v.runId}: every criterion confirmed independently. Goal achieved.`,
+          by: 'system',
+        });
+        patchGoal(this.db, instance.id, goal.id, {
+          verification: {
+            ...v,
+            result: failing.length ? 'failed' : 'passed',
+            finishedAt: at,
+            summary: failing.length ? `${failing.length} not met` : 'all confirmed',
+          },
+          // Failing criteria are new work: not a stall.
+          nudgesWithoutProgress: 0,
+        });
+        this.record(
+          instance.id,
+          failing.length ? 'goal-verify-failed' : 'goal-achieved',
+          `Goal ${goal.id} "${goal.title}": verification run #${v.runId} ${failing.length ? `found ${failing.length} criteria not met` : 'confirmed every criterion'}`,
+          v.cardId,
+        );
+      }
   }
 
   /** A goal with project names and its linked cards as they are now (PM-448). */
@@ -2092,6 +2215,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
           linkCards: z.array(z.unknown()).max(60).optional(),
           unlinkCards: z.array(z.unknown()).max(60).optional(),
           closeWithOpenCards: z.string().trim().min(1).max(1000).optional(),
+          closeUnverified: z.string().trim().min(1).max(1000).optional(),
           criteria: z
             .array(
               z
@@ -2115,6 +2239,10 @@ export class OrchestratorChat implements OrchestratorToolHost {
         const unmet = (current?.criteria ?? []).filter(
           (c) => (updates.get(c.id) ?? c.state) !== 'passing',
         );
+        if (!(current?.criteria ?? []).length && !input.addCriteria?.length)
+          fail(
+            'Add the acceptance checklist first (addCriteria: 2 to 8 checkable criteria) and check each with evidence',
+          );
         if (unmet.length || input.addCriteria?.length)
           fail(
             `Criteria not passing yet: ${unmet.map((c) => `#${c.id} "${c.text.slice(0, 60)}" (${updates.get(c.id) ?? c.state})`).join(', ') || 'the ones you are adding'}. Check each with evidence first.`,
@@ -2128,11 +2256,30 @@ export class OrchestratorChat implements OrchestratorToolHost {
             `${open.map((c) => `${c.key} (${c.status.replace('_', ' ')})`).join(', ')} still open: finish or unlink them, or give closeWithOpenCards saying why the goal holds anyway`,
           );
       }
+      // Closing goes through an independent verification run (PM-472): the goal stays active
+      // until the verifier confirms every criterion, unless it cannot run and the chat says why.
+      let verification: GoalVerification | null = null;
+      if (input.status === 'achieved' && !input.closeUnverified) {
+        const current = listGoals(this.db, orchestratorId).find((g) => g.id === input.goalId)!;
+        if (current.verification && !current.verification.result)
+          fail(
+            `Verification run #${current.verification.runId} is still checking this goal; it closes when that passes`,
+          );
+        try {
+          verification = await this.startVerification(instance, current);
+        } catch (e) {
+          fail(
+            `Verification could not start: ${(e as Error).message}. Retry later, or give closeUnverified saying why it is safe to close without it.`,
+          );
+        }
+      }
       const goal = updateGoal(this.db, orchestratorId, input.goalId, {
-        note: input.closeWithOpenCards
-          ? `${input.note}\n\nClosed with open cards: ${input.closeWithOpenCards}`
-          : input.note,
-        ...(input.status ? { status: input.status } : {}),
+        note: input.closeUnverified
+          ? `${input.note}\n\nClosed without independent verification: ${input.closeUnverified}`
+          : input.closeWithOpenCards
+            ? `${input.note}\n\nClosed with open cards: ${input.closeWithOpenCards}`
+            : input.note,
+        ...(input.status && !verification ? { status: input.status } : {}),
         ...cardChange,
         ...(input.criteria ? { criteria: input.criteria } : {}),
         ...(input.addCriteria ? { addCriteria: input.addCriteria } : {}),
@@ -2145,6 +2292,19 @@ export class OrchestratorChat implements OrchestratorToolHost {
         undefined,
         input.note,
       );
+      if (verification) {
+        const verifying = patchGoal(this.db, orchestratorId, goal.id, { verification })!;
+        this.record(
+          orchestratorId,
+          'goal-verifying',
+          `Goal ${goal.id} "${goal.title}": verification run #${verification.runId} started`,
+          verification.cardId,
+        );
+        return {
+          goal: goalBrief(this.goalView(instance, verifying)),
+          verification: `Run #${verification.runId} is checking every criterion independently; the goal closes when it confirms them, and a failure comes back as failing criteria. Keep working on anything else meanwhile.`,
+        };
+      }
       return { goal: goalBrief(this.goalView(instance, goal)) };
     }
 
@@ -2510,6 +2670,56 @@ const OWNER_STATUS_NOTE: Record<GoalStatus, string> = {
   achieved: 'Marked achieved by the owner.',
   dropped: 'Dropped by the owner.',
 };
+
+/** The independent verifier's task (PM-472): check, do not change, end with one VERDICT line. */
+export function verifierPrompt(g: OrchestratorGoalView): string {
+  return [
+    `You are verifying, independently, whether goal "${g.title}" is really done. You did not do this work; do not trust claims, check them.`,
+    `Objective: ${g.objective}`,
+    `Done when: ${g.doneWhen}`,
+    `Acceptance criteria (with the evidence claimed so far):\n${(g.criteria ?? [])
+      .map((c) => `#${c.id} ${c.text}${c.evidence ? `\n   claimed: ${c.evidence}` : ''}`)
+      .join('\n')}`,
+    g.cards.length
+      ? `Linked cards: ${g.cards.map((c) => `${c.key} "${c.title}" (${c.status})`).join('; ')}`
+      : '',
+    'For each criterion, look for direct evidence yourself: read the code, run the tests or build when that is how it is checked, look at the git log and the pull requests (gh pr view/list). Do not modify, commit, push or merge anything; only read and run checks.',
+    'Finish with exactly one line, the last line of your answer, in this form (valid JSON after the colon):',
+    'VERDICT: {"criteria":[{"id":1,"pass":true,"evidence":"what you saw"},{"id":2,"pass":false,"evidence":"what is missing"}]}',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/** The JSON object in a line: from its first { to its last }, past any terminal codes. */
+const jsonOf = (line: string) => line.slice(line.indexOf('{'), line.lastIndexOf('}') + 1);
+
+/** The verifier's last VERDICT line, or null when it gave none (PM-472). */
+export function parseVerdict(
+  output: string,
+): { id: number; pass: boolean; evidence: string }[] | null {
+  const lines = output.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const at = lines[i]!.indexOf('VERDICT:');
+    if (at < 0) continue;
+    try {
+      const parsed = JSON.parse(jsonOf(lines[i]!.slice(at))) as {
+        criteria?: { id?: unknown; pass?: unknown; evidence?: unknown }[];
+      };
+      if (!Array.isArray(parsed.criteria)) continue;
+      return parsed.criteria
+        .filter((c) => typeof c.id === 'number' && typeof c.pass === 'boolean')
+        .map((c) => ({
+          id: c.id as number,
+          pass: c.pass as boolean,
+          evidence: typeof c.evidence === 'string' ? c.evidence.slice(0, 600) : '',
+        }));
+    } catch {
+      // A malformed line; look further up.
+    }
+  }
+  return null;
+}
 
 /** The state of every active goal for a routine check (PM-461): cards, workers, what is done. */
 export function goalStatusBlock(goals: readonly OrchestratorGoalView[]): string {
