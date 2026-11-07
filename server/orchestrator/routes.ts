@@ -78,6 +78,13 @@ export function registerOrchestratorRoutes(
       return c.json(chat.sendCard(c.req.param('id'), parsed.data.cardId));
     });
     // Goals (PM-433): what the orchestrator pursues until done, and the owner's controls.
+    // A goal's optional limits (PM-473): automatic checks and days per budget window.
+    const goalBudget = z
+      .object({
+        checks: z.number().int().min(1).max(500).optional(),
+        days: z.number().min(0.1).max(365).optional(),
+      })
+      .strict();
     const goalInput = z
       .object({
         title: z.string().trim().min(1).max(120),
@@ -89,6 +96,7 @@ export function registerOrchestratorRoutes(
           .max(60)
           .optional(),
         criteria: z.array(z.string().trim().min(1).max(500)).max(12).optional(),
+        budget: goalBudget.optional(),
       })
       .strict();
     const cardRefs = z
@@ -105,11 +113,19 @@ export function registerOrchestratorRoutes(
         force: z.boolean().optional(),
         /** With "achieved": accept its linked cards in Review as Done. */
         acceptReview: z.boolean().optional(),
+        /** New limits (PM-473); null removes them. */
+        budget: goalBudget.nullable().optional(),
       })
       .strict()
       .refine(
-        (v) => v.status || v.note || v.linkCards || v.unlinkCards || v.projectIds,
-        'Give a status, a note, cards or projects',
+        (v) =>
+          v.status ||
+          v.note ||
+          v.linkCards ||
+          v.unlinkCards ||
+          v.projectIds ||
+          v.budget !== undefined,
+        'Give a status, a note, cards, projects or a budget',
       );
     app.get('/orchestrators/goals/recent', (c) => c.json(chat.goalEvents()));
     // The goals a card is linked to (PM-467), for the card dialog.

@@ -55,6 +55,8 @@ import {
   activeGoals,
   addGoal,
   cardSetKey,
+  budgetUse,
+  overBudget,
   patchGoal,
   unmetCriteria,
   isQuiet,
@@ -323,6 +325,16 @@ export const ORCHESTRATOR_TOOLS = [
           maxItems: 12,
           description:
             'The acceptance checklist: 2 to 8 short criteria, each checkable by a command, a test, a PR or a screenshot. Achieved needs every one passing.',
+        },
+        budget: {
+          type: 'object',
+          description:
+            'Optional limits when the owner gives them: automatic checks and/or days. At the limit you write a closing report and the goal waits for the owner.',
+          properties: {
+            checks: { type: 'integer', minimum: 1, maximum: 500 },
+            days: { type: 'number', minimum: 0.1, maximum: 365 },
+          },
+          additionalProperties: false,
         },
       },
       required: ['title', 'objective', 'doneWhen'],
@@ -1013,11 +1025,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
         lastCheckAt,
         nextCheckAt: null,
         note:
-          g.status === 'paused'
-            ? 'Paused: automatic checks skip it until you resume it.'
-            : g.status === 'blocked'
-              ? 'Blocked: waiting for you (see the latest note).'
-              : 'Closed.',
+          g.status === 'paused' && g.budgetReachedAt
+            ? 'Budget reached: the chat wrote its closing report; resume it for another budget window.'
+            : g.status === 'paused'
+              ? 'Paused: automatic checks skip it until you resume it.'
+              : g.status === 'blocked'
+                ? 'Blocked: waiting for you (see the latest note).'
+                : 'Closed.',
       };
     const stuck = this.goalStuck(instance);
     if (stuck) return { lastCheckAt, nextCheckAt: null, note: `No automatic checks: ${stuck}` };
@@ -1229,6 +1243,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       projectIds?: number[];
       cards?: (string | number)[];
       criteria?: string[];
+      budget?: OrchestratorGoal['budget'];
     },
   ) {
     const instance = this.instance(id);
@@ -1239,6 +1254,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       objective: input.objective,
       doneWhen: input.doneWhen,
       ...(input.criteria?.length ? { criteria: input.criteria } : {}),
+      ...(input.budget ? { budget: input.budget } : {}),
       ...this.goalLinks(
         instance,
         input.projectIds,
@@ -1262,6 +1278,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
       projectIds?: number[];
       force?: boolean;
       acceptReview?: boolean;
+      /** New limits (PM-473); null removes them. A change opens a new budget window. */
+      budget?: OrchestratorGoal['budget'] | null;
     },
   ) {
     const instance = this.instance(id);
@@ -1294,6 +1312,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
           : {}),
       ...cardChange,
       ...(projectIds ? { projectIds } : {}),
+      ...(change.budget !== undefined ? { budget: change.budget } : {}),
       by: 'owner',
     });
     this.record(
@@ -2172,6 +2191,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
             .optional(),
           cards: z.array(z.unknown()).max(60).optional(),
           criteria: z.array(z.string().trim().min(1).max(500)).max(12).optional(),
+          budget: z
+            .object({
+              checks: z.number().int().min(1).max(500).optional(),
+              days: z.number().min(0.1).max(365).optional(),
+            })
+            .strict()
+            .optional(),
         })
         .strict()
         .parse(args);
@@ -2182,6 +2208,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         objective: input.objective,
         doneWhen: input.doneWhen,
         ...(input.criteria ? { criteria: input.criteria } : {}),
+        ...(input.budget ? { budget: input.budget } : {}),
         ...this.goalLinks(
           instance,
           input.projects,
@@ -2722,7 +2749,7 @@ export function parseVerdict(
 }
 
 /** The state of every active goal for a routine check (PM-461): cards, workers, what is done. */
-export function goalStatusBlock(goals: readonly OrchestratorGoalView[]): string {
+export function goalStatusBlock(goals: readonly OrchestratorGoalView[], now = Date.now()): string {
   return [
     'Goal status now:',
     ...goals.map((g) => {
@@ -2749,7 +2776,16 @@ export function goalStatusBlock(goals: readonly OrchestratorGoalView[]): string 
             )
             .join('\n')
         : '  (no acceptance checklist yet: add 2 to 8 checkable criteria with update_goal addCriteria)';
-      return `- Goal ${g.id} "${g.title}" (${g.cards.length ? `${done} of ${g.cards.length} cards done` : 'no cards'}). Done when: ${g.doneWhen.slice(0, 300)}\n  Criteria:\n${criteria}\n  Cards:\n${cards}`;
+      // The budget window (PM-473): used so far, and the closing report when it has run out.
+      const use = budgetUse(g, now);
+      const budget = g.budget
+        ? `\n  Budget: ${use.checks}${g.budget.checks ? ` of ${g.budget.checks}` : ''} checks, day ${use.days.toFixed(1)}${g.budget.days ? ` of ${g.budget.days}` : ''}.${
+            overBudget(g, now)
+              ? ' BUDGET REACHED: write the closing report now with update_goal (which criteria pass with evidence, which do not and why, what you would do next and what it needs). After this check the goal waits for the owner.'
+              : ''
+          }`
+        : '';
+      return `- Goal ${g.id} "${g.title}" (${g.cards.length ? `${done} of ${g.cards.length} cards done` : 'no cards'}). Done when: ${g.doneWhen.slice(0, 300)}${budget}\n  Criteria:\n${criteria}\n  Cards:\n${cards}`;
     }),
   ].join('\n');
 }

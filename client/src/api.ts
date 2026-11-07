@@ -192,6 +192,8 @@ export const api = {
       cards?: string[];
       /** The acceptance checklist (PM-471). */
       criteria?: string[];
+      /** Optional limits per budget window (PM-473). */
+      budget?: { checks?: number; days?: number };
     },
   ) =>
     request<OrchestratorGoalView>('POST', `/orchestrators/${encodeURIComponent(id)}/goals`, goal),

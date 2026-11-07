@@ -48,7 +48,7 @@ do established harnesses do that ours does not yet?
    one-shot worker (or a fresh chat turn with no history) checks each criterion against the repo,
    tests and pull requests and reports pass or fail with evidence; a failure reopens the goal with
    the gap as the next card.
-3. **Goal budgets with a hand-back** (PM-473): optional limits per goal (checks, days, worker runs);
+3. **Goal budgets with a hand-back** (PM-473, done 2026-11-07): optional limits per goal (checks, days, worker runs);
    at the limit the chat writes a closing report (what passes, what does not, what it would do
    next) and the goal waits for the owner instead of looping.
 4. **Acceptance criteria on every card the goal creates** (PM-474): create_card for a goal requires

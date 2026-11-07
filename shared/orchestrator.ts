@@ -295,6 +295,17 @@ export interface OrchestratorGoal {
    * The goal closes when it passes; a failure turns criteria back to failing.
    */
   verification?: GoalVerification;
+  /**
+   * Optional limits (PM-473): automatic checks, and days, per budget window. At the limit the chat
+   * writes a closing report and the goal waits for the owner; resuming opens a new window.
+   */
+  budget?: { checks?: number; days?: number };
+  /** Checks that carried the goal step in the current budget window. */
+  checksUsed?: number;
+  /** When the current budget window started (set, or last resumed by the owner). */
+  budgetStartedAt?: string;
+  /** When the budget ran out; cleared when the owner resumes it. */
+  budgetReachedAt?: string;
 }
 
 /** A card linked to a goal, as the owner and the chat see it (PM-448). */

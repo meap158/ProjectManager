@@ -83,6 +83,8 @@ export function addGoal(
     cardIds?: number[];
     /** The acceptance checklist (PM-471); each starts open. */
     criteria?: string[];
+    /** Optional limits per budget window (PM-473). */
+    budget?: OrchestratorGoal['budget'];
   },
   now = new Date(),
 ): OrchestratorGoal {
@@ -105,6 +107,7 @@ export function addGoal(
       .map((t) => t.trim())
       .filter(Boolean)
       .map((text, i) => ({ id: i + 1, text, state: 'open' as const })),
+    ...(budgetOf(input.budget) ? { budget: budgetOf(input.budget), budgetStartedAt: at } : {}),
     status: 'active',
     createdAt: at,
     updatedAt: at,
@@ -131,6 +134,8 @@ export function updateGoal(
     /** Checklist changes (PM-471): new criteria, and criteria checked with evidence. */
     addCriteria?: string[];
     criteria?: CriterionUpdate[];
+    /** New limits (PM-473); null removes them. */
+    budget?: OrchestratorGoal['budget'] | null;
   },
   now = new Date(),
 ): OrchestratorGoal {
@@ -182,6 +187,16 @@ export function updateGoal(
     ...(change.link || change.unlink ? { cardIds } : {}),
     ...(change.projectIds ? { projectIds: [...new Set(change.projectIds)] } : {}),
     ...(change.criteria || change.addCriteria ? { criteria } : {}),
+    ...(change.budget !== undefined
+      ? budgetOf(change.budget ?? undefined)
+        ? { budget: budgetOf(change.budget ?? undefined) }
+        : { budget: undefined }
+      : {}),
+    // The owner resuming a goal, or changing its budget, opens a new budget window (PM-473).
+    ...((change.status === 'active' && change.by === 'owner' && goal.budgetReachedAt) ||
+    change.budget !== undefined
+      ? { budgetReachedAt: undefined, checksUsed: 0, budgetStartedAt: at }
+      : {}),
     updatedAt: at,
     progress: change.note
       ? [...goal.progress, { at, note: change.note, by: change.by }].slice(-KEEP_PROGRESS)
@@ -246,6 +261,68 @@ export function patchGoal(
   return found;
 }
 
+/** A budget with at least one positive limit, or undefined (PM-473). */
+export function budgetOf(budget?: OrchestratorGoal['budget']): OrchestratorGoal['budget'] {
+  const checks = budget?.checks && budget.checks > 0 ? Math.floor(budget.checks) : undefined;
+  const days = budget?.days && budget.days > 0 ? budget.days : undefined;
+  return checks || days ? { ...(checks ? { checks } : {}), ...(days ? { days } : {}) } : undefined;
+}
+
+/** How much of its budget window a goal has used, for the chat and the page (PM-473). */
+export function budgetUse(g: OrchestratorGoal, now: number) {
+  const started = Date.parse(g.budgetStartedAt ?? g.createdAt);
+  return {
+    checks: g.checksUsed ?? 0,
+    days: Math.max(0, (now - started) / 86_400_000),
+  };
+}
+
+/** An active goal whose budget window is used up and not yet reported (PM-473). */
+export function overBudget(g: OrchestratorGoal, now: number): boolean {
+  if (g.status !== 'active' || g.budgetReachedAt || !g.budget) return false;
+  const use = budgetUse(g, now);
+  return (
+    (g.budget.checks !== undefined && use.checks >= g.budget.checks) ||
+    (g.budget.days !== undefined && use.days >= g.budget.days)
+  );
+}
+
+/**
+ * After the check that asked for the closing report: these goals pause and wait for the owner,
+ * with a note saying why (PM-473). Resuming opens a new budget window.
+ */
+export function noteBudgetReached(
+  db: Db,
+  orchestratorId: string,
+  goalIds: readonly number[],
+  now: number,
+) {
+  if (!goalIds.length) return;
+  const at = new Date(now).toISOString();
+  save(
+    db,
+    orchestratorId,
+    listGoals(db, orchestratorId).map((g) => {
+      if (!goalIds.includes(g.id)) return g;
+      const use = budgetUse(g, now);
+      return {
+        ...g,
+        status: 'paused' as const,
+        budgetReachedAt: at,
+        updatedAt: at,
+        progress: [
+          ...g.progress,
+          {
+            at,
+            note: `Budget reached (${use.checks} checks, ${use.days.toFixed(1)} days): the chat was asked for a closing report, and the goal now waits for you. Resume it to give it another budget window.`,
+            by: 'system' as const,
+          },
+        ].slice(-KEEP_PROGRESS),
+      };
+    }),
+  );
+}
+
 /** Active goals the automatic check should bring back now. */
 export function goalsDue(goals: readonly OrchestratorGoal[], now: number): OrchestratorGoal[] {
   return goals.filter(
@@ -274,12 +351,15 @@ export function noteGoalCheck(
   const at = new Date(now).toISOString();
   const goals = listGoals(db, orchestratorId).map((g) => {
     if (g.status !== 'active') return g;
-    if (moved.has(g.id)) return { ...g, lastNudgeAt: now, nudgesWithoutProgress: 0 };
+    // Every goal-step check counts against the budget window, moving or not (PM-473).
+    const checksUsed = (g.checksUsed ?? 0) + 1;
+    if (moved.has(g.id)) return { ...g, lastNudgeAt: now, nudgesWithoutProgress: 0, checksUsed };
     const count = (g.nudgesWithoutProgress ?? 0) + 1;
     if (count !== GOAL_STALL_CHECKS)
-      return { ...g, lastNudgeAt: now, nudgesWithoutProgress: count };
+      return { ...g, lastNudgeAt: now, nudgesWithoutProgress: count, checksUsed };
     const quiet: OrchestratorGoal = {
       ...g,
+      checksUsed,
       updatedAt: at,
       lastNudgeAt: now,
       nudgesWithoutProgress: count,

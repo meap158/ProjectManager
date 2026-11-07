@@ -61,6 +61,9 @@ const EMPTY_DRAFT = {
   cards: [] as number[],
   /** One acceptance criterion per line (PM-471). */
   criteria: '',
+  /** Optional limits (PM-473), as typed. */
+  budgetChecks: '',
+  budgetDays: '',
 };
 const STATUS_LABEL: Record<CardStatus, string> = {
   backlog: 'Backlog',
@@ -175,6 +178,16 @@ export function OrchestratorGoals({
         ...(draft.projectId ? { projectIds: [draft.projectId] } : {}),
         ...(draft.cards.length ? { cards: draft.cards.map(String) } : {}),
         ...(criteria.length ? { criteria } : {}),
+        ...(Number(draft.budgetChecks) > 0 || Number(draft.budgetDays) > 0
+          ? {
+              budget: {
+                ...(Number(draft.budgetChecks) > 0
+                  ? { checks: Math.floor(Number(draft.budgetChecks)) }
+                  : {}),
+                ...(Number(draft.budgetDays) > 0 ? { days: Number(draft.budgetDays) } : {}),
+              },
+            }
+          : {}),
       });
       setDraft(EMPTY_DRAFT);
       setAdding(false);
@@ -327,6 +340,33 @@ export function OrchestratorGoals({
                 />
               </label>
               <div className="orchestrator-goal-form-row">
+                <label>
+                  Budget: automatic checks (optional)
+                  <input
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={500}
+                    placeholder="No limit"
+                    value={draft.budgetChecks}
+                    onChange={(e) => setDraft({ ...draft, budgetChecks: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Budget: days (optional)
+                  <input
+                    className="input"
+                    type="number"
+                    min={0.1}
+                    max={365}
+                    step={0.5}
+                    placeholder="No limit"
+                    value={draft.budgetDays}
+                    onChange={(e) => setDraft({ ...draft, budgetDays: e.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="orchestrator-goal-form-row">
                 {projects.length > 1 && (
                   <div className="field">
                     <span>Project</span>
@@ -432,6 +472,27 @@ export function OrchestratorGoals({
                     {goal.followUp?.readyToClose && (
                       <span className="badge badge-done" title={goal.followUp.note}>
                         Ready to close
+                      </span>
+                    )}
+                    {goal.budget && (
+                      <span
+                        className={goal.budgetReachedAt ? 'badge badge-attention' : 'badge'}
+                        title={
+                          goal.budgetReachedAt
+                            ? 'Budget reached: the chat wrote its closing report. Resume the goal for another budget window.'
+                            : 'Automatic checks and days used in this budget window; at the limit the chat writes a closing report and the goal waits for you'
+                        }
+                      >
+                        {goal.budgetReachedAt
+                          ? 'Budget reached'
+                          : [
+                              goal.budget.checks
+                                ? `${goal.checksUsed ?? 0}/${goal.budget.checks} checks`
+                                : '',
+                              goal.budget.days ? `${goal.budget.days} days` : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
                       </span>
                     )}
                     {goal.verification && !goal.verification.result && (

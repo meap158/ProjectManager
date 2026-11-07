@@ -218,7 +218,11 @@ checks, reading pull requests, changing nothing) and ends with a `VERDICT:` line
 active meanwhile; a tick every 20 seconds reads finished runs, closes the goal when every criterion
 is confirmed, and otherwise turns the unmet ones to failing with the verifier's evidence. The chat
 may close without it only when it cannot run (`closeUnverified` with a reason, kept in the note);
-the owner's Mark achieved is not verified. Details, bounds and the Grok Bot comparison are in
+the owner's Mark achieved is not verified. A goal may carry a budget (PM-473): a number of
+automatic checks and/or days per budget window, set by the owner (Add goal) or by the chat when
+the owner gives one. When it runs out, the next check asks the chat for a closing report (which
+criteria pass with evidence, which do not and why, what it would do next), then the goal pauses
+and waits for the owner; resuming it opens a new window. Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open

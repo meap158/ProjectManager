@@ -408,3 +408,23 @@ it('does not block a goal whose linked card is being worked on (PM-456)', async 
   expect(listGoals(t.db, 'm')[0]!.status).toBe('active');
   expect(listGoals(t.db, 'm')[0]!.nudgesWithoutProgress).toBe(0);
 });
+
+it('asks for a closing report when a goal reaches its budget, then lets it wait (PM-473)', async () => {
+  const { addGoal, listGoals, GOAL_NUDGE_MS } = await import('./goals.js');
+  const t = setup();
+  await t.auto.tick(); // baseline
+  addGoal(t.db, 'm', { title: 'Ship login', objective: 'o', doneWhen: 'd', budget: { checks: 2 } });
+  t.state.now += AUTO_CHECK_MIN_GAP_MS;
+  await t.auto.tick(); // check 1
+  t.state.now += GOAL_NUDGE_MS;
+  await t.auto.tick(); // check 2: the budget is now used up
+  t.state.now += GOAL_NUDGE_MS;
+  await t.auto.tick(); // the closing-report check
+  expect(t.state.checks).toBe(3);
+  expect(t.state.focuses.at(-1)).toBe('goal');
+  expect(t.state.events.some((e) => e.includes('reached its budget: closing report'))).toBe(true);
+  expect(listGoals(t.db, 'm')[0]!.status).toBe('paused');
+  t.state.now += GOAL_NUDGE_MS;
+  await t.auto.tick();
+  expect(t.state.checks).toBe(3); // waiting for the owner
+});

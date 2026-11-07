@@ -21,8 +21,10 @@ import {
   activeGoals,
   goalsDue,
   goalsReadyToClose,
+  noteBudgetReached,
   noteClosePrompted,
   noteGoalCheck,
+  overBudget,
 } from './goals.js';
 
 /** Bounds on automatic checks (PM-418). */
@@ -150,10 +152,14 @@ export class AutoCheck {
     // Only planning to ask for: a narrow check, so the chat does not re-review the whole board.
     // Active goals (PM-433) come back on their own schedule; any other check works on them too.
     const goals = activeGoals(db, id);
+    // A goal whose budget is used up comes back once for its closing report, then waits (PM-473).
+    const spent = goals.filter((g) => overBudget(g, now));
     // A goal whose linked cards are all Done comes back at once to be verified and closed (PM-454).
-    const ready = goalsReadyToClose(goals, (id) => getCard(db, id)?.status);
-    const goalDue = goalsDue(goals, now).filter((g) => !ready.includes(g));
-    const goalWork = goalDue.length + ready.length;
+    const ready = goalsReadyToClose(goals, (id) => getCard(db, id)?.status).filter(
+      (g) => !spent.includes(g),
+    );
+    const goalDue = goalsDue(goals, now).filter((g) => !ready.includes(g) && !spent.includes(g));
+    const goalWork = goalDue.length + ready.length + spent.length;
     const focus: CheckFocus =
       triggers.length || (planning && goalWork)
         ? 'all'
@@ -162,6 +168,10 @@ export class AutoCheck {
           : goalWork
             ? 'goal'
             : 'all';
+    if (spent.length)
+      triggers.push(
+        ...spent.map((g) => `goal "${g.title.slice(0, 60)}" reached its budget: closing report`),
+      );
     if (ready.length)
       triggers.push(
         ...ready.map((g) => `goal "${g.title.slice(0, 60)}" has every linked card Done`),
@@ -256,6 +266,20 @@ export class AutoCheck {
           id,
           `Goal ${g.id} "${g.title}" has had no progress in several checks; it stays active and is checked hourly`,
         );
+    // The check just sent asked for the closing report; those goals now wait for the owner.
+    if (spent.length && (focus === 'all' || focus === 'goal')) {
+      noteBudgetReached(
+        db,
+        id,
+        spent.map((g) => g.id),
+        now,
+      );
+      for (const g of spent)
+        this.deps.record(
+          id,
+          `Goal ${g.id} "${g.title}" reached its budget: closing report asked for, now waiting for the owner`,
+        );
+    }
     this.deps.record(
       id,
       `Automatic check (${triggers.slice(0, 3).join('; ')}${triggers.length > 3 ? `; +${triggers.length - 3} more` : ''})`,

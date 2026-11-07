@@ -8,7 +8,9 @@ import {
   goalsDue,
   listGoals,
   MAX_ACTIVE_GOALS,
+  noteBudgetReached,
   noteGoalCheck,
+  overBudget,
   updateGoal,
 } from './goals.js';
 
@@ -59,5 +61,42 @@ describe('orchestrator goals (PM-433)', () => {
       goalsDue(listGoals(db, 'm'), now + GOAL_STALL_CHECKS + GOAL_QUIET_NUDGE_MS),
     ).toHaveLength(1);
     expect(noteGoalCheck(db, 'm', now + GOAL_QUIET_NUDGE_MS * 2)).toEqual([]);
+  });
+});
+
+describe('goal budgets (PM-473)', () => {
+  it('counts checks per window, pauses at the limit, and opens a new window on resume', () => {
+    const db = fresh();
+    const start = new Date('2026-11-07T10:00:00Z');
+    const now = start.getTime();
+    addGoal(db, 'm', { ...goal, budget: { checks: 2 } }, start);
+    expect(overBudget(listGoals(db, 'm')[0]!, now)).toBe(false);
+    noteGoalCheck(db, 'm', now + 1);
+    noteGoalCheck(db, 'm', now + 2);
+    const spent = listGoals(db, 'm')[0]!;
+    expect(spent.checksUsed).toBe(2);
+    expect(overBudget(spent, now + 3)).toBe(true);
+    noteBudgetReached(db, 'm', [spent.id], now + 3);
+    const waiting = listGoals(db, 'm')[0]!;
+    expect(waiting.status).toBe('paused');
+    expect(waiting.budgetReachedAt).toBeTruthy();
+    expect(waiting.progress.at(-1)!.note).toContain('Budget reached (2 checks');
+    expect(overBudget(waiting, now + 4)).toBe(false); // reported once, then it waits
+    updateGoal(db, 'm', spent.id, { status: 'active', by: 'owner' });
+    const resumed = listGoals(db, 'm')[0]!;
+    expect(resumed.checksUsed).toBe(0);
+    expect(resumed.budgetReachedAt).toBeUndefined();
+    expect(overBudget(resumed, now + 5)).toBe(false);
+  });
+
+  it('measures days from the window start, and ignores empty budgets', () => {
+    const db = fresh();
+    const start = new Date('2026-11-07T10:00:00Z');
+    addGoal(db, 'm', { ...goal, budget: { days: 2 } }, start);
+    addGoal(db, 'm', { ...goal, title: 'No limits', budget: {} }, start);
+    const [limited, open] = listGoals(db, 'm');
+    expect(open!.budget).toBeUndefined();
+    expect(overBudget(limited!, start.getTime() + 47 * 3_600_000)).toBe(false);
+    expect(overBudget(limited!, start.getTime() + 49 * 3_600_000)).toBe(true);
   });
 });
