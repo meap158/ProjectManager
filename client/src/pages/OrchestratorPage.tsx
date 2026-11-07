@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState, type ReactNode } from 'react';
+﻿import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { api } from '../api';
 import { OrchestratorPending } from '../components/OrchestratorPending';
@@ -21,6 +21,8 @@ import { RunCard } from '../components/RunCard';
 import { useOrchestratorRuns } from '../components/useOrchestratorRuns';
 import { OrchestratorChat } from '../components/OrchestratorChat';
 import { OrchestratorGoals } from '../components/OrchestratorGoals';
+import { CardDialog } from '../components/CardDialog';
+import type { Card } from '../../../shared/types';
 import { collapseButtonProps, useCollapsed } from '../useCollapsed';
 
 const defaults: Omit<OrchestratorConfig, 'id'> = {
@@ -89,6 +91,9 @@ export function OrchestratorPage() {
   const selectedInstance =
     state.instances.find((item) => item.id === requestedOwner) ?? state.instances[0];
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  /** A card opened from a link on this page, shown in the card dialog in place (PM-457). */
+  const [openCard, setOpenCard] = useState<Card | null>(null);
+  const [cardError, setCardError] = useState('');
   const [runRefresh, setRunRefresh] = useState(0);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [inFlightCards, setInFlightCards] = useState<OrchestratorCardSummary[]>([]);
@@ -246,8 +251,35 @@ export function OrchestratorPage() {
   const reversedEvents = [...filteredEvents].reverse();
   const visibleEvents = reversedEvents.slice(0, historyLimit);
 
+  /**
+   * Card links on this page (goal chips, Activity, Working now, plan preview, Needs you) open the
+   * card dialog here instead of leaving for the Board (PM-457). A modified or middle click keeps
+   * the link's own behaviour, so the Board still opens in a new tab when asked.
+   */
+  function openCardInPlace(event: MouseEvent) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return;
+    const anchor = (event.target as HTMLElement).closest('a[href]');
+    const href = anchor?.getAttribute('href') ?? '';
+    const match = /^\/board\?(?:.*&)?card=(\d+)/.exec(href);
+    if (!match) return;
+    event.preventDefault();
+    const id = Number(match[1]);
+    setCardError('');
+    api
+      .listAllCards()
+      .then((cards) => {
+        const found = cards.find((c) => c.id === id);
+        if (found) setOpenCard(found);
+        else setCardError(`PM-${id} no longer exists`);
+      })
+      .catch((e: unknown) =>
+        setCardError(e instanceof Error ? e.message : 'Could not open the card'),
+      );
+  }
+
   return (
-    <main className="page orchestrator-page">
+    <main className="page orchestrator-page" onClickCapture={openCardInPlace}>
       <div className="page-head">
         <div>
           <h1>Orchestrators</h1>
@@ -1870,6 +1902,21 @@ export function OrchestratorPage() {
           </>
         )}
       </section>
+      {cardError && (
+        <p role="alert" className="error-banner">
+          {cardError}
+        </p>
+      )}
+      {openCard && (
+        <CardDialog
+          card={openCard}
+          projectId={openCard.projectId}
+          projects={projects}
+          onClose={() => setOpenCard(null)}
+          onSaved={() => setOpenCard(null)}
+          onDeleted={() => setOpenCard(null)}
+        />
+      )}
       {openEvent && (
         <ActivityEventDialog
           event={openEvent}

@@ -146,7 +146,9 @@ sentence; the terminals link lives in the nav and in Working now. Plan preview r
 badge, card key and agent; the reason with the next step under it; worker and try counts on the
 right (stacked on phones). Activity rows open their entry in a dialog (PM-452) with the time,
 orchestrator, action, card and the full text the orchestrator wrote, read on demand by the
-entry's `detailId` (the list keeps a one-line summary).
+entry's `detailId` (the list keeps a one-line summary). Card links on the page (goal chips, Activity, Working now,
+plan preview, Needs you) open the card dialog in place (PM-457); a modified or middle click keeps
+the link, so the Board opens in a new tab.
 Actions preserve paused/Observe configuration and existing quota, capacity and review policy.
 Plan preview shows aggregate readiness counts with 100-task pages and explicit Previous/Next
 controls. Each page is a fresh inspection; it never starts work.
