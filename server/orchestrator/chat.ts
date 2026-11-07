@@ -1385,13 +1385,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
         fail(`${c.key} already has a live worker; check it with get_card / worker_output`);
       const live = sessions.length + runs.length;
       if (live >= instance.maxWorkers)
-        fail(`At capacity: ${live} of your ${instance.maxWorkers} workers are busy`);
+        fail(`At capacity: ${live} of your ${instance.maxWorkers} workers are busy. ${DO_IT_HERE}`);
       const inProject =
         sessions.filter((s) => s.projectId === c.projectId).length +
         runs.filter((r) => r.projectId === c.projectId).length;
       if (inProject >= instance.maxWorkersPerProject)
         fail(
-          `${projectName(c.projectId)} already has ${inProject} of your ${instance.maxWorkersPerProject} workers`,
+          `${projectName(c.projectId)} already has ${inProject} of your ${instance.maxWorkersPerProject} workers. ${DO_IT_HERE}`,
         );
       const available = new Set(
         (await providerStatuses()).filter((p) => p.available).map((p) => p.id),
@@ -1400,7 +1400,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
         fail(`Use one of your providers: ${instance.providers.join(', ')}`);
       const providerId = requested ?? instance.providers.find((p) => available.has(p));
       if (!providerId || !available.has(providerId))
-        fail(`None of your providers is installed: ${instance.providers.join(', ')}`);
+        fail(
+          `None of your providers is installed: ${instance.providers.join(', ')}. ${DO_IT_HERE}`,
+        );
       return { providerId: providerId!, available };
     };
     /** The scheduler's own verdict on a card: provider capacity, quota reserve, assignments. */
@@ -2201,7 +2203,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
       // Handing a card to a session makes it one of your workers (PM-417), unless it already is.
       const ownLive = own.sessions.length + own.runs.length;
       if (!own.sessions.some((o) => o.id === s!.id) && ownLive >= instance.maxWorkers)
-        fail(`At capacity: ${ownLive} of your ${instance.maxWorkers} workers are busy`);
+        fail(
+          `At capacity: ${ownLive} of your ${instance.maxWorkers} workers are busy. ${DO_IT_HERE}`,
+        );
       // Typing into a session mid-turn or mid-question would mix into its work: re-read the
       // state right before sending.
       const fresh = this.supervisor.getSession(s!.id);
@@ -2346,7 +2350,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     {
       const { providerId, available } = await capacity(c, input.providerId);
       const verdict = plan(getCard(this.db, c.id) ?? c, providerId, available);
-      if (!verdict.allowed) fail(verdict.reason);
+      if (!verdict.allowed) fail(`${verdict.reason}. ${DO_IT_HERE}`);
       if (input.requestId) requests.reserve(input.requestId, fingerprint);
       // Sessions hear how to reach this orchestrator back (PM-432).
       const prompt = defaultPrompt(
@@ -2561,8 +2565,11 @@ function openingPrompt(instance: OrchestratorConfig): string {
  * How the chat gets work done when it may hand it out (PM-399): to a session already in the
  * project, else a new one within the limits, else directly.
  */
+/** Said by a hand-over refusal (PM-470): the chat can do the work itself instead of waiting. */
+const DO_IT_HERE =
+  'If it fits a turn, do it directly here instead of waiting, and note on the card that you did';
 const HAND_OVER =
-  "Hand ready work to a CLI session: assign_card to an idle session in the card's project with no card (list_sessions), or start_session within your worker limits when none fits. Work directly here only when no session can take it or the task is about this orchestrator itself. Never type into a session that is working or asking the user; check hand-overs with worker_output instead of resending.";
+  "Hand ready work to a CLI session: assign_card to an idle session in the card's project with no card (list_sessions), or start_session within your worker limits when none fits. Do it directly here when that is the better choice: the task is small or about coordination, or no worker can take it now (at your worker limits, an agent's quota below the reserve or used up, every session busy or asking the owner). Do not leave ready work waiting for a worker you could stand in for; note on the card that you did it here. Never type into a session that is working or asking the user; check hand-overs with worker_output instead of resending.";
 /**
  * Drafting the next work for a project with nothing to do (PM-426). Only from what the owner has
  * committed to: a missing or Draft roadmap yields Backlog cards, never To do, because the
@@ -2585,7 +2592,7 @@ const GOAL_STEP_DIRECT =
  * reviewed, blocked work is unblocked or re-planned), and the goal closes only on evidence.
  */
 const GOAL_STEP_DELEGATING =
-  "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, within your worker limits: an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself for something small or about coordination. Do not leave capacity idle while ready cards wait, and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) When every linked card is Done, check doneWhen yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
+  "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, within your worker limits: an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself when the card is small or about coordination, or when no worker can take it now (at your limits, quota below the reserve or used up, every session busy). Do not leave capacity idle while ready cards wait, and do not leave a ready card waiting for a worker you could stand in for; and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) When every linked card is Done, check doneWhen yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
 
 /** Accepting finished work (PM-427): verified against the card, never on the worker's word alone. */
 const ACCEPT_STEP =
@@ -2715,7 +2722,7 @@ and implementing authorized work directly in this chat session. This folder is y
 
 ## Your settings
 
-- Chat mode: ${instance.strategy === 'observe' ? 'Watch only (recommend; implement only when the user explicitly asks)' : delegates(instance) ? 'Hand authorized work to CLI sessions in your projects; work directly when none can take it' : 'Process authorized work directly in this chat session'}
+- Chat mode: ${instance.strategy === 'observe' ? 'Watch only (recommend; implement only when the user explicitly asks)' : delegates(instance) ? 'Hand authorized work to CLI sessions in your projects; work directly when that is better (small or coordination work) or when no session or run can take it (limits, quota, busy)' : 'Process authorized work directly in this chat session'}
 ${
   delegates(instance)
     ? '- Handing work to CLI sessions is on: assign_card, start_session, dispatch_worker and message_worker are available, within the limits below.'

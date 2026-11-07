@@ -207,7 +207,9 @@ the stall limit, and status changes from the page leave a note on the goal. Rout
 linked card, its state and its worker), and the goal step runs each goal like a small team:
 independent cards planned and linked, ready cards staffed in parallel within the worker limits
 (never two workers on one card), every linked card moved a step per check, and the goal closed
-only on evidence. Details, bounds and the Grok Bot comparison are in
+only on evidence. Working directly in the chat is a first-class choice (PM-470): for small or coordination
+work, and whenever no worker can take a ready card (worker limits, quota below the reserve or used
+up, every session busy or asking); the hand-over tools say so when they refuse. Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open
