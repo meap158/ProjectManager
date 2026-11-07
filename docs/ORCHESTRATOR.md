@@ -203,7 +203,11 @@ live countdown to the next check, the last check and the goals it covers, or why
 Each linked card shows the session or run working on it. Follow up (PM-456) on a goal asks the chat at once to check
 every linked card and its worker, act on them and report the full picture with update_goal. A
 goal whose linked card changed or is being worked on since its last check is not counted toward
-the stall limit, and status changes from the page leave a note on the goal. Details, bounds and the Grok Bot comparison are in
+the stall limit, and status changes from the page leave a note on the goal. Routine checks that work on goals (PM-461) carry the same goal status as Follow up (each
+linked card, its state and its worker), and the goal step runs each goal like a small team:
+independent cards planned and linked, ready cards staffed in parallel within the worker limits
+(never two workers on one card), every linked card moved a step per check, and the goal closed
+only on evidence. Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open

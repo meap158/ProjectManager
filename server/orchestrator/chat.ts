@@ -650,10 +650,15 @@ export class OrchestratorChat implements OrchestratorToolHost {
     const goal =
       goalId === undefined ? null : (listGoals(this.db, id).find((g) => g.id === goalId) ?? null);
     if (goalId !== undefined && !goal) throw new AgentError(404, `No goal ${goalId}`);
+    // Routine checks that work on goals carry the same per-goal status as Follow up (PM-461):
+    // each linked card's state and who is on it, so the chat starts from facts, not a rediscovery.
     const prompt = (config: OrchestratorConfig) =>
       goal
         ? goalFollowUpPrompt(this.goalView(config, goal))
-        : checkPrompt(config, focus, attentionKinds, goals);
+        : checkPrompt(config, focus, attentionKinds, goals) +
+          (goals && (focus === 'all' || focus === 'goal')
+            ? `\n\n${goalStatusBlock(activeGoals(this.db, id).map((g) => this.goalView(config, g)))}`
+            : '');
     const request = prompt(instance);
     let existing = this.session(id);
     if (!existing || !instance.providers.includes(existing.providerId))
@@ -2425,6 +2430,31 @@ const OWNER_STATUS_NOTE: Record<GoalStatus, string> = {
   dropped: 'Dropped by the owner.',
 };
 
+/** The state of every active goal for a routine check (PM-461): cards, workers, what is done. */
+export function goalStatusBlock(goals: readonly OrchestratorGoalView[]): string {
+  return [
+    'Goal status now:',
+    ...goals.map((g) => {
+      const done = g.cards.filter((c) => c.status === 'done').length;
+      const cards = g.cards.length
+        ? g.cards
+            .map(
+              (c) =>
+                `  - ${c.key} "${c.title}": ${c.status.replace('_', ' ')}${
+                  c.worker
+                    ? `, ${c.worker.kind} ${c.worker.id} "${c.worker.name}" (${c.worker.state})`
+                    : c.status === 'done'
+                      ? ''
+                      : ', no worker'
+                }`,
+            )
+            .join('\n')
+        : '  - no cards linked yet: plan them';
+      return `- Goal ${g.id} "${g.title}" (${g.cards.length ? `${done} of ${g.cards.length} cards done` : 'no cards'}). Done when: ${g.doneWhen.slice(0, 300)}\n${cards}`;
+    }),
+  ].join('\n');
+}
+
 /**
  * The owner's "Follow up" on one goal (PM-456): check every linked card and its worker in full,
  * act on what is found, and report the whole picture.
@@ -2532,8 +2562,14 @@ export const WORKER_CHANNEL =
 /** Working toward the owner's goals (PM-433): plan, execute by the fitting route, report, repeat. */
 const GOAL_STEP_DIRECT =
   "Goals: for each active goal (overview's goals), compare the current state with its doneWhen condition. Plan the next concrete steps as cards in the right project and link them to the goal (create_card goalId, or update_goal linkCards), do them yourself here and verify them. When every linked card is Done, check doneWhen itself. Call update_goal with what moved and what is next; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
+/**
+ * The goal step when the orchestrator may hand work out (PM-461): run each goal like a small
+ * swarm. Independent cards go to separate workers at once, within the worker limits; every
+ * check moves each linked card one step (an idle worker gets its next step, finished work is
+ * reviewed, blocked work is unblocked or re-planned), and the goal closes only on evidence.
+ */
 const GOAL_STEP_DELEGATING =
-  "Goals: for each active goal (overview's goals), compare the current state with its doneWhen condition. Plan the next concrete steps as cards in the right project and link them to the goal (create_card goalId, or update_goal linkCards), then get each done the way it needs: hand it to an idle session already in that project (assign_card) or start one within your limits (start_session) for longer interactive work, dispatch_worker for a self-contained task, or do it yourself here when it is small or about coordination. Follow up on workers already on the goal (worker_output, worker_reply, message_worker) and answer their questions with reply_worker. When every linked card is Done, check doneWhen itself. Call update_goal with what moved and what is next; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
+  "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, within your worker limits: an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself for something small or about coordination. Do not leave capacity idle while ready cards wait, and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) When every linked card is Done, check doneWhen yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
 
 /** Accepting finished work (PM-427): verified against the card, never on the worker's word alone. */
 const ACCEPT_STEP =

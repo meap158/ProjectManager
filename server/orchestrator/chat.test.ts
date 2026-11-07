@@ -24,6 +24,7 @@ import {
   briefing,
   checkPrompt,
   goalFollowUpPrompt,
+  goalStatusBlock,
   pruneArtifacts,
 } from './chat.js';
 import { readLimits } from '../agents/limits.js';
@@ -1241,6 +1242,33 @@ describe('worker messages and goals (PM-432, PM-433)', () => {
     ).note;
     expect(note).toContain('"Check on its own" is off');
     off.db.close();
+    db.close();
+  });
+});
+
+describe('goals in routine checks (PM-461)', () => {
+  it("carry every active goal's card status, and the goal step staffs cards in parallel", async () => {
+    const { call, chat, mine, db } = setup({ autoCheck: true, delegateToSessions: true });
+    await call('set_goal', {
+      title: 'Ship',
+      objective: 'o',
+      doneWhen: 'login works',
+      cards: [mine.key],
+    });
+    const block = goalStatusBlock(chat.goals('master-1'));
+    expect(block).toContain('Goal 1 "Ship" (0 of 1 cards done)');
+    expect(block).toContain(`- ${mine.key} "Add login": todo, no worker`);
+    const step = checkPrompt(
+      {
+        name: 'X',
+        providers: ['codex'],
+        projectIds: [],
+        delegateToSessions: true,
+      } as unknown as OrchestratorConfig,
+      'goal',
+    );
+    expect(step).toContain('Staff in parallel');
+    expect(step).toContain('never put two workers on one card');
     db.close();
   });
 });
