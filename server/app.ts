@@ -397,8 +397,7 @@ export function createApp(
     send: (id, text) =>
       supervisor.sendInput(
         id,
-        `[200~${text}[201~
-`,
+        `\x1b[200~${text}\x1b[201~\r`,
         false,
       ),
     record: (orchestratorId, action, message, cardId) =>
