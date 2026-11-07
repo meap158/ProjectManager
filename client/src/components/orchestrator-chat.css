@@ -344,6 +344,63 @@
   display: grid;
   gap: 8px;
 }
+/* The goal form as a modal (PM-458): 560px on desktop, the whole screen on phones. */
+dialog.confirm-dialog.goal-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+  padding: 0;
+}
+.goal-dialog .orchestrator-goal-form {
+  gap: 0;
+}
+.orchestrator-goal-form-body {
+  display: grid;
+  gap: 10px;
+}
+.orchestrator-goal-form-body .field {
+  display: grid;
+  gap: 4px;
+}
+.orchestrator-goal-form-body .field > span {
+  font-size: 12px;
+  font-weight: 550;
+}
+.orchestrator-goal-form-body textarea.input {
+  min-height: 72px;
+  height: auto;
+  resize: vertical;
+}
+.orchestrator-goal-form-body h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.orchestrator-goal-form-body > p {
+  margin: 0;
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  dialog.confirm-dialog.goal-dialog {
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+  }
+  .goal-dialog .orchestrator-goal-form {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  .goal-dialog .orchestrator-goal-form-body {
+    flex: 1;
+    overflow-y: auto;
+    align-content: start;
+  }
+  .goal-dialog .dialog-footer .btn {
+    min-height: 44px;
+    flex: 1;
+  }
+}
 .orchestrator-goal-form label {
   display: grid;
   gap: 4px;

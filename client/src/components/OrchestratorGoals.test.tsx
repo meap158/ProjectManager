@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import type { OrchestratorConfig, OrchestratorGoalView } from '../../../shared/orchestrator';
 
@@ -47,6 +47,16 @@ import { api } from '../api';
 import { OrchestratorGoals } from './OrchestratorGoals';
 
 afterEach(cleanup);
+// jsdom has no modal dialogs: open and close them by the attribute.
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+    this.dispatchEvent(new Event('close'));
+  };
+});
 const instance = {
   id: 'o',
   name: 'Trial',

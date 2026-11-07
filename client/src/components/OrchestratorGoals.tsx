@@ -250,10 +250,10 @@ export function OrchestratorGoals({
           <button
             type="button"
             className="btn btn-sm"
-            aria-expanded={adding}
-            onClick={() => setAdding((v) => !v)}
+            aria-haspopup="dialog"
+            onClick={() => setAdding(true)}
           >
-            {adding ? 'Cancel' : 'Add goal'}
+            Add goal
           </button>
         )}
       </div>
@@ -264,85 +264,105 @@ export function OrchestratorGoals({
         </p>
       )}
       {adding && (
-        <form className="orchestrator-goal-form" onSubmit={add}>
-          <label>
-            Goal
-            <input
-              className="input"
-              required
-              maxLength={120}
-              placeholder="Ship the login flow"
-              value={draft.title}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-            />
-          </label>
-          <label>
-            Objective
-            <textarea
-              className="input"
-              required
-              maxLength={4000}
-              rows={3}
-              placeholder="What to achieve, in which projects, and any constraints"
-              value={draft.objective}
-              onChange={(e) => setDraft({ ...draft, objective: e.target.value })}
-            />
-          </label>
-          <label>
-            Done when
-            <input
-              className="input"
-              required
-              maxLength={2000}
-              placeholder="A condition anyone can check, such as: the e2e login test passes on main"
-              value={draft.doneWhen}
-              onChange={(e) => setDraft({ ...draft, doneWhen: e.target.value })}
-            />
-          </label>
-          <div className="orchestrator-goal-form-row">
-            {projects.length > 1 && (
-              <div className="field">
-                <span>Project</span>
-                <Dropdown
-                  label="Project"
-                  value={draft.projectId}
-                  options={[
-                    { value: 0, label: 'All of its projects' },
-                    ...projects.map((p) => ({ value: p.id, label: p.name })),
-                  ]}
-                  onChange={(projectId) => setDraft({ ...draft, projectId })}
+        <ModalShell title="New goal" onClose={() => setAdding(false)}>
+          <form className="orchestrator-goal-form" onSubmit={add}>
+            <div className="dialog-body orchestrator-goal-form-body">
+              <h2>New goal</h2>
+              <p className="faint">
+                The orchestrator keeps at it until "Done when" holds: it plans cards, hands them to
+                sessions or runs, follows up and reports here.
+              </p>
+              <label>
+                Goal
+                <input
+                  className="input"
+                  required
+                  maxLength={120}
+                  placeholder="Ship the login flow"
+                  value={draft.title}
+                  onChange={(e) => setDraft({ ...draft, title: e.target.value })}
                 />
+              </label>
+              <label>
+                Objective
+                <textarea
+                  className="input"
+                  required
+                  maxLength={4000}
+                  rows={3}
+                  placeholder="What to achieve, in which projects, and any constraints"
+                  value={draft.objective}
+                  onChange={(e) => setDraft({ ...draft, objective: e.target.value })}
+                />
+              </label>
+              <label>
+                Done when
+                <input
+                  className="input"
+                  required
+                  maxLength={2000}
+                  placeholder="A condition anyone can check, such as: the e2e login test passes on main"
+                  value={draft.doneWhen}
+                  onChange={(e) => setDraft({ ...draft, doneWhen: e.target.value })}
+                />
+              </label>
+              <div className="orchestrator-goal-form-row">
+                {projects.length > 1 && (
+                  <div className="field">
+                    <span>Project</span>
+                    <Dropdown
+                      label="Project"
+                      value={draft.projectId}
+                      options={[
+                        { value: 0, label: 'All of its projects' },
+                        ...projects.map((p) => ({ value: p.id, label: p.name })),
+                      ]}
+                      onChange={(projectId) => setDraft({ ...draft, projectId })}
+                    />
+                  </div>
+                )}
+                <div className="field">
+                  <span>Cards (optional)</span>
+                  <Dropdown
+                    label="Cards"
+                    value={0}
+                    searchable
+                    searchPlaceholder="Search cards by key or title…"
+                    options={[
+                      { value: 0, label: 'No cards' },
+                      ...scopedCards
+                        .filter((c) => !draft.projectId || c.projectId === draft.projectId)
+                        .slice(0, PICKER_LIMIT)
+                        .map(cardOption),
+                    ]}
+                    onChange={() => undefined}
+                    multiple={{
+                      values: draft.cards,
+                      allValue: 0,
+                      onChange: (cards) => setDraft({ ...draft, cards }),
+                    }}
+                  />
+                </div>
               </div>
-            )}
-            <div className="field">
-              <span>Cards (optional)</span>
-              <Dropdown
-                label="Cards"
-                value={0}
-                searchable
-                searchPlaceholder="Search cards by key or title…"
-                options={[
-                  { value: 0, label: 'No cards' },
-                  ...scopedCards
-                    .filter((c) => !draft.projectId || c.projectId === draft.projectId)
-                    .slice(0, PICKER_LIMIT)
-                    .map(cardOption),
-                ]}
-                onChange={() => undefined}
-                multiple={{
-                  values: draft.cards,
-                  allValue: 0,
-                  onChange: (cards) => setDraft({ ...draft, cards }),
-                }}
-              />
             </div>
-          </div>
-          <div>
-            <button type="submit" className="btn btn-sm btn-primary" disabled={busy}>
-              Start goal
-            </button>
-          </div>
-        </form>
+            <div className="dialog-footer">
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={(e) => {
+                  const dialog = e.currentTarget.closest('dialog');
+                  if (dialog?.open) dialog.close();
+                  else setAdding(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-sm btn-primary" disabled={busy}>
+                Start goal
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
       {goals && open.length === 0 && closed.length === 0 && !adding && (
         <p className="faint orchestrator-goals-empty">No goals yet.</p>
@@ -771,6 +791,39 @@ function CloseGoalDialog({
           Mark achieved
         </button>
       </div>
+    </dialog>
+  );
+}
+
+/**
+ * A modal dialog for the goal form (PM-458): centred on desktop, full screen on phones; Escape,
+ * Cancel or a backdrop click closes it, and focus stays inside while it is open.
+ */
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal?.();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="confirm-dialog goal-dialog"
+      aria-label={title}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) e.currentTarget.close();
+      }}
+    >
+      {children}
     </dialog>
   );
 }

@@ -122,7 +122,8 @@ project (`lib/projectColors.ts`, PM-449), or an "All projects" pill,
 and below the text an "N of M cards done" bar (`--status-done`) leads a row of linked card chips,
 each with a status-coloured dot, opening the card on the board, with an × to unlink. "Link a card"
 is a searchable dropdown of the orchestrator's cards (key and title, column and project under
-it, open cards first, PM-449). "Add goal" opens a form (Goal, Objective, Done
+it, open cards first, PM-449). "Add goal" opens a modal dialog (PM-458: 560px on desktop, full screen on phones
+with the footer buttons held at the bottom) with a form (Goal, Objective, Done
 when, plus a Project dropdown when there are several and an optional multi-select Cards picker). Watch only orchestrators show a
 line instead of the form.
 One-time chat checks work directly in the chat, with a scoped current-task indicator and a
