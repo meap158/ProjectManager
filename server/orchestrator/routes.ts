@@ -112,6 +112,13 @@ export function registerOrchestratorRoutes(
       const text = chat.eventDetail(Number(c.req.param('id')));
       return text === null ? c.json({ error: 'No such detail' }, 404) : c.json({ text });
     });
+    // Entries recorded before details were kept: found in the goal and message stores.
+    app.get('/orchestrators/:id/event-text', (c) => {
+      const action = c.req.query('action') ?? '';
+      const message = (c.req.query('message') ?? '').slice(0, 1000);
+      const text = chat.eventFullText(c.req.param('id'), action, message);
+      return text === null ? c.json({ error: 'Not kept' }, 404) : c.json({ text });
+    });
     app.get('/orchestrators/:id/goals', (c) => c.json(chat.goals(c.req.param('id'))));
     app.post('/orchestrators/:id/goals', async (c) => {
       const parsed = goalInput.safeParse(await c.req.json().catch(() => null));

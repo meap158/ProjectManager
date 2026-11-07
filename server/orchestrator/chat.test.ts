@@ -1253,6 +1253,23 @@ describe('Activity details (PM-452)', () => {
     expect(chat.eventDetail(999)).toBeNull();
     db.close();
   });
+
+  it("finds an older entry's full text in the goal store", async () => {
+    const { call, chat, db } = setup({ autoCheck: true });
+    const doneWhen = 'All of it is merged. '.repeat(12).trim();
+    await call('set_goal', { title: 'Ship', objective: 'Ship it all', doneWhen });
+    const note = 'Merged #573 and #574. '.repeat(12).trim();
+    await call('update_goal', { goalId: 1, note });
+    const summary = (text: string) => `Goal 1 "Ship": ${text.slice(0, 120)}`;
+    expect(chat.eventFullText('master-1', 'goal-set', summary(doneWhen))).toBe(
+      `Ship it all
+
+Done when: ${doneWhen}`,
+    );
+    expect(chat.eventFullText('master-1', 'goal-progress', summary(note))).toBe(note);
+    expect(chat.eventFullText('master-1', 'git', 'TiemNet: gh pr merge 1')).toBeNull();
+    db.close();
+  });
 });
 
 describe('goals as epics (PM-448)', () => {

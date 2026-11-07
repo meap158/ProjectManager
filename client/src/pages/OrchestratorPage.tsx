@@ -1905,17 +1905,21 @@ function ActivityEventDialog({
     if (dialog && !dialog.open) dialog.showModal();
   }, []);
   useEffect(() => {
-    if (!event.detailId) return;
     let active = true;
-    api
-      .orchestratorEventDetail(event.detailId)
+    // Newer entries carry a detailId; older ones are looked up in the goal and message stores.
+    (event.detailId
+      ? api.orchestratorEventDetail(event.detailId)
+      : api.orchestratorEventText(event.orchestratorId, event.action, event.message)
+    )
       .then((r) => active && setDetail(r.text))
       .catch(() => active && setMissing(true));
     return () => {
       active = false;
     };
-  }, [event.detailId]);
-  const loading = Boolean(event.detailId) && detail === null && !missing;
+  }, [event]);
+  const loading = detail === null && !missing;
+  /** The summary already says it all: nothing more to show. */
+  const sameAsSummary = detail !== null && event.message.includes(detail.trim());
   return (
     <dialog
       ref={ref}
@@ -1939,8 +1943,8 @@ function ActivityEventDialog({
         </p>
         <p className="activity-event-summary">{event.message}</p>
         {loading && <p className="faint">Loading the full text…</p>}
-        {detail !== null && <pre className="activity-event-text">{detail}</pre>}
-        {missing && (
+        {detail !== null && !sameAsSummary && <pre className="activity-event-text">{detail}</pre>}
+        {missing && event.detailId && (
           <p className="faint">The full text has aged out; only the summary above is kept.</p>
         )}
       </div>

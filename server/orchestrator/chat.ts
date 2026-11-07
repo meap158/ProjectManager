@@ -738,6 +738,38 @@ export class OrchestratorChat implements OrchestratorToolHost {
     return Number.isInteger(id) && id > 0 ? eventDetail(this.db, id) : null;
   }
 
+  /**
+   * The full text of an entry recorded before details were kept (PM-452), found in the stores
+   * that still hold it: the goal (its objective and condition, or the progress note the summary
+   * starts) and the worker messages (the message the summary starts). Null when none holds it.
+   */
+  eventFullText(orchestratorId: string, action: string, message: string): string | null {
+    const tail = (text: string) => {
+      const at = text.indexOf('": ');
+      return at < 0 ? null : text.slice(at + 3).trim();
+    };
+    const goalId = /^Goal (\d+) /.exec(message)?.[1];
+    if (goalId && action.startsWith('goal-')) {
+      const goal = listGoals(this.db, orchestratorId).find((g) => g.id === Number(goalId));
+      if (!goal) return null;
+      if (action === 'goal-set') return `${goal.objective}\n\nDone when: ${goal.doneWhen}`;
+      const start = tail(message);
+      if (!start) return null;
+      return goal.progress.find((p) => p.note.startsWith(start))?.note ?? null;
+    }
+    const fromWorker = /^#(\d+) from session /.exec(message)?.[1];
+    const messages = listMessages(this.db, orchestratorId);
+    if (fromWorker) return messages.find((m) => m.id === Number(fromWorker))?.text ?? null;
+    if (action === 'messaged' || action === 'replied') {
+      const start = tail(message);
+      if (!start) return null;
+      return (
+        messages.find((m) => m.direction === 'to_worker' && m.text.startsWith(start))?.text ?? null
+      );
+    }
+    return null;
+  }
+
   /** The owner's view of an orchestrator's goals (PM-433), newest first, with linked cards. */
   goals(id: string): OrchestratorGoalView[] {
     const instance = this.instance(id);
