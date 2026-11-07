@@ -8,6 +8,9 @@
 Persistent AI coding agent sessions. Every project. Any screen, including your phone.
 Your projects and session data stay on your computer.
 
+Antigravity chat supports conversations whose newer metadata omits the workspace by verifying the
+exact pinned conversation against the CLI's local history. Unverified conversations show a CLI fallback.
+
 Files plays video and audio through seekable streams with native controls. Large media files
 are independent of the 2 MB text-preview limit and load metadata before playback. HTML pages
 up to 25 MB render in the existing sandbox; source above 2 MB is available as a download.

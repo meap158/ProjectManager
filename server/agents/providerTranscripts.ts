@@ -250,10 +250,23 @@ export async function readProviderTranscript(
     const file = antigravityConversationFile(id, home);
     if (!file) return snapshot([], after);
     // A conversation file is tens of MB: decode it again only when it (or its WAL) changed.
-    const sig = await fileSignature([file, `${file}-wal`]);
+    const sig = await fileSignature([
+      file,
+      `${file}-wal`,
+      path.join(path.dirname(path.dirname(file)), 'history.jsonl'),
+    ]);
     const cached = antigravityCache.get(file);
     if (cached?.sig === sig && cached.cwd === cwd) return snapshot(cached.items, after);
-    const items = readAntigravity(file, cwd) ?? [];
+    const items = readAntigravity(file, cwd);
+    if (items === null)
+      return {
+        supported: false,
+        items: [],
+        next: 0,
+        reset: true,
+        unavailable:
+          'Cannot verify this Antigravity conversation belongs to this session folder. Use the CLI view while its workspace record is unavailable.',
+      };
     antigravityCache.set(file, { sig, cwd, items });
     return snapshot(items, after);
   }

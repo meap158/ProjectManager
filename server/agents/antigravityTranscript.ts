@@ -11,7 +11,7 @@
 // skipped, so an Antigravity update that changes the format shows less rather than wrong things.
 // Reads are read-only, and scoped to the pinned conversation and the session's folder.
 
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -175,16 +175,46 @@ export function antigravityConversationFile(id: string, home = os.homedir()): st
   return null;
 }
 
+/** Newer CLI metadata omits the workspace. History must bind this exact ID, never the latest. */
+function historyWorkspace(file: string): string | null {
+  const history = path.join(path.dirname(path.dirname(file)), 'history.jsonl');
+  const id = path.basename(file, '.db');
+  let fd: number | undefined;
+  try {
+    const size = statSync(history).size;
+    const length = Math.min(size, 2_000_000);
+    const bytes = Buffer.alloc(length);
+    fd = openSync(history, 'r');
+    readSync(fd, bytes, 0, length, size - length);
+    const lines = bytes.toString('utf8').split(/\r?\n/);
+    if (size > length) lines.shift();
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const entry = JSON.parse(lines[i]!) as { conversationId?: unknown; workspace?: unknown };
+        if (entry.conversationId === id && typeof entry.workspace === 'string')
+          return entry.workspace;
+      } catch {
+        // Partial trailing writes and unrelated malformed records do not bind a conversation.
+      }
+    }
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+  return null;
+}
+
 /** The conversation's last steps, or null when it isn't the session's (other folder) or unreadable. */
 export function readAntigravity(file: string, cwd: string, limit = 600): ChatItem[] | null {
   const db = new DatabaseSync(file, { readOnly: true });
   try {
-    const meta = db.prepare('SELECT data FROM trajectory_metadata_blob LIMIT 1').get() as
+    const meta = db.prepare("SELECT data FROM trajectory_metadata_blob WHERE id = 'main'").get() as
       { data: Uint8Array } | undefined;
     const folder = meta ? text(at(decodeMessage(Buffer.from(meta.data)), 1), 1) : '';
     let dir = '';
     try {
-      dir = folder ? fileURLToPath(folder) : '';
+      dir = folder ? fileURLToPath(folder) : (historyWorkspace(file) ?? '');
     } catch {
       dir = '';
     }

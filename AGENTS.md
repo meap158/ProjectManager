@@ -196,3 +196,7 @@ anything.
   Above 2 MB, return `kind: 'html'` and offer source download instead of the code view. Ordinary
   text remains capped at 2 MB; `too-large.maxBytes` supplies the applicable limit. Never serve
   project HTML as executable content on the app origin or relax frame restrictions.
+
+- PM-522: Antigravity transcripts may lack workspace metadata. Fall back only to an exact
+  pinned conversation ID in the bounded CLI history tail, and invalidate the cache when history
+  changes. Explicit metadata workspace mismatches must never be overridden by history.

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -6,6 +6,53 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterAll, describe, expect, it } from 'vitest';
 import { antigravityItems, decodeMessage } from './antigravityTranscript.js';
 import { readProviderTranscript } from './providerTranscripts.js';
+
+it('binds workspace-less metadata through exact history identity and invalidates cached bindings', async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'pm-agy-history-'));
+  const id = '6e91a3b2-1e71-4f2f-b58f-463b12c2c41b';
+  const dir = path.join(home, '.gemini', 'antigravity-cli', 'conversations');
+  const cwd = path.join(home, 'orchestrator');
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${id}.db`);
+  const db = new DatabaseSync(file);
+  db.exec(
+    'CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB); CREATE TABLE trajectory_metadata_blob (id TEXT, data BLOB);',
+  );
+  db.prepare('INSERT INTO trajectory_metadata_blob VALUES (?, ?)').run('main', encode([[6, id]]));
+  db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(1, 14, user('Pinned orchestrator message'));
+  db.close();
+  const history = path.join(dir, '..', 'history.jsonl');
+  const resume = JSON.stringify(['agy', '--conversation', id]);
+  const read = (after?: number) => readProviderTranscript('antigravity', resume, cwd, after, home);
+  try {
+    expect((await read()).supported).toBe(false);
+    writeFileSync(history, JSON.stringify({ conversationId: 'another', workspace: cwd }) + '\n');
+    expect((await read()).supported).toBe(false);
+    writeFileSync(
+      history,
+      JSON.stringify({ conversationId: id, workspace: cwd }) + '\n{"partial":',
+    );
+    const first = await read();
+    expect(first.items[0]?.text).toBe('Pinned orchestrator message');
+    expect((await read(first.next)).items).toEqual([]);
+    writeFileSync(
+      history,
+      JSON.stringify({ conversationId: id, workspace: path.join(home, 'foreign-long-folder') }) +
+        '\n',
+    );
+    expect((await read(first.next)).supported).toBe(false);
+    // An explicit database workspace is authoritative even if history claims this folder.
+    writeFileSync(history, JSON.stringify({ conversationId: id, workspace: cwd }) + '\n');
+    const update = new DatabaseSync(file);
+    update
+      .prepare('UPDATE trajectory_metadata_blob SET data = ?')
+      .run(encode([[1, [[1, pathToFileURL(path.join(home, 'foreign')).href]]]]));
+    update.close();
+    expect((await read()).supported).toBe(false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
 
 // A minimal protobuf encoder, enough to build the steps Antigravity writes.
 type Field = [number, number | string | Buffer | Field[]];
