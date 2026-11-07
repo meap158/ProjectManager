@@ -263,7 +263,10 @@ export function OrchestratorGoals({
           {watchOnly ? (
             <p className="faint">Watch only orchestrators do not pursue goals.</p>
           ) : (
-            <GoalsFollowUp goals={open} />
+            <>
+              <GoalsFollowUp goals={open} />
+              <GoalsOutcomes goals={goals ?? []} />
+            </>
           )}
         </div>
         {!watchOnly && (
@@ -616,6 +619,9 @@ export function OrchestratorGoals({
                   busy={busy}
                   onUnlink={(key) => unlink(goal, key)}
                 />
+                {!open.includes(goal) && goal.outcome && (
+                  <p className="orchestrator-goal-outcome faint">{outcomeText(goal)}</p>
+                )}
               </li>
             );
           })}
@@ -779,6 +785,45 @@ function countdown(at: number, now: number): string {
  * goal at once, so the timing belongs to the panel, not to each goal: a live countdown to the next
  * check, when the last one ran, and how many goals it covers; or why no check will come.
  */
+/** A closed goal's outcome in one line (PM-475). */
+function outcomeText(goal: OrchestratorGoalView): string {
+  const o = goal.outcome;
+  const verdicts = o.verifications.passed + o.verifications.failed;
+  return [
+    `${goal.status === 'achieved' ? 'Done' : 'Closed'} in ${o.days < 1 ? `${Math.max(1, Math.round(o.days * 24))} h` : `${o.days.toFixed(1)} days`}`,
+    `${o.checks} automatic check${o.checks === 1 ? '' : 's'}`,
+    `${o.runs} worker run${o.runs === 1 ? '' : 's'}`,
+    o.ownerNotes ? `${o.ownerNotes} owner note${o.ownerNotes === 1 ? '' : 's'}` : '',
+    verdicts ? `verified ${o.verifications.passed} of ${verdicts}` : '',
+    o.reopenings ? `reopened ${o.reopenings}×` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/**
+ * How achieved goals went (PM-475): how many, and the median days and checks they took, so the
+ * goal loop is tuned on evidence rather than impressions.
+ */
+function GoalsOutcomes({ goals }: { goals: readonly OrchestratorGoalView[] }) {
+  const achieved = goals.filter((g) => g.status === 'achieved' && g.outcome);
+  if (!achieved.length) return null;
+  const median = (values: number[]) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  };
+  const days = median(achieved.map((g) => g.outcome.days));
+  const checks = median(achieved.map((g) => g.outcome.checks));
+  return (
+    <p className="faint orchestrator-goals-followup">
+      {achieved.length} achieved · median{' '}
+      {days < 1 ? `${Math.round(days * 24)} h` : `${days.toFixed(1)} days`} and {Math.round(checks)}{' '}
+      checks each
+    </p>
+  );
+}
+
 function GoalsFollowUp({ goals }: { goals: readonly OrchestratorGoalView[] }) {
   const active = goals.filter((g) => g.status === 'active' && g.followUp);
   const nexts = active

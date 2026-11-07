@@ -36,6 +36,7 @@ import type {
   GoalEvent,
   GoalCard,
   GoalVerification,
+  GoalOutcome,
   CardGoal,
   OrchestratorGoalView,
 } from '../../shared/orchestrator.js';
@@ -960,6 +961,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
           },
           // Failing criteria are new work: not a stall.
           nudgesWithoutProgress: 0,
+          // Counted for the goal's outcome (PM-475).
+          verifications: {
+            passed: (goal.verifications?.passed ?? 0) + (failing.length ? 0 : 1),
+            failed: (goal.verifications?.failed ?? 0) + (failing.length ? 1 : 0),
+          },
         });
         this.record(
           instance.id,
@@ -1019,7 +1025,32 @@ export class OrchestratorChat implements OrchestratorToolHost {
       ...g,
       projects: (g.projectIds ?? []).map((id) => ({ id, name: names.get(id) ?? `Project ${id}` })),
       cards,
+      outcome: this.goalOutcome(g, cards),
       followUp: this.goalFollowUp(instance, g, cards),
+    };
+  }
+
+  /** A goal's outcome measures (PM-475): time, checks, worker runs, owner input, reopenings. */
+  private goalOutcome(
+    g: OrchestratorGoal,
+    cards: readonly GoalCard[],
+    now = Date.now(),
+  ): GoalOutcome {
+    const open = g.status === 'active' || g.status === 'paused' || g.status === 'blocked';
+    const end = open ? now : Date.parse(g.updatedAt);
+    const since = Date.parse(g.createdAt);
+    let runs = 0;
+    for (const c of cards)
+      runs += this.supervisor
+        .listRuns(c.projectId, c.id)
+        .filter((r) => Date.parse(r.createdAt ?? r.startedAt ?? '') >= since).length;
+    return {
+      days: Math.max(0, (end - since) / 86_400_000),
+      checks: g.totalChecks ?? 0,
+      runs,
+      ownerNotes: g.progress.filter((p) => p.by === 'owner').length,
+      reopenings: g.reopenings ?? 0,
+      verifications: g.verifications ?? { passed: 0, failed: 0 },
     };
   }
 

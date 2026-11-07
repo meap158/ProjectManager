@@ -306,6 +306,10 @@ export interface OrchestratorGoal {
   budgetStartedAt?: string;
   /** When the budget ran out; cleared when the owner resumes it. */
   budgetReachedAt?: string;
+  /** Outcome counters (PM-475): every goal-step check, achieved goals reopened, verdicts. */
+  totalChecks?: number;
+  reopenings?: number;
+  verifications?: { passed: number; failed: number };
 }
 
 /** A card linked to a goal, as the owner and the chat see it (PM-448). */
@@ -319,10 +323,25 @@ export interface GoalCard {
   worker?: { kind: 'session' | 'run'; id: number; name: string; state: string };
 }
 
+/** A goal's outcome measures (PM-475), to tune the goal loop on evidence. */
+export interface GoalOutcome {
+  /** From when it was set to when it closed, or to now while open. */
+  days: number;
+  checks: number;
+  /** Worker runs on its linked cards since it was set. */
+  runs: number;
+  /** Progress notes and status changes the owner made on it. */
+  ownerNotes: number;
+  reopenings: number;
+  verifications: { passed: number; failed: number };
+}
+
 /** A goal with its projects named and its linked cards resolved (PM-448). */
 export interface OrchestratorGoalView extends OrchestratorGoal {
   projects: { id: number; name: string }[];
   cards: GoalCard[];
+  /** How it went (PM-475): time taken, checks, worker runs, owner notes, reopenings, verdicts. */
+  outcome: GoalOutcome;
   /** When the orchestrator last came back to it and when it will next (PM-454). */
   followUp: {
     lastCheckAt: string | null;

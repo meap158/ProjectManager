@@ -1312,6 +1312,29 @@ describe('goal acceptance checklist (PM-471)', () => {
   });
 });
 
+describe('goal outcome measures (PM-475)', () => {
+  it('counts checks, owner notes and reopenings, and freezes the time when the goal closes', async () => {
+    const { call, chat, db } = setup({ autoCheck: true });
+    await call('set_goal', { title: 'Ship', objective: 'o', doneWhen: 'd' });
+    const { noteGoalCheck } = await import('./goals.js');
+    noteGoalCheck(db, 'master-1', Date.now());
+    noteGoalCheck(db, 'master-1', Date.now() + 1);
+    chat.updateOwnerGoal('master-1', 1, { note: 'Focus on the phone layout' });
+    chat.updateOwnerGoal('master-1', 1, { status: 'achieved' });
+    chat.updateOwnerGoal('master-1', 1, { status: 'active' });
+    const outcome = chat.goals('master-1')[0]!.outcome;
+    expect(outcome).toMatchObject({
+      checks: 2,
+      runs: 0,
+      ownerNotes: 3, // the note, "Marked achieved" and "Resumed"
+      reopenings: 1,
+      verifications: { passed: 0, failed: 0 },
+    });
+    expect(outcome.days).toBeGreaterThanOrEqual(0);
+    db.close();
+  });
+});
+
 describe('acceptance checks on cards (PM-474)', () => {
   it('keeps one Acceptance line first in the notes, replacing an older one', () => {
     const notes = withAcceptance('Some notes.', 'tests pass');

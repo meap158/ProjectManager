@@ -192,6 +192,10 @@ export function updateGoal(
         ? { budget: budgetOf(change.budget ?? undefined) }
         : { budget: undefined }
       : {}),
+    // An achieved goal made active again counts as a reopening (PM-475).
+    ...(change.status === 'active' && goal.status === 'achieved'
+      ? { reopenings: (goal.reopenings ?? 0) + 1 }
+      : {}),
     // The owner resuming a goal, or changing its budget, opens a new budget window (PM-473).
     ...((change.status === 'active' && change.by === 'owner' && goal.budgetReachedAt) ||
     change.budget !== undefined
@@ -351,15 +355,19 @@ export function noteGoalCheck(
   const at = new Date(now).toISOString();
   const goals = listGoals(db, orchestratorId).map((g) => {
     if (g.status !== 'active') return g;
-    // Every goal-step check counts against the budget window, moving or not (PM-473).
+    // Every goal-step check counts against the budget window, moving or not (PM-473), and toward
+    // its outcome (PM-475).
     const checksUsed = (g.checksUsed ?? 0) + 1;
-    if (moved.has(g.id)) return { ...g, lastNudgeAt: now, nudgesWithoutProgress: 0, checksUsed };
+    const totalChecks = (g.totalChecks ?? 0) + 1;
+    if (moved.has(g.id))
+      return { ...g, lastNudgeAt: now, nudgesWithoutProgress: 0, checksUsed, totalChecks };
     const count = (g.nudgesWithoutProgress ?? 0) + 1;
     if (count !== GOAL_STALL_CHECKS)
-      return { ...g, lastNudgeAt: now, nudgesWithoutProgress: count, checksUsed };
+      return { ...g, lastNudgeAt: now, nudgesWithoutProgress: count, checksUsed, totalChecks };
     const quiet: OrchestratorGoal = {
       ...g,
       checksUsed,
+      totalChecks,
       updatedAt: at,
       lastNudgeAt: now,
       nudgesWithoutProgress: count,

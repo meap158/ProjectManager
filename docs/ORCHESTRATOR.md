@@ -226,7 +226,10 @@ and waits for the owner; resuming it opens a new window. Every card a goal creat
 acceptance check (PM-474): `create_card` with a `goalId` needs `acceptance`, kept as the first
 "Acceptance:" line of the card's notes (`update_card` can set or replace it on any card); handing
 the card to a session or run leads with "This card is done when: …", and review checks that line
-first. Details, bounds and the Grok Bot comparison are in
+first. Each goal keeps outcome measures (PM-475): days from set to closed, automatic checks across
+budget windows, worker runs on its linked cards, the owner's notes and status changes,
+reopenings, and verification passes and failures. Closed goals show them in one line, and the
+Goals heading sums achieved goals (count, median days and checks). Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open

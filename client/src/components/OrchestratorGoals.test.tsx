@@ -21,6 +21,14 @@ const goals: OrchestratorGoalView[] = [
       nextCheckAt: null,
       note: 'No automatic checks: the orchestrator is paused.',
     },
+    outcome: {
+      days: 0.5,
+      checks: 0,
+      runs: 0,
+      ownerNotes: 0,
+      reopenings: 0,
+      verifications: { passed: 0, failed: 0 },
+    },
   },
 ];
 vi.mock('../api', () => ({
@@ -224,5 +232,30 @@ it('shows the acceptance checklist with its evidence (PM-471)', async () => {
   const item = await screen.findByText('e2e login passes');
   expect(item.closest('li')!.getAttribute('title')).toBe('Passing: 12 passed (checked by chat)');
   expect(screen.getByTitle('1 of 2 acceptance criteria passing')).toBeTruthy();
+  vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
+});
+
+it('shows how closed goals went, and a summary of achieved ones (PM-475)', async () => {
+  vi.mocked(api.orchestratorGoals).mockResolvedValue([
+    {
+      ...goals[0]!,
+      status: 'achieved',
+      outcome: {
+        days: 2.25,
+        checks: 14,
+        runs: 6,
+        ownerNotes: 3,
+        reopenings: 1,
+        verifications: { passed: 1, failed: 1 },
+      },
+    },
+  ]);
+  render(<OrchestratorGoals instance={instance} />, { wrapper: MemoryRouter });
+  expect(
+    await screen.findByText(
+      'Done in 2.3 days · 14 automatic checks · 6 worker runs · 3 owner notes · verified 1 of 2 · reopened 1×',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText(/1 achieved · median 2.3 days and 14 checks each/)).toBeTruthy();
   vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
 });
