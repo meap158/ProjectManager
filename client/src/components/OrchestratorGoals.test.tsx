@@ -259,3 +259,25 @@ it('shows how closed goals went, and a summary of achieved ones (PM-475)', async
   expect(screen.getByText(/1 achieved · median 2.3 days and 14 checks each/)).toBeTruthy();
   vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
 });
+
+it('shows closed goals in a section collapsed by default, with every closed goal listed', async () => {
+  vi.mocked(api.orchestratorGoals).mockResolvedValue([
+    goals[0]!,
+    { ...goals[0]!, id: 2, title: 'Old win', status: 'achieved' },
+    { ...goals[0]!, id: 3, title: 'Given up', status: 'dropped' },
+    { ...goals[0]!, id: 4, title: 'Ancient win', status: 'achieved' },
+    { ...goals[0]!, id: 5, title: 'Older win', status: 'achieved' },
+  ]);
+  render(<OrchestratorGoals instance={instance} />, { wrapper: MemoryRouter });
+  // The open goal stays in the main list, outside any disclosure.
+  expect((await screen.findByText('Ship login')).closest('details')).toBeNull();
+  // Closed goals share one collapsed section, collapsed at first, with no cap.
+  const section = document.querySelector('details.orchestrator-goals-closed');
+  expect(section).toBeTruthy();
+  expect((section as HTMLDetailsElement).open).toBe(false);
+  expect(screen.getByText(/Closed goals/)).toBeTruthy();
+  for (const title of ['Old win', 'Given up', 'Ancient win', 'Older win']) {
+    expect(screen.getByText(title).closest('details')).toBe(section);
+  }
+  vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
+});

@@ -51,7 +51,6 @@ const RESUME: Record<GoalStatus, string> = {
   dropped: 'Restore',
 };
 const POLL_MS = 15_000;
-const SHOWN_CLOSED = 3;
 
 const EMPTY_DRAFT = {
   title: '',
@@ -253,7 +252,198 @@ export function OrchestratorGoals({
   const open = (goals ?? []).filter(
     (g) => g.status === 'active' || g.status === 'blocked' || g.status === 'paused',
   );
-  const closed = (goals ?? []).filter((g) => !open.includes(g)).slice(0, SHOWN_CLOSED);
+  /** Achieved and dropped goals, kept together in a collapsed section under the open ones. */
+  const closed = (goals ?? []).filter((g) => !open.includes(g));
+
+  /**
+   * One goal row, shared by the open list and the closed section below it. The row renders
+   * the same content in both places; only which actions are offered differs.
+   */
+  const renderGoal = (goal: OrchestratorGoalView, isOpen: boolean) => {
+    // An active goal's latest line is never an old automatic "set to blocked" notice
+    // (written before goals stopped being blocked automatically, PM-459).
+    const last = goal.progress
+      .filter(
+        (p) =>
+          !(goal.status === 'active' && p.by === 'system' && p.note.includes('set to blocked')),
+      )
+      .at(-1);
+    return (
+      <li key={goal.id} className="orchestrator-goal" data-status={goal.status}>
+        <div className="orchestrator-goal-head">
+          <div className="orchestrator-goal-title">
+            <strong>{goal.title}</strong>
+            <span className={TONE[goal.status]}>{LABEL[goal.status]}</span>
+            {(goal.projects ?? []).length ? (
+              goal.projects.map((p) => projectTag(p.id, p.name))
+            ) : projects.length === 1 ? (
+              // No projects named: all of the orchestrator's, here just one.
+              projectTag(projects[0]!.id, projects[0]!.name)
+            ) : (
+              <span className="orchestrator-goal-project">All projects</span>
+            )}
+            <CardsDone goal={goal} />
+            {(goal.criteria ?? []).length > 0 && (
+              <span
+                className="orchestrator-goal-done-count"
+                title={`${(goal.criteria ?? []).filter((c) => c.state === 'passing').length} of ${(goal.criteria ?? []).length} acceptance criteria passing`}
+              >
+                <CheckIcon size={11} />
+                <span className="num">
+                  {(goal.criteria ?? []).filter((c) => c.state === 'passing').length}/
+                  {(goal.criteria ?? []).length}
+                </span>
+              </span>
+            )}
+            {goal.followUp?.readyToClose && (
+              <span className="badge badge-done" title={goal.followUp.note}>
+                Ready to close
+              </span>
+            )}
+            {goal.budget && (
+              <span
+                className={goal.budgetReachedAt ? 'badge badge-attention' : 'badge'}
+                title={
+                  goal.budgetReachedAt
+                    ? 'Budget reached: the chat wrote its closing report. Resume the goal for another budget window.'
+                    : 'Automatic checks and days used in this budget window; at the limit the chat writes a closing report and the goal waits for you'
+                }
+              >
+                {goal.budgetReachedAt
+                  ? 'Budget reached'
+                  : [
+                      goal.budget.checks
+                        ? `${goal.checksUsed ?? 0}/${goal.budget.checks} checks`
+                        : '',
+                      goal.budget.days ? `${goal.budget.days} days` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+              </span>
+            )}
+            {goal.verification && !goal.verification.result && (
+              <span
+                className="badge badge-tracked"
+                title={`Run #${goal.verification.runId} is checking every criterion independently; the goal closes when it confirms them`}
+              >
+                Verifying
+              </span>
+            )}
+            {goal.verification?.result === 'passed' && goal.status === 'achieved' && (
+              <span
+                className="badge badge-done"
+                title={`Every criterion confirmed by verifier run #${goal.verification.runId}`}
+              >
+                Verified
+              </span>
+            )}
+          </div>
+          {!watchOnly && (
+            <div className="orchestrator-goal-actions" role="group" aria-label="Goal actions">
+              {goal.status === 'active' && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={busy}
+                  title="Ask the chat now to check every linked card and its worker, act on them and report the full progress"
+                  onClick={() => followUp(goal)}
+                >
+                  <PlayIcon size={12} /> Follow up
+                </button>
+              )}
+              {goal.status === 'active' ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy}
+                  title="Stop working on it for now; automatic checks skip it until you resume"
+                  onClick={() => set(goal, 'paused')}
+                >
+                  <PauseIcon size={12} /> Pause
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy}
+                  title="Make it active again, so the orchestrator works on it until it is done"
+                  onClick={() => set(goal, 'active')}
+                >
+                  {goal.status === 'achieved' || goal.status === 'dropped' ? (
+                    <RefreshIcon size={12} />
+                  ) : (
+                    <PlayIcon size={12} />
+                  )}
+                  {RESUME[goal.status]}
+                </button>
+              )}
+              {isOpen && (
+                <>
+                  <div className="orchestrator-goal-linker">
+                    <Dropdown
+                      label={`Link a card to ${goal.title}`}
+                      value={0}
+                      searchable
+                      searchPlaceholder="Search cards by key or title…"
+                      disabled={busy}
+                      options={linkOptions(goal)}
+                      onChange={(cardId) => cardId && link(goal, cardId)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm orchestrator-goal-achieve"
+                    disabled={busy}
+                    title="Close it as done"
+                    onClick={() =>
+                      (goal.cards ?? []).some((c) => c.status !== 'done') ||
+                      (goal.criteria ?? []).some((c) => c.state !== 'passing')
+                        ? setClosing(goal)
+                        : set(goal, 'achieved')
+                    }
+                  >
+                    <CheckIcon size={12} /> Mark achieved
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger"
+                    disabled={busy}
+                    title="Give it up; you can restore it later"
+                    onClick={() => set(goal, 'dropped')}
+                  >
+                    <CloseIcon size={12} /> Drop
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        <ClampedText>
+          <p className="orchestrator-goal-done">
+            <span className="faint">Done when:</span> {goal.doneWhen}
+          </p>
+          {last && (
+            <p className="orchestrator-goal-progress">
+              {last.note}{' '}
+              <span className="faint">
+                · {last.by === 'system' ? 'automatic' : last.by} · {formatRelative(last.at)}
+              </span>
+            </p>
+          )}
+        </ClampedText>
+        <GoalCriteria goal={goal} />
+        <GoalCards
+          goal={goal}
+          canEdit={!watchOnly}
+          busy={busy}
+          onUnlink={(key) => unlink(goal, key)}
+        />
+        {!isOpen && goal.outcome && (
+          <p className="orchestrator-goal-outcome faint">{outcomeText(goal)}</p>
+        )}
+      </li>
+    );
+  };
 
   return (
     <section className="orchestrator-goals" aria-label={`${instance.name} goals`}>
@@ -430,202 +620,18 @@ export function OrchestratorGoals({
       {goals && open.length === 0 && closed.length === 0 && !adding && (
         <p className="faint orchestrator-goals-empty">No goals yet.</p>
       )}
-      {[...open, ...closed].length > 0 && (
-        <ul className="orchestrator-goal-list">
-          {[...open, ...closed].map((goal) => {
-            // An active goal's latest line is never an old automatic "set to blocked" notice
-            // (written before goals stopped being blocked automatically, PM-459).
-            const last = goal.progress
-              .filter(
-                (p) =>
-                  !(
-                    goal.status === 'active' &&
-                    p.by === 'system' &&
-                    p.note.includes('set to blocked')
-                  ),
-              )
-              .at(-1);
-            return (
-              <li key={goal.id} className="orchestrator-goal" data-status={goal.status}>
-                <div className="orchestrator-goal-head">
-                  <div className="orchestrator-goal-title">
-                    <strong>{goal.title}</strong>
-                    <span className={TONE[goal.status]}>{LABEL[goal.status]}</span>
-                    {(goal.projects ?? []).length ? (
-                      goal.projects.map((p) => projectTag(p.id, p.name))
-                    ) : projects.length === 1 ? (
-                      // No projects named: all of the orchestrator's, here just one.
-                      projectTag(projects[0]!.id, projects[0]!.name)
-                    ) : (
-                      <span className="orchestrator-goal-project">All projects</span>
-                    )}
-                    <CardsDone goal={goal} />
-                    {(goal.criteria ?? []).length > 0 && (
-                      <span
-                        className="orchestrator-goal-done-count"
-                        title={`${(goal.criteria ?? []).filter((c) => c.state === 'passing').length} of ${(goal.criteria ?? []).length} acceptance criteria passing`}
-                      >
-                        <CheckIcon size={11} />
-                        <span className="num">
-                          {(goal.criteria ?? []).filter((c) => c.state === 'passing').length}/
-                          {(goal.criteria ?? []).length}
-                        </span>
-                      </span>
-                    )}
-                    {goal.followUp?.readyToClose && (
-                      <span className="badge badge-done" title={goal.followUp.note}>
-                        Ready to close
-                      </span>
-                    )}
-                    {goal.budget && (
-                      <span
-                        className={goal.budgetReachedAt ? 'badge badge-attention' : 'badge'}
-                        title={
-                          goal.budgetReachedAt
-                            ? 'Budget reached: the chat wrote its closing report. Resume the goal for another budget window.'
-                            : 'Automatic checks and days used in this budget window; at the limit the chat writes a closing report and the goal waits for you'
-                        }
-                      >
-                        {goal.budgetReachedAt
-                          ? 'Budget reached'
-                          : [
-                              goal.budget.checks
-                                ? `${goal.checksUsed ?? 0}/${goal.budget.checks} checks`
-                                : '',
-                              goal.budget.days ? `${goal.budget.days} days` : '',
-                            ]
-                              .filter(Boolean)
-                              .join(' · ')}
-                      </span>
-                    )}
-                    {goal.verification && !goal.verification.result && (
-                      <span
-                        className="badge badge-tracked"
-                        title={`Run #${goal.verification.runId} is checking every criterion independently; the goal closes when it confirms them`}
-                      >
-                        Verifying
-                      </span>
-                    )}
-                    {goal.verification?.result === 'passed' && goal.status === 'achieved' && (
-                      <span
-                        className="badge badge-done"
-                        title={`Every criterion confirmed by verifier run #${goal.verification.runId}`}
-                      >
-                        Verified
-                      </span>
-                    )}
-                  </div>
-                  {!watchOnly && (
-                    <div
-                      className="orchestrator-goal-actions"
-                      role="group"
-                      aria-label="Goal actions"
-                    >
-                      {goal.status === 'active' && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary"
-                          disabled={busy}
-                          title="Ask the chat now to check every linked card and its worker, act on them and report the full progress"
-                          onClick={() => followUp(goal)}
-                        >
-                          <PlayIcon size={12} /> Follow up
-                        </button>
-                      )}
-                      {goal.status === 'active' ? (
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          disabled={busy}
-                          title="Stop working on it for now; automatic checks skip it until you resume"
-                          onClick={() => set(goal, 'paused')}
-                        >
-                          <PauseIcon size={12} /> Pause
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          disabled={busy}
-                          title="Make it active again, so the orchestrator works on it until it is done"
-                          onClick={() => set(goal, 'active')}
-                        >
-                          {goal.status === 'achieved' || goal.status === 'dropped' ? (
-                            <RefreshIcon size={12} />
-                          ) : (
-                            <PlayIcon size={12} />
-                          )}
-                          {RESUME[goal.status]}
-                        </button>
-                      )}
-                      {open.includes(goal) && (
-                        <>
-                          <div className="orchestrator-goal-linker">
-                            <Dropdown
-                              label={`Link a card to ${goal.title}`}
-                              value={0}
-                              searchable
-                              searchPlaceholder="Search cards by key or title…"
-                              disabled={busy}
-                              options={linkOptions(goal)}
-                              onChange={(cardId) => cardId && link(goal, cardId)}
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-sm orchestrator-goal-achieve"
-                            disabled={busy}
-                            title="Close it as done"
-                            onClick={() =>
-                              (goal.cards ?? []).some((c) => c.status !== 'done') ||
-                              (goal.criteria ?? []).some((c) => c.state !== 'passing')
-                                ? setClosing(goal)
-                                : set(goal, 'achieved')
-                            }
-                          >
-                            <CheckIcon size={12} /> Mark achieved
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-danger"
-                            disabled={busy}
-                            title="Give it up; you can restore it later"
-                            onClick={() => set(goal, 'dropped')}
-                          >
-                            <CloseIcon size={12} /> Drop
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <ClampedText>
-                  <p className="orchestrator-goal-done">
-                    <span className="faint">Done when:</span> {goal.doneWhen}
-                  </p>
-                  {last && (
-                    <p className="orchestrator-goal-progress">
-                      {last.note}{' '}
-                      <span className="faint">
-                        · {last.by === 'system' ? 'automatic' : last.by} · {formatRelative(last.at)}
-                      </span>
-                    </p>
-                  )}
-                </ClampedText>
-                <GoalCriteria goal={goal} />
-                <GoalCards
-                  goal={goal}
-                  canEdit={!watchOnly}
-                  busy={busy}
-                  onUnlink={(key) => unlink(goal, key)}
-                />
-                {!open.includes(goal) && goal.outcome && (
-                  <p className="orchestrator-goal-outcome faint">{outcomeText(goal)}</p>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+      {open.length > 0 && (
+        <ul className="orchestrator-goal-list">{open.map((goal) => renderGoal(goal, true))}</ul>
+      )}
+      {closed.length > 0 && (
+        <details className="orchestrator-goals-closed">
+          <summary>
+            Closed goals <span className="faint">({closed.length})</span>
+          </summary>
+          <ul className="orchestrator-goal-list">
+            {closed.map((goal) => renderGoal(goal, false))}
+          </ul>
+        </details>
       )}
       {closing && (
         <CloseGoalDialog

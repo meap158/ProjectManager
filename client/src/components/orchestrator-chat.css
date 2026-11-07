@@ -223,6 +223,9 @@
     width: 32px;
     height: 32px;
   }
+  .orchestrator-goals-closed summary {
+    min-height: 44px;
+  }
   .orchestrator-chat-head {
     flex-direction: column;
     align-items: stretch;
@@ -412,6 +415,17 @@ dialog.confirm-dialog.goal-dialog {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+/* Closed goals sit in a collapsed disclosure under the open list. */
+.orchestrator-goals-closed {
+  margin-top: 8px;
+}
+.orchestrator-goals-closed summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.orchestrator-goals-closed .orchestrator-goal-list {
+  margin-top: 6px;
 }
 .orchestrator-goal {
   display: grid;
