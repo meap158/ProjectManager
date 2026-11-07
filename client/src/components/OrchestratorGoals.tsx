@@ -350,7 +350,18 @@ export function OrchestratorGoals({
       {[...open, ...closed].length > 0 && (
         <ul className="orchestrator-goal-list">
           {[...open, ...closed].map((goal) => {
-            const last = goal.progress.at(-1);
+            // An active goal's latest line is never an old automatic "set to blocked" notice
+            // (written before goals stopped being blocked automatically, PM-459).
+            const last = goal.progress
+              .filter(
+                (p) =>
+                  !(
+                    goal.status === 'active' &&
+                    p.by === 'system' &&
+                    p.note.includes('set to blocked')
+                  ),
+              )
+              .at(-1);
             return (
               <li key={goal.id} className="orchestrator-goal" data-status={goal.status}>
                 <div className="orchestrator-goal-head">

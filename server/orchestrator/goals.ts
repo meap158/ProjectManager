@@ -20,8 +20,16 @@ export const MAX_ACTIVE_GOALS = 5;
 export const GOAL_NUDGE_MS = 15 * 60_000;
 /** Cards one goal may link (PM-448). */
 export const MAX_GOAL_CARDS = 60;
-/** Checks without reported progress before a goal is set to blocked. */
+/**
+ * Checks without progress before a goal counts as quiet (PM-459): it stays active (the owner's
+ * decision: never blocked automatically), gets one note and a notification, and comes back less
+ * often, every GOAL_QUIET_NUDGE_MS, until something moves.
+ */
 export const GOAL_STALL_CHECKS = 4;
+export const GOAL_QUIET_NUDGE_MS = 60 * 60_000;
+/** Whether a goal has gone quiet: no progress in GOAL_STALL_CHECKS checks. */
+export const isQuiet = (g: OrchestratorGoal) =>
+  g.status === 'active' && (g.nudgesWithoutProgress ?? 0) >= GOAL_STALL_CHECKS;
 const KEEP_PROGRESS = 40;
 const KEEP_GOALS = 50;
 
@@ -168,13 +176,17 @@ export function noteClosePrompted(db: Db, orchestratorId: string, goalIds: reado
 
 /** Active goals the automatic check should bring back now. */
 export function goalsDue(goals: readonly OrchestratorGoal[], now: number): OrchestratorGoal[] {
-  return goals.filter((g) => g.status === 'active' && now - (g.lastNudgeAt ?? 0) >= GOAL_NUDGE_MS);
+  return goals.filter(
+    (g) =>
+      g.status === 'active' &&
+      now - (g.lastNudgeAt ?? 0) >= (isQuiet(g) ? GOAL_QUIET_NUDGE_MS : GOAL_NUDGE_MS),
+  );
 }
 
 /**
  * After a check that included the goal step: each active goal counts one more check without
- * progress (reset by update_goal), and one that reached the stall limit is set to blocked.
- * Returns the goals it blocked.
+ * progress (reset by update_goal or moving work). One that reaches the limit stays active and
+ * gets one note (PM-459); returns the goals that just went quiet.
  */
 export function noteGoalCheck(
   db: Db,
@@ -192,10 +204,10 @@ export function noteGoalCheck(
     if (g.status !== 'active') return g;
     if (moved.has(g.id)) return { ...g, lastNudgeAt: now, nudgesWithoutProgress: 0 };
     const count = (g.nudgesWithoutProgress ?? 0) + 1;
-    if (count < GOAL_STALL_CHECKS) return { ...g, lastNudgeAt: now, nudgesWithoutProgress: count };
-    const blocked: OrchestratorGoal = {
+    if (count !== GOAL_STALL_CHECKS)
+      return { ...g, lastNudgeAt: now, nudgesWithoutProgress: count };
+    const quiet: OrchestratorGoal = {
       ...g,
-      status: 'blocked',
       updatedAt: at,
       lastNudgeAt: now,
       nudgesWithoutProgress: count,
@@ -203,13 +215,13 @@ export function noteGoalCheck(
         ...g.progress,
         {
           at,
-          note: `No progress reported after ${count} automatic checks; set to blocked. Resume it once the way forward is clear.`,
+          note: `No progress in ${count} automatic checks. It stays active; checks now come back to it hourly until something moves. Follow up, or tell the chat what it needs.`,
           by: 'system' as const,
         },
       ].slice(-KEEP_PROGRESS),
     };
-    stalled.push(blocked);
-    return blocked;
+    stalled.push(quiet);
+    return quiet;
   });
   save(db, orchestratorId, goals);
   return stalled;

@@ -104,9 +104,11 @@ Goals panel under each orchestrator's chat (`GET/POST /orchestrators/:id/goals`,
 an active goal back every 15 minutes (within its hourly bounds) with the `goal` focus, and any other
 automatic check carries the goal step too. The step tells the chat to compare the state with
 `doneWhen`, plan cards, and do each the way it needs: an idle session in the project, a new session
-within the limits, a one-time run, or itself. Each check that carries the step counts toward a stall
-limit; four checks without an `update_goal` set the goal to blocked with a note, so a stuck loop
-stops spending quota. At most 5 goals are active at once. Watch only orchestrators have none.
+within the limits, a one-time run, or itself. Each check that carries the step counts toward a quiet
+limit, reset by `update_goal`, a linked card changing or a session working on one (PM-456). After
+four checks without progress the goal stays active (the owner's decision, PM-459: goals are never
+blocked automatically), gets one note and a "Goal not moving" notification, and is checked hourly
+instead of every 15 minutes until something moves, so a stuck loop spends little quota. At most 5 goals are active at once. Watch only orchestrators have none.
 
 **Goal notifications (PM-436).** `GET /orchestrators/goals/recent` lists goals across orchestrators that
 reached achieved or blocked in the last day, with the latest note. With the Inbox desktop

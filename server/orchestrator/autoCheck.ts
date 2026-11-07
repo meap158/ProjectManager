@@ -254,7 +254,7 @@ export class AutoCheck {
       for (const g of noteGoalCheck(db, id, now, moved))
         this.deps.record(
           id,
-          `Goal ${g.id} "${g.title}" set to blocked: no progress after several checks`,
+          `Goal ${g.id} "${g.title}" has had no progress in several checks; it stays active and is checked hourly`,
         );
     this.deps.record(
       id,

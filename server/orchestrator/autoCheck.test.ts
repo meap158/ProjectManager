@@ -346,8 +346,9 @@ it('never plans while the setting is off, watch-only, or past the daily bound', 
   expect(t.state.checks).toBe(PLAN_MAX_PER_DAY);
 });
 
-it('keeps bringing an active goal back until it stalls, with the goal focus (PM-433)', async () => {
-  const { addGoal, listGoals, GOAL_NUDGE_MS, GOAL_STALL_CHECKS } = await import('./goals.js');
+it('keeps bringing an active goal back, hourly once it goes quiet, never blocking it (PM-433, PM-459)', async () => {
+  const { addGoal, listGoals, GOAL_NUDGE_MS, GOAL_QUIET_NUDGE_MS, GOAL_STALL_CHECKS } =
+    await import('./goals.js');
   const t = setup();
   await t.auto.tick(); // baseline
   addGoal(t.db, 'm', { title: 'Ship login', objective: 'o', doneWhen: 'd' });
@@ -364,11 +365,14 @@ it('keeps bringing an active goal back until it stalls, with the goal focus (PM-
     await t.auto.tick();
   }
   expect(t.state.checks).toBe(GOAL_STALL_CHECKS);
-  expect(listGoals(t.db, 'm')[0]!.status).toBe('blocked');
-  expect(t.state.events.some((e) => e.includes('set to blocked'))).toBe(true);
+  expect(listGoals(t.db, 'm')[0]!.status).toBe('active');
+  expect(t.state.events.some((e) => e.includes('stays active'))).toBe(true);
   t.state.now += GOAL_NUDGE_MS;
   await t.auto.tick();
-  expect(t.state.checks).toBe(GOAL_STALL_CHECKS); // a blocked goal is left to the owner
+  expect(t.state.checks).toBe(GOAL_STALL_CHECKS); // quiet: not every 15 minutes any more
+  t.state.now += GOAL_QUIET_NUDGE_MS;
+  await t.auto.tick();
+  expect(t.state.checks).toBe(GOAL_STALL_CHECKS + 1); // but hourly
 });
 
 it('asks the chat to close a goal once every linked card is Done, once per card set (PM-454)', async () => {

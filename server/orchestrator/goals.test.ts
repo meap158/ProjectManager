@@ -4,6 +4,7 @@ import {
   addGoal,
   GOAL_NUDGE_MS,
   GOAL_STALL_CHECKS,
+  GOAL_QUIET_NUDGE_MS,
   goalsDue,
   listGoals,
   MAX_ACTIVE_GOALS,
@@ -38,7 +39,7 @@ describe('orchestrator goals (PM-433)', () => {
     expect(() => updateGoal(db, 'm', 99, { note: 'x', by: 'chat' })).toThrow(/No goal 99/);
   });
 
-  it('comes back every interval, and blocks a goal after checks without progress', () => {
+  it('comes back every interval, and goes quiet (never blocked) after checks without progress (PM-459)', () => {
     const db = fresh();
     const now = Date.parse('2026-11-06T10:00:00Z');
     addGoal(db, 'm', goal);
@@ -49,9 +50,14 @@ describe('orchestrator goals (PM-433)', () => {
     // Progress resets the count.
     updateGoal(db, 'm', 1, { note: 'Opened PR #4', by: 'chat' });
     for (let i = 1; i < GOAL_STALL_CHECKS; i++) expect(noteGoalCheck(db, 'm', now + i)).toEqual([]);
-    const [blocked] = noteGoalCheck(db, 'm', now + GOAL_STALL_CHECKS);
-    expect(blocked?.status).toBe('blocked');
-    expect(blocked?.progress.at(-1)?.by).toBe('system');
-    expect(goalsDue(listGoals(db, 'm'), now + 10 * GOAL_NUDGE_MS)).toEqual([]);
+    const [quiet] = noteGoalCheck(db, 'm', now + GOAL_STALL_CHECKS);
+    expect(quiet?.status).toBe('active');
+    expect(quiet?.progress.at(-1)?.note).toContain('stays active');
+    // Checked hourly now, not every 15 minutes; the note is written once.
+    expect(goalsDue(listGoals(db, 'm'), now + GOAL_STALL_CHECKS + GOAL_NUDGE_MS)).toEqual([]);
+    expect(
+      goalsDue(listGoals(db, 'm'), now + GOAL_STALL_CHECKS + GOAL_QUIET_NUDGE_MS),
+    ).toHaveLength(1);
+    expect(noteGoalCheck(db, 'm', now + GOAL_QUIET_NUDGE_MS * 2)).toEqual([]);
   });
 });

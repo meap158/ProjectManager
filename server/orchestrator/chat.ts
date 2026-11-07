@@ -53,6 +53,8 @@ import {
   activeGoals,
   addGoal,
   cardSetKey,
+  isQuiet,
+  GOAL_QUIET_NUDGE_MS,
   listGoals,
   updateGoal,
   type GoalStatus,
@@ -871,10 +873,15 @@ export class OrchestratorChat implements OrchestratorToolHost {
         note: 'Every linked card is Done: the next check verifies the goal and closes it.',
         readyToClose: true,
       };
+    const quiet = isQuiet(g);
     return {
       lastCheckAt,
-      nextCheckAt: new Date(Math.max(now, (g.lastNudgeAt ?? 0) + GOAL_NUDGE_MS)).toISOString(),
-      note: 'Checks come back to it about every 15 minutes, sooner when its work changes.',
+      nextCheckAt: new Date(
+        Math.max(now, (g.lastNudgeAt ?? 0) + (quiet ? GOAL_QUIET_NUDGE_MS : GOAL_NUDGE_MS)),
+      ).toISOString(),
+      note: quiet
+        ? 'No progress lately: checks come back to it hourly until something moves.'
+        : 'Checks come back to it about every 15 minutes, sooner when its work changes.',
     };
   }
 
@@ -995,8 +1002,12 @@ export class OrchestratorChat implements OrchestratorToolHost {
     const events: GoalEvent[] = [];
     for (const instance of this.service.state().instances) {
       const goals = listGoals(this.db, instance.id);
-      const why = goals.some((g) => g.status === 'active') ? this.goalStuck(instance) : null;
+      const blocker = goals.some((g) => g.status === 'active') ? this.goalStuck(instance) : null;
       for (const g of goals) {
+        // Nothing continues it, or it has gone quiet (no progress in several checks, PM-459).
+        const why =
+          blocker ??
+          (isQuiet(g) ? `no progress in ${g.nudgesWithoutProgress} automatic checks` : null);
         if (why && g.status === 'active' && now - Date.parse(g.updatedAt) >= 2 * GOAL_NUDGE_MS)
           events.push({
             orchestratorId: instance.id,
