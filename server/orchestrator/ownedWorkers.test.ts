@@ -47,6 +47,32 @@ describe('orchestrator-owned sessions (PM-417)', () => {
     expect(ownedSessionIds(db, 'm1', [session(3, 30, 'm1')]).size).toBe(0);
     db.close();
   });
+
+  it('releases the slot once the handed card is done, but not before (PM-496)', () => {
+    const db = openDb(':memory:');
+    const now = new Date().toISOString();
+    db.prepare('INSERT INTO projects (id, name, path, created_at) VALUES (1, ?, ?, ?)').run(
+      'P',
+      '/p',
+      now,
+    );
+    const addCard = db.prepare(
+      "INSERT INTO cards (id, project_id, title, description, status, position, created_at, updated_at) VALUES (?, 1, 't', '', ?, 0, ?, ?)",
+    );
+    addCard.run(40, 'in_progress', now, now);
+    addCard.run(41, 'review', now, now);
+    addCard.run(42, 'done', now, now);
+    recordOwnedSession(db, 'm1', 5, 40);
+    recordOwnedSession(db, 'm1', 6, 41);
+    recordOwnedSession(db, 'm1', 7, 42);
+    recordOwnedSession(db, 'm1', 8, 43);
+    expect([...ownedSessionIds(db, 'm1', [session(5, 40), session(6, 41)])]).toEqual([5, 6]);
+    // Card 42 is done: the still-linked idle session no longer counts.
+    expect([...ownedSessionIds(db, 'm1', [session(5, 40), session(7, 42)])]).toEqual([5]);
+    // Card 43 has no row (deleted or fixture id): stays owned, never dropped on read failure.
+    expect([...ownedSessionIds(db, 'm1', [session(8, 43)])]).toEqual([8]);
+    db.close();
+  });
 });
 
 describe('cards an orchestrator has worked on (PM-420)', () => {

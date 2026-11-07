@@ -1,12 +1,14 @@
 import type { Db } from '../db.js';
 import type { AgentSession } from '../../shared/types.js';
-import { getSetting, setSetting } from '../store.js';
+import { getCard, getSetting, setSetting } from '../store.js';
 
 /**
  * Sessions an orchestrator owns (PM-417), so its worker limits count its own workers instead of
  * every session the owner started by hand. A session is owned while it is still on the card the
  * orchestrator started it on or handed it (`start_session`, `assign_card`), or while that
  * orchestrator supervises it (PM-405 enrollment). Linking the session to another card ends it.
+ * Finished work frees the slot (PM-496): once the card reaches done, the session no longer
+ * counts, even if it is still linked. Cards in review still count, so rework can continue.
  * Runs need no record: the ones an orchestrator dispatches carry its id.
  */
 interface OwnedSession {
@@ -79,7 +81,9 @@ export function ownedSessionIds(
   for (const session of sessions) {
     if (session.cardId == null || session.orchestratorId) continue;
     if (records.get(session.id) === session.cardId) {
-      owned.add(session.id);
+      // A done card releases its session (PM-496): finished work must not hold a worker
+      // slot forever. A missing card row stays owned (conservative: never drop on read failure).
+      if (getCard(db, session.cardId)?.status !== 'done') owned.add(session.id);
       continue;
     }
     const enrollment = getSetting<Enrollment>(db, enrollmentKey(session.id));
