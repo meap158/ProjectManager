@@ -843,6 +843,19 @@ dialog.orchestrator-form-dialog > .orchestrator-form-panel {
   font-size: 12px;
   color: var(--text-3);
 }
+/* The picker's name row carries the same running dot as the detail header. */
+.orchestrator-picker .orchestrator-picker-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: inherit;
+  color: inherit;
+}
+.orchestrator-picker .orchestrator-picker-name strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .orchestrator-instances-list {
   min-width: 0;
 }

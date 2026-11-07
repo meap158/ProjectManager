@@ -1294,6 +1294,12 @@ it('renders multiple orchestrators in the picker nav for switching', async () =>
   expect(picker).toBeDefined();
   expect(within(picker).getByRole('button', { name: /First Orchestrator/ })).toBeDefined();
   expect(within(picker).getByRole('button', { name: /Second Orchestrator/ })).toBeDefined();
+  // The picker carries the same running dot as the detail header.
+  const firstButton = within(picker).getByRole('button', { name: /First Orchestrator/ });
+  expect(firstButton.querySelector('.orchestrator-status-dot.active')).not.toBeNull();
+  const secondButton = within(picker).getByRole('button', { name: /Second Orchestrator/ });
+  expect(secondButton.querySelector('.orchestrator-status-dot')).not.toBeNull();
+  expect(secondButton.querySelector('.orchestrator-status-dot.active')).toBeNull();
   fireEvent.click(within(picker).getByRole('button', { name: /Second Orchestrator/ }));
   await screen.findByTitle('Delete Second Orchestrator');
 });

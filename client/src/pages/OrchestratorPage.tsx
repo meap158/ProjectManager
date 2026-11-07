@@ -397,7 +397,13 @@ export function OrchestratorPage() {
                     setHistoryLimit(25);
                   }}
                 >
-                  <strong>{item.name}</strong>
+                  <span className="orchestrator-picker-name">
+                    <span
+                      className={`orchestrator-status-dot ${item.enabled ? 'active' : ''}`}
+                      aria-hidden="true"
+                    />
+                    <strong>{item.name}</strong>
+                  </span>
                   <span>
                     {item.enabled
                       ? item.strategy === 'observe'
