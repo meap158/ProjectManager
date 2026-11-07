@@ -12,6 +12,7 @@ import type {
   OrchestratorGoal,
   OrchestratorGoalView,
   GoalEvent,
+  CardGoal,
 } from '../../shared/orchestrator';
 import type {
   AgentAutonomy,
@@ -159,6 +160,9 @@ export const api = {
   /** The full text behind a cut-off Activity entry (PM-452). */
   orchestratorEventDetail: (id: number) =>
     request<{ text: string }>('GET', `/orchestrators/event-details/${id}`),
+  /** The orchestrator goals a card is linked to (PM-467). */
+  goalsForCard: (cardId: number) =>
+    request<CardGoal[]>('GET', `/orchestrators/goals/by-card/${cardId}`),
   /** Ask the chat to follow up on one goal now (PM-456). */
   followUpGoal: (id: string, goalId: number) =>
     request<unknown>(

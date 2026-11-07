@@ -12,7 +12,7 @@ import {
   type ProjectSummary,
 } from '../../../shared/types';
 import { api } from '../api';
-import type { OrchestratorConfig } from '../../../shared/orchestrator';
+import type { CardGoal, OrchestratorConfig } from '../../../shared/orchestrator';
 import { formatDate, movedBy } from '../format';
 import { CardAgentAudit } from './CardAgentAudit';
 import { CardImages } from './CardImages';
@@ -502,6 +502,7 @@ export function CardDialog({
                 </span>
               )}
             </div>
+            {!creating && <CardGoals cardId={card.id} />}
             {showProjectPicker && (
               <div className="field">
                 <label htmlFor="new-card-project">Project</label>
@@ -830,5 +831,41 @@ export function CardDialog({
         </form>
       )}
     </dialog>
+  );
+}
+
+/**
+ * The orchestrator goals this card delivers (PM-467), like an issue's parent epic: each links to
+ * its orchestrator. Nothing shows for a card no goal links.
+ */
+function CardGoals({ cardId }: { cardId: number }) {
+  const [goals, setGoals] = useState<CardGoal[]>([]);
+  useEffect(() => {
+    let active = true;
+    if (typeof api.goalsForCard !== 'function') return;
+    api
+      .goalsForCard(cardId)
+      .then((list) => active && setGoals(list))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [cardId]);
+  if (!goals.length) return null;
+  return (
+    <p className="card-goals">
+      <span className="faint">Goal:</span>{' '}
+      {goals.map((g, i) => (
+        <span key={`${g.orchestratorId}-${g.goalId}`}>
+          {i > 0 && ' · '}
+          <Link to={`/orchestrators?orchestrator=${encodeURIComponent(g.orchestratorId)}`}>
+            {g.title}
+          </Link>{' '}
+          <span className="faint">
+            ({g.orchestratorName}, {g.status})
+          </span>
+        </span>
+      ))}
+    </p>
   );
 }

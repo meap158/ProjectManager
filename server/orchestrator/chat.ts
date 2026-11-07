@@ -35,6 +35,7 @@ import type {
   OrchestratorChatWork,
   GoalEvent,
   GoalCard,
+  CardGoal,
   OrchestratorGoalView,
 } from '../../shared/orchestrator.js';
 import type { OrchestratorToolHost } from '../boardMcp.js';
@@ -1003,6 +1004,21 @@ export class OrchestratorChat implements OrchestratorToolHost {
    * goals nothing will bring the chat back to (PM-437): the orchestrator is paused, its automatic
    * checks are off or its chat is closed, and the goal has not moved for two nudge intervals.
    */
+  goalsForCard(cardId: number): CardGoal[] {
+    const found: CardGoal[] = [];
+    for (const instance of this.service.state().instances)
+      for (const g of listGoals(this.db, instance.id))
+        if ((g.cardIds ?? []).includes(cardId))
+          found.push({
+            orchestratorId: instance.id,
+            orchestratorName: instance.name,
+            goalId: g.id,
+            title: g.title,
+            status: g.status,
+          });
+    return found;
+  }
+
   goalEvents(now = Date.now()): GoalEvent[] {
     const events: GoalEvent[] = [];
     for (const instance of this.service.state().instances) {

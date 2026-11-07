@@ -1385,6 +1385,17 @@ describe('goals as epics (PM-448)', () => {
       [created.key, 'todo'],
     ]);
     expect(view.projects).toEqual([{ id: a, name: 'Alpha' }]);
+    // The card side of the link (PM-467): which goals a card delivers.
+    expect(chat.goalsForCard(mine.id)).toEqual([
+      {
+        orchestratorId: 'master-1',
+        orchestratorName: 'Games',
+        goalId: 1,
+        title: 'Login',
+        status: 'active',
+      },
+    ]);
+    expect(chat.goalsForCard(other.id)).toEqual([]);
     const after = (await call('update_goal', {
       goalId: 1,
       note: 'split',

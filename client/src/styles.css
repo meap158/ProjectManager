@@ -7410,3 +7410,10 @@ span.path-link:hover .path-icon {
     height: 40px;
   }
 }
+
+/* The goals a card delivers (PM-467), under the card dialog title. */
+.card-goals {
+  margin: -4px 0 10px;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}

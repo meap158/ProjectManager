@@ -290,6 +290,15 @@ export interface OrchestratorGoalView extends OrchestratorGoal {
   };
 }
 
+/** A goal a card is linked to (PM-467), shown in the card dialog like an issue's parent epic. */
+export interface CardGoal {
+  orchestratorId: string;
+  orchestratorName: string;
+  goalId: number;
+  title: string;
+  status: GoalStatus;
+}
+
 /** A goal that reached achieved or blocked recently (PM-436), for the owner's notifications. */
 export interface GoalEvent {
   orchestratorId: string;

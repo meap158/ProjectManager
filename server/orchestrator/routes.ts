@@ -111,6 +111,10 @@ export function registerOrchestratorRoutes(
         'Give a status, a note, cards or projects',
       );
     app.get('/orchestrators/goals/recent', (c) => c.json(chat.goalEvents()));
+    // The goals a card is linked to (PM-467), for the card dialog.
+    app.get('/orchestrators/goals/by-card/:cardId', (c) =>
+      c.json(chat.goalsForCard(Number(c.req.param('cardId')))),
+    );
     // The full text behind a cut-off Activity entry (PM-452).
     app.get('/orchestrators/event-details/:id', (c) => {
       const text = chat.eventDetail(Number(c.req.param('id')));
