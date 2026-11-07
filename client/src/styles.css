@@ -6622,6 +6622,12 @@ span.path-link:hover .path-icon {
     font-size: 16px;
   }
 }
+/* The search box sits flush with the menu's scrolling edge, which would clip a ring drawn
+   outside it: draw it on the box's own edge instead (PM-455). */
+.dropdown-search:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
 .dropdown-empty {
   margin: 0;
   padding: 10px 8px;
