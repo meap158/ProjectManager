@@ -111,7 +111,12 @@ blocked, `badge-done` achieved), a coloured left edge, the "Done when" condition
 progress note with who wrote it. The condition and note are cut to about four lines; a "Show
 more" text link under them appears only when text is actually cut off (measured, PM-447). Pause,
 Resume (Reopen for achieved, Restore for dropped), Mark achieved (green) and Drop (red) are
-bordered small buttons with icons and tooltips (PM-444). Goals work like epics (PM-448): after
+bordered small buttons with icons and tooltips (PM-444). Goal rows are compact (PM-454): a header with title, status, project, an "N/M" done count with a
+small bar, a "Ready to close" badge when it applies and the actions on the right; then the
+clamped text; then the card chips, each naming its live session or run. Under the Goals heading
+one follow-up line counts down to the next automatic check ("Next check in 2:41 · last 12 min ago
+· works on 4 active goals together") or says why none will come. Mark achieved with open cards
+opens a confirm dialog listing them, with "Accept the N cards in Review as Done". Goals work like epics (PM-448): after
 the status, the goal's projects show as the Board's `project-tag` chips, in the same colour per
 project (`lib/projectColors.ts`, PM-449), or an "All projects" pill,
 and below the text an "N of M cards done" bar (`--status-done`) leads a row of linked card chips,

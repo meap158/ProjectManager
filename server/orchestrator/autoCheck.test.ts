@@ -370,3 +370,21 @@ it('keeps bringing an active goal back until it stalls, with the goal focus (PM-
   await t.auto.tick();
   expect(t.state.checks).toBe(GOAL_STALL_CHECKS); // a blocked goal is left to the owner
 });
+
+it('asks the chat to close a goal once every linked card is Done, once per card set (PM-454)', async () => {
+  const { addGoal, GOAL_NUDGE_MS } = await import('./goals.js');
+  const { updateCard } = await import('../store.js');
+  const t = setup();
+  await t.auto.tick(); // baseline
+  addGoal(t.db, 'm', { title: 'Ship login', objective: 'o', doneWhen: 'd', cardIds: [t.card] });
+  t.state.now += AUTO_CHECK_MIN_GAP_MS;
+  await t.auto.tick(); // the ordinary goal check
+  updateCard(t.db, t.card, { status: 'done' });
+  t.state.now += AUTO_CHECK_MIN_GAP_MS; // well before the next 15-minute nudge
+  await t.auto.tick();
+  expect(t.state.checks).toBe(2);
+  expect(t.state.events.at(-1)).toContain('goal "Ship login" has every linked card Done');
+  t.state.now += GOAL_NUDGE_MS;
+  await t.auto.tick();
+  expect(t.state.events.at(-1)).not.toContain('has every linked card Done');
+});

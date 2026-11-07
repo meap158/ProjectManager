@@ -100,6 +100,10 @@ export function registerOrchestratorRoutes(
         linkCards: cardRefs.optional(),
         unlinkCards: cardRefs.optional(),
         projectIds: z.array(z.number().int().positive()).max(50).optional(),
+        /** Close it although linked cards are open (PM-454), after the owner confirmed. */
+        force: z.boolean().optional(),
+        /** With "achieved": accept its linked cards in Review as Done. */
+        acceptReview: z.boolean().optional(),
       })
       .strict()
       .refine(
@@ -144,6 +148,8 @@ export function registerOrchestratorRoutes(
       } catch (e) {
         if (e instanceof Error && /No goal/.test(e.message))
           return c.json({ error: e.message }, 404);
+        if (e instanceof Error && /still open/.test(e.message))
+          return c.json({ error: e.message }, 409);
         if (e instanceof Error && /not in this orchestrator|at most/.test(e.message))
           return c.json({ error: e.message }, 400);
         if (e instanceof Error && /already active/.test(e.message))

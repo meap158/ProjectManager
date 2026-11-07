@@ -16,6 +16,11 @@ const goals: OrchestratorGoalView[] = [
     progress: [{ at: '2026-11-06T10:30:00Z', note: 'PR #3 open, checks running', by: 'chat' }],
     projects: [],
     cards: [],
+    followUp: {
+      lastCheckAt: null,
+      nextCheckAt: null,
+      note: 'No automatic checks: the orchestrator is paused.',
+    },
   },
 ];
 vi.mock('../api', () => ({
@@ -99,7 +104,7 @@ it('shows a goal like an epic: its project, linked cards and how many are done (
   ]);
   render(<OrchestratorGoals instance={instance} />, { wrapper: MemoryRouter });
   expect(await screen.findByText('TiemNet')).toBeTruthy();
-  expect(screen.getByText('1 of 2 cards done')).toBeTruthy();
+  expect(screen.getByText('1/2')).toBeTruthy();
   expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('1');
   expect(screen.getByRole('link', { name: 'PM-15' }).getAttribute('href')).toBe(
     '/board?project=7&card=15',
@@ -119,6 +124,62 @@ it('shows a goal like an epic: its project, linked cards and how many are done (
   );
   await waitFor(() =>
     expect(api.updateOrchestratorGoal).toHaveBeenCalledWith('o', 1, { linkCards: ['20'] }),
+  );
+  vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
+});
+
+it('shows who works each card and when the orchestrator follows up, and confirms closing with open cards (PM-454)', async () => {
+  const now = Date.now();
+  vi.mocked(api.orchestratorGoals).mockResolvedValue([
+    {
+      ...goals[0]!,
+      cards: [
+        { id: 12, key: 'PM-12', title: 'Form', status: 'review', projectId: 7 },
+        {
+          id: 15,
+          key: 'PM-15',
+          title: 'API',
+          status: 'in_progress',
+          projectId: 7,
+          worker: { kind: 'session', id: 138, name: 'Splash', state: 'running' },
+        },
+      ],
+      followUp: {
+        lastCheckAt: new Date(now - 12 * 60_000).toISOString(),
+        nextCheckAt: new Date(now + 3 * 60_000 + 20_000).toISOString(),
+        note: 'Checks come back to it about every 15 minutes, sooner when its work changes.',
+      },
+    },
+  ]);
+  render(<OrchestratorGoals instance={instance} />, { wrapper: MemoryRouter });
+  expect(await screen.findByText('Splash')).toBeTruthy();
+  expect(screen.getByRole('link', { name: /PM-15/ }).getAttribute('title')).toContain(
+    'Session 138 "Splash" is working on it',
+  );
+  // One follow-up line for the panel: a countdown, the last check and the goals it covers.
+  expect(screen.getByRole('timer').textContent).toMatch(
+    /Next check in 3:[12][0-9] · last 12 min ago · works on 1 active goal together/,
+  );
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: /Mark achieved/ }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole('button', { name: /Mark achieved/ }));
+  expect(await screen.findByText('Mark "Ship login" achieved?')).toBeTruthy();
+  expect(screen.getByLabelText(/Accept the 1 card in Review as Done/)).toBeTruthy();
+  fireEvent.click(
+    within(screen.getByRole('dialog', { hidden: true })).getByRole('button', {
+      name: 'Mark achieved',
+      hidden: true,
+    }),
+  );
+  await waitFor(() =>
+    expect(api.updateOrchestratorGoal).toHaveBeenCalledWith('o', 1, {
+      status: 'achieved',
+      force: true,
+      acceptReview: true,
+    }),
   );
   vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
 });

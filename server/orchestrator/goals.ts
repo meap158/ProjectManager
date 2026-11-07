@@ -133,6 +133,39 @@ export function updateGoal(
   return next;
 }
 
+/** A goal's linked card set as one comparable key (PM-454). */
+export const cardSetKey = (g: OrchestratorGoal) =>
+  [...(g.cardIds ?? [])].sort((a, b) => a - b).join(',');
+
+/**
+ * Active goals whose linked cards are all Done and whose chat has not been asked to close them
+ * for this card set yet (PM-454): the next automatic check asks it to verify doneWhen.
+ */
+export function goalsReadyToClose(
+  goals: readonly OrchestratorGoal[],
+  status: (cardId: number) => string | undefined,
+): OrchestratorGoal[] {
+  return goals.filter(
+    (g) =>
+      g.status === 'active' &&
+      (g.cardIds ?? []).length > 0 &&
+      (g.cardIds ?? []).every((id) => status(id) === 'done') &&
+      g.closePromptedFor !== cardSetKey(g),
+  );
+}
+
+/** Records that the chat was asked to close these goals for their current card sets. */
+export function noteClosePrompted(db: Db, orchestratorId: string, goalIds: readonly number[]) {
+  if (!goalIds.length) return;
+  save(
+    db,
+    orchestratorId,
+    listGoals(db, orchestratorId).map((g) =>
+      goalIds.includes(g.id) ? { ...g, closePromptedFor: cardSetKey(g) } : g,
+    ),
+  );
+}
+
 /** Active goals the automatic check should bring back now. */
 export function goalsDue(goals: readonly OrchestratorGoal[], now: number): OrchestratorGoal[] {
   return goals.filter((g) => g.status === 'active' && now - (g.lastNudgeAt ?? 0) >= GOAL_NUDGE_MS);

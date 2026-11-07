@@ -191,6 +191,10 @@ export const api = {
       linkCards?: string[];
       unlinkCards?: string[];
       projectIds?: number[];
+      /** Close it although linked cards are open, after confirming (PM-454). */
+      force?: boolean;
+      /** With "achieved": accept its linked cards in Review as Done. */
+      acceptReview?: boolean;
     },
   ) =>
     request<OrchestratorGoal>(

@@ -5,6 +5,7 @@ import type { Db } from '../db.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { AgentSession } from '../../shared/types.js';
 import {
+  getCard,
   getSetting,
   listCards,
   listCardsInFlight,
@@ -16,7 +17,13 @@ import { readLimits } from '../agents/limits.js';
 import { ownedSessionIds } from './ownedWorkers.js';
 import { sessionQuota } from './sessionSupervision.js';
 import { plans, type CheckFocus } from './chat.js';
-import { activeGoals, goalsDue, noteGoalCheck } from './goals.js';
+import {
+  activeGoals,
+  goalsDue,
+  goalsReadyToClose,
+  noteClosePrompted,
+  noteGoalCheck,
+} from './goals.js';
 
 /** Bounds on automatic checks (PM-418). */
 export const AUTO_CHECK_MAX_PER_HOUR = 4;
@@ -143,15 +150,22 @@ export class AutoCheck {
     // Only planning to ask for: a narrow check, so the chat does not re-review the whole board.
     // Active goals (PM-433) come back on their own schedule; any other check works on them too.
     const goals = activeGoals(db, id);
-    const goalDue = goalsDue(goals, now);
+    // A goal whose linked cards are all Done comes back at once to be verified and closed (PM-454).
+    const ready = goalsReadyToClose(goals, (id) => getCard(db, id)?.status);
+    const goalDue = goalsDue(goals, now).filter((g) => !ready.includes(g));
+    const goalWork = goalDue.length + ready.length;
     const focus: CheckFocus =
-      triggers.length || (planning && goalDue.length)
+      triggers.length || (planning && goalWork)
         ? 'all'
         : planning
           ? 'plan'
-          : goalDue.length
+          : goalWork
             ? 'goal'
             : 'all';
+    if (ready.length)
+      triggers.push(
+        ...ready.map((g) => `goal "${g.title.slice(0, 60)}" has every linked card Done`),
+      );
     if (goalDue.length)
       triggers.push(...goalDue.map((g) => `goal "${g.title.slice(0, 60)}" continues`));
     if (planning)
@@ -210,6 +224,12 @@ export class AutoCheck {
       this.save(id, deferred); // chat.check's own guards said no; the trigger stays pending.
       return;
     }
+    if (focus === 'all' || focus === 'goal')
+      noteClosePrompted(
+        db,
+        id,
+        ready.map((g) => g.id),
+      );
     // Every check that carried the goal step counts against each active goal's stall limit.
     if (goals.length && (focus === 'all' || focus === 'goal'))
       for (const g of noteGoalCheck(db, id, now))

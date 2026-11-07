@@ -52,6 +52,7 @@ import { addEventDetail, eventDetail } from './eventDetails.js';
 import {
   activeGoals,
   addGoal,
+  cardSetKey,
   listGoals,
   updateGoal,
   type GoalStatus,
@@ -318,7 +319,7 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'update_goal',
     description:
-      'Report progress on a goal (what moved, what is next) and optionally change its status: achieved (with evidence that doneWhen holds), blocked (what only the owner can do), paused or active. Link the cards that deliver it as you plan them (linkCards), unlink ones that no longer belong. Report after every check that works on it.',
+      'Report progress on a goal (what moved, what is next) and optionally change its status: achieved (with evidence that doneWhen holds; refused while linked cards are open unless you give closeWithOpenCards saying why the goal holds anyway), blocked (what only the owner can do), paused or active. Link the cards that deliver it as you plan them (linkCards), unlink ones that no longer belong. Report after every check that works on it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -326,6 +327,11 @@ export const ORCHESTRATOR_TOOLS = [
         note: { type: 'string', minLength: 1, maxLength: 2000 },
         linkCards: { type: 'array', items: { type: ['string', 'integer'] } },
         unlinkCards: { type: 'array', items: { type: ['string', 'integer'] } },
+        closeWithOpenCards: {
+          type: 'string',
+          maxLength: 1000,
+          description: 'With achieved: why the goal holds although some linked cards are open',
+        },
         status: { type: 'string', enum: ['active', 'paused', 'blocked', 'achieved', 'dropped'] },
       },
       required: ['goalId', 'note'],
@@ -779,23 +785,132 @@ export class OrchestratorChat implements OrchestratorToolHost {
   /** A goal with project names and its linked cards as they are now (PM-448). */
   private goalView(instance: OrchestratorConfig, g: OrchestratorGoal): OrchestratorGoalView {
     const names = new Map(this.scope(instance).map((p) => [p.id, p.name]));
+    const ids = new Set(g.cardIds ?? []);
+    // Who is on each linked card right now (PM-454): a live session first, else a run.
+    const sessions = ids.size
+      ? this.supervisor
+          .listAllSessions()
+          .filter(
+            (s) => s.status === 'running' && !s.orchestratorId && s.cardId && ids.has(s.cardId),
+          )
+      : [];
+    const runs = ids.size
+      ? this.supervisor
+          .listAllRuns(500)
+          .filter(
+            (r) =>
+              (r.status === 'running' || r.status === 'queued') && r.cardId && ids.has(r.cardId),
+          )
+      : [];
     const cards: GoalCard[] = [];
     for (const id of g.cardIds ?? []) {
       const c = getCard(this.db, id);
-      if (c)
-        cards.push({
-          id: c.id,
-          key: c.key,
-          title: c.title,
-          status: c.status,
-          projectId: c.projectId,
-        });
+      if (!c) continue;
+      const s = sessions.find((x) => x.cardId === c.id);
+      const r = runs.find((x) => x.cardId === c.id);
+      const worker = s
+        ? {
+            kind: 'session' as const,
+            id: s.id,
+            name: s.name || `Session ${s.id}`,
+            state: s.tailState ?? 'running',
+          }
+        : r
+          ? { kind: 'run' as const, id: r.id, name: r.name || `Run ${r.id}`, state: r.status }
+          : undefined;
+      cards.push({
+        id: c.id,
+        key: c.key,
+        title: c.title,
+        status: c.status,
+        projectId: c.projectId,
+        ...(worker ? { worker } : {}),
+      });
     }
     return {
       ...g,
       projects: (g.projectIds ?? []).map((id) => ({ id, name: names.get(id) ?? `Project ${id}` })),
       cards,
+      followUp: this.goalFollowUp(instance, g, cards),
     };
+  }
+
+  /** When the orchestrator last came back to a goal and when it will next, in words (PM-454). */
+  private goalFollowUp(
+    instance: OrchestratorConfig,
+    g: OrchestratorGoal,
+    cards: readonly GoalCard[],
+    now = Date.now(),
+  ): OrchestratorGoalView['followUp'] {
+    const lastCheckAt = g.lastNudgeAt ? new Date(g.lastNudgeAt).toISOString() : null;
+    if (g.status !== 'active')
+      return {
+        lastCheckAt,
+        nextCheckAt: null,
+        note:
+          g.status === 'paused'
+            ? 'Paused: automatic checks skip it until you resume it.'
+            : g.status === 'blocked'
+              ? 'Blocked: waiting for you (see the latest note).'
+              : 'Closed.',
+      };
+    const stuck = this.goalStuck(instance);
+    if (stuck) return { lastCheckAt, nextCheckAt: null, note: `No automatic checks: ${stuck}` };
+    const allDone = cards.length > 0 && cards.every((c) => c.status === 'done');
+    if (allDone && g.closePromptedFor !== cardSetKey(g))
+      return {
+        lastCheckAt,
+        nextCheckAt: new Date(now).toISOString(),
+        note: 'Every linked card is Done: the next check verifies the goal and closes it.',
+        readyToClose: true,
+      };
+    return {
+      lastCheckAt,
+      nextCheckAt: new Date(Math.max(now, (g.lastNudgeAt ?? 0) + GOAL_NUDGE_MS)).toISOString(),
+      note: 'Checks come back to it about every 15 minutes, sooner when its work changes.',
+    };
+  }
+
+  /** Linked cards not Done, counting a pending link/unlink change (PM-454). */
+  private openGoalCards(
+    orchestratorId: string,
+    goalId: number,
+    change: { link?: number[]; unlink?: number[] } = {},
+  ) {
+    const goal = listGoals(this.db, orchestratorId).find((g) => g.id === goalId);
+    if (!goal) return [];
+    const unlink = new Set(change.unlink ?? []);
+    return [...new Set([...(goal.cardIds ?? []), ...(change.link ?? [])])]
+      .filter((id) => !unlink.has(id))
+      .map((id) => getCard(this.db, id))
+      .filter((c): c is Card => Boolean(c) && c!.status !== 'done');
+  }
+
+  /**
+   * The owner closing a goal accepts its linked cards in Review (PM-454): Done, a note on the
+   * card, and their finished runs accepted, as when the chat accepts work.
+   */
+  private acceptGoalReviewCards(instance: OrchestratorConfig, goalId: number) {
+    const goal = listGoals(this.db, instance.id).find((g) => g.id === goalId);
+    if (!goal) return;
+    const at = new Date().toISOString();
+    for (const id of goal.cardIds ?? []) {
+      const c = getCard(this.db, id);
+      if (!c || c.status !== 'review') continue;
+      updateCard(this.db, c.id, {
+        status: 'done',
+        description:
+          `${c.description}\n\nAccepted by the owner when closing goal ${goal.id} "${goal.title}" (${at}).`.slice(
+            0,
+            NOTE_LIMIT,
+          ),
+      });
+      for (const r of this.supervisor
+        .listRuns(c.projectId, c.id)
+        .filter((run) => run.status === 'succeeded' && !run.validation))
+        this.supervisor.validateRun(r.id, 'accepted', 'done');
+      this.record(instance.id, 'moved', `${c.key}: review → done (owner, goal ${goal.id})`, c.id);
+    }
   }
 
   /** A card reference (key like PM-12, or id) in this orchestrator's scope, or an error. */
@@ -954,16 +1069,30 @@ export class OrchestratorChat implements OrchestratorToolHost {
       linkCards?: (string | number)[];
       unlinkCards?: (string | number)[];
       projectIds?: number[];
+      force?: boolean;
+      acceptReview?: boolean;
     },
   ) {
     const instance = this.instance(id);
     const projectIds = change.projectIds
       ? this.goalLinks(instance, change.projectIds, []).projectIds
       : undefined;
+    const cardChange = this.goalCardChange(instance, change.linkCards, change.unlinkCards);
+    if (change.status === 'achieved') {
+      // Closing it with open cards asks first (PM-454); the page confirms and can accept the
+      // ones in Review on the way.
+      if (change.acceptReview) this.acceptGoalReviewCards(instance, goalId);
+      const open = this.openGoalCards(id, goalId, cardChange);
+      if (open.length && !change.force)
+        throw new AgentError(
+          409,
+          `${open.map((c) => c.key).join(', ')} still open; confirm to mark it achieved anyway`,
+        );
+    }
     const goal = updateGoal(this.db, id, goalId, {
       ...(change.status ? { status: change.status } : {}),
       ...(change.note ? { note: change.note } : {}),
-      ...this.goalCardChange(instance, change.linkCards, change.unlinkCards),
+      ...cardChange,
       ...(projectIds ? { projectIds } : {}),
       by: 'owner',
     });
@@ -1881,13 +2010,24 @@ export class OrchestratorChat implements OrchestratorToolHost {
           status: z.enum(['active', 'paused', 'blocked', 'achieved', 'dropped']).optional(),
           linkCards: z.array(z.unknown()).max(60).optional(),
           unlinkCards: z.array(z.unknown()).max(60).optional(),
+          closeWithOpenCards: z.string().trim().min(1).max(1000).optional(),
         })
         .strict()
         .parse(args);
+      const cardChange = this.goalCardChange(instance, input.linkCards, input.unlinkCards);
+      if (input.status === 'achieved' && !input.closeWithOpenCards) {
+        const open = this.openGoalCards(orchestratorId, input.goalId, cardChange);
+        if (open.length)
+          fail(
+            `${open.map((c) => `${c.key} (${c.status.replace('_', ' ')})`).join(', ')} still open: finish or unlink them, or give closeWithOpenCards saying why the goal holds anyway`,
+          );
+      }
       const goal = updateGoal(this.db, orchestratorId, input.goalId, {
-        note: input.note,
+        note: input.closeWithOpenCards
+          ? `${input.note}\n\nClosed with open cards: ${input.closeWithOpenCards}`
+          : input.note,
         ...(input.status ? { status: input.status } : {}),
-        ...this.goalCardChange(instance, input.linkCards, input.unlinkCards),
+        ...cardChange,
         by: 'chat',
       });
       this.record(

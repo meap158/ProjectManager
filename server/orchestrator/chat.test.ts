@@ -1239,6 +1239,39 @@ describe('worker messages and goals (PM-432, PM-433)', () => {
   });
 });
 
+describe('closing goals with linked cards (PM-454)', () => {
+  it('refuses achieved while linked cards are open, unless the chat says why or the owner confirms', async () => {
+    const { call, chat, mine, a, db, supervisor } = setup({ autoCheck: true });
+    Object.assign(supervisor, { validateRun: vi.fn() });
+    const review = insertCard(db, a, { title: 'Review me', description: '', status: 'review' });
+    await call('set_goal', {
+      title: 'G',
+      objective: 'o',
+      doneWhen: 'd',
+      cards: [mine.key, review.key],
+    });
+    await expect(
+      call('update_goal', { goalId: 1, note: 'done', status: 'achieved' }),
+    ).rejects.toThrow(/still open/);
+    const view = chat.goals('master-1')[0]!;
+    expect(view.followUp.note).toContain('chat is closed'); // no chat session in this setup
+    expect(() => chat.updateOwnerGoal('master-1', 1, { status: 'achieved' })).toThrow(/still open/);
+    chat.updateOwnerGoal('master-1', 1, { status: 'achieved', force: true, acceptReview: true });
+    expect(getCard(db, review.id)!.status).toBe('done');
+    expect(getCard(db, mine.id)!.status).toBe('todo'); // not in Review: left where it is
+    expect(chat.goals('master-1')[0]!.status).toBe('achieved');
+    await call('set_goal', { title: 'H', objective: 'o', doneWhen: 'd', cards: [mine.key] });
+    const closed = (await call('update_goal', {
+      goalId: 2,
+      note: 'shipped',
+      status: 'achieved',
+      closeWithOpenCards: 'the card is a follow-up',
+    })) as { goal: { status: string } };
+    expect(closed.goal.status).toBe('achieved');
+    db.close();
+  });
+});
+
 describe('Activity details (PM-452)', () => {
   it('keeps the full text behind a cut-off entry, readable by its detailId', async () => {
     const { call, chat, record, db } = setup({ autoCheck: true });

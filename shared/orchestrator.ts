@@ -257,6 +257,8 @@ export interface OrchestratorGoal {
   lastNudgeAt?: number;
   /** Automatic checks since the chat last reported progress on it. */
   nudgesWithoutProgress?: number;
+  /** The linked card set (sorted ids) the chat was last asked to close the goal for (PM-454). */
+  closePromptedFor?: string;
   /** Projects it is about (PM-448); empty or missing means all of the orchestrator's projects. */
   projectIds?: number[];
   /** Cards that deliver it, like the tracked issues of an epic (PM-448). */
@@ -270,12 +272,22 @@ export interface GoalCard {
   title: string;
   status: CardWithProject['status'];
   projectId: number;
+  /** The live session or run on this card right now (PM-454). */
+  worker?: { kind: 'session' | 'run'; id: number; name: string; state: string };
 }
 
 /** A goal with its projects named and its linked cards resolved (PM-448). */
 export interface OrchestratorGoalView extends OrchestratorGoal {
   projects: { id: number; name: string }[];
   cards: GoalCard[];
+  /** When the orchestrator last came back to it and when it will next (PM-454). */
+  followUp: {
+    lastCheckAt: string | null;
+    nextCheckAt: string | null;
+    note: string;
+    /** Every linked card is Done and the next check verifies and closes it. */
+    readyToClose?: boolean;
+  };
 }
 
 /** A goal that reached achieved or blocked recently (PM-436), for the owner's notifications. */

@@ -193,7 +193,14 @@ and shown in a Goals panel under the chat. Like an epic, a goal names its projec
 of the orchestrator's) and links the cards that deliver it (PM-448): `set_goal` takes `projects`
 and `cards` and also links card keys named in its own text, `create_card` takes `goalId`,
 `update_goal` takes `linkCards`/`unlinkCards`, and the briefs show each card's status and
-"N of M" done. Every link is checked against the orchestrator's projects. Details, bounds and the Grok Bot comparison are in
+"N of M" done. Every link is checked against the orchestrator's projects. Closing follows the
+links (PM-454): `update_goal` refuses achieved while linked cards are open unless the chat gives
+`closeWithOpenCards` (recorded in the note), the owner's Mark achieved asks first and can accept
+the linked cards in Review as Done (with their finished runs), and once every linked card is Done
+the next automatic check asks the chat to verify doneWhen and close the goal (once per card set).
+One check works on every active goal together, so the Goals panel shows one follow-up line: a
+live countdown to the next check, the last check and the goals it covers, or why no check comes.
+Each linked card shows the session or run working on it. Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open

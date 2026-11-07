@@ -515,6 +515,78 @@
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
 }
+/* Follow-up (PM-454): who is on each card, and when the orchestrator comes back to the goal. */
+.orchestrator-goal-card-worker {
+  max-width: 14ch;
+  padding-left: 5px;
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  color: var(--text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.orchestrator-goal-card-worker[data-state='running'] {
+  color: var(--status-in_progress);
+}
+.orchestrator-goal-card-worker[data-state='input'] {
+  color: var(--danger);
+}
+/* One goal row: header with title, status, project, done count and actions; text; cards. */
+.orchestrator-goal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.orchestrator-goal-head .orchestrator-goal-title {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.orchestrator-goal-head .orchestrator-goal-actions {
+  margin-top: 0;
+}
+.orchestrator-goal-done-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.orchestrator-goal-done-count .orchestrator-goal-bar {
+  flex: none;
+  width: 56px;
+}
+.orchestrator-goals-followup {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+.orchestrator-goals-followup strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.orchestrator-goal-followup-warn {
+  color: var(--text-2);
+}
+.close-goal-cards {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.close-goal-cards li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.close-goal-accept {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
 /* Long conditions and notes take about four lines until the owner asks for more. */
 .orchestrator-goal-text {
   display: grid;
