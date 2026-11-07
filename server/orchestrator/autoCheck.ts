@@ -230,9 +230,28 @@ export class AutoCheck {
         id,
         ready.map((g) => g.id),
       );
-    // Every check that carried the goal step counts against each active goal's stall limit.
+    // Every check that carried the goal step counts against each active goal's stall limit,
+    // unless its work visibly moved: a linked card changed or someone is working on one (PM-456).
+    const working = new Set(
+      this.deps
+        .listSessions()
+        .filter((s) => !s.orchestratorId && s.status === 'running' && s.tailState === 'running')
+        .map((s) => s.cardId)
+        .filter((c): c is number => typeof c === 'number'),
+    );
+    const moved = new Set(
+      goals
+        .filter((g) =>
+          (g.cardIds ?? []).some((cardId) => {
+            if (working.has(cardId)) return true;
+            const updated = getCard(db, cardId)?.updatedAt;
+            return Boolean(updated) && Date.parse(updated!) > (g.lastNudgeAt ?? 0);
+          }),
+        )
+        .map((g) => g.id),
+    );
     if (goals.length && (focus === 'all' || focus === 'goal'))
-      for (const g of noteGoalCheck(db, id, now))
+      for (const g of noteGoalCheck(db, id, now, moved))
         this.deps.record(
           id,
           `Goal ${g.id} "${g.title}" set to blocked: no progress after several checks`,

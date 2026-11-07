@@ -174,6 +174,20 @@ export function OrchestratorGoals({
     });
   }
 
+  /** What the last Follow up did, shown under the heading for a few seconds (PM-456). */
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(''), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+  const followUp = (goal: OrchestratorGoal) =>
+    void act(async () => {
+      await api.followUpGoal(instance.id, goal.id);
+      setNotice(
+        `Asked the chat to follow up on "${goal.title}". Its report lands in the chat and on the goal.`,
+      );
+    });
   /** A goal being closed while some linked cards are open: the confirm dialog (PM-454). */
   const [closing, setClosing] = useState<OrchestratorGoalView | null>(null);
   const close = (goal: OrchestratorGoal, acceptReview: boolean) =>
@@ -244,6 +258,11 @@ export function OrchestratorGoals({
         )}
       </div>
       {error && <p className="error-banner">{error}</p>}
+      {notice && (
+        <p className="orchestrator-goals-notice" role="status">
+          {notice}
+        </p>
+      )}
       {adding && (
         <form className="orchestrator-goal-form" onSubmit={add}>
           <label>
@@ -359,6 +378,17 @@ export function OrchestratorGoals({
                       role="group"
                       aria-label="Goal actions"
                     >
+                      {goal.status === 'active' && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          disabled={busy}
+                          title="Ask the chat now to check every linked card and its worker, act on them and report the full progress"
+                          onClick={() => followUp(goal)}
+                        >
+                          <PlayIcon size={12} /> Follow up
+                        </button>
+                      )}
                       {goal.status === 'active' ? (
                         <button
                           type="button"

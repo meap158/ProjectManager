@@ -557,6 +557,13 @@
   flex: none;
   width: 56px;
 }
+.orchestrator-goals-notice {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--accent-soft);
+  font-size: 12px;
+}
 .orchestrator-goals-followup {
   margin: 2px 0 0;
   font-size: 12px;

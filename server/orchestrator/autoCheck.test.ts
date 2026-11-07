@@ -388,3 +388,19 @@ it('asks the chat to close a goal once every linked card is Done, once per card 
   await t.auto.tick();
   expect(t.state.events.at(-1)).not.toContain('has every linked card Done');
 });
+
+it('does not block a goal whose linked card is being worked on (PM-456)', async () => {
+  const { addGoal, listGoals, GOAL_NUDGE_MS, GOAL_STALL_CHECKS } = await import('./goals.js');
+  const t = setup();
+  t.state.sessions = [
+    { id: 5, status: 'running', tailState: 'running', cardId: t.card } as unknown as AgentSession,
+  ];
+  await t.auto.tick(); // baseline
+  addGoal(t.db, 'm', { title: 'Ship login', objective: 'o', doneWhen: 'd', cardIds: [t.card] });
+  for (let i = 0; i < GOAL_STALL_CHECKS + 1; i++) {
+    t.state.now += GOAL_NUDGE_MS;
+    await t.auto.tick();
+  }
+  expect(listGoals(t.db, 'm')[0]!.status).toBe('active');
+  expect(listGoals(t.db, 'm')[0]!.nudgesWithoutProgress).toBe(0);
+});

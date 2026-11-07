@@ -200,7 +200,10 @@ the linked cards in Review as Done (with their finished runs), and once every li
 the next automatic check asks the chat to verify doneWhen and close the goal (once per card set).
 One check works on every active goal together, so the Goals panel shows one follow-up line: a
 live countdown to the next check, the last check and the goals it covers, or why no check comes.
-Each linked card shows the session or run working on it. Details, bounds and the Grok Bot comparison are in
+Each linked card shows the session or run working on it. Follow up (PM-456) on a goal asks the chat at once to check
+every linked card and its worker, act on them and report the full picture with update_goal. A
+goal whose linked card changed or is being worked on since its last check is not counted toward
+the stall limit, and status changes from the page leave a note on the goal. Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open

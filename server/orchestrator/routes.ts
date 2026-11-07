@@ -138,6 +138,12 @@ export function registerOrchestratorRoutes(
         throw e;
       }
     });
+    // The owner's Follow up (PM-456): the chat checks that goal's cards and workers now.
+    app.post('/orchestrators/:id/goals/:goalId/follow-up', async (c) => {
+      const goalId = Number(c.req.param('goalId'));
+      if (!Number.isInteger(goalId)) return c.json({ error: 'Invalid goal' }, 400);
+      return c.json(await chat.check(c.req.param('id'), 'goal', [], goalId));
+    });
     app.patch('/orchestrators/:id/goals/:goalId', async (c) => {
       const goalId = Number(c.req.param('goalId'));
       const parsed = goalChange.safeParse(await c.req.json().catch(() => null));

@@ -19,7 +19,13 @@ import type { AgentSupervisor } from '../agents/supervisor.js';
 import type { AgentRun, AgentSession, ProjectSummary } from '../../shared/types.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { OrchestratorService } from './service.js';
-import { OrchestratorChat, briefing, checkPrompt, pruneArtifacts } from './chat.js';
+import {
+  OrchestratorChat,
+  briefing,
+  checkPrompt,
+  goalFollowUpPrompt,
+  pruneArtifacts,
+} from './chat.js';
 import { readLimits } from '../agents/limits.js';
 import { OrchestratorAssignments } from './assignments.js';
 import { providerStatuses } from '../agents/providers.js';
@@ -1235,6 +1241,27 @@ describe('worker messages and goals (PM-432, PM-433)', () => {
     ).note;
     expect(note).toContain('"Check on its own" is off');
     off.db.close();
+    db.close();
+  });
+});
+
+describe('following up on a goal (PM-456)', () => {
+  it('builds a follow-up prompt from the goal, and notes owner status changes', async () => {
+    const { call, chat, mine, db } = setup({ autoCheck: true });
+    await call('set_goal', {
+      title: 'Ship',
+      objective: 'o',
+      doneWhen: 'login works',
+      cards: [mine.key],
+    });
+    const prompt = goalFollowUpPrompt(chat.goals('master-1')[0]!);
+    expect(prompt).toContain('follow up on goal 1 "Ship"');
+    expect(prompt).toContain(`- ${mine.key} "Add login": todo, no live worker`);
+    expect(prompt).toContain('update_goal with the full picture');
+    chat.updateOwnerGoal('master-1', 1, { status: 'paused' });
+    chat.updateOwnerGoal('master-1', 1, { status: 'active' });
+    expect(chat.goals('master-1')[0]!.progress.at(-1)!.note).toBe('Resumed by the owner.');
+    await expect(chat.check('master-1', 'goal', [], 99)).rejects.toThrow(/No goal 99/);
     db.close();
   });
 });

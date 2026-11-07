@@ -28,6 +28,7 @@ vi.mock('../api', () => ({
     orchestratorGoals: vi.fn(async () => goals),
     addOrchestratorGoal: vi.fn(async () => goals[0]),
     updateOrchestratorGoal: vi.fn(async () => goals[0]),
+    followUpGoal: vi.fn(async () => ({})),
     listAllCards: vi.fn(async () => [
       {
         id: 20,
@@ -182,4 +183,13 @@ it('shows who works each card and when the orchestrator follows up, and confirms
     }),
   );
   vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
+});
+
+it('asks the chat to follow up on one goal now (PM-456)', async () => {
+  render(<OrchestratorGoals instance={instance} />, { wrapper: MemoryRouter });
+  const button = await screen.findByRole('button', { name: /Follow up/ });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(button);
+  await waitFor(() => expect(api.followUpGoal).toHaveBeenCalledWith('o', 1));
+  expect(await screen.findByRole('status')).toBeTruthy();
 });

@@ -159,6 +159,13 @@ export const api = {
   /** The full text behind a cut-off Activity entry (PM-452). */
   orchestratorEventDetail: (id: number) =>
     request<{ text: string }>('GET', `/orchestrators/event-details/${id}`),
+  /** Ask the chat to follow up on one goal now (PM-456). */
+  followUpGoal: (id: string, goalId: number) =>
+    request<unknown>(
+      'POST',
+      `/orchestrators/${encodeURIComponent(id)}/goals/${goalId}/follow-up`,
+      {},
+    ),
   /** An older entry's full text, found in the goal and message stores (PM-452). */
   orchestratorEventText: (id: string, action: string, message: string) =>
     request<{ text: string }>(

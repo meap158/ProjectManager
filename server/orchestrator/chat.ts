@@ -640,10 +640,19 @@ export class OrchestratorChat implements OrchestratorToolHost {
     id: string,
     focus: CheckFocus = 'all',
     attentionKinds: readonly string[] = [],
+    /** Follow up on this one goal now (PM-456): its own prompt instead of the board check. */
+    goalId?: number,
   ): Promise<AgentSession> {
     const instance = this.instance(id);
     const goals = activeGoals(this.db, id).length > 0;
-    const request = checkPrompt(instance, focus, attentionKinds, goals);
+    const goal =
+      goalId === undefined ? null : (listGoals(this.db, id).find((g) => g.id === goalId) ?? null);
+    if (goalId !== undefined && !goal) throw new AgentError(404, `No goal ${goalId}`);
+    const prompt = (config: OrchestratorConfig) =>
+      goal
+        ? goalFollowUpPrompt(this.goalView(config, goal))
+        : checkPrompt(config, focus, attentionKinds, goals);
+    const request = prompt(instance);
     let existing = this.session(id);
     if (!existing || !instance.providers.includes(existing.providerId))
       return this.open(id, undefined, `${openingLine(instance)}\n\n${request}`);
@@ -668,15 +677,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
           : 'The orchestrator chat is busy; wait for it or open it to steer',
       );
     this.writeBriefing(currentInstance);
-    this.supervisor.sendInput(
-      live.id,
-      `\x1b[200~${checkPrompt(currentInstance, focus, attentionKinds, goals)}\x1b[201~\r`,
-      false,
-    );
+    this.supervisor.sendInput(live.id, `\x1b[200~${prompt(currentInstance)}\x1b[201~\r`, false);
     this.record(
       id,
       'check',
-      `Asked the chat to check pending work (${focus}${attentionKinds.length ? `: ${attentionKinds.join(', ')}` : ''})`,
+      goal
+        ? `Asked the chat to follow up on goal ${goal.id} "${goal.title}" (owner)`
+        : `Asked the chat to check pending work (${focus}${attentionKinds.length ? `: ${attentionKinds.join(', ')}` : ''})`,
     );
     return this.supervisor.getSession(live.id)!;
   }
@@ -1091,7 +1098,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
     }
     const goal = updateGoal(this.db, id, goalId, {
       ...(change.status ? { status: change.status } : {}),
-      ...(change.note ? { note: change.note } : {}),
+      // A status change from the page leaves a note, so the latest line never contradicts the
+      // badge (a resumed goal still showing "set to blocked", PM-456).
+      ...(change.note
+        ? { note: change.note }
+        : change.status
+          ? { note: OWNER_STATUS_NOTE[change.status] }
+          : {}),
       ...cardChange,
       ...(projectIds ? { projectIds } : {}),
       by: 'owner',
@@ -2391,6 +2404,40 @@ class SessionRequests {
     delete map[id];
     this.save(map);
   }
+}
+
+const OWNER_STATUS_NOTE: Record<GoalStatus, string> = {
+  active: 'Resumed by the owner.',
+  paused: 'Paused by the owner.',
+  blocked: 'Marked blocked by the owner.',
+  achieved: 'Marked achieved by the owner.',
+  dropped: 'Dropped by the owner.',
+};
+
+/**
+ * The owner's "Follow up" on one goal (PM-456): check every linked card and its worker in full,
+ * act on what is found, and report the whole picture.
+ */
+export function goalFollowUpPrompt(g: OrchestratorGoalView): string {
+  const cards = g.cards.length
+    ? g.cards
+        .map(
+          (c) =>
+            `- ${c.key} "${c.title}": ${c.status.replace('_', ' ')}${
+              c.worker
+                ? `, ${c.worker.kind} ${c.worker.id} "${c.worker.name}" (${c.worker.state})`
+                : ', no live worker'
+            }`,
+        )
+        .join('\n')
+    : '- none linked yet: find or create the cards that deliver it and link them (update_goal linkCards, create_card goalId)';
+  return [
+    `The owner asked you to follow up on goal ${g.id} "${g.title}" now.`,
+    `Done when: ${g.doneWhen}`,
+    `Linked cards:\n${cards}`,
+    'For each linked card: read its notes, the latest output of its worker (worker_output, and worker_reply for messages), and its commits or pull requests. Decide the next step and take it: message or unblock the worker, hand the card to a session or start one, dispatch a run, review and accept finished work, or do it yourself when it is small.',
+    "Then call update_goal with the full picture: each card's state, what moved since the last note, what is next and who does it. Mark it achieved only when doneWhen holds with evidence, or blocked with exactly what only the owner can do.",
+  ].join('\n\n');
 }
 
 /** A goal for the chat: its projects, condition, linked cards and the last few progress notes. */

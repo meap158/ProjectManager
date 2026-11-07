@@ -176,11 +176,21 @@ export function goalsDue(goals: readonly OrchestratorGoal[], now: number): Orche
  * progress (reset by update_goal), and one that reached the stall limit is set to blocked.
  * Returns the goals it blocked.
  */
-export function noteGoalCheck(db: Db, orchestratorId: string, now: number): OrchestratorGoal[] {
+export function noteGoalCheck(
+  db: Db,
+  orchestratorId: string,
+  now: number,
+  /**
+   * Goals whose work moved since their last check (PM-456): a linked card changed, or a session
+   * or run is working on one. They are not stalled, whether or not the chat wrote a note.
+   */
+  moved: ReadonlySet<number> = new Set(),
+): OrchestratorGoal[] {
   const stalled: OrchestratorGoal[] = [];
   const at = new Date(now).toISOString();
   const goals = listGoals(db, orchestratorId).map((g) => {
     if (g.status !== 'active') return g;
+    if (moved.has(g.id)) return { ...g, lastNudgeAt: now, nudgesWithoutProgress: 0 };
     const count = (g.nudgesWithoutProgress ?? 0) + 1;
     if (count < GOAL_STALL_CHECKS) return { ...g, lastNudgeAt: now, nudgesWithoutProgress: count };
     const blocked: OrchestratorGoal = {
