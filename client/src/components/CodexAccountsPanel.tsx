@@ -581,6 +581,8 @@ export function CodexAccountsPanel({
                     <span className="badge">{state.defaultAccount.plan}</span>
                   </>
                 )}
+                {/* Active tag sits with the name, never in the action button row (mobile). */}
+                <span className="badge badge-done">active</span>
                 {state.defaultAccount && !state.defaultAccount.available && (
                   <span className="faint" style={{ fontSize: 12.5 }}>
                     {' '}
@@ -612,7 +614,6 @@ export function CodexAccountsPanel({
                 >
                   <AccountActionIcon action="refresh" />
                 </button>
-                <span className="badge badge-done">active</span>
               </span>
             </li>
 
@@ -751,6 +752,8 @@ export function CodexAccountsPanel({
                                 <span className="badge">{acc.plan}</span>
                               </>
                             )}
+                            {/* Active tag sits with the name, never in the action button row (mobile). */}
+                            {isActive && <span className="badge badge-done">active</span>}
                           </span>
                           {!isClaude && state.autoSwitch && (
                             <label className="codex-account-auto-switch">
@@ -803,9 +806,7 @@ export function CodexAccountsPanel({
                     >
                       <AccountActionIcon action="refresh" />
                     </button>
-                    {isActive ? (
-                      <span className="badge badge-done">active</span>
-                    ) : (
+                    {!isActive && (
                       <button
                         type="button"
                         className="btn btn-sm"

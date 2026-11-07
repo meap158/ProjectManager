@@ -101,7 +101,10 @@ describe('CodexAccountsPanel (PM-164)', () => {
     });
     render(<CodexAccountsPanel providerId="claude" onError={vi.fn()} />);
     const defaultRow = (await screen.findByText('Default Claude account')).closest('li')!;
-    expect(within(defaultRow).getByText('active')).toBeDefined();
+    const badge = within(defaultRow).getByText('active');
+    // The tag sits with the name, never in the action button row (mobile).
+    expect(badge.closest('.codex-account-heading, .codex-account-info')).not.toBeNull();
+    expect(badge.closest('.codex-account-actions')).toBeNull();
     expect(defaultRow.textContent).toContain('work@example.com');
     expect(defaultRow.textContent).not.toContain('not signed in');
     expect(screen.queryByRole('button', { name: 'Use default' })).toBeNull();
