@@ -203,3 +203,26 @@ it('asks the chat to follow up on one goal now (PM-456)', async () => {
   await waitFor(() => expect(api.followUpGoal).toHaveBeenCalledWith('o', 1));
   expect(await screen.findByRole('status')).toBeTruthy();
 });
+
+it('shows the acceptance checklist with its evidence (PM-471)', async () => {
+  vi.mocked(api.orchestratorGoals).mockResolvedValue([
+    {
+      ...goals[0]!,
+      criteria: [
+        {
+          id: 1,
+          text: 'e2e login passes',
+          state: 'passing',
+          evidence: '12 passed',
+          checkedBy: 'chat',
+        },
+        { id: 2, text: 'PR merged', state: 'open' },
+      ],
+    },
+  ]);
+  render(<OrchestratorGoals instance={instance} />, { wrapper: MemoryRouter });
+  const item = await screen.findByText('e2e login passes');
+  expect(item.closest('li')!.getAttribute('title')).toBe('Passing: 12 passed (checked by chat)');
+  expect(screen.getByTitle('1 of 2 acceptance criteria passing')).toBeTruthy();
+  vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
+});

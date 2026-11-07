@@ -243,6 +243,17 @@ export interface GoalProgress {
   by: 'chat' | 'owner' | 'system';
 }
 
+/** One checkable acceptance criterion of a goal (PM-471). */
+export interface GoalCriterion {
+  id: number;
+  text: string;
+  state: 'open' | 'passing' | 'failing';
+  /** What showed it passing or failing: a command and its result, a PR, a screenshot. */
+  evidence?: string;
+  checkedBy?: 'chat' | 'owner' | 'verifier';
+  checkedAt?: string;
+}
+
 export interface OrchestratorGoal {
   id: number;
   title: string;
@@ -263,6 +274,11 @@ export interface OrchestratorGoal {
   projectIds?: number[];
   /** Cards that deliver it, like the tracked issues of an epic (PM-448). */
   cardIds?: number[];
+  /**
+   * The acceptance checklist (PM-471): achieved needs every criterion passing. Older goals have
+   * none until the chat adds them.
+   */
+  criteria?: GoalCriterion[];
 }
 
 /** A card linked to a goal, as the owner and the chat see it (PM-448). */

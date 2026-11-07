@@ -59,6 +59,8 @@ const EMPTY_DRAFT = {
   doneWhen: '',
   projectId: 0,
   cards: [] as number[],
+  /** One acceptance criterion per line (PM-471). */
+  criteria: '',
 };
 const STATUS_LABEL: Record<CardStatus, string> = {
   backlog: 'Backlog',
@@ -161,6 +163,10 @@ export function OrchestratorGoals({
 
   function add(e: FormEvent) {
     e.preventDefault();
+    const criteria = draft.criteria
+      .split('\n')
+      .map((line) => line.replace(/^\s*[-*\d.)]+\s*/, '').trim())
+      .filter(Boolean);
     void act(async () => {
       await api.addOrchestratorGoal(instance.id, {
         title: draft.title,
@@ -168,6 +174,7 @@ export function OrchestratorGoals({
         doneWhen: draft.doneWhen,
         ...(draft.projectId ? { projectIds: [draft.projectId] } : {}),
         ...(draft.cards.length ? { cards: draft.cards.map(String) } : {}),
+        ...(criteria.length ? { criteria } : {}),
       });
       setDraft(EMPTY_DRAFT);
       setAdding(false);
@@ -306,6 +313,19 @@ export function OrchestratorGoals({
                   onChange={(e) => setDraft({ ...draft, doneWhen: e.target.value })}
                 />
               </label>
+              <label>
+                Acceptance criteria (one per line, optional)
+                <textarea
+                  className="input"
+                  maxLength={6000}
+                  rows={3}
+                  placeholder={
+                    'The login e2e test passes on main\nA new user can sign in on a phone\nThe PR is merged with checks green'
+                  }
+                  value={draft.criteria}
+                  onChange={(e) => setDraft({ ...draft, criteria: e.target.value })}
+                />
+              </label>
               <div className="orchestrator-goal-form-row">
                 {projects.length > 1 && (
                   <div className="field">
@@ -397,6 +417,18 @@ export function OrchestratorGoals({
                       <span className="orchestrator-goal-project">All projects</span>
                     )}
                     <CardsDone goal={goal} />
+                    {(goal.criteria ?? []).length > 0 && (
+                      <span
+                        className="orchestrator-goal-done-count"
+                        title={`${(goal.criteria ?? []).filter((c) => c.state === 'passing').length} of ${(goal.criteria ?? []).length} acceptance criteria passing`}
+                      >
+                        <CheckIcon size={11} />
+                        <span className="num">
+                          {(goal.criteria ?? []).filter((c) => c.state === 'passing').length}/
+                          {(goal.criteria ?? []).length}
+                        </span>
+                      </span>
+                    )}
                     {goal.followUp?.readyToClose && (
                       <span className="badge badge-done" title={goal.followUp.note}>
                         Ready to close
@@ -465,7 +497,8 @@ export function OrchestratorGoals({
                             disabled={busy}
                             title="Close it as done"
                             onClick={() =>
-                              (goal.cards ?? []).some((c) => c.status !== 'done')
+                              (goal.cards ?? []).some((c) => c.status !== 'done') ||
+                              (goal.criteria ?? []).some((c) => c.state !== 'passing')
                                 ? setClosing(goal)
                                 : set(goal, 'achieved')
                             }
@@ -499,6 +532,7 @@ export function OrchestratorGoals({
                     </p>
                   )}
                 </ClampedText>
+                <GoalCriteria goal={goal} />
                 <GoalCards
                   goal={goal}
                   canEdit={!watchOnly}
@@ -733,6 +767,7 @@ function CloseGoalDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const openCards = (goal.cards ?? []).filter((c) => c.status !== 'done');
+  const unmet = (goal.criteria ?? []).filter((c) => c.state !== 'passing');
   const inReview = openCards.filter((c) => c.status === 'review');
   const [acceptReview, setAcceptReview] = useState(inReview.length > 0);
   useEffect(() => {
@@ -748,9 +783,26 @@ function CloseGoalDialog({
     >
       <div className="dialog-body">
         <h2 id="close-goal-title">Mark "{goal.title}" achieved?</h2>
-        <p>
-          {openCards.length} linked card{openCards.length === 1 ? ' is' : 's are'} not Done yet:
-        </p>
+        {unmet.length > 0 && (
+          <>
+            <p>
+              {unmet.length} acceptance criteri{unmet.length === 1 ? 'on is' : 'a are'} not passing:
+            </p>
+            <ul className="close-goal-cards">
+              {unmet.map((c) => (
+                <li key={c.id}>
+                  <span className="faint">#{c.id}</span> {c.text}{' '}
+                  <span className="faint">({c.state})</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {openCards.length > 0 && (
+          <p>
+            {openCards.length} linked card{openCards.length === 1 ? ' is' : 's are'} not Done yet:
+          </p>
+        )}
         <ul className="close-goal-cards">
           {openCards.map((c) => (
             <li key={c.id}>
@@ -825,5 +877,34 @@ function ModalShell({
     >
       {children}
     </dialog>
+  );
+}
+
+/**
+ * A goal's acceptance checklist (PM-471): each criterion with its state, and its evidence and who
+ * checked it on hover. Achieved needs every one passing.
+ */
+function GoalCriteria({ goal }: { goal: OrchestratorGoalView }) {
+  const criteria = goal.criteria ?? [];
+  if (!criteria.length) return null;
+  return (
+    <ul className="orchestrator-goal-criteria" aria-label={`${goal.title}: acceptance criteria`}>
+      {criteria.map((c) => (
+        <li
+          key={c.id}
+          data-state={c.state}
+          title={
+            c.evidence
+              ? `${c.state === 'passing' ? 'Passing' : 'Failing'}: ${c.evidence}${c.checkedBy ? ` (checked by ${c.checkedBy})` : ''}`
+              : 'Not checked yet'
+          }
+        >
+          <span className="orchestrator-goal-criterion-mark" aria-label={c.state}>
+            {c.state === 'passing' ? '✓' : c.state === 'failing' ? '✕' : '○'}
+          </span>
+          {c.text}
+        </li>
+      ))}
+    </ul>
   );
 }

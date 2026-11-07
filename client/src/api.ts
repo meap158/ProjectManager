@@ -190,6 +190,8 @@ export const api = {
       doneWhen: string;
       projectIds?: number[];
       cards?: string[];
+      /** The acceptance checklist (PM-471). */
+      criteria?: string[];
     },
   ) =>
     request<OrchestratorGoalView>('POST', `/orchestrators/${encodeURIComponent(id)}/goals`, goal),

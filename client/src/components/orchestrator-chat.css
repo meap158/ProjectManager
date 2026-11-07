@@ -614,6 +614,37 @@ dialog.confirm-dialog.goal-dialog {
   flex: none;
   width: 56px;
 }
+/* Acceptance checklist (PM-471). */
+.orchestrator-goal-criteria {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.orchestrator-goal-criteria li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.orchestrator-goal-criterion-mark {
+  flex: none;
+  width: 12px;
+  color: var(--text-3);
+  font-weight: 700;
+  text-align: center;
+}
+.orchestrator-goal-criteria li[data-state='passing'] .orchestrator-goal-criterion-mark {
+  color: var(--good);
+}
+.orchestrator-goal-criteria li[data-state='failing'] .orchestrator-goal-criterion-mark {
+  color: var(--danger);
+}
+.orchestrator-goal-criteria li[data-state='passing'] {
+  color: var(--text-2);
+}
 .orchestrator-goals-notice {
   margin: 0;
   padding: 6px 10px;

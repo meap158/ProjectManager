@@ -54,6 +54,7 @@ import {
   activeGoals,
   addGoal,
   cardSetKey,
+  unmetCriteria,
   isQuiet,
   GOAL_QUIET_NUDGE_MS,
   listGoals,
@@ -297,7 +298,7 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'set_goal',
     description:
-      'Record an objective the owner asked you to pursue until it is done (PM-433): a short title, the objective, and doneWhen, the checkable condition that means achieved. Like an epic, it names its projects (omit for all of yours) and links the cards that deliver it; card keys named in the text are linked too. While it is active, automatic checks bring you back to it until you mark it achieved or blocked.',
+      'Record an objective the owner asked you to pursue until it is done (PM-433): a short title, the objective, doneWhen (the condition that means achieved) and criteria, its acceptance checklist of short checkable items. Like an epic, it names its projects (omit for all of yours) and links the cards that deliver it; card keys named in the text are linked too. While it is active, automatic checks bring you back to it until you mark it achieved or blocked.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -314,6 +315,13 @@ export const ORCHESTRATOR_TOOLS = [
           items: { type: ['string', 'integer'] },
           description: 'Cards that deliver it (keys like PM-12)',
         },
+        criteria: {
+          type: 'array',
+          items: { type: 'string', maxLength: 500 },
+          maxItems: 12,
+          description:
+            'The acceptance checklist: 2 to 8 short criteria, each checkable by a command, a test, a PR or a screenshot. Achieved needs every one passing.',
+        },
       },
       required: ['title', 'objective', 'doneWhen'],
       additionalProperties: false,
@@ -322,7 +330,7 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'update_goal',
     description:
-      'Report progress on a goal (what moved, what is next) and optionally change its status: achieved (with evidence that doneWhen holds; refused while linked cards are open unless you give closeWithOpenCards saying why the goal holds anyway), blocked (what only the owner can do), paused or active. Link the cards that deliver it as you plan them (linkCards), unlink ones that no longer belong. Report after every check that works on it.',
+      'Report progress on a goal (what moved, what is next), check its acceptance criteria with evidence, and optionally change its status: achieved (every criterion passing, with evidence that doneWhen holds; refused while linked cards are open unless you give closeWithOpenCards saying why the goal holds anyway), blocked (what only the owner can do), paused or active. Link the cards that deliver it as you plan them (linkCards), unlink ones that no longer belong. Report after every check that works on it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -330,6 +338,25 @@ export const ORCHESTRATOR_TOOLS = [
         note: { type: 'string', minLength: 1, maxLength: 2000 },
         linkCards: { type: 'array', items: { type: ['string', 'integer'] } },
         unlinkCards: { type: 'array', items: { type: ['string', 'integer'] } },
+        criteria: {
+          type: 'array',
+          description:
+            'Check criteria: {id, state: passing|failing|open, evidence}. Passing needs evidence (a command and its result, a PR, a screenshot path).',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+              state: { type: 'string', enum: ['open', 'passing', 'failing'] },
+              evidence: { type: 'string', maxLength: 1000 },
+            },
+            required: ['id', 'state'],
+          },
+        },
+        addCriteria: {
+          type: 'array',
+          items: { type: 'string', maxLength: 500 },
+          description: 'Add acceptance criteria (a goal without a checklist needs 2 to 8)',
+        },
         closeWithOpenCards: {
           type: 'string',
           maxLength: 1000,
@@ -1078,6 +1105,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       doneWhen: string;
       projectIds?: number[];
       cards?: (string | number)[];
+      criteria?: string[];
     },
   ) {
     const instance = this.instance(id);
@@ -1087,6 +1115,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       title: input.title,
       objective: input.objective,
       doneWhen: input.doneWhen,
+      ...(input.criteria?.length ? { criteria: input.criteria } : {}),
       ...this.goalLinks(
         instance,
         input.projectIds,
@@ -1122,10 +1151,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
       // ones in Review on the way.
       if (change.acceptReview) this.acceptGoalReviewCards(instance, goalId);
       const open = this.openGoalCards(id, goalId, cardChange);
-      if (open.length && !change.force)
+      const unmet = unmetCriteria(
+        listGoals(this.db, id).find((g) => g.id === goalId) ?? ({} as OrchestratorGoal),
+      );
+      if ((open.length || unmet.length) && !change.force)
         throw new AgentError(
           409,
-          `${open.map((c) => c.key).join(', ')} still open; confirm to mark it achieved anyway`,
+          `${[...open.map((c) => c.key), ...unmet.map((c) => `criterion #${c.id}`)].join(', ')} still open; confirm to mark it achieved anyway`,
         );
     }
     const goal = updateGoal(this.db, id, goalId, {
@@ -2016,6 +2048,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
             .max(50)
             .optional(),
           cards: z.array(z.unknown()).max(60).optional(),
+          criteria: z.array(z.string().trim().min(1).max(500)).max(12).optional(),
         })
         .strict()
         .parse(args);
@@ -2025,6 +2058,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         title: input.title,
         objective: input.objective,
         doneWhen: input.doneWhen,
+        ...(input.criteria ? { criteria: input.criteria } : {}),
         ...this.goalLinks(
           instance,
           input.projects,
@@ -2058,9 +2092,34 @@ export class OrchestratorChat implements OrchestratorToolHost {
           linkCards: z.array(z.unknown()).max(60).optional(),
           unlinkCards: z.array(z.unknown()).max(60).optional(),
           closeWithOpenCards: z.string().trim().min(1).max(1000).optional(),
+          criteria: z
+            .array(
+              z
+                .object({
+                  id: z.number().int().positive(),
+                  state: z.enum(['open', 'passing', 'failing']),
+                  evidence: z.string().trim().max(1000).optional(),
+                })
+                .strict(),
+            )
+            .max(12)
+            .optional(),
+          addCriteria: z.array(z.string().trim().min(1).max(500)).max(12).optional(),
         })
         .strict()
         .parse(args);
+      if (input.status === 'achieved') {
+        // Every acceptance criterion passes before a goal closes (PM-471), counting this call.
+        const current = listGoals(this.db, orchestratorId).find((g) => g.id === input.goalId);
+        const updates = new Map((input.criteria ?? []).map((c) => [c.id, c.state]));
+        const unmet = (current?.criteria ?? []).filter(
+          (c) => (updates.get(c.id) ?? c.state) !== 'passing',
+        );
+        if (unmet.length || input.addCriteria?.length)
+          fail(
+            `Criteria not passing yet: ${unmet.map((c) => `#${c.id} "${c.text.slice(0, 60)}" (${updates.get(c.id) ?? c.state})`).join(', ') || 'the ones you are adding'}. Check each with evidence first.`,
+          );
+      }
       const cardChange = this.goalCardChange(instance, input.linkCards, input.unlinkCards);
       if (input.status === 'achieved' && !input.closeWithOpenCards) {
         const open = this.openGoalCards(orchestratorId, input.goalId, cardChange);
@@ -2075,6 +2134,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
           : input.note,
         ...(input.status ? { status: input.status } : {}),
         ...cardChange,
+        ...(input.criteria ? { criteria: input.criteria } : {}),
+        ...(input.addCriteria ? { addCriteria: input.addCriteria } : {}),
         by: 'chat',
       });
       this.record(
@@ -2470,7 +2531,15 @@ export function goalStatusBlock(goals: readonly OrchestratorGoalView[]): string 
             )
             .join('\n')
         : '  - no cards linked yet: plan them';
-      return `- Goal ${g.id} "${g.title}" (${g.cards.length ? `${done} of ${g.cards.length} cards done` : 'no cards'}). Done when: ${g.doneWhen.slice(0, 300)}\n${cards}`;
+      const criteria = (g.criteria ?? []).length
+        ? (g.criteria ?? [])
+            .map(
+              (c) =>
+                `  [${c.state === 'passing' ? 'x' : c.state === 'failing' ? '!' : ' '}] #${c.id} ${c.text.slice(0, 160)}`,
+            )
+            .join('\n')
+        : '  (no acceptance checklist yet: add 2 to 8 checkable criteria with update_goal addCriteria)';
+      return `- Goal ${g.id} "${g.title}" (${g.cards.length ? `${done} of ${g.cards.length} cards done` : 'no cards'}). Done when: ${g.doneWhen.slice(0, 300)}\n  Criteria:\n${criteria}\n  Cards:\n${cards}`;
     }),
   ].join('\n');
 }
@@ -2513,6 +2582,14 @@ function goalBrief(g: OrchestratorGoalView) {
     doneWhen: g.doneWhen,
     cards: g.cards.map((c) => ({ key: c.key, title: c.title, status: c.status })),
     cardsDone: g.cards.length ? `${done} of ${g.cards.length}` : 'no cards linked yet',
+    criteria: (g.criteria ?? []).length
+      ? (g.criteria ?? []).map((c) => ({
+          id: c.id,
+          text: c.text,
+          state: c.state,
+          ...(c.evidence ? { evidence: c.evidence.slice(0, 200) } : {}),
+        }))
+      : 'no checklist yet: add 2 to 8 checkable criteria (update_goal addCriteria)',
     updatedAt: g.updatedAt,
     recentProgress: g.progress.slice(-5),
   };
@@ -2592,7 +2669,7 @@ const GOAL_STEP_DIRECT =
  * reviewed, blocked work is unblocked or re-planned), and the goal closes only on evidence.
  */
 const GOAL_STEP_DELEGATING =
-  "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, within your worker limits: an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself when the card is small or about coordination, or when no worker can take it now (at your limits, quota below the reserve or used up, every session busy). Do not leave capacity idle while ready cards wait, and do not leave a ready card waiting for a worker you could stand in for; and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) When every linked card is Done, check doneWhen yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only with evidence that doneWhen holds, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
+  "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, within your worker limits: an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself when the card is small or about coordination, or when no worker can take it now (at your limits, quota below the reserve or used up, every session busy). Do not leave capacity idle while ready cards wait, and do not leave a ready card waiting for a worker you could stand in for; and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) Check the acceptance criteria as the work lands: mark each passing or failing with evidence (update_goal criteria); a failing one gets a card. When every linked card is Done, check every remaining criterion yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only when every criterion passes with evidence, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
 
 /** Accepting finished work (PM-427): verified against the card, never on the worker's word alone. */
 const ACCEPT_STEP =

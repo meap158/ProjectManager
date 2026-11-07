@@ -1273,6 +1273,40 @@ describe('goals in routine checks (PM-461)', () => {
   });
 });
 
+describe('goal acceptance checklist (PM-471)', () => {
+  it('closes a goal only when every criterion passes, and passing needs evidence', async () => {
+    const { call, chat, db } = setup({ autoCheck: true });
+    await call('set_goal', {
+      title: 'Ship',
+      objective: 'o',
+      doneWhen: 'login works',
+      criteria: ['e2e login test passes', 'PR merged with checks green'],
+    });
+    expect(chat.goals('master-1')[0]!.criteria!.map((c) => c.state)).toEqual(['open', 'open']);
+    await expect(
+      call('update_goal', { goalId: 1, note: 'n', criteria: [{ id: 1, state: 'passing' }] }),
+    ).rejects.toThrow(/needs evidence/);
+    await call('update_goal', {
+      goalId: 1,
+      note: 'tests green',
+      criteria: [{ id: 1, state: 'passing', evidence: 'npm run e2e: 12 passed' }],
+    });
+    await expect(
+      call('update_goal', { goalId: 1, note: 'done?', status: 'achieved' }),
+    ).rejects.toThrow(/#2 "PR merged with checks green" .open./);
+    const closed = (await call('update_goal', {
+      goalId: 1,
+      note: 'merged',
+      status: 'achieved',
+      criteria: [{ id: 2, state: 'passing', evidence: 'PR #9 merged, checks green' }],
+    })) as { goal: { status: string; criteria: { state: string }[] } };
+    expect(closed.goal.status).toBe('achieved');
+    expect(closed.goal.criteria.every((c) => c.state === 'passing')).toBe(true);
+    expect(chat.goals('master-1')[0]!.criteria![1]!.checkedBy).toBe('chat');
+    db.close();
+  });
+});
+
 describe('following up on a goal (PM-456)', () => {
   it('builds a follow-up prompt from the goal, and notes owner status changes', async () => {
     const { call, chat, mine, db } = setup({ autoCheck: true });

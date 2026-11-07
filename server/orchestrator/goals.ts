@@ -10,14 +10,31 @@ import { getSetting, setSetting } from '../store.js';
  * blocked, so a stuck loop stops spending quota and the owner sees why.
  */
 
-import type { GoalProgress, GoalStatus, OrchestratorGoal } from '../../shared/orchestrator.js';
+import type {
+  GoalCriterion,
+  GoalProgress,
+  GoalStatus,
+  OrchestratorGoal,
+} from '../../shared/orchestrator.js';
 
-export type { GoalProgress, GoalStatus, OrchestratorGoal };
+export type { GoalCriterion, GoalProgress, GoalStatus, OrchestratorGoal };
 
 /** Active goals one orchestrator may hold at once. */
 export const MAX_ACTIVE_GOALS = 5;
 /** How often an active goal is brought back to the chat when nothing else asks for a check. */
 export const GOAL_NUDGE_MS = 15 * 60_000;
+/** Criteria on one goal's checklist (PM-471). */
+export const MAX_GOAL_CRITERIA = 12;
+/** A criterion change: a new state with its evidence. */
+export interface CriterionUpdate {
+  id: number;
+  state: GoalCriterion['state'];
+  evidence?: string;
+}
+/** Criteria still keeping a goal from achieved (PM-471). */
+export const unmetCriteria = (g: OrchestratorGoal) =>
+  (g.criteria ?? []).filter((c) => c.state !== 'passing');
+
 /** Cards one goal may link (PM-448). */
 export const MAX_GOAL_CARDS = 60;
 /**
@@ -64,10 +81,14 @@ export function addGoal(
     doneWhen: string;
     projectIds?: number[];
     cardIds?: number[];
+    /** The acceptance checklist (PM-471); each starts open. */
+    criteria?: string[];
   },
   now = new Date(),
 ): OrchestratorGoal {
   const goals = listGoals(db, orchestratorId);
+  if ((input.criteria ?? []).length > MAX_GOAL_CRITERIA)
+    throw new Error(`A goal has at most ${MAX_GOAL_CRITERIA} criteria`);
   if (goals.filter((g) => g.status === 'active').length >= MAX_ACTIVE_GOALS)
     throw new Error(
       `${MAX_ACTIVE_GOALS} goals are already active; finish, pause or drop one first`,
@@ -80,6 +101,10 @@ export function addGoal(
     doneWhen: input.doneWhen,
     projectIds: [...new Set(input.projectIds ?? [])],
     cardIds: [...new Set(input.cardIds ?? [])].slice(0, MAX_GOAL_CARDS),
+    criteria: (input.criteria ?? [])
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((text, i) => ({ id: i + 1, text, state: 'open' as const })),
     status: 'active',
     createdAt: at,
     updatedAt: at,
@@ -103,6 +128,9 @@ export function updateGoal(
     link?: number[];
     unlink?: number[];
     projectIds?: number[];
+    /** Checklist changes (PM-471): new criteria, and criteria checked with evidence. */
+    addCriteria?: string[];
+    criteria?: CriterionUpdate[];
   },
   now = new Date(),
 ): OrchestratorGoal {
@@ -122,11 +150,38 @@ export function updateGoal(
   );
   if (cardIds.length > MAX_GOAL_CARDS)
     throw new Error(`A goal links at most ${MAX_GOAL_CARDS} cards`);
+  let criteria = goal.criteria ?? [];
+  for (const update of change.criteria ?? []) {
+    if (!criteria.some((c) => c.id === update.id))
+      throw new Error(`No criterion ${update.id} on goal ${goalId}`);
+    if (update.state === 'passing' && !update.evidence?.trim())
+      throw new Error(`Criterion ${update.id} needs evidence to pass`);
+  }
+  criteria = criteria.map((c) => {
+    const update = (change.criteria ?? []).find((u) => u.id === c.id);
+    if (!update) return c;
+    const checkedBy = change.by === 'system' ? 'verifier' : change.by;
+    return {
+      ...c,
+      state: update.state,
+      ...(update.evidence?.trim() ? { evidence: update.evidence.trim() } : {}),
+      checkedBy,
+      checkedAt: at,
+    };
+  });
+  for (const text of (change.addCriteria ?? []).map((t) => t.trim()).filter(Boolean))
+    criteria = [
+      ...criteria,
+      { id: Math.max(0, ...criteria.map((c) => c.id)) + 1, text, state: 'open' as const },
+    ];
+  if (criteria.length > MAX_GOAL_CRITERIA)
+    throw new Error(`A goal has at most ${MAX_GOAL_CRITERIA} criteria`);
   const next: OrchestratorGoal = {
     ...goal,
     ...(change.status ? { status: change.status } : {}),
     ...(change.link || change.unlink ? { cardIds } : {}),
     ...(change.projectIds ? { projectIds: [...new Set(change.projectIds)] } : {}),
+    ...(change.criteria || change.addCriteria ? { criteria } : {}),
     updatedAt: at,
     progress: change.note
       ? [...goal.progress, { at, note: change.note, by: change.by }].slice(-KEEP_PROGRESS)

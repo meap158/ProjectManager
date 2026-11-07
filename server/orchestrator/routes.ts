@@ -88,6 +88,7 @@ export function registerOrchestratorRoutes(
           .array(z.union([z.string().trim().min(1).max(40), z.number().int().positive()]))
           .max(60)
           .optional(),
+        criteria: z.array(z.string().trim().min(1).max(500)).max(12).optional(),
       })
       .strict();
     const cardRefs = z
