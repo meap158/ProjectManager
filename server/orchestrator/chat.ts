@@ -173,13 +173,18 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'update_card',
     description:
-      'Move a card (status) and/or append a note: progress, evidence, a blocker, a question for the user. Move to review only with evidence; to done only when the requirements are clearly met.',
+      'Move a card (status) and/or append a note: progress, evidence, a blocker, a question for the user. Move to review only with evidence; to done only when the requirements are clearly met (its Acceptance line, when it has one). Give acceptance to set the check that means the card is done.',
     inputSchema: {
       type: 'object',
       properties: {
         card: { type: ['string', 'integer'] },
         status: { type: 'string', enum: CARD_STATUSES },
         note: { type: 'string', minLength: 1, maxLength: 4000 },
+        acceptance: {
+          type: 'string',
+          maxLength: 600,
+          description: 'Set or replace the check that means this card is done',
+        },
       },
       required: ['card'],
       additionalProperties: false,
@@ -188,7 +193,7 @@ export const ORCHESTRATOR_TOOLS = [
   {
     name: 'create_card',
     description:
-      'Create a card in one of your projects: split a large task, or record follow-up work. Give goalId when the card delivers one of your goals, so it is linked to it.',
+      'Create a card in one of your projects: split a large task, or record follow-up work. Give goalId when the card delivers one of your goals, so it is linked to it; a goal card needs acceptance, the one check that means it is done.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -197,6 +202,12 @@ export const ORCHESTRATOR_TOOLS = [
         notes: { type: 'string', maxLength: 4000 },
         status: { type: 'string', enum: CARD_STATUSES },
         goalId: { type: 'integer', description: 'Link the new card to this goal' },
+        acceptance: {
+          type: 'string',
+          maxLength: 600,
+          description:
+            'The check that means this card is done, e.g. "npm test passes and /login renders the form on a phone". Required with goalId.',
+        },
       },
       required: ['projectId', 'title'],
       additionalProperties: false,
@@ -1865,10 +1876,12 @@ export class OrchestratorChat implements OrchestratorToolHost {
           card: z.unknown(),
           status: z.enum(CARD_STATUSES).optional(),
           note: z.string().trim().min(1).max(4000).optional(),
+          acceptance: z.string().trim().min(1).max(600).optional(),
         })
         .strict()
         .parse(args);
-      if (!input.status && !input.note) fail('Give a status, a note, or both');
+      if (!input.status && !input.note && !input.acceptance)
+        fail('Give a status, a note, an acceptance check, or a combination');
       const c = card(input.card);
       // Accepting work (PM-427): the verdict on its finished runs follows the card, with evidence.
       const verdict =
@@ -1887,10 +1900,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
         );
       const patch: { status?: CardStatus; description?: string } = {};
       if (input.status) patch.status = input.status;
-      if (input.note) {
-        patch.description = `${c.description}\n\nOrchestrator note (${new Date().toISOString()}):\n${input.note}`;
-        if (patch.description.length > NOTE_LIMIT)
-          fail(`Card notes are full (${NOTE_LIMIT} characters)`);
+      let description = input.acceptance
+        ? withAcceptance(c.description, input.acceptance)
+        : c.description;
+      if (input.note)
+        description = `${description}\n\nOrchestrator note (${new Date().toISOString()}):\n${input.note}`;
+      if (description !== c.description) {
+        if (description.length > NOTE_LIMIT) fail(`Card notes are full (${NOTE_LIMIT} characters)`);
+        patch.description = description;
       }
       const updated = updateCard(this.db, c.id, patch);
       audit(c.id, 'update_card', { status: input.status, note: input.note });
@@ -1951,6 +1968,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
           notes: z.string().max(4000).default(''),
           status: z.enum(CARD_STATUSES).default('todo'),
           goalId: z.number().int().positive().optional(),
+          acceptance: z.string().trim().min(1).max(600).optional(),
         })
         .strict()
         .parse(args);
@@ -1958,9 +1976,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
         fail(`Project ${input.projectId} is not in this orchestrator's scope`);
       if (input.goalId && !listGoals(this.db, orchestratorId).some((g) => g.id === input.goalId))
         fail(`No goal ${input.goalId}`);
+      // A card that delivers a goal says how to tell it is done (PM-474).
+      if (input.goalId && !input.acceptance)
+        fail(
+          'A goal card needs acceptance: the one check that means it is done (a command and its result, a page that renders, a merged PR)',
+        );
       const created = insertCard(this.db, input.projectId, {
         title: input.title,
-        description: input.notes,
+        description: input.acceptance ? withAcceptance(input.notes, input.acceptance) : input.notes,
         status: input.status,
       });
       audit(created.id, 'create_card', input);
@@ -2073,6 +2096,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       let insertionDenied = false;
       try {
         const context = [
+          acceptanceLead(c.description),
           cardContext(this.service.situation(orchestratorId)!, c.id, c.projectId),
           input.instructions ? `Instructions from the orchestrator:\n${input.instructions}` : '',
         ]
@@ -2472,6 +2496,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         c.title,
         c.description,
         [
+          acceptanceLead(c.description),
           input.instructions ? `Instructions from the orchestrator:\n${input.instructions}` : '',
           WORKER_CHANNEL,
         ]
@@ -2606,6 +2631,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         c.title,
         c.description,
         [
+          acceptanceLead(c.description),
           input.instructions ? `Instructions from the orchestrator:\n${input.instructions}` : '',
           WORKER_CHANNEL,
         ]
@@ -2917,9 +2943,36 @@ const GOAL_STEP_DIRECT =
 const GOAL_STEP_DELEGATING =
   "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, within your worker limits: an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself when the card is small or about coordination, or when no worker can take it now (at your limits, quota below the reserve or used up, every session busy). Do not leave capacity idle while ready cards wait, and do not leave a ready card waiting for a worker you could stand in for; and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) Check the acceptance criteria as the work lands: mark each passing or failing with evidence (update_goal criteria); a failing one gets a card. When every linked card is Done, check every remaining criterion yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only when every criterion passes with evidence, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
 
+/** The line a card's notes use for its acceptance check (PM-474). */
+const ACCEPTANCE = 'Acceptance:';
+
+/** A card's notes with its acceptance check set or replaced (PM-474), kept as the first line. */
+export function withAcceptance(notes: string, acceptance: string): string {
+  const rest = notes
+    .split('\n')
+    .filter((line) => !line.startsWith(ACCEPTANCE))
+    .join('\n')
+    .trim();
+  return [`${ACCEPTANCE} ${acceptance.trim()}`, rest].filter(Boolean).join('\n\n');
+}
+
+/** A card's acceptance check from its notes, or null (PM-474). */
+export function acceptanceOf(notes: string): string | null {
+  const line = notes.split('\n').find((l) => l.startsWith(ACCEPTANCE));
+  return line ? line.slice(ACCEPTANCE.length).trim() || null : null;
+}
+
+/** What a worker reads first about a card with an acceptance check (PM-474). */
+function acceptanceLead(notes: string): string {
+  const acceptance = acceptanceOf(notes);
+  return acceptance
+    ? `This card is done when: ${acceptance}\nCheck exactly that before you say it is finished, and report what you saw.`
+    : '';
+}
+
 /** Accepting finished work (PM-427): verified against the card, never on the worker's word alone. */
 const ACCEPT_STEP =
-  "Review: for each card in Review, verify it against its requirements yourself: read its notes, the commits and diff in the project folder, and run the project's checks when they are quick. Clearly met: update_card to done with a note giving the evidence (this accepts its finished runs). Not met: update_card to todo with a note saying exactly what is missing (this rejects them). Leave in Review, with a note, only what needs the owner's judgment: visual or product decisions, real devices, accounts or payments.";
+  "Review: for each card in Review, verify it against its requirements yourself (its Acceptance line first, when it has one): read its notes, the commits and diff in the project folder, and run the project's checks when they are quick. Clearly met: update_card to done with a note giving the evidence (this accepts its finished runs). Not met: update_card to todo with a note saying exactly what is missing (this rejects them). Leave in Review, with a note, only what needs the owner's judgment: visual or product decisions, real devices, accounts or payments.";
 
 const CHECKS_DELEGATING: Partial<Record<CheckFocus, string>> = {
   goal: GOAL_STEP_DELEGATING,

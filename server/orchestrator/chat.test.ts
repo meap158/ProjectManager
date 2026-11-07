@@ -26,6 +26,8 @@ import {
   goalFollowUpPrompt,
   goalStatusBlock,
   parseVerdict,
+  withAcceptance,
+  acceptanceOf,
   pruneArtifacts,
 } from './chat.js';
 import { readLimits } from '../agents/limits.js';
@@ -1310,6 +1312,27 @@ describe('goal acceptance checklist (PM-471)', () => {
   });
 });
 
+describe('acceptance checks on cards (PM-474)', () => {
+  it('keeps one Acceptance line first in the notes, replacing an older one', () => {
+    const notes = withAcceptance('Some notes.', 'tests pass');
+    expect(notes).toBe('Acceptance: tests pass\n\nSome notes.');
+    expect(acceptanceOf(notes)).toBe('tests pass');
+    const replaced = withAcceptance(notes, 'tests pass on a phone');
+    expect(replaced).toBe('Acceptance: tests pass on a phone\n\nSome notes.');
+    expect(acceptanceOf('No check here')).toBeNull();
+  });
+
+  it('sets a check with update_card and leads the hand-over with it', async () => {
+    const { call, mine, supervisor, db } = setup({ autoCheck: true });
+    await call('update_card', { card: mine.key, acceptance: 'the login form renders' });
+    expect(acceptanceOf(getCard(db, mine.id)!.description)).toBe('the login form renders');
+    await call('dispatch_worker', { card: mine.key });
+    const options = supervisor.dispatchCard.mock.calls.at(-1)![2] as { context?: string };
+    expect(options.context).toContain('This card is done when: the login form renders');
+    db.close();
+  });
+});
+
 describe('independent verification before a goal closes (PM-472)', () => {
   const passAll = async (call: (name: string, args: unknown) => Promise<unknown>) => {
     await call('set_goal', {
@@ -1507,9 +1530,20 @@ describe('goals as epics (PM-448)', () => {
     await expect(
       call('update_goal', { goalId: 1, note: 'x', linkCards: [other.key] }),
     ).rejects.toThrow(/not in this orchestrator/);
-    const created = (await call('create_card', { projectId: a, title: 'API', goalId: 1 })) as {
-      key: string;
-    };
+    // A goal card needs its acceptance check (PM-474).
+    await expect(call('create_card', { projectId: a, title: 'API', goalId: 1 })).rejects.toThrow(
+      /needs acceptance/,
+    );
+    const created = (await call('create_card', {
+      projectId: a,
+      title: 'API',
+      goalId: 1,
+      notes: 'Wire the login endpoint.',
+      acceptance: 'POST /login returns 200 for a valid user',
+    })) as { key: string };
+    expect(getCard(db, Number(created.key.split('-')[1]))!.description).toBe(
+      'Acceptance: POST /login returns 200 for a valid user\n\nWire the login endpoint.',
+    );
     updateCard(db, mine.id, { status: 'done' });
     const view = chat.goals('master-1')[0]!;
     expect(view.cards.map((c) => [c.key, c.status])).toEqual([

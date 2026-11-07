@@ -222,7 +222,11 @@ the owner's Mark achieved is not verified. A goal may carry a budget (PM-473): a
 automatic checks and/or days per budget window, set by the owner (Add goal) or by the chat when
 the owner gives one. When it runs out, the next check asks the chat for a closing report (which
 criteria pass with evidence, which do not and why, what it would do next), then the goal pauses
-and waits for the owner; resuming it opens a new window. Details, bounds and the Grok Bot comparison are in
+and waits for the owner; resuming it opens a new window. Every card a goal creates carries its
+acceptance check (PM-474): `create_card` with a `goalId` needs `acceptance`, kept as the first
+"Acceptance:" line of the card's notes (`update_card` can set or replace it on any card); handing
+the card to a session or run leads with "This card is done when: …", and review checks that line
+first. Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open

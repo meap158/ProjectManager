@@ -51,7 +51,7 @@ do established harnesses do that ours does not yet?
 3. **Goal budgets with a hand-back** (PM-473, done 2026-11-07): optional limits per goal (checks, days, worker runs);
    at the limit the chat writes a closing report (what passes, what does not, what it would do
    next) and the goal waits for the owner instead of looping.
-4. **Acceptance criteria on every card the goal creates** (PM-474): create_card for a goal requires
+4. **Acceptance criteria on every card the goal creates** (PM-474, done 2026-11-07): create_card for a goal requires
    an acceptance check; hand-over prompts lead with it; review compares against it.
 5. **Goal outcome measures** (PM-475): per goal, time to done, checks, worker runs, owner
    interventions and reopenings, shown when it closes and summed per orchestrator, to tune the
