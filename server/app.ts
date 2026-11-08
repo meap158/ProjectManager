@@ -582,13 +582,8 @@ export function createApp(
     return c.body(null, 204);
   });
 
-  // Pinned files and folders (PM-284). Reading is open to every listener; changing pins writes to
-  // this app's own database only (never the project), but like the other Files actions it answers
-  // on this computer only, so a phone or tunnel session cannot rearrange them.
-  const pinsHostOnly = (c: Context) => {
-    if (c.req.header(LAN_HEADER) || c.req.header(REMOTE_HEADER))
-      throw new HttpError(403, 'Pins can only be changed on the computer running ProjectManager');
-  };
+  // Pins change only this app's metadata. Authenticated LAN and remote listeners have the same
+  // pin actions as the host; project file actions retain their separate access checks.
   const pinError = <T>(run: () => T): T => {
     try {
       return run();
@@ -734,7 +729,6 @@ export function createApp(
     return c.json({ pins });
   });
   app.post('/projects/:id/file-pins', async (c) => {
-    pinsHostOnly(c);
     const root = projectRoot(c);
     const { path: raw, scope } = await parseBody(
       c,
@@ -748,12 +742,10 @@ export function createApp(
     return c.json({ id: added.id }, 201);
   });
   app.delete('/file-pins/:id', (c) => {
-    pinsHostOnly(c);
     if (!store.removeFilePin(db, parseId(c))) throw new HttpError(404, 'Pin not found');
     return c.body(null, 204);
   });
   app.post('/file-pins/:id/move', async (c) => {
-    pinsHostOnly(c);
     const { direction } = await parseBody(c, z.object({ direction: z.enum(['up', 'down']) }));
     store.moveFilePin(db, parseId(c), direction);
     return c.body(null, 204);

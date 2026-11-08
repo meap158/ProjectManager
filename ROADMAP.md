@@ -81,3 +81,6 @@ Preview, Files menu and Inbox.
 
 PM-305 refines existing Codex rotation: fresh exhaustion, 5-hour/weekly/saved-order ranking,
 and global safe idle checks preserve grace work. Browser and live-account acceptance remain pending.
+
+PM-579 extends Files pin management to signed-in LAN and remote devices, using the existing
+access gates and metadata store. Project files are unchanged by pin actions.

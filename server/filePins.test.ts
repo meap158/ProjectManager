@@ -142,24 +142,48 @@ describe('file pins API', () => {
     expect(MAX_PINS_PER_SCOPE).toBe(50);
   });
 
-  it('can only be changed on this computer, but read from anywhere', async () => {
+  it('allows the same pin actions through authenticated LAN and remote listeners', async () => {
     const t = setup();
-    const a = await t.project(t.mk(['ok.md']));
-    const body = { path: 'ok.md', scope: 'project' };
+    const a = await t.project(t.mk(['ok.md', 'other.md']));
     for (const header of ['x-pm-lan', 'x-pm-remote']) {
-      const refused = await t.call('POST', `/projects/${a}/file-pins`, body, { [header]: '1' });
-      expect(refused.status).toBe(403);
+      const headers = { [header]: '1' };
+      const add = async (file: string) => {
+        const response = await t.call(
+          'POST',
+          `/projects/${a}/file-pins`,
+          { path: file, scope: 'project' },
+          headers,
+        );
+        expect(response.status).toBe(201);
+        return ((await response.json()) as { id: number }).id;
+      };
+      const one = await add('ok.md');
+      const two = await add('other.md');
+      expect(
+        (await t.call('POST', `/file-pins/${two}/move`, { direction: 'up' }, headers)).status,
+      ).toBe(204);
+      const read = await t.call('GET', `/projects/${a}/file-pins`, undefined, headers);
+      expect(read.status).toBe(200);
+      expect(((await read.json()) as { pins: FilePin[] }).pins.map((p) => p.id)).toEqual([
+        two,
+        one,
+      ]);
+      expect(
+        (
+          await t.call(
+            'POST',
+            `/projects/${a}/file-pins`,
+            { path: '../outside', scope: 'all' },
+            headers,
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (await t.call('POST', `/file-pins/${two}/move`, { direction: 'invalid' }, headers)).status,
+      ).toBe(400);
+      for (const id of [one, two])
+        expect((await t.call('DELETE', `/file-pins/${id}`, undefined, headers)).status).toBe(204);
     }
-    const added = await t.call('POST', `/projects/${a}/file-pins`, body);
-    const { id } = (await added.json()) as { id: number };
-    expect(
-      (await t.call('DELETE', `/file-pins/${id}`, undefined, { 'x-pm-lan': '1' })).status,
-    ).toBe(403);
-    expect(
-      (await t.call('POST', `/file-pins/${id}/move`, { direction: 'up' }, { 'x-pm-remote': '1' }))
-        .status,
-    ).toBe(403);
-    const read = await t.call('GET', `/projects/${a}/file-pins`, undefined, { 'x-pm-lan': '1' });
-    expect(read.status).toBe(200);
+    expect(await t.pins(a)).toEqual([]);
   });
 });

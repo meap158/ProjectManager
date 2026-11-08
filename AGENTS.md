@@ -217,3 +217,7 @@ anything.
   PM-571: the total (`maxWorkers`) and per-provider limits cap run workers only. `assign_card` to an
   existing idle session is never refused for worker limits, and `start_session` and the planner's
   `workerKind: 'session'` skip them (the global safety cap of 32 still holds).
+
+- PM-579: Files pins are app metadata. Signed-in LAN and remote sessions have the same pin
+  create/delete/reorder actions as the host. Keep listener authentication, JSON validation and
+  contained path checks; file rename/open/reveal retain their separate access rules.

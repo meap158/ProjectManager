@@ -414,7 +414,8 @@ adjacent-pair CVD separation in both modes).
   for this project only or for every project by relative path (an "All" badge). A pin whose path is absent in a
   project is dimmed with "missing". Pin from the context menu or with Alt+P (this project) and Alt+Shift+P
   (all projects); the row's "..." menu moves a pin up or down within its scope, or unpins it. Pins are kept in
-  this app's database (never in the project) and can only be changed on this computer; they are read everywhere.
+  this app's database (never in the project). Signed-in LAN and remote devices can add, remove and
+  reorder them with the same controls as the host computer.
 - **Folder previewer (`FolderView`, PM-286):** selecting a folder (in the tree, from a pin, a breadcrumb or a
   subfolder) shows its contents in the right pane instead of the last file: every entry with size and times as a
   Grid of thumbnails or a List; filters (name, type chips, modified range via `Dropdown`, bordered Include subfolders

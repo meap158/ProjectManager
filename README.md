@@ -164,8 +164,10 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
 - **Account switching:** saved Codex and Claude logins and optional Antigravity accounts, with
   live usage and reset times. Codex, and Claude Code if you turn it on, switch to the login with
   the most quota left when one runs out (see [the account audit](docs/ACCOUNT-SWITCHER-AUDIT.md)).
-- **Files:** a VS Code-style explorer with Markdown, HTML, image and code previews. The lightbox
-  keeps the selected thumbnail visible during navigation and resizing. Very large
+- **Files:** a VS Code-style explorer with Markdown, HTML, image and code previews. Pins support
+  adding, removing and reordering from signed-in LAN and remote devices, just as on the host
+  computer, and change app metadata only. The lightbox keeps the selected thumbnail visible
+  during navigation and resizing. Very large
   folders load in batches with a Load more button.
 - **SOPs:** **Settings > SOPs** checks every project's agent instructions against a shared
   standard (handover notes, roadmap, safe process cleanup, writing style) and turns a gap into a
