@@ -218,11 +218,13 @@ export function planOrchestration(
       decide('wait', 'Worker capacity reached', undefined, 'global_capacity');
       continue;
     }
-    if (totalScoped >= policy.maxWorkers) {
+    // Session starts follow only the project's CLI limit; the orchestrator's total and
+    // per-provider worker limits cap run workers (PM-571). The machine-wide safety cap holds.
+    const sessionStart = snapshot.workerKind === 'session';
+    if (!sessionStart && totalScoped >= policy.maxWorkers) {
       decide('wait', 'Worker capacity reached', undefined, 'managed_capacity');
       continue;
     }
-    const sessionStart = snapshot.workerKind === 'session';
     const projectLimit = sessionStart ? MAX_SESSIONS_PER_PROJECT : policy.maxWorkersPerProject;
     const projectOccupancy = sessionStart
       ? snapshot.sessions.filter((s) => s.projectId === card.projectId && !s.orchestratorId).length
@@ -251,8 +253,9 @@ export function planOrchestration(
       if (!snapshot.availableProviders.includes(providerId))
         return block('unavailable', 'CLI unavailable; check installation and PATH');
       if (
+        !sessionStart &&
         providerCount(providerId) + (reservedProviders.get(providerId) ?? 0) >=
-        policy.maxWorkersPerProvider
+          policy.maxWorkersPerProvider
       )
         return block('capacity', 'Provider worker limit reached; wait for a worker to finish');
       const limits = snapshot.limits.find((l) => l.providerId === providerId);

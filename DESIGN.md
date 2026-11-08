@@ -46,7 +46,7 @@ dialog width. Keep the full text selectable, with vertical scrolling when needed
 Orchestrator settings offer automatic session continuation as an unchecked option and
 distinguish per-project run-worker allocation from project CLI slots. Starting a session uses
 the project's saved CLI limit; assigning or messaging an existing session needs no new slot.
-The total and per-provider orchestrator worker limits still apply to new workers. Help text
+The total and per-provider orchestrator worker limits cap run workers only; session work follows the project CLI limit alone (PM-571). Help text
 explains enrollment and wait conditions. Session checks report the session name, card, progress and
 an actionable wait reason. Enrollment, continuation and explicit wake actions use decision history.
 

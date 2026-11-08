@@ -1641,8 +1641,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
       // Any live worker on the card blocks it, whoever started it.
       if (all.runs.some((r) => r.cardId === c.id) || all.sessions.some((s) => s.cardId === c.id))
         fail(`${c.key} already has a live worker; check it with get_card / worker_output`);
+      // The total limit caps run workers; session starts follow the project's CLI limit (PM-571).
       const live = sessions.length + runs.length;
-      if (live >= instance.maxWorkers)
+      if (kind === 'run' && live >= instance.maxWorkers)
         fail(`At capacity: ${live} of your ${instance.maxWorkers} workers are busy. ${DO_IT_HERE}`);
       const inProject =
         sessions.filter((s) => s.projectId === c.projectId).length +
@@ -1850,11 +1851,11 @@ export class OrchestratorChat implements OrchestratorToolHost {
           // so a reader cannot compare the uncounted workers with the limit (a chat once did).
           yourWorkers: sessions.length + runs.length,
           maxWorkers: instance.maxWorkers,
-          freeWorkerSlots: Math.max(0, instance.maxWorkers - sessions.length - runs.length),
+          freeRunWorkerSlots: Math.max(0, instance.maxWorkers - sessions.length - runs.length),
           maxRunWorkersPerProject: instance.maxWorkersPerProject,
           maxSessionsPerProject: MAX_SESSIONS_PER_PROJECT,
           notCountedWorkers: all.sessions.length + all.runs.length - sessions.length - runs.length,
-          note: 'Only yourWorkers count toward maxWorkers. All saved project CLI sessions count toward maxSessionsPerProject, including stopped sessions; orchestrator chats are excluded. maxRunWorkersPerProject applies to run workers, not session starts, messages or card assignment. Reuse idle sessions when CLI slots are full. A card with a live worker stays theirs.',
+          note: "maxWorkers (and the per-provider limit) cap run workers (dispatch_worker): only yourWorkers count, sessions included. Session work follows only maxSessionsPerProject: assign_card and message_worker to an existing idle session are never refused for worker limits, and start_session needs a free CLI slot in that project (all saved project CLI sessions count, stopped and the owner's included; orchestrator chats excluded). Reuse idle sessions when CLI slots are full. A card with a live worker stays theirs.",
         },
         projects: projects.map((p) =>
           priority.has(p.id) ? { ...projectBrief(p), priority: true } : projectBrief(p),
@@ -2560,12 +2561,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
         sessions.some((other) => other.cardId === c.id && other.id !== s!.id)
       )
         fail(`${c.key} already has a live worker; check it with get_card / worker_output`);
-      // Handing a card to a session makes it one of your workers (PM-417), unless it already is.
-      const ownLive = own.sessions.length + own.runs.length;
-      if (!own.sessions.some((o) => o.id === s!.id) && ownLive >= instance.maxWorkers)
-        fail(
-          `At capacity: ${ownLive} of your ${instance.maxWorkers} workers are busy. ${DO_IT_HERE}`,
-        );
+      // Handing a card to an idle session that already exists takes no new CLI slot, so the
+      // orchestrator's own worker limits (which cap run workers) never refuse it (PM-571). It
+      // still becomes one of your workers (PM-417).
       // Typing into a session mid-turn or mid-question would mix into its work: re-read the
       // state right before sending.
       const fresh = this.supervisor.getSession(s!.id);
@@ -3017,7 +3015,7 @@ function openingPrompt(instance: OrchestratorConfig): string {
 const DO_IT_HERE =
   'If it fits a turn, do it directly here instead of waiting, and note on the card that you did';
 const HAND_OVER =
-  "Hand ready work to a CLI session: assign_card to an idle session in the card's project with no card (list_sessions), or start_session within your worker limits when none fits. Do it directly here when that is the better choice: the task is small or about coordination, or no worker can take it now (at your worker limits, an agent's quota below the reserve or used up, every session busy or asking the owner). Do not leave ready work waiting for a worker you could stand in for; note on the card that you did it here. Never type into a session that is working or asking the user; check hand-overs with worker_output instead of resending.";
+  "Hand ready work to a CLI session: assign_card to an idle session in the card's project with no card (list_sessions), or start_session when none fits and the project has a free CLI slot. Do it directly here when that is the better choice: the task is small or about coordination, or no worker can take it now (the project's CLI slots full, an agent's quota below the reserve or used up, every session busy or asking the owner). Do not leave ready work waiting for a worker you could stand in for; note on the card that you did it here. Never type into a session that is working or asking the user; check hand-overs with worker_output instead of resending.";
 /**
  * Drafting the next work for a project with nothing to do (PM-426). Only from what the owner has
  * committed to: a missing or Draft roadmap yields Backlog cards, never To do, because the
@@ -3040,7 +3038,7 @@ const GOAL_STEP_DIRECT =
  * reviewed, blocked work is unblocked or re-planned), and the goal closes only on evidence.
  */
 const GOAL_STEP_DELEGATING =
-  "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, within your worker limits: an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself when the card is small or about coordination, or when no worker can take it now (at your limits, quota below the reserve or used up, every session busy). Do not leave capacity idle while ready cards wait, and do not leave a ready card waiting for a worker you could stand in for; and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) Check the acceptance criteria as the work lands: mark each passing or failing with evidence (update_goal criteria); a failing one gets a card. A criterion only the owner can satisfy (their review, approval, listening test or decision) is marked owner with exactly what they need to do, once: the owner is told, and you do not chase it again. Every other open criterion needs a card and a worker moving it. When every linked card is Done, check every remaining criterion yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only when every criterion passes with evidence, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
+  "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, (sessions follow the project's CLI limit, runs your worker limits): an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself when the card is small or about coordination, or when no worker can take it now (CLI slots full, quota below the reserve or used up, every session busy). Do not leave capacity idle while ready cards wait, and do not leave a ready card waiting for a worker you could stand in for; and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) Check the acceptance criteria as the work lands: mark each passing or failing with evidence (update_goal criteria); a failing one gets a card. A criterion only the owner can satisfy (their review, approval, listening test or decision) is marked owner with exactly what they need to do, once: the owner is told, and you do not chase it again. Every other open criterion needs a card and a worker moving it. When every linked card is Done, check every remaining criterion yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only when every criterion passes with evidence, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
 
 /** The line a card's notes use for its acceptance check (PM-474). */
 const ACCEPTANCE = 'Acceptance:';
@@ -3163,7 +3161,7 @@ export function checkPrompt(
       : '';
   return [
     delegating
-      ? 'Check on pending work in your scope now. Call overview first. Hand work to CLI sessions in your projects where one fits, within your worker limits; work directly here otherwise.'
+      ? 'Check on pending work in your scope now. Call overview first. Hand work to CLI sessions in your projects where one fits (sessions follow the project CLI limit, runs your worker limits); work directly here otherwise.'
       : 'Check on pending work in your scope now. Call overview first. Work directly in this chat session; do not dispatch workers or delegate. Worker capacity does not gate direct work.',
     ...steps.map((s, i) => `${i + 1}. ${s}`),
     `Finish with a short report: what you moved, started or noted, what's blocked, and what needs me.${observe}`,
@@ -3205,7 +3203,7 @@ ${
 }
 - Background scheduler settings below are separate from this chat's direct work:
 - Providers for workers: ${instance.providers.join(', ')}
-- Worker limits: ${instance.maxWorkers} in total, counting only the workers you started, handed a card or supervise. Run workers have a per-project allocation of ${instance.maxWorkersPerProject}. Starting CLI sessions instead uses the project's limit of ${MAX_SESSIONS_PER_PROJECT} saved sessions, including stopped sessions and the owner's sessions (orchestrator chats excluded). Messaging or assigning an existing idle session uses no new CLI slot and is not blocked by the per-project run allocation.
+- Worker limits apply to run workers (dispatch_worker): ${instance.maxWorkers} in total (counting the workers you started, handed a card or supervise), ${instance.maxWorkersPerProject} per project and ${instance.maxWorkersPerProvider} per provider. Session work follows only the project's CLI limit of ${MAX_SESSIONS_PER_PROJECT} saved sessions (stopped and the owner's sessions included, orchestrator chats excluded): assign_card or message_worker to an existing idle session is never refused for worker limits, and start_session needs a free CLI slot in that project.
 ${priority.size ? `- ${PRIORITY_RULE}\n` : ''}
 ## Projects in your scope (snapshot when this chat opened; call overview for live state)
 
@@ -3223,7 +3221,7 @@ ${projects.map(project).join('\n') || '- (none)'}
 - \`read_image\`: look at a card's attached image (index from get_card).
 - \`list_sessions\`: the CLI sessions in your projects, with their state and linked card.
 - \`assign_card\`: hand a card to an idle session in its project (links it, moves it to In progress, types the task in). Delivery is not confirmed: check with worker_output, never resend blindly.
-- \`start_session\`: start a new CLI session on a card in its project, within your worker limits and the quota reserve. Use a unique requestId and reuse it after a lost response.
+- \`start_session\`: start a new CLI session on a card in its project, within the project's CLI limit and the quota reserve. Use a unique requestId and reuse it after a lost response.
 - \`worker_reply\`: a session's newest answer as text (after message_worker or reply_worker).
 - \`reply_worker\`: answer a message a worker sent you; it reaches that session when it is idle.
 - \`set_goal\`, \`update_goal\`, \`list_goals\`: objectives you pursue until they are done.

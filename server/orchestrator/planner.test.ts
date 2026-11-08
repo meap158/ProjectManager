@@ -53,6 +53,21 @@ describe('orchestrator planning', () => {
       planOrchestration(p, { ...state, sessions: [], workerKind: 'run' }, now)[1]?.waitReason,
     ).toBe('project_capacity');
   });
+  it('plans session starts past the total and per-provider run limits (PM-571)', () => {
+    const p = { ...policy, maxWorkers: 1, maxWorkersPerProject: 1, maxWorkersPerProvider: 1 };
+    const busy = {
+      id: 40,
+      projectId: 1,
+      providerId: 'codex',
+      status: 'running',
+      cardId: 999,
+    } as AgentSession;
+    const state = { ...snapshot(), sessions: [busy], ownedSessionIds: new Set([40]) };
+    const asRun = planOrchestration(p, { ...state, workerKind: 'run' }, now);
+    expect(asRun[0]?.action).toBe('wait');
+    const asSession = planOrchestration(p, { ...state, workerKind: 'session' }, now);
+    expect(asSession[0]?.action).toBe('dispatch');
+  });
   it('alternates projects and prefers the least recently served project across ticks', () => {
     const state = snapshot();
     state.cards = [card(1), card(2), card(3, 2), card(4, 2)];

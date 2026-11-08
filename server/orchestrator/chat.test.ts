@@ -586,12 +586,13 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     expect(capacity).toMatchObject({
       yourWorkers: 0,
       maxWorkers: 2,
-      freeWorkerSlots: 2,
+      freeRunWorkerSlots: 2,
       notCountedWorkers: 2,
     });
     expect(capacity).not.toHaveProperty('liveWorkers');
     expect(capacity.maxSessionsPerProject).toBe(8);
-    expect(capacity.note).toMatch(/All saved project CLI sessions/);
+    expect(capacity.note).toMatch(/all saved project CLI sessions count/);
+    expect(capacity.note).toMatch(/never refused for worker limits/);
   });
   const withSessionTools = (supervisor: Record<string, unknown>) => {
     const attachCard = vi.fn((id: number, cardId: number) => ({
@@ -724,6 +725,27 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     await t.call('assign_card', { card: t.mine.key, sessionId: 40 });
     expect(attachCard).toHaveBeenCalledOnce();
     expect(createSession).not.toHaveBeenCalled();
+    t.db.close();
+  });
+
+  it('hands cards to sessions past the total worker limit, which caps runs only (PM-571)', async () => {
+    const t = setup({ maxWorkers: 1, maxWorkersPerProject: 1, maxWorkersPerProvider: 1 });
+    const { attachCard, createSession } = withSessionTools(t.supervisor);
+    const { recordOwnedSession } = await import('./ownedWorkers.js');
+    // One worker of its own already, so the total (and per-provider) limit of one is used up.
+    t.sessions.push(
+      live({ id: 41, projectId: t.a, name: 'busy worker', cardId: 999, cardKey: 'PM-999' }),
+      live({ id: 42, projectId: t.a, name: 'idle' }),
+    );
+    recordOwnedSession(t.db, 'master-1', 41, 999);
+    await t.call('assign_card', { card: t.mine.key, sessionId: 42 });
+    expect(attachCard).toHaveBeenCalledWith(42, t.mine.id, expect.anything());
+    const other = insertCard(t.db, t.a, { title: 'Another', description: '', status: 'todo' });
+    await t.call('start_session', { card: other.key });
+    expect(createSession).toHaveBeenCalledOnce();
+    // Run workers still respect it.
+    const third = insertCard(t.db, t.a, { title: 'Third', description: '', status: 'todo' });
+    await expect(t.call('dispatch_worker', { card: third.key })).rejects.toThrow(/At capacity/);
     t.db.close();
   });
 

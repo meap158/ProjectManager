@@ -284,7 +284,7 @@ it('renders orchestrators with their settings, collapses form, supports edit and
   expect(screen.getByText('Running')).toBeDefined();
   expect(screen.getAllByText(/Project one/)[0]).toBeDefined();
   expect(screen.getByText(/Codex, Claude/)).toBeDefined();
-  expect(screen.getByText(/up to 6 workers/)).toBeDefined();
+  expect(screen.getByText(/up to 6 run workers/)).toBeDefined();
   expect(screen.getByText(/15% quota in reserve/)).toBeDefined();
   expect(screen.getByText(/Follows up Dashboard issues/)).toBeDefined();
   expect(screen.getByText(/Unknown quota allowed/)).toBeDefined();

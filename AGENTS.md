@@ -214,3 +214,6 @@ anything.
 - PM-526: `start_session` plans with `workerKind: 'session'` against the project's saved CLI
   limit, counting stopped and owner sessions but excluding orchestrator chats. Per-project run
   allocation does not block session starts, messages or assignment. Explicit wake reuses its slot.
+  PM-571: the total (`maxWorkers`) and per-provider limits cap run workers only. `assign_card` to an
+  existing idle session is never refused for worker limits, and `start_session` and the planner's
+  `workerKind: 'session'` skip them (the global safety cap of 32 still holds).

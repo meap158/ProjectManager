@@ -173,7 +173,7 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
 - **Orchestrators:** a chat that follows up on tasks and moves cards across all your projects.
   Session starts use the project CLI limit (eight saved sessions, including stopped sessions),
   rather than the per-project run-worker allocation. Existing idle sessions can receive messages
-  and cards without another slot. Total and provider worker limits still apply to new workers.
+  and cards without another slot. The total and per-provider worker limits cap run workers only (PM-571).
   Enable **Auto-continue enrolled sessions while quota permits** in its settings to supervise
   unfinished card work. Scoped tools inspect progress, enroll workers and explicitly wake stopped
   sessions. Fresh quota, empty prompts and persisted delivery checks guard each continuation.
