@@ -326,6 +326,39 @@
 .orchestrator-form .dropdown-trigger {
   width: 100%;
 }
+.orchestrator-form-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: none;
+}
+/* Left-out or picked projects: visible chips plus a picker to add more (PM-549). */
+.orchestrator-scope-list {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.orchestrator-scope-list-heading {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.orchestrator-scope-list .selected-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.orchestrator-scope-list-empty {
+  margin: 0;
+  font-size: 12.5px;
+}
+.orchestrator-scope-list-add {
+  max-width: 320px;
+}
 .orchestrator-checkboxes {
   display: flex;
   flex-direction: column;
@@ -770,6 +803,13 @@ dialog.orchestrator-form-dialog > .orchestrator-form-panel {
   margin: 0;
   border: 0;
   box-shadow: none;
+}
+/* The title with Cancel and Save stays in view while the long form scrolls (PM-549). */
+dialog.orchestrator-form-dialog > .orchestrator-form-panel > .panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface);
 }
 @media (max-width: 768px) {
   /* A full-height sheet on phones. */

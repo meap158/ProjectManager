@@ -1470,20 +1470,32 @@ export function OrchestratorPage() {
                     : 'Choose the projects it looks after, which agents it may start and how many at once.'}
                 </p>
               </div>
-              {state.instances.length > 0 && (
+              {/* Save at the top too, so a long form saves without scrolling (PM-549). */}
+              <div className="orchestrator-form-header-actions">
+                {state.instances.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setDraft(defaults);
+                      setShowForm(false);
+                    }}
+                  >
+                    Cancel edit
+                  </button>
+                )}
                 <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => {
-                    setDraft(defaults);
-                    setShowForm(false);
-                  }}
+                  type="submit"
+                  form="orchestrator-form"
+                  className="btn btn-sm btn-primary"
+                  disabled={busy}
                 >
-                  Cancel edit
+                  Save
                 </button>
-              )}
+              </div>
             </div>
             <form
+              id="orchestrator-form"
               className="orchestrator-form"
               onSubmit={(event) => {
                 event.preventDefault();
@@ -1539,40 +1551,29 @@ export function OrchestratorPage() {
                         },
                       ]}
                     />
-                    {scopeMode === 'except' && (
-                      <Dropdown
-                        label="Leave out"
-                        value={0}
-                        onChange={() => {}}
-                        multiple={{
-                          values: draft.excludedProjectIds ?? [],
-                          allValue: 0,
-                          onChange: (excludedProjectIds) =>
-                            setDraft({ ...draft, excludedProjectIds }),
-                        }}
-                        options={[
-                          { value: 0, label: 'None left out' },
-                          ...projects.map((p) => ({ value: p.id, label: p.name })),
-                        ]}
-                      />
-                    )}
-                    {scopeMode === 'only' && (
-                      <Dropdown
-                        label="Projects"
-                        value={0}
-                        onChange={() => {}}
-                        multiple={{
-                          values: draft.projectIds,
-                          allValue: 0,
-                          onChange: (projectIds) => setDraft({ ...draft, projectIds }),
-                        }}
-                        options={[
-                          { value: 0, label: 'None picked (all projects)' },
-                          ...projects.map((p) => ({ value: p.id, label: p.name })),
-                        ]}
-                      />
-                    )}
                   </label>
+                  {scopeMode === 'except' && (
+                    <ScopeProjectList
+                      heading="Left out"
+                      empty="Nothing left out yet, so it looks after every project."
+                      addLabel="Leave out a project…"
+                      removeVerb="Stop leaving out"
+                      ids={draft.excludedProjectIds ?? []}
+                      projects={projects}
+                      onChange={(excludedProjectIds) => setDraft({ ...draft, excludedProjectIds })}
+                    />
+                  )}
+                  {scopeMode === 'only' && (
+                    <ScopeProjectList
+                      heading="Looks after"
+                      empty="No projects picked yet. Until you add one it looks after every project."
+                      addLabel="Add a project…"
+                      removeVerb="Remove"
+                      ids={draft.projectIds}
+                      projects={projects}
+                      onChange={(projectIds) => setDraft({ ...draft, projectIds })}
+                    />
+                  )}
                   <label>
                     Serve first
                     <Dropdown
@@ -2103,6 +2104,77 @@ function OrchestratorFormShell({
     <dialog ref={ref} className="orchestrator-form-dialog" aria-label={title} onClose={onClose}>
       {children}
     </dialog>
+  );
+}
+
+/**
+ * The projects a scope leaves out or picks, shown as removable chips with a searchable picker
+ * to add more (PM-549). The list is always visible, so what the scope means is never hidden
+ * behind a closed dropdown.
+ */
+function ScopeProjectList({
+  heading,
+  empty,
+  addLabel,
+  removeVerb,
+  ids,
+  projects,
+  onChange,
+}: {
+  heading: string;
+  empty: string;
+  addLabel: string;
+  removeVerb: string;
+  ids: number[];
+  projects: ProjectSummary[];
+  onChange: (ids: number[]) => void;
+}) {
+  const chosen = ids
+    .map((id) => projects.find((p) => p.id === id))
+    .filter((p): p is ProjectSummary => Boolean(p));
+  const rest = projects.filter((p) => !ids.includes(p.id));
+  return (
+    <div className="orchestrator-scope-list" role="group" aria-label={heading}>
+      <span className="orchestrator-scope-list-heading">
+        {heading}
+        {chosen.length > 0 && <span className="faint"> · {chosen.length}</span>}
+      </span>
+      {chosen.length ? (
+        <ul className="selected-list">
+          {chosen.map((p) => (
+            <li key={p.id} className="chip">
+              {p.name}
+              <button
+                type="button"
+                className="chip-x"
+                aria-label={`${removeVerb} ${p.name}`}
+                title={`${removeVerb} ${p.name}`}
+                onClick={() => onChange(ids.filter((id) => id !== p.id))}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="faint orchestrator-scope-list-empty">{empty}</p>
+      )}
+      {rest.length > 0 && (
+        <div className="orchestrator-scope-list-add">
+          <Dropdown
+            label={addLabel}
+            value={0}
+            searchable
+            searchPlaceholder="Find a project"
+            onChange={(id) => id && onChange([...ids, id])}
+            options={[
+              { value: 0, label: addLabel },
+              ...rest.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

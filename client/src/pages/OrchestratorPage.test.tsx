@@ -143,7 +143,7 @@ it('creates a paused orchestrator with the chosen scope and quota policy', async
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Project master' } });
   fireEvent.click(screen.getByRole('button', { name: 'Project scope' }));
   fireEvent.click(screen.getByRole('button', { name: /Only these projects/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Add a project…' }));
   fireEvent.click(screen.getByRole('button', { name: 'Project one' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save orchestrator' }));
   await waitFor(() =>
@@ -167,9 +167,13 @@ it('scopes an orchestrator to all projects except chosen ones (PM-528)', async (
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Most projects' } });
   fireEvent.click(screen.getByRole('button', { name: 'Project scope' }));
   fireEvent.click(screen.getByRole('button', { name: /All projects except/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Leave out' }));
+  expect(screen.getByText(/Nothing left out yet/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Leave out a project…' }));
   fireEvent.click(screen.getByRole('button', { name: 'Project one' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save orchestrator' }));
+  // The left-out project shows as a chip that can be taken off again (PM-549).
+  expect(screen.getByRole('button', { name: 'Stop leaving out Project one' })).toBeTruthy();
+  // Save in the header submits the same form.
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await waitFor(() =>
     expect(api.saveOrchestrator).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Most projects', projectIds: [], excludedProjectIds: [1] }),
