@@ -394,12 +394,7 @@ export function createApp(
     instances: () => orchestrator.state().instances,
     getSession: (id) => supervisor.getSession(id),
     chatSession: (id) => orchestratorChat.session(id),
-    send: (id, text) =>
-      supervisor.sendInput(
-        id,
-        `\x1b[200~${text}\x1b[201~\r`,
-        false,
-      ),
+    send: (id, text) => supervisor.sendInput(id, `\x1b[200~${text}\x1b[201~\r`, false),
     record: (orchestratorId, action, message, cardId) =>
       orchestrator.record({ orchestratorId, action, message, ...(cardId ? { cardId } : {}) }),
   });
