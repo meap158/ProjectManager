@@ -29,6 +29,30 @@ const snapshot = () => ({
   limits: [limits('claude', 100), limits('codex', 20)],
 });
 describe('orchestrator planning', () => {
+  it('plans CLI starts against project saved-session slots, not the run allocation', () => {
+    const p = { ...policy, maxWorkers: 8, maxWorkersPerProject: 1, maxWorkersPerProvider: 8 };
+    const sessions = Array.from(
+      { length: 7 },
+      (_, i) =>
+        ({
+          id: 40 + i,
+          projectId: 1,
+          providerId: 'codex',
+          status: 'exited',
+          cardId: null,
+        }) as AgentSession,
+    );
+    const state = { ...snapshot(), sessions, workerKind: 'session' as const };
+    const result = planOrchestration(p, state, now);
+    expect(result[0]?.action).toBe('dispatch');
+    expect(result[1]?.waitReason).toBe('project_capacity');
+    expect(
+      planOrchestration(p, { ...state, sessions: [] }, now).filter((d) => d.action === 'dispatch'),
+    ).toHaveLength(2);
+    expect(
+      planOrchestration(p, { ...state, sessions: [], workerKind: 'run' }, now)[1]?.waitReason,
+    ).toBe('project_capacity');
+  });
   it('alternates projects and prefers the least recently served project across ticks', () => {
     const state = snapshot();
     state.cards = [card(1), card(2), card(3, 2), card(4, 2)];

@@ -611,8 +611,8 @@ export function OrchestratorPage() {
                       </div>
                       <p className="orchestrator-instance-about">
                         Looks after <strong>{scopeNames}</strong> · works with {providerNames} · up
-                        to {instance.maxWorkers} workers ({instance.maxWorkersPerProject} per
-                        project, {instance.maxWorkersPerProvider} per provider) · keeps{' '}
+                        to {instance.maxWorkers} workers ({instance.maxWorkersPerProject} run
+                        workers per project, {instance.maxWorkersPerProvider} per provider) · keeps{' '}
                         {instance.reservePercent}% quota in reserve
                       </p>
                       <div className="orchestrator-pills">
@@ -1571,7 +1571,7 @@ export function OrchestratorPage() {
                     />
                   </label>
                   <label>
-                    Workers per project
+                    Run workers per project
                     <input
                       className="input"
                       type="number"

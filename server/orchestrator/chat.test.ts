@@ -590,7 +590,8 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
       notCountedWorkers: 2,
     });
     expect(capacity).not.toHaveProperty('liveWorkers');
-    expect(capacity.note).toMatch(/never block you/);
+    expect(capacity.maxSessionsPerProject).toBe(8);
+    expect(capacity.note).toMatch(/All saved project CLI sessions/);
   });
   const withSessionTools = (supervisor: Record<string, unknown>) => {
     const attachCard = vi.fn((id: number, cardId: number) => ({
@@ -701,6 +702,44 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     );
     expect(createSession).toHaveBeenCalledTimes(1);
     db.close();
+  });
+
+  it('starts another project CLI despite a per-project run allocation of one', async () => {
+    const t = setup({ maxWorkers: 4, maxWorkersPerProject: 1, maxWorkersPerProvider: 4 });
+    const { createSession } = withSessionTools(t.supervisor);
+    t.sessions.push(live({ id: 41, projectId: t.a, name: 'existing worker', cardId: 999 }));
+    const { recordOwnedSession } = await import('./ownedWorkers.js');
+    recordOwnedSession(t.db, 'master-1', 41, 999);
+    await t.call('start_session', { card: t.mine.key });
+    expect(createSession).toHaveBeenCalledOnce();
+    t.db.close();
+  });
+
+  it('messages and assigns an existing CLI at full project capacity without adding a slot', async () => {
+    const t = setup({ maxWorkers: 4, maxWorkersPerProject: 1 });
+    const { attachCard, createSession } = withSessionTools(t.supervisor);
+    for (let i = 0; i < 8; i++) t.sessions.push(live({ id: 40 + i, projectId: t.a }));
+    await t.call('message_worker', { sessionId: 40, text: 'Check progress' });
+    expect(t.supervisor.sendInput).toHaveBeenCalledOnce();
+    await t.call('assign_card', { card: t.mine.key, sessionId: 40 });
+    expect(attachCard).toHaveBeenCalledOnce();
+    expect(createSession).not.toHaveBeenCalled();
+    t.db.close();
+  });
+
+  it('counts stopped and owner CLI sessions at the real project limit, excluding chats', async () => {
+    const t = setup({ maxWorkers: 4, maxWorkersPerProject: 1 });
+    const { createSession } = withSessionTools(t.supervisor);
+    for (let i = 0; i < 8; i++)
+      t.sessions.push(live({ id: 40 + i, projectId: t.a, status: 'exited' }));
+    await expect(t.call('start_session', { card: t.mine.key })).rejects.toThrow(
+      /CLI session limit/,
+    );
+    expect(createSession).not.toHaveBeenCalled();
+    t.sessions[0]!.orchestratorId = 'another-chat';
+    await t.call('start_session', { card: t.mine.key });
+    expect(createSession).toHaveBeenCalledOnce();
+    t.db.close();
   });
 
   it('lists only the CLI sessions in its projects', async () => {

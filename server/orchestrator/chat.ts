@@ -4,7 +4,12 @@ import { cardAttachmentsDir, listAttachments } from '../attachments.js';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Db } from '../db.js';
-import { AgentError, defaultPrompt, type AgentSupervisor } from '../agents/supervisor.js';
+import {
+  AgentError,
+  defaultPrompt,
+  MAX_SESSIONS_PER_PROJECT,
+  type AgentSupervisor,
+} from '../agents/supervisor.js';
 import { providerStatuses } from '../agents/providers.js';
 import { stripTerminal } from '../agents/activity.js';
 import {
@@ -1625,7 +1630,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
      * project, has no live worker, your worker limits have room and a provider of yours is
      * installed. Each refusal names the limit, so it is not retried blindly.
      */
-    const capacity = async (c: Card, requested?: string) => {
+    const capacity = async (c: Card, requested?: string, kind: 'run' | 'session' = 'run') => {
       if (c.projectId === 0)
         fail(
           `${c.key} belongs to no project ("All projects"), so a worker has no folder to run in; ` +
@@ -1642,7 +1647,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const inProject =
         sessions.filter((s) => s.projectId === c.projectId).length +
         runs.filter((r) => r.projectId === c.projectId).length;
-      if (inProject >= instance.maxWorkersPerProject)
+      const projectSessions = this.supervisor
+        .listAllSessions()
+        .filter((s) => s.projectId === c.projectId && !s.orchestratorId).length;
+      if (kind === 'session' && projectSessions >= MAX_SESSIONS_PER_PROJECT)
+        fail(
+          `${projectName(c.projectId)} has reached its CLI session limit (${MAX_SESSIONS_PER_PROJECT} per project). Reuse an existing idle session.`,
+        );
+      if (kind === 'run' && inProject >= instance.maxWorkersPerProject)
         fail(
           `${projectName(c.projectId)} already has ${inProject} of your ${instance.maxWorkersPerProject} workers. ${DO_IT_HERE}`,
         );
@@ -1659,7 +1671,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
       return { providerId: providerId!, available };
     };
     /** The scheduler's own verdict on a card: provider capacity, quota reserve, assignments. */
-    const plan = (latest: Card, providerId: string, available: Set<string>, mine?: number) => {
+    const plan = (
+      latest: Card,
+      providerId: string,
+      available: Set<string>,
+      mine?: number,
+      kind: 'run' | 'session' = 'run',
+    ) => {
       const policy = this.instance(orchestratorId);
       const blockedCardIds = new OrchestratorAssignments(this.db).blockedCards();
       if (mine !== undefined) blockedCardIds.delete(mine);
@@ -1667,6 +1685,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const decision = planOrchestration(
         { ...policy, providers: [providerId] },
         {
+          workerKind: kind,
           cards: [latest],
           runs: planningRuns(this.db, policy.projectIds),
           sessions,
@@ -1832,9 +1851,10 @@ export class OrchestratorChat implements OrchestratorToolHost {
           yourWorkers: sessions.length + runs.length,
           maxWorkers: instance.maxWorkers,
           freeWorkerSlots: Math.max(0, instance.maxWorkers - sessions.length - runs.length),
-          maxWorkersPerProject: instance.maxWorkersPerProject,
+          maxRunWorkersPerProject: instance.maxWorkersPerProject,
+          maxSessionsPerProject: MAX_SESSIONS_PER_PROJECT,
           notCountedWorkers: all.sessions.length + all.runs.length - sessions.length - runs.length,
-          note: "Only yourWorkers count toward maxWorkers. notCountedWorkers are the owner's own sessions and other runs: they never block you, though a card one of them is on stays theirs.",
+          note: 'Only yourWorkers count toward maxWorkers. All saved project CLI sessions count toward maxSessionsPerProject, including stopped sessions; orchestrator chats are excluded. maxRunWorkersPerProject applies to run workers, not session starts, messages or card assignment. Reuse idle sessions when CLI slots are full. A card with a live worker stays theirs.',
         },
         projects: projects.map((p) =>
           priority.has(p.id) ? { ...projectBrief(p), priority: true } : projectBrief(p),
@@ -2648,8 +2668,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
       this.starting.add(c.id);
       try {
         return await this.startSession(c, input, fingerprint, requests, {
-          capacity,
-          plan,
+          capacity: (card, provider) => capacity(card, provider, 'session'),
+          plan: (card, provider, available) =>
+            plan(card, provider, available, undefined, 'session'),
           audit,
           sessionBrief,
           brief,
@@ -3178,7 +3199,7 @@ ${
 }
 - Background scheduler settings below are separate from this chat's direct work:
 - Providers for workers: ${instance.providers.join(', ')}
-- Worker limits: ${instance.maxWorkers} in total, ${instance.maxWorkersPerProject} per project, counting only the workers you started, handed a card or supervise; the owner's own sessions never use them up
+- Worker limits: ${instance.maxWorkers} in total, counting only the workers you started, handed a card or supervise. Run workers have a per-project allocation of ${instance.maxWorkersPerProject}. Starting CLI sessions instead uses the project's limit of ${MAX_SESSIONS_PER_PROJECT} saved sessions, including stopped sessions and the owner's sessions (orchestrator chats excluded). Messaging or assigning an existing idle session uses no new CLI slot and is not blocked by the per-project run allocation.
 ${priority.size ? `- ${PRIORITY_RULE}\n` : ''}
 ## Projects in your scope (snapshot when this chat opened; call overview for live state)
 

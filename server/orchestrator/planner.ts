@@ -1,5 +1,6 @@
 import type { AgentRun, AgentSession, Card } from '../../shared/types.js';
 import type { ProviderLimits } from '../../shared/limits.js';
+import { MAX_SESSIONS_PER_PROJECT } from '../agents/supervisor.js';
 import type {
   OrchestratorWaitReason,
   OrchestratorProviderBlocker,
@@ -42,6 +43,8 @@ export interface OrchestratorDecision {
 }
 
 export interface OrchestratorPlanningSnapshot {
+  /** Session starts use the project's CLI slots rather than the run-worker allocation. */
+  workerKind?: 'run' | 'session';
   cards: Card[];
   runs: PlanningRun[];
   sessions: AgentSession[];
@@ -219,11 +222,20 @@ export function planOrchestration(
       decide('wait', 'Worker capacity reached', undefined, 'managed_capacity');
       continue;
     }
-    if (
-      projectCount(card.projectId) + (reservedProjects.get(card.projectId) ?? 0) >=
-      policy.maxWorkersPerProject
-    ) {
-      decide('wait', 'Worker capacity reached', undefined, 'project_capacity');
+    const sessionStart = snapshot.workerKind === 'session';
+    const projectLimit = sessionStart ? MAX_SESSIONS_PER_PROJECT : policy.maxWorkersPerProject;
+    const projectOccupancy = sessionStart
+      ? snapshot.sessions.filter((s) => s.projectId === card.projectId && !s.orchestratorId).length
+      : projectCount(card.projectId);
+    if (projectOccupancy + (reservedProjects.get(card.projectId) ?? 0) >= projectLimit) {
+      decide(
+        'wait',
+        sessionStart
+          ? `Project CLI limit reached (${projectLimit} sessions)`
+          : 'Worker capacity reached',
+        undefined,
+        'project_capacity',
+      );
       continue;
     }
     if (snapshot.resourceBlock) {

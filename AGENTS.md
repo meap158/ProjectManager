@@ -200,3 +200,7 @@ anything.
 - PM-522: Antigravity transcripts may lack workspace metadata. Fall back only to an exact
   pinned conversation ID in the bounded CLI history tail, and invalidate the cache when history
   changes. Explicit metadata workspace mismatches must never be overridden by history.
+
+- PM-526: `start_session` plans with `workerKind: 'session'` against the project's saved CLI
+  limit, counting stopped and owner sessions but excluding orchestrator chats. Per-project run
+  allocation does not block session starts, messages or assignment. Explicit wake reuses its slot.

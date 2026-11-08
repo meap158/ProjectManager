@@ -347,9 +347,11 @@ export class SessionSupervision {
     const decision = planOrchestration(
       { ...policy, providers: [session.providerId], allowUnknownQuota: false },
       {
+        workerKind: 'session',
         cards: [card],
         runs: planningRuns(this.db, policy.projectIds),
-        sessions,
+        // Resuming reuses this saved CLI slot rather than creating another one.
+        sessions: sessions.filter((s) => s.id !== id),
         ownedSessionIds: ownedSessionIds(this.db, owner, sessions),
         availableProviders: [session.providerId],
         limits: this.quota(session),
