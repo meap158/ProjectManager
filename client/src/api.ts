@@ -614,6 +614,12 @@ export const api = {
     }),
   setGrokAutoSwitch: (autoSwitch: boolean) =>
     request<NativeAccountsState>('PUT', '/agents/grok-accounts/auto-switch', { autoSwitch }),
+  setGrokAccountAutoSwitchEligible: (id: string, eligible: boolean) =>
+    request<NativeAccountsState>(
+      'PUT',
+      `/agents/grok-accounts/${encodeURIComponent(id)}/auto-switch`,
+      { eligible },
+    ),
   removeGrokAccount: (id: string) =>
     request<NativeAccountsState>('DELETE', `/agents/grok-accounts/${encodeURIComponent(id)}`),
   saveAntigravityAccount: () =>

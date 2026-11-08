@@ -91,6 +91,13 @@ describe('Grok account rotation', () => {
     expect(pick([account('x', 10, { status: 'unavailable' })])).toBeUndefined();
   });
 
+  it('never picks a login the owner left out of automatic switching (PM-531)', () => {
+    const current = account('a', 100);
+    const out = { ...account('c', 5), autoSwitchEligible: false };
+    expect(nextGrokAccount(state(current, [out, account('b', 60)]), new Map(), NOW)?.id).toBe('b');
+    expect(nextGrokAccount(state(current, [out]), new Map(), NOW)).toBeNull();
+  });
+
   it('skips logins it left until their skip time has passed', () => {
     const s = state(account('a', 100), [account('b', 10), account('c', 50)]);
     expect(nextGrokAccount(s, new Map([['b', NOW + 1]]), NOW)?.id).toBe('c');

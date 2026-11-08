@@ -60,7 +60,7 @@ export function grokSkipUntil(account: NativeAccount | null | undefined, now = D
  * of credits. Candidates: saved, readable, not the current login, not skipped, and not out by
  * their own reading. One whose usage is unknown (an expired saved token is never refreshed here,
  * since that would retire its refresh token) is allowed but ranked last; if it is out too, the
- * next tick moves on. Ranking: least credit used, then saved order.
+ * next tick moves on. Accounts the owner left out (PM-531) are never chosen. Ranking: least credit used, then saved order.
  */
 export function nextGrokAccount(
   state: NativeAccountsState,
@@ -77,6 +77,7 @@ export function nextGrokAccount(
     .filter(
       ({ account, used }) =>
         account.id !== currentId &&
+        account.autoSwitchEligible !== false &&
         account.usageStatus !== 'unavailable' &&
         (skipped.get(account.id) ?? 0) <= now &&
         (used === null || used < 99),

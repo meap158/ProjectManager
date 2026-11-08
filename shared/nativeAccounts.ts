@@ -17,6 +17,8 @@ export interface NativeAccount {
   renewable?: boolean;
   /** What the usage check found when there is no percentage to show (PM-525). */
   usageNote?: string;
+  /** Grok only (PM-531): false when the owner left this saved login out of automatic switching. */
+  autoSwitchEligible?: boolean;
 }
 export interface NativeAccountsState {
   available: boolean;

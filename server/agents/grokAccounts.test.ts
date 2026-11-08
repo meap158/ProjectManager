@@ -114,6 +114,22 @@ it('does not overwrite a refreshed current login when switching to its saved row
   await service.switch(a.id);
   expect(readFileSync(file, 'utf8')).toBe(fresh);
 });
+it('keeps a login left out of automatic switching out across re-saves (PM-531)', async () => {
+  const { service, file } = setup();
+  writeFileSync(file, auth('a@example.com'));
+  const b = (await service.import(auth('b@example.com'))).accounts[0]!;
+  expect(b.autoSwitchEligible).toBeUndefined();
+  const out = await service.setAutoSwitchEligible(b.id, false);
+  expect(out.accounts[0]?.autoSwitchEligible).toBe(false);
+  // A newer copy of the same login (renewed tokens) keeps the choice.
+  await service.import(auth('b@example.com', 'renewed-token'));
+  expect(service.state().accounts[0]?.autoSwitchEligible).toBe(false);
+  await service.setAutoSwitchEligible(b.id, true);
+  expect(service.state().accounts[0]?.autoSwitchEligible).toBeUndefined();
+  await expect(service.setAutoSwitchEligible('grok_' + 'f'.repeat(32), false)).rejects.toThrow(
+    'not found',
+  );
+});
 it('rename/remove leaves default credentials intact and rejects traversal/missing keys', async () => {
   const { service, file, data } = setup();
   const live = auth('a@example.com');

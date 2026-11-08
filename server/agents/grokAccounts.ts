@@ -133,6 +133,7 @@ const rowSchema = z.object({
     .nullable()
     .optional(),
   usageStatus: z.enum(['fresh', 'stale', 'expired', 'unavailable', 'not_loaded']).optional(),
+  autoSwitchEligible: z.boolean().optional(),
 });
 const emptyUsage = () => ({ fiveHour: null, weekly: null, updatedAt: null });
 export function grokHome(home = os.homedir(), env: NodeJS.ProcessEnv = process.env) {
@@ -204,6 +205,8 @@ export class GrokAccounts {
       usage: emptyUsage(),
       usageStatus: 'not_loaded',
       limits: null,
+      // Left out of automatic switching stays left out when the login is re-saved (PM-531).
+      ...(previous?.autoSwitchEligible === false ? { autoSwitchEligible: false } : {}),
     };
     // A saved account keeps its place in the owner's order (the active one is re-saved as the
     // CLI renews its tokens, PM-523); a new one goes last.
@@ -264,6 +267,7 @@ export class GrokAccounts {
           : (valid?.usageStatus ?? 'not_loaded'),
       ...(expired && auth.renewable ? { renewable: true } : {}),
       ...(!expired && valid?.usageNote ? { usageNote: valid.usageNote } : {}),
+      ...(saved?.autoSwitchEligible === false ? { autoSwitchEligible: false } : {}),
     };
   }
   /**
@@ -346,6 +350,19 @@ export class GrokAccounts {
         row = rows.find((a) => a.id === id);
       if (!row) throw new GrokAccountError('Grok account not found.');
       row.name = z.string().trim().min(1).max(160).parse(name);
+      this.saveRows(rows);
+      return this.state();
+    });
+  }
+  /** Includes or leaves out a saved account from automatic switching (PM-531). */
+  setAutoSwitchEligible(id: string, eligible: boolean) {
+    return this.exclusive(() => {
+      validId.parse(id);
+      const rows = this.rows(),
+        row = rows.find((a) => a.id === id);
+      if (!row) throw new GrokAccountError('Grok account not found.');
+      if (eligible) delete row.autoSwitchEligible;
+      else row.autoSwitchEligible = false;
       this.saveRows(rows);
       return this.state();
     });

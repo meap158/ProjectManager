@@ -289,6 +289,14 @@ export function registerAgentRoutes(app: Hono, db: Db, supervisor: AgentSupervis
     const body = z.object({ accountId: z.string() }).parse(await grokBody(c));
     return c.json(await grokState(grokAccounts().switch(grokId(body.accountId))));
   });
+  app.put('/agents/grok-accounts/:id/auto-switch', async (c) => {
+    const body = z.object({ eligible: z.boolean() }).parse(await grokBody(c));
+    return c.json(
+      await grokState(
+        grokAccounts().setAutoSwitchEligible(grokId(c.req.param('id')), body.eligible),
+      ),
+    );
+  });
   app.patch('/agents/grok-accounts/:id', async (c) => {
     const body = z.object({ name: z.string().trim().min(1).max(160) }).parse(await grokBody(c));
     return c.json(await grokState(grokAccounts().rename(grokId(c.req.param('id')), body.name)));

@@ -190,6 +190,8 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
   }
   function row(a: NativeAccount | null, isDefault = false) {
     const id = isDefault ? 'default' : a!.id;
+    // Per-account choice, as in the Codex switcher (PM-531): only Grok rotates, only saved logins.
+    const autoSwitchBox = isGrok && !isDefault && state?.autoSwitch === true;
     return (
       <li key={id} data-account-id={id} className={`codex-account-row${drag.rowState(id)}`}>
         {reordering && !isDefault && (
@@ -244,7 +246,10 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
           <span className="codex-account-heading">
             {/* One identity cell, as in the Codex switcher: the email follows the name inline
                 instead of sitting in the next grid column. */}
-            <span className="codex-account-identity" style={{ gridColumn: '1 / -1' }}>
+            <span
+              className="codex-account-identity"
+              style={autoSwitchBox ? undefined : { gridColumn: '1 / -1' }}
+            >
               <b>{isDefault ? `Default ${title} account` : a!.name}</b>
               {isDefault && (
                 <span className="faint" style={{ fontSize: 12.5 }}>
@@ -265,6 +270,20 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
                 </>
               )}
             </span>
+            {autoSwitchBox && (
+              <label className="codex-account-auto-switch">
+                <input
+                  type="checkbox"
+                  checked={a!.autoSwitchEligible !== false}
+                  disabled={busy}
+                  aria-label={`Include ${a!.name} in automatic switching`}
+                  onChange={(event) =>
+                    void act(() => api.setGrokAccountAutoSwitchEligible(id, event.target.checked))
+                  }
+                />
+                Auto-switch
+              </label>
+            )}
           </span>
           {usage(a)}
         </span>
