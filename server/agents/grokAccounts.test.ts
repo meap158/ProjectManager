@@ -128,6 +128,34 @@ it('rename/remove leaves default credentials intact and rejects traversal/missin
   expect(readFileSync(file, 'utf8')).toBe(live);
   expect(service.state().accounts).toEqual([]);
 });
+it('reads a billing reply with no credit percentage as no allowance, not unavailable (PM-525)', async () => {
+  // The reply Grok gives an account with no subscription or prepaid credits.
+  const reply = {
+    config: {
+      currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', end: '2099-01-01T00:00:00Z' },
+      onDemandCap: { val: 0 },
+      onDemandUsed: { val: 0 },
+      prepaidBalance: { val: 0 },
+      isUnifiedBillingUser: true,
+    },
+  };
+  const request = vi.fn(
+    async (url: string | URL | Request) =>
+      new Response(JSON.stringify(String(url).includes('/billing') ? reply : { tips: [] })),
+  );
+  const { service, file } = setup(request as typeof fetch);
+  writeFileSync(file, auth('free@example.com'));
+  const account = (await service.refresh()).defaultAccount!;
+  expect(account.usageStatus).toBe('fresh');
+  expect(account.limits).toBeNull();
+  expect(account.usageNote).toContain('no credit allowance');
+  // An on-demand cap is measured instead.
+  reply.config.onDemandCap.val = 40;
+  reply.config.onDemandUsed.val = 10;
+  const capped = (await service.refresh()).defaultAccount!;
+  expect(capped.limits?.windows[0]).toMatchObject({ label: 'On-demand', usedPercent: 25 });
+  expect(capped.usageNote).toBeUndefined();
+});
 function billing(used: number) {
   return {
     config: {

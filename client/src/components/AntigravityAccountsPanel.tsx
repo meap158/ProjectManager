@@ -162,9 +162,11 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
                   ? 'Usage unavailable; try refreshing later'
                   : a?.usageStatus === 'stale'
                     ? 'Usage may be out of date; refreshing'
-                    : a?.usage.updatedAt
-                      ? `Usage checked ${new Date(a.usage.updatedAt).toLocaleString()}`
-                      : 'Usage not refreshed'}
+                    : a?.usageNote
+                      ? a.usageNote
+                      : a?.usage.updatedAt
+                        ? `Usage checked ${new Date(a.usage.updatedAt).toLocaleString()}`
+                        : 'Usage not refreshed'}
         </span>
         {(a?.limits || windows.length > 0) && (
           <UsageLimits

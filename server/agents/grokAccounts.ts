@@ -263,6 +263,7 @@ export class GrokAccounts {
           ? 'stale'
           : (valid?.usageStatus ?? 'not_loaded'),
       ...(expired && auth.renewable ? { renewable: true } : {}),
+      ...(!expired && valid?.usageNote ? { usageNote: valid.usageNote } : {}),
     };
   }
   /**
@@ -448,6 +449,7 @@ export class GrokAccounts {
         account.usage = emptyUsage();
         account.limits = null;
         account.usageStatus = 'unavailable';
+        delete account.usageNote;
         try {
           if (
             auth.expiry &&
@@ -457,7 +459,10 @@ export class GrokAccounts {
           const billing = z
             .object({
               config: z.object({
-                creditUsagePercent: z.number().finite().min(0).max(100),
+                // Absent for accounts with no credit allowance (PM-525): the reply is still valid.
+                creditUsagePercent: z.number().finite().min(0).max(100).optional(),
+                onDemandCap: z.object({ val: z.number().finite().min(0) }).optional(),
+                onDemandUsed: z.object({ val: z.number().finite().min(0) }).optional(),
                 currentPeriod: z
                   .object({ type: z.string().optional(), end: z.string().optional() })
                   .optional(),
@@ -484,29 +489,43 @@ export class GrokAccounts {
               : period === 'USAGE_PERIOD_TYPE_DAILY'
                 ? 1440
                 : 0;
-          account.limits = {
-            providerId: 'grok',
-            source: 'Grok billing service',
-            asOf,
-            windows: [
-              {
-                label: labels[period] ?? 'Credits',
-                windowMinutes: minutes,
-                usedPercent: billing.config.creditUsagePercent,
-                resetsAt:
-                  reset && Number.isFinite(Date.parse(reset))
-                    ? new Date(reset).toISOString()
-                    : null,
-              },
-            ],
-          } satisfies ProviderLimits;
+          // The credit percentage when Grok reports one; else spend against an on-demand cap;
+          // else the account has no credit allowance to measure (PM-525).
+          const cap = billing.config.onDemandCap?.val ?? 0;
+          const usedPercent =
+            billing.config.creditUsagePercent ??
+            (cap > 0 ? Math.min(100, ((billing.config.onDemandUsed?.val ?? 0) / cap) * 100) : null);
+          account.limits =
+            usedPercent === null
+              ? null
+              : ({
+                  providerId: 'grok',
+                  source: 'Grok billing service',
+                  asOf,
+                  windows: [
+                    {
+                      label:
+                        billing.config.creditUsagePercent === undefined
+                          ? 'On-demand'
+                          : (labels[period] ?? 'Credits'),
+                      windowMinutes: minutes,
+                      usedPercent,
+                      resetsAt:
+                        reset && Number.isFinite(Date.parse(reset))
+                          ? new Date(reset).toISOString()
+                          : null,
+                    },
+                  ],
+                } satisfies ProviderLimits);
           account.usage = {
             fiveHour: null,
-            weekly:
-              period === 'USAGE_PERIOD_TYPE_WEEKLY' ? billing.config.creditUsagePercent : null,
+            weekly: period === 'USAGE_PERIOD_TYPE_WEEKLY' ? usedPercent : null,
             updatedAt: asOf,
           };
           account.usageStatus = 'fresh';
+          if (usedPercent === null)
+            account.usageNote =
+              'Grok reports no credit allowance for this account (no subscription or prepaid credits)';
           try {
             const settings = z
               .object({ subscription_tier_display: z.string().max(160) })

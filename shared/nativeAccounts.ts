@@ -15,6 +15,8 @@ export interface NativeAccount {
    * token, so the CLI renews it when this account is switched in.
    */
   renewable?: boolean;
+  /** What the usage check found when there is no percentage to show (PM-525). */
+  usageNote?: string;
 }
 export interface NativeAccountsState {
   available: boolean;
