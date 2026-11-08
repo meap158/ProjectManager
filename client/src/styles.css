@@ -6550,7 +6550,8 @@ body.is-reordering-rows {
   }
 }
 
-/* Phones keep a session's Continue beside ⋯ in its pane header, not inside the ⋯ menu. */
+/* Phones keep a session's Continue beside ⋯ in its pane header, not inside the ⋯ menu, in the CLI
+   and the Chat view alike (PM-584). */
 .pane-continue-phone {
   display: none;
 }
