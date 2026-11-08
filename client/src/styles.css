@@ -5227,8 +5227,42 @@ span.path-link:hover .path-icon {
   min-width: 44px;
   min-height: 44px;
 }
+/* Reordering (PM-529): the dragged row lifts above the others, which slide to make room
+   (lib/reorderMotion.ts); the dropped row settles with a short highlight. */
+.codex-account-row {
+  position: relative;
+  border-radius: var(--radius);
+  transition:
+    box-shadow 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
 .codex-account-row.is-reordering {
+  z-index: 2;
+  background: var(--surface-raised);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--shadow-lg);
+  transform: scale(1.01);
+}
+.codex-account-row.is-reordering .account-drag-handle,
+body.is-reordering-rows,
+body.is-reordering-rows * {
+  cursor: grabbing;
+}
+body.is-reordering-rows {
+  user-select: none;
+}
+.codex-account-row.is-settled {
   background: var(--accent-soft);
+}
+@media (prefers-reduced-motion: reduce) {
+  .codex-account-row {
+    transition: none;
+  }
+  .codex-account-row.is-reordering {
+    transform: none;
+  }
 }
 .antigravity-account-list {
   list-style: none;

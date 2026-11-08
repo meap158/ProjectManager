@@ -10,6 +10,7 @@ import { InfoIcon, ProviderIcon } from './icons';
 import './project-agents.css';
 import { UsageLimits } from './UsageLimits';
 import { serialPoll } from '../lib/serialPoll';
+import { useReorderDrag, useReorderSlide } from '../lib/reorderMotion';
 import { useViewPreference } from '../useViewPreference';
 
 export function AccountActionIcon({
@@ -69,7 +70,9 @@ export function CodexAccountsPanel({
   const [busy, setBusy] = useState(false);
   const [refreshingUsage, setRefreshingUsage] = useState(false);
   const [reordering, setReordering] = useState(false);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
+  // Reorder motion (PM-529): displaced rows slide, the dragged row lifts, the dropped one settles.
+  const drag = useReorderDrag();
+  const listRef = useRef<HTMLUListElement>(null);
   const [order, setOrder] = useViewPreference<string[]>(
     `pm.accounts.order.${providerId}`,
     [],
@@ -84,9 +87,14 @@ export function CodexAccountsPanel({
     const from = ids.indexOf(id),
       to = from + delta;
     if (from < 0 || to < 0 || to >= ids.length) return;
-    [ids[from], ids[to]] = [ids[to]!, ids[from]!];
+    // Insert, not swap: a drag across several rows moves only the dragged one (PM-529).
+    ids.splice(from, 1);
+    ids.splice(to, 0, id);
     setOrder(ids);
+    const moved = orderedAccounts.find((a) => a.id === id);
+    if (moved) drag.announce(moved.name, to + 1, ids.length);
   };
+  useReorderSlide(listRef, orderedAccounts.map((a) => a.id).join(','));
   const [showAdd, setShowAdd] = useState(false);
   const [importName, setImportName] = useState('');
   const [importJson, setImportJson] = useState('');
@@ -561,7 +569,10 @@ export function CodexAccountsPanel({
               Drag a handle to reorder. With a keyboard, focus a handle and use Up or Down.
             </p>
           )}
-          <ul className="list codex-accounts-list">
+          <span className="sr-only" role="status" aria-live="polite">
+            {drag.announcement}
+          </span>
+          <ul ref={listRef} className="list codex-accounts-list">
             <li className="codex-account-row">
               <span className="status-dot green" role="img" aria-label="Active account" />
               <span className="codex-account-info">
@@ -653,7 +664,7 @@ export function CodexAccountsPanel({
                 <li
                   key={acc.id}
                   data-account-id={acc.id}
-                  className={`codex-account-row${draggingId === acc.id ? ' is-reordering' : ''}`}
+                  className={`codex-account-row${drag.rowState(acc.id)}`}
                 >
                   {reordering && (
                     <button
@@ -665,6 +676,7 @@ export function CodexAccountsPanel({
                         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                           e.preventDefault();
                           moveAccount(acc.id, e.key === 'ArrowUp' ? -1 : 1);
+                          drag.drop(acc.id);
                         }
                       }}
                       onPointerDown={(e) => {
@@ -672,7 +684,7 @@ export function CodexAccountsPanel({
                         e.preventDefault();
                         e.currentTarget.focus();
                         e.currentTarget.setPointerCapture(e.pointerId);
-                        setDraggingId(acc.id);
+                        drag.lift(acc.id);
                       }}
                       onPointerMove={(e) => {
                         if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
@@ -689,9 +701,9 @@ export function CodexAccountsPanel({
                       onPointerUp={(e) => {
                         if (e.currentTarget.hasPointerCapture(e.pointerId))
                           e.currentTarget.releasePointerCapture(e.pointerId);
-                        setDraggingId(null);
+                        drag.drop(acc.id);
                       }}
-                      onPointerCancel={() => setDraggingId(null)}
+                      onPointerCancel={() => drag.drop(null)}
                     >
                       ⠿
                     </button>

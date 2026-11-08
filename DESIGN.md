@@ -84,6 +84,10 @@ and optional drag-reorder mode. Provider-specific authentication and refresh cap
 explicit; Claude refresh rereads attributed snapshots. Antigravity detects the current default login
 without silently creating a saved profile.
 Saved accounts offer a Reorder mode with touch/pointer drag handles and keyboard Up/Down support;
+the dragged row lifts (accent ring, `--shadow-lg`, a 1% scale, grabbing cursor), displaced rows
+slide into place (`lib/reorderMotion.ts`, 180 ms FLIP), the dropped row settles with a short
+`--accent-soft` highlight, each move is announced ("Moved Work to position 2 of 3"), and motion is
+skipped under prefers-reduced-motion (PM-529);
 order persists per provider in this
 browser, with Default pinned first. Codex accounts offer individual usage refresh, resolving the
 active saved copy to the default login's credential source. Refresh never switches credentials.

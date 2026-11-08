@@ -6,6 +6,7 @@ import { useViewPreference } from '../useViewPreference';
 import { AccountActionIcon } from './CodexAccountsPanel';
 import { InfoIcon, ProviderIcon } from './icons';
 import { UsageLimits } from './UsageLimits';
+import { useReorderDrag, useReorderSlide } from '../lib/reorderMotion';
 import { ConfirmDelete } from './ConfirmDelete';
 
 function AccountToolbarAction({
@@ -131,6 +132,10 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
       (order.indexOf(a.id) < 0 ? order.length : order.indexOf(a.id)) -
       (order.indexOf(b.id) < 0 ? order.length : order.indexOf(b.id)),
   );
+  // Reorder motion (PM-529): displaced rows slide, the dragged row lifts, the dropped one settles.
+  const listRef = useRef<HTMLUListElement>(null);
+  const drag = useReorderDrag();
+  useReorderSlide(listRef, rows.map((a) => a.id).join(','));
   function move(id: string, target: number) {
     const ids = rows.map((a) => a.id),
       from = ids.indexOf(id);
@@ -138,6 +143,8 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
     ids.splice(from, 1);
     ids.splice(target, 0, id);
     setOrder(ids);
+    const moved = rows.find((a) => a.id === id);
+    if (moved) drag.announce(moved.name, target + 1, ids.length);
   }
   function usage(a: NativeAccount | null | undefined) {
     const windows = [
@@ -185,7 +192,7 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
   function row(a: NativeAccount | null, isDefault = false) {
     const id = isDefault ? 'default' : a!.id;
     return (
-      <li key={id} data-account-id={id} className="codex-account-row">
+      <li key={id} data-account-id={id} className={`codex-account-row${drag.rowState(id)}`}>
         {reordering && !isDefault && (
           <button
             type="button"
@@ -196,6 +203,7 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
               if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                 e.preventDefault();
                 move(id, rows.findIndex((x) => x.id === id) + (e.key === 'ArrowUp' ? -1 : 1));
+                drag.drop(id);
               }
             }}
             onPointerDown={(e) => {
@@ -203,6 +211,7 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
               e.preventDefault();
               e.currentTarget.focus();
               e.currentTarget.setPointerCapture(e.pointerId);
+              drag.lift(id);
             }}
             onPointerMove={(e) => {
               if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
@@ -219,7 +228,9 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
             onPointerUp={(e) => {
               if (e.currentTarget.hasPointerCapture(e.pointerId))
                 e.currentTarget.releasePointerCapture(e.pointerId);
+              drag.drop(id);
             }}
+            onPointerCancel={() => drag.drop(null)}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
               <circle cx="5" cy="4" r="1" />
@@ -505,7 +516,10 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
             </button>
           )}
           {reordering && <p className="faint">Drag a handle, or focus it and use Up/Down.</p>}
-          <ul className="list codex-accounts-list">
+          <span className="sr-only" role="status" aria-live="polite">
+            {drag.announcement}
+          </span>
+          <ul ref={listRef} className="list codex-accounts-list">
             {row(state.defaultAccount ?? null, true)}
             {rows.map((a) => row(a))}
           </ul>

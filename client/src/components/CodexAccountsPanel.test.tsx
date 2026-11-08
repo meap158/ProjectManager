@@ -166,6 +166,11 @@ describe('CodexAccountsPanel (PM-164)', () => {
         (el) => el.textContent,
       );
     expect(names()).toEqual(['Default Codex account', 'Personal', 'Work Pro']);
+    // The move is announced, and the moved row settles with a highlight (PM-529).
+    expect(screen.getByText('Moved Personal to position 1 of 2')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Reorder Personal' }).closest('li')!.className,
+    ).toContain('is-settled');
     // Auto-switch breaks ties by this order, so the server gets it too.
     await waitFor(() =>
       expect(api.setCodexAccountOrder).toHaveBeenCalledWith(reordered.accounts.map((a) => a.id)),
