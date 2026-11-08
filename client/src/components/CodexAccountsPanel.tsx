@@ -10,7 +10,7 @@ import { InfoIcon, ProviderIcon } from './icons';
 import './project-agents.css';
 import { UsageLimits } from './UsageLimits';
 import { serialPoll } from '../lib/serialPoll';
-import { useReorderDrag, useReorderSlide } from '../lib/reorderMotion';
+import { useReorder } from '../lib/reorderMotion';
 import { useViewPreference } from '../useViewPreference';
 
 export function AccountActionIcon({
@@ -71,7 +71,6 @@ export function CodexAccountsPanel({
   const [refreshingUsage, setRefreshingUsage] = useState(false);
   const [reordering, setReordering] = useState(false);
   // Reorder motion (PM-529): displaced rows slide, the dragged row lifts, the dropped one settles.
-  const drag = useReorderDrag();
   const listRef = useRef<HTMLUListElement>(null);
   const [order, setOrder] = useViewPreference<string[]>(
     `pm.accounts.order.${providerId}`,
@@ -94,7 +93,7 @@ export function CodexAccountsPanel({
     const moved = orderedAccounts.find((a) => a.id === id);
     if (moved) drag.announce(moved.name, to + 1, ids.length);
   };
-  useReorderSlide(listRef, orderedAccounts.map((a) => a.id).join(','));
+  const drag = useReorder(listRef, orderedAccounts.map((a) => a.id).join(','));
   const [showAdd, setShowAdd] = useState(false);
   const [importName, setImportName] = useState('');
   const [importJson, setImportJson] = useState('');
@@ -684,19 +683,14 @@ export function CodexAccountsPanel({
                         e.preventDefault();
                         e.currentTarget.focus();
                         e.currentTarget.setPointerCapture(e.pointerId);
-                        drag.lift(acc.id);
+                        drag.lift(acc.id, e.clientY, e.currentTarget.closest('li'));
                       }}
                       onPointerMove={(e) => {
                         if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-                        const target = document
-                          .elementFromPoint(e.clientX, e.clientY)
-                          ?.closest('[data-account-id]')
-                          ?.getAttribute('data-account-id');
-                        if (target && target !== acc.id) {
-                          const from = orderedAccounts.findIndex((a) => a.id === acc.id),
-                            to = orderedAccounts.findIndex((a) => a.id === target);
-                          moveAccount(acc.id, to - from);
-                        }
+                        // Position from the layout, not the row under the pointer (PM-532).
+                        const to = drag.track(e.clientY);
+                        const from = orderedAccounts.findIndex((a) => a.id === acc.id);
+                        if (to >= 0 && to !== from) moveAccount(acc.id, to - from);
                       }}
                       onPointerUp={(e) => {
                         if (e.currentTarget.hasPointerCapture(e.pointerId))

@@ -5232,10 +5232,10 @@ span.path-link:hover .path-icon {
 .codex-account-row {
   position: relative;
   border-radius: var(--radius);
+  /* Never transition transform: the lifted row follows the pointer through it (PM-532). */
   transition:
     box-shadow 140ms ease,
-    background 140ms ease,
-    transform 140ms ease;
+    background 140ms ease;
 }
 .codex-account-row.is-reordering {
   z-index: 2;
@@ -5243,7 +5243,15 @@ span.path-link:hover .path-icon {
   box-shadow:
     0 0 0 1px var(--accent),
     var(--shadow-lg);
-  transform: scale(1.01);
+  will-change: transform;
+}
+/* The list is its rows' offsetParent, so reorder measures are relative to it (PM-532). */
+.codex-accounts-list {
+  position: relative;
+}
+/* The handle sits in the middle of its row, however tall the row's usage lines make it. */
+.codex-account-row > .account-drag-handle {
+  align-self: center;
 }
 .codex-account-row.is-reordering .account-drag-handle,
 body.is-reordering-rows,
@@ -5259,9 +5267,6 @@ body.is-reordering-rows {
 @media (prefers-reduced-motion: reduce) {
   .codex-account-row {
     transition: none;
-  }
-  .codex-account-row.is-reordering {
-    transform: none;
   }
 }
 .antigravity-account-list {

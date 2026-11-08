@@ -6,7 +6,7 @@ import { useViewPreference } from '../useViewPreference';
 import { AccountActionIcon } from './CodexAccountsPanel';
 import { InfoIcon, ProviderIcon } from './icons';
 import { UsageLimits } from './UsageLimits';
-import { useReorderDrag, useReorderSlide } from '../lib/reorderMotion';
+import { useReorder } from '../lib/reorderMotion';
 import { ConfirmDelete } from './ConfirmDelete';
 
 function AccountToolbarAction({
@@ -134,8 +134,7 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
   );
   // Reorder motion (PM-529): displaced rows slide, the dragged row lifts, the dropped one settles.
   const listRef = useRef<HTMLUListElement>(null);
-  const drag = useReorderDrag();
-  useReorderSlide(listRef, rows.map((a) => a.id).join(','));
+  const drag = useReorder(listRef, rows.map((a) => a.id).join(','));
   function move(id: string, target: number) {
     const ids = rows.map((a) => a.id),
       from = ids.indexOf(id);
@@ -211,19 +210,13 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
               e.preventDefault();
               e.currentTarget.focus();
               e.currentTarget.setPointerCapture(e.pointerId);
-              drag.lift(id);
+              drag.lift(id, e.clientY, e.currentTarget.closest('li'));
             }}
             onPointerMove={(e) => {
               if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-              const target = document
-                .elementFromPoint(e.clientX, e.clientY)
-                ?.closest('[data-account-id]')
-                ?.getAttribute('data-account-id');
-              if (target && target !== id)
-                move(
-                  id,
-                  rows.findIndex((x) => x.id === target),
-                );
+              // Position from the layout, not the row under the pointer (PM-532): no jitter.
+              const to = drag.track(e.clientY);
+              if (to >= 0 && to !== rows.findIndex((x) => x.id === id)) move(id, to);
             }}
             onPointerUp={(e) => {
               if (e.currentTarget.hasPointerCapture(e.pointerId))
