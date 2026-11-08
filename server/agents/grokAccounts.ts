@@ -89,11 +89,14 @@ export function parseGrokAuth(raw: string) {
         Math.abs(claims.exp) < 8e12
           ? new Date(claims.exp * 1000).toISOString()
           : null);
+      const refreshToken = (e as Record<string, unknown>).refresh_token;
       return {
         id,
         email,
         token: e.key,
         expiry,
+        /** A refresh token the CLI can renew an expired access token with (PM-523). */
+        renewable: typeof refreshToken === 'string' && refreshToken.length > 0,
         raw,
         fingerprint: createHash('sha256').update(raw).digest('hex'),
       };
@@ -202,7 +205,9 @@ export class GrokAccounts {
       usageStatus: 'not_loaded',
       limits: null,
     };
-    this.saveRows([...rows.filter((a) => a.id !== row.id), row]);
+    // A saved account keeps its place in the owner's order (the active one is re-saved as the
+    // CLI renews its tokens, PM-523); a new one goes last.
+    this.saveRows(previous ? rows.map((a) => (a.id === row.id ? row : a)) : [...rows, row]);
     return row;
   }
   private writeEncrypted(file: string, raw: string) {
@@ -257,10 +262,31 @@ export class GrokAccounts {
         : valid?.usageStatus === 'fresh' && !usageIsFresh(valid.usage.updatedAt)
           ? 'stale'
           : (valid?.usageStatus ?? 'not_loaded'),
+      ...(expired && auth.renewable ? { renewable: true } : {}),
     };
+  }
+  /**
+   * Keeps the saved copy of the active account in step with the CLI (PM-523). Grok renews its
+   * access and refresh tokens while an account is in use; the saved copy used to keep the tokens
+   * from when it was saved, so a later `grok login` to another account replaced the newer ones
+   * and left the saved account unusable.
+   */
+  private syncActive(current: ReturnType<typeof parseGrokAuth> | null) {
+    if (!current || this.busy || !this.rows().some((row) => row.id === current.id)) return;
+    try {
+      if (this.decrypt(current.id) === current.raw) return;
+    } catch {
+      // An unreadable saved copy is replaced by the live login below.
+    }
+    try {
+      this.snapshot(current.raw);
+    } catch (error) {
+      console.error('[grok-accounts] keeping the saved login current:', (error as Error).message);
+    }
   }
   state(refreshStale = false): NativeAccountsState {
     const current = this.current();
+    this.syncActive(current);
     const rows = this.rows();
     const accounts = rows.map((row) => {
       try {

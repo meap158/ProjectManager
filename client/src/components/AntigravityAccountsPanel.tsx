@@ -154,15 +154,17 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
         <span className="codex-account-usage-status faint">
           {busy
             ? 'Updating...'
-            : a?.usageStatus === 'expired'
-              ? `Login expired: sign in with ${isGrok ? 'grok' : 'agy'}, then save the login again`
-              : a?.usageStatus === 'unavailable'
-                ? 'Usage unavailable; try refreshing later'
-                : a?.usageStatus === 'stale'
-                  ? 'Usage may be out of date; refreshing'
-                  : a?.usage.updatedAt
-                    ? `Usage checked ${new Date(a.usage.updatedAt).toLocaleString()}`
-                    : 'Usage not refreshed'}
+            : a?.usageStatus === 'expired' && a.renewable
+              ? 'Access token expired; Grok renews it from the saved login when you switch to this account'
+              : a?.usageStatus === 'expired'
+                ? `Login expired: sign in with ${isGrok ? 'grok' : 'agy'}, then save the login again`
+                : a?.usageStatus === 'unavailable'
+                  ? 'Usage unavailable; try refreshing later'
+                  : a?.usageStatus === 'stale'
+                    ? 'Usage may be out of date; refreshing'
+                    : a?.usage.updatedAt
+                      ? `Usage checked ${new Date(a.usage.updatedAt).toLocaleString()}`
+                      : 'Usage not refreshed'}
         </span>
         {(a?.limits || windows.length > 0) && (
           <UsageLimits
@@ -252,12 +254,17 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
         </span>
         <span className="actions codex-account-actions">
           {a?.active && <span className="badge badge-done">active</span>}
-          <AccountToolbarAction
-            kind="refresh"
-            label={`Refresh usage for ${isDefault ? 'default account' : a!.name}`}
+          {/* An icon, as in the Claude and Codex switchers; the label is its name and tooltip. */}
+          <button
+            type="button"
+            className="btn btn-sm"
             disabled={busy}
+            aria-label={`Refresh usage for ${isDefault ? 'default account' : a!.name}`}
+            title={`Refresh usage for ${isDefault ? 'default account' : a!.name}`}
             onClick={() => void act(() => methods.refreshOne(id))}
-          />
+          >
+            <AccountActionIcon action="refresh" />
+          </button>
           {!isDefault && (
             <>
               {!a!.active && (

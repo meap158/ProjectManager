@@ -240,3 +240,31 @@ it('starts with unknown usage after restart rather than trusting stale persisted
     false,
   );
 });
+it('keeps the active saved login current as the CLI renews it, so a later login elsewhere loses nothing (PM-523)', async () => {
+  const { file, service } = setup();
+  writeFileSync(file, auth('b@example.com'));
+  await service.saveCurrent();
+  writeFileSync(file, auth('a@example.com', 'access-a-1'));
+  await service.saveCurrent();
+  const order = service.state().accounts.map((a) => a.email);
+  // The CLI renews account a's tokens while it is in use.
+  writeFileSync(file, auth('a@example.com', 'access-a-2'));
+  service.state();
+  // Then the owner signs in to account b with the CLI: a's newest tokens were already saved.
+  writeFileSync(file, auth('b@example.com'));
+  const a = service.state().accounts.find((x) => x.email === 'a@example.com')!;
+  await service.switch(a.id);
+  expect(JSON.parse(readFileSync(file, 'utf8'))['https://auth.x.ai'].key).toBe('access-a-2');
+  // Re-saving keeps the owner's order.
+  expect(service.state().accounts.map((x) => x.email)).toEqual(order);
+});
+it('marks an expired access token with a refresh token as renewable, not lost (PM-523)', async () => {
+  const { file, service } = setup();
+  writeFileSync(
+    file,
+    auth('a@example.com', 'old', 'team-a', 'https://auth.x.ai', '2020-01-01T00:00:00Z'),
+  );
+  const account = service.state().defaultAccount!;
+  expect(account.usageStatus).toBe('expired');
+  expect(account.renewable).toBe(true);
+});

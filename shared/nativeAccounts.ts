@@ -10,6 +10,11 @@ export interface NativeAccount {
   usage: { fiveHour: number | null; weekly: number | null; updatedAt: string | null };
   limits?: ProviderLimits | null;
   usageStatus?: 'fresh' | 'stale' | 'expired' | 'unavailable' | 'not_loaded';
+  /**
+   * Grok only (PM-523): the access token has expired but the saved login carries a refresh
+   * token, so the CLI renews it when this account is switched in.
+   */
+  renewable?: boolean;
 }
 export interface NativeAccountsState {
   available: boolean;
