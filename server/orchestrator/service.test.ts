@@ -262,6 +262,46 @@ describe('orchestrator service', () => {
       db.close();
     }
   });
+  it('scopes "all projects except" as all minus the excluded, new projects included (PM-528)', () => {
+    const db = openDb(':memory:');
+    const add = (id: number) =>
+      db
+        .prepare('INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, ?)')
+        .run(id, `P${id}`, path.join(tmp, `p${id}`), new Date().toISOString());
+    add(1);
+    add(2);
+    add(3);
+    const service = new OrchestratorService(db, {} as AgentSupervisor, null);
+    const saved = service.save({
+      name: 'Most',
+      enabled: false,
+      strategy: 'autonomous',
+      projectIds: [1, 3], // an expanded list sent back by the form
+      excludedProjectIds: [2],
+      providers: ['codex'],
+      maxWorkers: 2,
+      maxWorkersPerProject: 1,
+      maxWorkersPerProvider: 1,
+      reservePercent: 10,
+      allowUnknownQuota: false,
+      quotaMaxAgeMs: 600000,
+    } as never);
+    expect(service.state().instances[0]!.projectIds).toEqual([1, 3]);
+    // Stored as "all except", never as the expanded list.
+    const raw = JSON.parse(
+      (
+        db.prepare("SELECT value FROM settings WHERE key = 'master-orchestrators'").get() as {
+          value: string;
+        }
+      ).value,
+    ) as { instances: { projectIds: number[]; excludedProjectIds: number[] }[] };
+    expect(raw.instances[0]).toMatchObject({ projectIds: [], excludedProjectIds: [2] });
+    // A project added later joins on its own.
+    add(4);
+    expect(service.state().instances[0]!.projectIds).toEqual([1, 3, 4]);
+    expect(saved.id).toBeTruthy();
+    db.close();
+  });
   it('does not enqueue recurring ticks while an earlier tick is pending', async () => {
     vi.useFakeTimers();
     const db = openDb(':memory:');

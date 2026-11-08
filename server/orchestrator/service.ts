@@ -11,6 +11,7 @@ import {
   listCardsInFlight,
   cardKey,
   scopeFolders,
+  listProjectFolders,
 } from '../store.js';
 import { resourceBlock } from './resources.js';
 import { providerStatuses } from '../agents/providers.js';
@@ -99,7 +100,34 @@ export class OrchestratorService {
         byId: new Map(instances.map((instance) => [instance.id, instance])),
       };
     }
-    return this.policyCache.byId.get(id);
+    const instance = this.policyCache.byId.get(id);
+    return instance && this.withScope(instance);
+  }
+
+  /**
+   * "All projects except some" (PM-528) as every reader expects it: projectIds listing all
+   * projects but the excluded ones, worked out on each read so projects added later join. An
+   * exclusion that leaves nothing gives a scope no project matches, never "all".
+   */
+  private withScope(instance: OrchestratorConfig): OrchestratorConfig {
+    const excluded = instance.excludedProjectIds ?? [];
+    if (instance.projectIds.length || !excluded.length) return instance;
+    const ids = listProjectFolders(this.db)
+      .map((p) => p.id)
+      .filter((id) => !excluded.includes(id));
+    return { ...instance, projectIds: ids.length ? ids : [-1] };
+  }
+
+  /** Saves the state with "all except" scopes stored as such, never as the expanded list. */
+  private persist(state: OrchestratorState) {
+    const { status: _status, ...rest } = state;
+    void _status;
+    setSetting(this.db, KEY, {
+      ...rest,
+      instances: state.instances.map((i) =>
+        i.excludedProjectIds?.length ? { ...i, projectIds: [] } : i,
+      ),
+    });
   }
 
   readonly sessionSupervision: SessionSupervision;
@@ -127,6 +155,7 @@ export class OrchestratorService {
     const saved = getSetting<OrchestratorState>(this.db, KEY) ?? { instances: [], events: [] };
     return {
       ...saved,
+      instances: saved.instances.map((instance) => this.withScope(instance)),
       status: {
         executing: this.executing,
         lastTickAt: this.lastTickAt,
@@ -409,7 +438,7 @@ export class OrchestratorService {
     const index = state.instances.findIndex((i) => i.id === instance.id);
     if (index < 0) state.instances.push(instance);
     else state.instances[index] = instance;
-    setSetting(this.db, KEY, state);
+    this.persist(state);
     return instance;
   }
   clearEvents(): void {
@@ -417,7 +446,7 @@ export class OrchestratorService {
     state.events = [];
     this.db.prepare("DELETE FROM settings WHERE key LIKE 'orchestrator-observations:%'").run();
     this.observationCache.clear();
-    setSetting(this.db, KEY, state);
+    this.persist(state);
   }
   delete(id: string): boolean {
     const state = this.state();
@@ -426,7 +455,7 @@ export class OrchestratorService {
     state.instances.splice(index, 1);
     this.db.prepare('DELETE FROM settings WHERE key = ?').run(`orchestrator-observations:${id}`);
     this.observationCache.delete(id);
-    setSetting(this.db, KEY, state);
+    this.persist(state);
     return true;
   }
   pruneAttention(
@@ -568,7 +597,7 @@ export class OrchestratorService {
           setSetting(this.db, `orchestrator-observations:${id}`, snapshot.values);
       if (state) {
         if (state.events.length > 500) state.events = state.events.slice(-500);
-        setSetting(this.db, KEY, state);
+        this.persist(state);
       }
       this.db.exec('RELEASE orchestrator_observations');
       for (const [id, snapshot] of observations)

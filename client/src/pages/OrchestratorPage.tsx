@@ -100,6 +100,23 @@ export function OrchestratorPage() {
   // Collapsed orchestrators and panels (PM-90), remembered in this browser.
   const { isCollapsed, toggle } = useCollapsed('pm.orchestrator.collapsed');
   const [draft, setDraft] = useState<Omit<OrchestratorConfig, 'id'> & { id?: string }>(defaults);
+  /**
+   * How the draft's scope is chosen (PM-528): every project, every project but some (new ones
+   * join), or only the listed ones. Set from the orchestrator when the form opens.
+   */
+  const [scopeMode, setScopeMode] = useState<'all' | 'except' | 'only'>('all');
+  /** Opens the form on an orchestrator, or on a new one, with its scope mode (PM-528). */
+  const openDraft = (next: Omit<OrchestratorConfig, 'id'> & { id?: string }) => {
+    const excluded = next.excludedProjectIds?.length ?? 0;
+    // An "all except" scope arrives expanded; edit it as chosen.
+    setDraft(excluded ? { ...next, projectIds: [] } : next);
+    setScopeMode(excluded ? 'except' : next.projectIds.length ? 'only' : 'all');
+  };
+  /** The projects in the draft's scope, for Serve first. */
+  const draftScope = (id: number) =>
+    scopeMode === 'except'
+      ? !(draft.excludedProjectIds ?? []).includes(id)
+      : !draft.projectIds.length || draft.projectIds.includes(id);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
   const [refreshWarning, setRefreshWarning] = useState('');
@@ -356,7 +373,7 @@ export function OrchestratorPage() {
                 type="button"
                 className="btn btn-sm btn-primary"
                 onClick={() => {
-                  setDraft(defaults);
+                  openDraft(defaults);
                   setShowForm(true);
                 }}
               >
@@ -411,11 +428,13 @@ export function OrchestratorPage() {
                         : 'Running'
                       : 'Paused'}
                     {' · '}
-                    {item.projectIds.length === 1
-                      ? '1 project'
-                      : item.projectIds.length
-                        ? `${item.projectIds.length} projects`
-                        : 'All projects'}
+                    {item.excludedProjectIds?.length
+                      ? `All but ${item.excludedProjectIds.length} project${item.excludedProjectIds.length === 1 ? '' : 's'}`
+                      : item.projectIds.length === 1
+                        ? '1 project'
+                        : item.projectIds.length
+                          ? `${item.projectIds.length} projects`
+                          : 'All projects'}
                   </span>
                 </button>
               ))}
@@ -429,11 +448,15 @@ export function OrchestratorPage() {
                     : projects;
                   const scopedProjectIds = new Set(scopedProjects.map((p) => p.id));
 
-                  const scopeNames = instance.projectIds.length
-                    ? instance.projectIds
+                  const scopeNames = instance.excludedProjectIds?.length
+                    ? `All projects except ${instance.excludedProjectIds
                         .map((id) => projects.find((p) => p.id === id)?.name ?? `Project ${id}`)
-                        .join(', ')
-                    : 'All projects';
+                        .join(', ')}`
+                    : instance.projectIds.length
+                      ? instance.projectIds
+                          .map((id) => projects.find((p) => p.id === id)?.name ?? `Project ${id}`)
+                          .join(', ')
+                      : 'All projects';
                   const providerNames = instance.providers
                     .map((id) => PROVIDER_LABELS[id] ?? id)
                     .join(', ');
@@ -585,7 +608,7 @@ export function OrchestratorPage() {
                             className="btn btn-sm"
                             disabled={busy}
                             onClick={() => {
-                              setDraft(instance);
+                              openDraft(instance);
                               setShowForm(true);
                             }}
                           >
@@ -1465,7 +1488,19 @@ export function OrchestratorPage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 void perform(async () => {
-                  await api.saveOrchestrator(draft);
+                  // The scope as the chosen mode means it (PM-528).
+                  const { excludedProjectIds: _excluded, ...rest } = draft;
+                  void _excluded;
+                  const excluded = (draft.excludedProjectIds ?? []).filter((id) =>
+                    projects.some((p) => p.id === id),
+                  );
+                  await api.saveOrchestrator(
+                    scopeMode === 'except' && excluded.length
+                      ? { ...rest, projectIds: [], excludedProjectIds: excluded }
+                      : scopeMode === 'all' || scopeMode === 'except'
+                        ? { ...rest, projectIds: [] }
+                        : rest,
+                  );
                   setDraft(defaults);
                   setShowForm(false);
                 });
@@ -1488,18 +1523,55 @@ export function OrchestratorPage() {
                     Project scope
                     <Dropdown
                       label="Project scope"
-                      value={0}
-                      onChange={() => {}}
-                      multiple={{
-                        values: draft.projectIds,
-                        allValue: 0,
-                        onChange: (projectIds) => setDraft({ ...draft, projectIds }),
-                      }}
+                      value={scopeMode}
+                      onChange={(mode) => setScopeMode(mode)}
                       options={[
-                        { value: 0, label: 'All projects' },
-                        ...projects.map((p) => ({ value: p.id, label: p.name })),
+                        { value: 'all', label: 'All projects', sub: 'Every project, new ones too' },
+                        {
+                          value: 'except',
+                          label: 'All projects except…',
+                          sub: 'Every project but the ones you leave out; new ones join',
+                        },
+                        {
+                          value: 'only',
+                          label: 'Only these projects',
+                          sub: 'Just the ones you pick',
+                        },
                       ]}
                     />
+                    {scopeMode === 'except' && (
+                      <Dropdown
+                        label="Leave out"
+                        value={0}
+                        onChange={() => {}}
+                        multiple={{
+                          values: draft.excludedProjectIds ?? [],
+                          allValue: 0,
+                          onChange: (excludedProjectIds) =>
+                            setDraft({ ...draft, excludedProjectIds }),
+                        }}
+                        options={[
+                          { value: 0, label: 'None left out' },
+                          ...projects.map((p) => ({ value: p.id, label: p.name })),
+                        ]}
+                      />
+                    )}
+                    {scopeMode === 'only' && (
+                      <Dropdown
+                        label="Projects"
+                        value={0}
+                        onChange={() => {}}
+                        multiple={{
+                          values: draft.projectIds,
+                          allValue: 0,
+                          onChange: (projectIds) => setDraft({ ...draft, projectIds }),
+                        }}
+                        options={[
+                          { value: 0, label: 'None picked (all projects)' },
+                          ...projects.map((p) => ({ value: p.id, label: p.name })),
+                        ]}
+                      />
+                    )}
                   </label>
                   <label>
                     Serve first
@@ -1508,9 +1580,7 @@ export function OrchestratorPage() {
                       value={0}
                       onChange={() => {}}
                       multiple={{
-                        values: (draft.priorityProjectIds ?? []).filter(
-                          (id) => !draft.projectIds.length || draft.projectIds.includes(id),
-                        ),
+                        values: (draft.priorityProjectIds ?? []).filter(draftScope),
                         allValue: 0,
                         onChange: (priorityProjectIds) =>
                           setDraft({ ...draft, priorityProjectIds }),
@@ -1518,9 +1588,7 @@ export function OrchestratorPage() {
                       options={[
                         { value: 0, label: 'No priority (take turns)' },
                         ...projects
-                          .filter(
-                            (p) => !draft.projectIds.length || draft.projectIds.includes(p.id),
-                          )
+                          .filter((p) => draftScope(p.id))
                           .map((p) => ({ value: p.id, label: p.name })),
                       ]}
                     />

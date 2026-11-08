@@ -142,6 +142,8 @@ it('creates a paused orchestrator with the chosen scope and quota policy', async
   await screen.findByText("Create an orchestrator to look after your projects' boards.");
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Project master' } });
   fireEvent.click(screen.getByRole('button', { name: 'Project scope' }));
+  fireEvent.click(screen.getByRole('button', { name: /Only these projects/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
   fireEvent.click(screen.getByRole('button', { name: 'Project one' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save orchestrator' }));
   await waitFor(() =>
@@ -152,6 +154,25 @@ it('creates a paused orchestrator with the chosen scope and quota policy', async
         projectIds: [1],
         allowUnknownQuota: false,
       }),
+    ),
+  );
+});
+it('scopes an orchestrator to all projects except chosen ones (PM-528)', async () => {
+  render(
+    <MemoryRouter>
+      <OrchestratorPage />
+    </MemoryRouter>,
+  );
+  await screen.findByText("Create an orchestrator to look after your projects' boards.");
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Most projects' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Project scope' }));
+  fireEvent.click(screen.getByRole('button', { name: /All projects except/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Leave out' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Project one' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save orchestrator' }));
+  await waitFor(() =>
+    expect(api.saveOrchestrator).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Most projects', projectIds: [], excludedProjectIds: [1] }),
     ),
   );
 });

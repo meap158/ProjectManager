@@ -32,6 +32,11 @@ export interface OrchestratorConfig {
   gitAutonomy?: boolean;
   projectIds: number[];
   /**
+   * With an empty projectIds (all projects): the projects left out (PM-528). Projects added later
+   * join automatically. The service hands every reader projectIds as all projects minus these.
+   */
+  excludedProjectIds?: number[];
+  /**
    * Projects whose work goes first (PM-430): the scheduler hands out their cards before any
    * other project's, and the chat is told to do the same. Empty or absent: fair rotation only.
    */
