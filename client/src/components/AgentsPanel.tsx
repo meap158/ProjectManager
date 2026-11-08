@@ -570,10 +570,13 @@ export function AgentsPanel({
                   )}
                   <span className="project-terminal-spacer" style={{ flex: 1 }} />
                   {/* Phones: the title gets the room; the actions open from ⋯ in a row below,
-                      except Continue, which stays beside ⋯ in both views (PM-584). */}
-                  <span className="pane-continue-phone">
-                    <SessionContinue session={active} onError={setError} iconOnly />
-                  </span>
+                      except Continue in the CLI view, which stays beside ⋯. In the Chat view it is
+                      in the ⋯ menu, left of Restart, so the name keeps its room (PM-584). */}
+                  {sessionView.view !== 'chat' && (
+                    <span className="pane-continue-phone">
+                      <SessionContinue session={active} onError={setError} iconOnly />
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="icon-btn project-actions-toggle"

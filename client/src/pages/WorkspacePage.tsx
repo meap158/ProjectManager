@@ -876,9 +876,9 @@ function Pane({
           <ViewSwitch view={sessionView.view} onChange={sessionView.choose} />
         )}
         <span style={{ flex: 1 }} />
-        {/* Phones: Continue stays beside ⋯ rather than inside it, in the CLI and the Chat view
-            alike, so it is one tap without scrolling to the composer (PM-584). */}
-        {showContinue && (
+        {/* Phones: in the CLI view Continue stays beside ⋯; in the Chat view it moves into the ⋯
+            menu, left of Restart, so the session name keeps its room (PM-584). */}
+        {showContinue && sessionView.view !== 'chat' && (
           <span className="pane-continue-phone">
             <SessionContinue session={s} onError={onError} iconOnly />
           </span>

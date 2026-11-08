@@ -49,9 +49,13 @@ describe('session pane actions, the same in every pane', () => {
     expect(await screen.findByText('PM-12 → Review')).toBeTruthy();
   });
 
-  it('leaves image and Continue to the chat composer, and offers Start and Dispose once a task ended', () => {
+  it('keeps Continue in the chat view for phones only, left of Restart, and offers Start and Dispose once a task ended', () => {
     const { rerender } = render(<SessionPaneActions session={session()} view="chat" {...props} />);
-    expect(screen.queryByRole('button', { name: 'Continue Builder' })).toBeNull();
+    // Wide screens hide this copy (the composer has its own key); phones show it in the ⋯ menu.
+    const chatContinue = screen.getByRole('button', { name: 'Continue Builder' });
+    const menuCopy = chatContinue.closest('.session-continue-menu');
+    expect(menuCopy).toBeTruthy();
+    expect(menuCopy?.nextElementSibling?.getAttribute('aria-label')).toBe('Restart Builder');
     rerender(
       <SessionPaneActions
         session={session({ status: 'exited', cardId: 3, cardKey: 'PM-3', supervise: false })}

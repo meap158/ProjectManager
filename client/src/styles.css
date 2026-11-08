@@ -6550,9 +6550,11 @@ body.is-reordering-rows {
   }
 }
 
-/* Phones keep a session's Continue beside ⋯ in its pane header, not inside the ⋯ menu, in the CLI
-   and the Chat view alike (PM-584). */
-.pane-continue-phone {
+/* Phones keep a session's Continue beside ⋯ in its pane header in the CLI view. In the Chat view
+   it sits in the ⋯ menu, left of Restart, so the session name keeps its room (PM-584). */
+.pane-continue-phone,
+.session-continue-menu {
+  /* Wide screens: the Chat view's composer has its own Continue key. */
   display: none;
 }
 @media (max-width: 768px) {
@@ -6573,6 +6575,12 @@ body.is-reordering-rows {
   .pane-controls-buttons .session-continue,
   .project-terminal-actions .session-continue {
     display: none;
+  }
+  /* Chat view: Continue lives in the ⋯ menu instead (PM-584). */
+  .session-continue-menu,
+  .pane-controls-buttons .session-continue-menu .session-continue,
+  .project-terminal-actions .session-continue-menu .session-continue {
+    display: inline-flex;
   }
 }
 /* Compact session shortcuts retain labels for assistive technology and touch targets. */

@@ -86,9 +86,16 @@ export function SessionPaneActions({
       {showProgress && s.terminal === 'pty' && (
         <SessionProgress session={s} onChanged={onChanged} />
       )}
-      {showContinue && view !== 'chat' && (
-        <SessionContinue session={s} onError={onError} iconOnly />
-      )}
+      {showContinue &&
+        (view !== 'chat' ? (
+          <SessionContinue session={s} onError={onError} iconOnly />
+        ) : (
+          // Chat view: the composer has a Continue key on wide screens; phones get this copy in
+          // the ⋯ menu, left of Restart, instead of one in the crowded header (PM-584).
+          <span className="session-continue-menu">
+            <SessionContinue session={s} onError={onError} iconOnly />
+          </span>
+        ))}
       {running ? (
         <>
           <button
