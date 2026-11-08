@@ -210,6 +210,8 @@ it('asks the chat to follow up on one goal now (PM-456)', async () => {
   fireEvent.click(button);
   await waitFor(() => expect(api.followUpGoal).toHaveBeenCalledWith('o', 1));
   expect(await screen.findByRole('status')).toBeTruthy();
+  // The button acknowledges the click in place for a moment (PM-530).
+  expect(await screen.findByRole('button', { name: /Followed up/ })).toBeTruthy();
 });
 
 it('shows the acceptance checklist with its evidence (PM-471)', async () => {

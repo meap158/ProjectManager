@@ -200,9 +200,17 @@ export function OrchestratorGoals({
     const timer = setTimeout(() => setNotice(''), 6000);
     return () => clearTimeout(timer);
   }, [notice]);
+  /** The goal whose Follow up just went through: its button shows a check briefly (PM-530). */
+  const [followedUp, setFollowedUp] = useState<number | null>(null);
+  useEffect(() => {
+    if (followedUp === null) return;
+    const timer = setTimeout(() => setFollowedUp(null), 2000);
+    return () => clearTimeout(timer);
+  }, [followedUp]);
   const followUp = (goal: OrchestratorGoal) =>
     void act(async () => {
       await api.followUpGoal(instance.id, goal.id);
+      setFollowedUp(goal.id);
       setNotice(
         `Asked the chat to follow up on "${goal.title}". Its report lands in the chat and on the goal.`,
       );
@@ -347,8 +355,17 @@ export function OrchestratorGoals({
                   disabled={busy}
                   title="Ask the chat now to check every linked card and its worker, act on them and report the full progress"
                   onClick={() => followUp(goal)}
+                  data-done={followedUp === goal.id || undefined}
                 >
-                  <PlayIcon size={12} /> Follow up
+                  {followedUp === goal.id ? (
+                    <>
+                      <CheckIcon size={12} /> Followed up
+                    </>
+                  ) : (
+                    <>
+                      <PlayIcon size={12} /> Follow up
+                    </>
+                  )}
                 </button>
               )}
               {goal.status === 'active' ? (

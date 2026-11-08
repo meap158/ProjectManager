@@ -678,6 +678,24 @@ dialog.confirm-dialog.goal-dialog {
   height: 22px;
   padding: 0 7px;
 }
+/* Follow up just went through (PM-530): a green check for two seconds, with a short fade in. */
+.orchestrator-goal-actions .btn[data-done] {
+  border-color: var(--good);
+  background: color-mix(in srgb, var(--good) 22%, var(--surface));
+  color: var(--text);
+  animation: goal-followed-up 180ms ease-out;
+}
+@keyframes goal-followed-up {
+  from {
+    transform: scale(0.96);
+    opacity: 0.6;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orchestrator-goal-actions .btn[data-done] {
+    animation: none;
+  }
+}
 .orchestrator-goals-notice {
   margin: 0;
   padding: 6px 10px;
