@@ -83,7 +83,10 @@ it is reached.
 **Messages (PM-432).** `server/orchestrator/workerMessages.ts` keeps them per orchestrator in
 settings (`orchestrator-messages:<id>`, last 300), so a restart neither loses nor repeats one. The
 sender of `message_orchestrator` is the session its board grant belongs to, never an argument; it
-is refused when no enabled orchestrator owns the session or that orchestrator is Watch only. Loop
+reaches, in order, the orchestrator that owns or supervises the session, the one that last wrote
+to it (`orchestrator-worker-contact:<sessionId>`, set by `message_worker`, `reply_worker` and
+`assign_card`), then the one scoped most narrowly to its project, running ones before paused ones
+(PM-572). It is refused only when no orchestrator covers the project, or the only one is Watch only. Loop
 guards: a session may send 6 an hour, only a question asks for a reply, an orchestrator may queue 3
 undelivered messages per session, and the chat is woken at most 6 times an hour, 2 minutes apart.
 `WorkerMessenger` (a 15-second tick) types a waiting reply into its session only when that session

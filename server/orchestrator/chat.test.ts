@@ -114,9 +114,10 @@ function setup(overrides: Partial<OrchestratorConfig> = {}, attachmentsRoot: str
     wake: vi.fn(),
     assertCanEnroll: vi.fn(),
   };
+  const others: OrchestratorConfig[] = [];
   const service = {
     sessionSupervision,
-    state: () => ({ instances: [instance], events: [] }),
+    state: () => ({ instances: [instance, ...others], events: [] }),
     situation: () => ({ generatedAt: '', needsAttention: [], beingWorkedOn: [] }),
     record,
   } as unknown as OrchestratorService;
@@ -144,6 +145,7 @@ function setup(overrides: Partial<OrchestratorConfig> = {}, attachmentsRoot: str
     supervisor,
     record,
     instance,
+    others,
     sessionSupervision,
   };
 }
@@ -1226,11 +1228,12 @@ describe('worker messages and goals (PM-432, PM-433)', () => {
       ...over,
     }) as AgentSession;
 
-  it('takes a message from a session it owns, refuses others, and queues the reply', async () => {
-    const { chat, call, sessions, db, mine } = setup();
-    sessions.push(worker({ cardId: mine.id }));
-    expect(() => chat.fromWorker(7, { kind: 'question', text: 'Which DB?' })).toThrow(
-      /No orchestrator looks after this session/,
+  it('takes a message from a session in its projects, refuses others, and queues the reply', async () => {
+    const { chat, call, sessions, db, mine, b } = setup();
+    sessions.push(worker({ cardId: mine.id }), worker({ id: 8, projectId: b, cardId: null }));
+    // Outside every orchestrator's scope there is nobody to write to.
+    expect(() => chat.fromWorker(8, { kind: 'question', text: 'Anyone?' })).toThrow(
+      /No orchestrator looks after this project/,
     );
     const { recordOwnedSession } = await import('./ownedWorkers.js');
     recordOwnedSession(db, 'master-1', 7, mine.id);
@@ -1253,6 +1256,41 @@ describe('worker messages and goals (PM-432, PM-433)', () => {
     for (let i = 1; i < 6; i++) chat.fromWorker(7, { kind: 'status', text: `step ${i}` });
     expect(() => chat.fromWorker(7, { kind: 'status', text: 'too many' })).toThrow(/this hour/);
     db.close();
+  });
+
+  it('lets any session in its projects write back, not only one it handed a card (PM-572)', async () => {
+    const t = setup();
+    // An idle session with no card, which the orchestrator only messaged.
+    t.sessions.push(worker({ cardId: null, cardKey: null, tailState: 'idle' }));
+    await t.call('message_worker', { sessionId: 7, text: 'Take PM-1 next' });
+    const sent = t.chat.fromWorker(7, { kind: 'question', text: 'Which branch?' }) as {
+      orchestrator: string;
+    };
+    expect(sent.orchestrator).toBe('Games');
+    t.db.close();
+  });
+
+  it('routes a worker message to its owner, then the last writer, then the narrowest scope (PM-572)', async () => {
+    const t = setup();
+    const broad = { ...t.instance, id: 'broad', name: 'Everything', projectIds: [] };
+    const paused = { ...t.instance, id: 'paused', name: 'Paused', enabled: false };
+    const watcher = { ...t.instance, id: 'watch', name: 'Watcher', strategy: 'observe' as const };
+    t.others.push(broad, paused, watcher);
+    t.sessions.push(worker({ cardId: null, cardKey: null, tailState: 'idle' }));
+    const to = () =>
+      (t.chat.fromWorker(7, { kind: 'status', text: 'x' }) as { orchestrator: string })
+        .orchestrator;
+    // Nobody wrote to it: the running orchestrator scoped most narrowly to its project.
+    expect(to()).toBe('Games');
+    // The broad one wrote to it last, so its answers go there.
+    await t.chat.call('broad', 5, 'message_worker', { sessionId: 7, text: 'Hi' });
+    expect(to()).toBe('Everything');
+    // An orchestrator that handed it a card owns it and comes first.
+    const { recordOwnedSession } = await import('./ownedWorkers.js');
+    t.sessions[0]!.cardId = t.mine.id;
+    recordOwnedSession(t.db, 'master-1', 7, t.mine.id);
+    expect(to()).toBe('Games');
+    t.db.close();
   });
 
   it('queues a message for a busy session instead of refusing it, when asked', async () => {

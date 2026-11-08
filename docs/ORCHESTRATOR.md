@@ -186,8 +186,9 @@ through. The briefing marks those projects "(priority)" with a rule to hand out,
 plan their cards first, and `overview` marks them with `priority: true` and lists their To do cards
 first. Empty means fair rotation only.
 
-**Worker messages and goals (PM-432, PM-433).** Sessions an orchestrator owns can write to it
-(`message_orchestrator`: question, handoff, blocked, status), and its chat answers with
+**Worker messages and goals (PM-432, PM-433).** Messages work both ways for every orchestrator
+scoped to a session's project (PM-572): the chat writes with `message_worker`, and the session
+writes back with `message_orchestrator` (question, handoff, blocked, status), and its chat answers with
 `reply_worker`, queues messages for busy sessions and reads answers with `worker_reply`. Goals are
 objectives the chat pursues until a checkable condition holds, brought back by the automatic check
 and shown in a Goals panel under the chat. Like an epic, a goal names its projects (none means all

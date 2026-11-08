@@ -96,6 +96,18 @@ export function addMessage(
   return full;
 }
 
+const contactKey = (sessionId: number) => `orchestrator-worker-contact:${sessionId}`;
+
+/** Remembers which orchestrator last wrote to a session, so its answers find the way back (PM-572). */
+export function noteContact(db: Db, sessionId: number, orchestratorId: string, now = new Date()) {
+  setSetting(db, contactKey(sessionId), { orchestratorId, at: now.toISOString() });
+}
+
+/** The orchestrator that last wrote to a session, if any. */
+export function lastContact(db: Db, sessionId: number): string | null {
+  return getSetting<{ orchestratorId: string }>(db, contactKey(sessionId))?.orchestratorId ?? null;
+}
+
 /** Applies a change to some of an orchestrator's messages. */
 export function updateMessages(
   db: Db,

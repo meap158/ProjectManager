@@ -64,7 +64,7 @@ export const BOARD_TOOLS = [
   {
     name: 'message_orchestrator',
     description:
-      'Write to the orchestrator that handed you your card or supervises you (PM-432): question (you need a decision or information; the answer is typed in here when you are idle), handoff (part of the work belongs to someone else, or you finished a stage), blocked (you cannot go on, and why), or status (progress worth knowing). A few an hour; routine progress goes on the card with add_note.',
+      'Write to the orchestrator that looks after this project (PM-432, PM-572): the one that handed you your card, supervises you or last wrote to you, otherwise the one scoped to this project. question (you need a decision or information; the answer is typed in here when you are idle), handoff (part of the work belongs to someone else, or you finished a stage), blocked (you cannot go on, and why), or status (progress worth knowing). A few an hour; routine progress goes on the card with add_note.',
     inputSchema: {
       ...object,
       properties: {

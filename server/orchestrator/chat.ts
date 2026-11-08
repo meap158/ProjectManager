@@ -77,7 +77,9 @@ import {
 import {
   addMessage,
   inboxFor,
+  lastContact,
   listMessages,
+  noteContact,
   QUEUED_PER_SESSION,
   sentLastHour,
   updateMessages,
@@ -1420,6 +1422,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     ).length;
     if (waiting >= QUEUED_PER_SESSION)
       fail(`Session ${s.id} already has ${waiting} messages waiting; let it catch up first`);
+    noteContact(this.db, s.id, orchestratorId);
     const message = addMessage(this.db, {
       orchestratorId,
       sessionId: s.id,
@@ -1482,12 +1485,10 @@ export class OrchestratorChat implements OrchestratorToolHost {
       .parse(args);
     const s = this.supervisor.getSession(sessionId);
     if (!s || s.orchestratorId) fail('Only worker sessions can message an orchestrator');
-    const owner = this.service
-      .state()
-      .instances.find((i) => i.enabled && ownedSessionIds(this.db, i.id, [s!]).has(s!.id));
+    const owner = this.workerOrchestrator(s!);
     if (!owner)
       fail(
-        'No orchestrator looks after this session (only one that handed you your card or supervises you does); write your note on the card instead',
+        `No orchestrator looks after ${s!.projectId ? 'this project' : 'sessions outside a project'}; write your note on the card instead`,
       );
     if (owner!.strategy === 'observe')
       fail(`The orchestrator "${owner!.name}" is Watch only; write your note on the card instead`);
@@ -1519,6 +1520,37 @@ export class OrchestratorChat implements OrchestratorToolHost {
           ? 'The answer is typed into this session when you are idle. Carry on with what you can meanwhile, or finish your turn and wait if you are blocked.'
           : 'Delivered to the orchestrator; no reply is expected.',
     };
+  }
+
+  /**
+   * The orchestrator a worker session's message_orchestrator reaches (PM-572). Messages work both
+   * ways for every orchestrator scoped to the session's project, as message_worker does, not only
+   * for one that handed the session its current card. In order: the orchestrator that owns or
+   * supervises it, the one that last wrote to it, then the one scoped most narrowly to its
+   * project. Running orchestrators come before paused ones; Watch only ones are a last resort,
+   * so the worker hears why its message cannot go through.
+   */
+  private workerOrchestrator(s: AgentSession): OrchestratorConfig | null {
+    const instances = this.service.state().instances;
+    const scoped = (i: OrchestratorConfig) =>
+      !!s.projectId && (i.projectIds.length === 0 || i.projectIds.includes(s.projectId));
+    const owners = instances.filter((i) => ownedSessionIds(this.db, i.id, [s]).has(s.id));
+    const contact = lastContact(this.db, s.id);
+    const width = (i: OrchestratorConfig) => i.projectIds.length || Number.MAX_SAFE_INTEGER;
+    const rank = (i: OrchestratorConfig) => [
+      i.strategy === 'observe' ? 1 : 0,
+      i.enabled ? 0 : 1,
+      owners.includes(i) ? 0 : 1,
+      i.id === contact ? 0 : 1,
+      width(i),
+    ];
+    const candidates = instances.filter((i) => owners.includes(i) || scoped(i));
+    candidates.sort((a, b) => {
+      const [ra, rb] = [rank(a), rank(b)];
+      for (let k = 0; k < ra.length; k++) if (ra[k] !== rb[k]) return ra[k]! - rb[k]!;
+      return 0;
+    });
+    return candidates[0] ?? null;
   }
 
   /** An Activity entry; `detail` is the full text when the message is a cut-off summary. */
@@ -2282,6 +2314,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
             : `Session ${s!.id} is working; check back later`,
         );
       this.supervisor.sendInput(s!.id, `\x1b[200~${input.text}\x1b[201~\r`, false);
+      noteContact(this.db, s!.id, orchestratorId);
       this.record(
         orchestratorId,
         'messaged',
@@ -2597,6 +2630,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
         ...(prompt ? { prompt } : {}),
       });
       recordOwnedSession(this.db, orchestratorId, s!.id, c.id);
+      noteContact(this.db, s!.id, orchestratorId);
       if (instance.superviseSessions)
         this.service.sessionSupervision.enroll(orchestratorId, s!.id, true);
       audit(c.id, 'assign_card', { sessionId: s!.id, instructions: input.instructions ?? null });
