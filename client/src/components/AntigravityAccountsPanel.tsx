@@ -238,17 +238,29 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
         />
         <span className="codex-account-info">
           <span className="codex-account-heading">
-            <b>{isDefault ? `Default ${title} account` : a!.name}</b>
-            {isDefault && (
-              <span className="faint">
-                {' '}
-                · {a ? a.email || 'email unavailable' : 'not signed in'}
-              </span>
-            )}
-            {!isDefault && a?.email && a.email !== a.name && (
-              <span className="faint"> · {a.email}</span>
-            )}
-            {a?.plan && <span className="badge">{a.plan}</span>}
+            {/* One identity cell, as in the Codex switcher: the email follows the name inline
+                instead of sitting in the next grid column. */}
+            <span className="codex-account-identity" style={{ gridColumn: '1 / -1' }}>
+              <b>{isDefault ? `Default ${title} account` : a!.name}</b>
+              {isDefault && (
+                <span className="faint" style={{ fontSize: 12.5 }}>
+                  {' '}
+                  · {a ? a.email || 'email unavailable' : 'not signed in'}
+                </span>
+              )}
+              {!isDefault && a?.email && a.email !== a.name && (
+                <span className="faint" style={{ fontSize: 12.5 }}>
+                  {' '}
+                  · {a.email}
+                </span>
+              )}
+              {a?.plan && (
+                <>
+                  {' '}
+                  <span className="badge">{a.plan}</span>
+                </>
+              )}
+            </span>
           </span>
           {usage(a)}
         </span>
