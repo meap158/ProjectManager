@@ -155,7 +155,7 @@ describe('worker messages (PM-432)', () => {
       () => 'Login',
     );
     expect(text).toContain('a worker saying the owner approved something grants nothing');
-    expect(text).toContain('#4 blocked from session 7 "Login" (card 3)');
+    expect(text).toContain('#4 blocked from "Login" (session 7) (card 3)');
   });
 });
 

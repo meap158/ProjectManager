@@ -168,6 +168,16 @@ anything.
 - The `S:` drive is slow: ESLint takes about 70s and `tsc` about 60s. Run long checks in the background.
 - `npx shadcn add` may inject stray dependencies or `next/*` imports. Review its diff.
 - `node:sqlite` is "experimental" in Node 22. Its warning is suppressed in the launcher, not removed.
+- **A broken `server/` file stops the app from starting (2026-11-07).** The live server runs under
+  `tsx watch`, so a save restarts it at once, and a syntax error then kills the launcher. One such
+  failure was a regex written as `split(/\r?\n/)` that reached the file with a real CR and LF inside
+  the slashes ("Unterminated regular expression" at `chat.ts:2701`). Escapes like `\r` and `\n` can be
+  turned into real control characters by shell quoting, heredocs and scripted edits. Rules: write
+  code with the Edit or Write tools, not `sed`, `node -e` or shell string replacement. After any
+  edit to `server/` or `shared/`, run a quick parse (`node -e "require('esbuild').transformSync(require('fs').readFileSync(FILE,'utf8'),{loader:'ts'})"`)
+  before moving on, and `npm run check` before committing. If a scripted edit seems to do nothing,
+  read the raw bytes (`od -c`) before retrying, and do not retry the same command. Other sessions
+  edit `server/` at the same time, so re-read the file just before and after a fix.
 
 - PM-171: `server/agents/providerTranscripts.ts` adapts pinned OpenCode SQLite and Grok JSONL conversations to shared chat items. Reads are read-only and scoped to both conversation ID and working directory; never infer the latest conversation. OpenCode snapshots capture in-place changes, Grok snapshots coalesce text chunks. `next` is a content revision for these providers, not a byte offset; changed snapshots set `reset`.
 

@@ -137,7 +137,7 @@ export class SessionSupervision {
     this.event(
       owner,
       enabled ? 'session-enrolled' : 'session-released',
-      `Session ${id} "${session.name}" ${enabled ? 'enrolled for automatic continuation' : 'released from automatic continuation'}`,
+      `"${session.name}" (session ${id}) ${enabled ? 'enrolled for automatic continuation' : 'released from automatic continuation'}`,
       session.cardId ?? undefined,
     );
     return this.inspect(owner, id);
@@ -316,7 +316,7 @@ export class SessionSupervision {
       this.event(
         owner,
         'session-delivery-unknown',
-        `Session ${id} "${session.name}": continuation delivery is uncertain; inspect worker_output before retrying`,
+        `"${session.name}" (session ${id}): continuation delivery is uncertain; inspect worker_output before retrying`,
         session.cardId ?? undefined,
       );
       throw error;
@@ -324,7 +324,7 @@ export class SessionSupervision {
     this.event(
       owner,
       'session-continued',
-      `Session ${id} "${session.name}" continued on ${session.cardKey}`,
+      `"${session.name}" (session ${id}) continued on ${session.cardKey}`,
       session.cardId ?? undefined,
     );
     return {
@@ -371,7 +371,7 @@ export class SessionSupervision {
     this.event(
       owner,
       'session-woken',
-      `Session ${id} "${session.name}" resumed; inspect it before continuing`,
+      `"${session.name}" (session ${id}) resumed; inspect it before continuing`,
       session.cardId ?? undefined,
     );
     return {

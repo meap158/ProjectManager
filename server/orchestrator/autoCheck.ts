@@ -135,8 +135,14 @@ export class AutoCheck {
     const checkedBoard = previous.checkedBoard ?? '';
     const triggers: string[] = [];
     for (const sessionId of previous.running)
-      if (!current.state.running.includes(sessionId))
-        triggers.push(`session ${sessionId} stopped working`);
+      if (!current.state.running.includes(sessionId)) {
+        const name = this.deps.listSessions().find((s) => s.id === sessionId)?.name;
+        triggers.push(
+          name
+            ? `"${name}" (session ${sessionId}) stopped working`
+            : `session ${sessionId} stopped working`,
+        );
+      }
     for (const cardId of current.state.review)
       if (!previous.review.includes(cardId)) triggers.push(`card ${cardId} moved to Review`);
     const boardMoved = current.board !== checkedBoard;
