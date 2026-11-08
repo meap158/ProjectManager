@@ -281,3 +281,28 @@ it('shows closed goals in a section collapsed by default, with every closed goal
   }
   vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
 });
+
+it('shows what a criterion needs from the owner, and lets the owner confirm it (PM-524)', async () => {
+  vi.mocked(api.orchestratorGoals).mockResolvedValue([
+    {
+      ...goals[0]!,
+      criteria: [
+        {
+          id: 4,
+          text: 'Owner accepts the result screen',
+          state: 'owner',
+          evidence: 'Open /play/neon on a phone and accept it',
+        },
+      ],
+    },
+  ]);
+  render(<OrchestratorGoals instance={instance} />, { wrapper: MemoryRouter });
+  expect(await screen.findByText(/Your part: Open \/play\/neon on a phone/)).toBeTruthy();
+  const confirm = screen.getByRole('button', { name: /Confirm/ });
+  await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(api.updateOrchestratorGoal).toHaveBeenCalledWith('o', 1, { confirmCriteria: [4] }),
+  );
+  vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
+});

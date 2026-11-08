@@ -104,7 +104,7 @@ export function inboxAlerts(
   for (const g of goals)
     alerts.push({
       key: `goal:${g.orchestratorId}:${g.goalId}:${g.status}:${g.updatedAt}`,
-      title: `Goal ${g.status === 'stuck' ? 'not moving' : g.status}: ${g.title}`,
+      title: `Goal ${g.status === 'stuck' ? 'not moving' : g.status === 'waiting' ? 'waiting for you' : g.status}: ${g.title}`,
       body: [g.orchestratorName, g.note].filter(Boolean).join(': ').slice(0, 200),
       path: '/orchestrators',
     });

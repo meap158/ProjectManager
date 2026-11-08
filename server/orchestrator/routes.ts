@@ -115,6 +115,8 @@ export function registerOrchestratorRoutes(
         acceptReview: z.boolean().optional(),
         /** New limits (PM-473); null removes them. */
         budget: goalBudget.nullable().optional(),
+        /** Criteria the owner confirms as passing (PM-524). */
+        confirmCriteria: z.array(z.number().int().positive()).max(12).optional(),
       })
       .strict()
       .refine(
@@ -124,7 +126,8 @@ export function registerOrchestratorRoutes(
           v.linkCards ||
           v.unlinkCards ||
           v.projectIds ||
-          v.budget !== undefined,
+          v.budget !== undefined ||
+          Boolean(v.confirmCriteria?.length),
         'Give a status, a note, cards, projects or a budget',
       );
     app.get('/orchestrators/goals/recent', (c) => c.json(chat.goalEvents()));

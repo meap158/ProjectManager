@@ -431,7 +431,20 @@ export function OrchestratorGoals({
             </p>
           )}
         </ClampedText>
-        <GoalCriteria goal={goal} />
+        <GoalCriteria
+          goal={goal}
+          busy={busy}
+          {...(!watchOnly
+            ? {
+                onConfirm: (criterionId: number) =>
+                  void act(() =>
+                    api.updateOrchestratorGoal(instance.id, goal.id, {
+                      confirmCriteria: [criterionId],
+                    }),
+                  ),
+              }
+            : {})}
+        />
         <GoalCards
           goal={goal}
           canEdit={!watchOnly}
@@ -1012,7 +1025,16 @@ function ModalShell({
  * A goal's acceptance checklist (PM-471): each criterion with its state, and its evidence and who
  * checked it on hover. Achieved needs every one passing.
  */
-function GoalCriteria({ goal }: { goal: OrchestratorGoalView }) {
+function GoalCriteria({
+  goal,
+  busy = false,
+  onConfirm,
+}: {
+  goal: OrchestratorGoalView;
+  busy?: boolean;
+  /** The owner confirms a criterion that waits for them (PM-524). */
+  onConfirm?: (criterionId: number) => void;
+}) {
   const criteria = goal.criteria ?? [];
   if (!criteria.length) return null;
   return (
@@ -1022,15 +1044,43 @@ function GoalCriteria({ goal }: { goal: OrchestratorGoalView }) {
           key={c.id}
           data-state={c.state}
           title={
-            c.evidence
-              ? `${c.state === 'passing' ? 'Passing' : 'Failing'}: ${c.evidence}${c.checkedBy ? ` (checked by ${c.checkedBy})` : ''}`
-              : 'Not checked yet'
+            c.state === 'owner'
+              ? `Waiting for you: ${c.evidence ?? ''}`
+              : c.evidence
+                ? `${c.state === 'passing' ? 'Passing' : 'Failing'}: ${c.evidence}${c.checkedBy ? ` (checked by ${c.checkedBy})` : ''}`
+                : 'Not checked yet'
           }
         >
-          <span className="orchestrator-goal-criterion-mark" aria-label={c.state}>
-            {c.state === 'passing' ? '✓' : c.state === 'failing' ? '✕' : '○'}
+          <span
+            className="orchestrator-goal-criterion-mark"
+            aria-label={c.state === 'owner' ? 'waiting for you' : c.state}
+          >
+            {c.state === 'passing'
+              ? '✓'
+              : c.state === 'failing'
+                ? '✕'
+                : c.state === 'owner'
+                  ? '⏳'
+                  : '○'}
           </span>
-          {c.text}
+          <span className="orchestrator-goal-criterion-text">
+            {c.text}
+            {/* What the owner has to do, in full: this is the one line written for them. */}
+            {c.state === 'owner' && c.evidence && (
+              <span className="orchestrator-goal-criterion-ask"> · Your part: {c.evidence}</span>
+            )}
+          </span>
+          {c.state === 'owner' && onConfirm && (
+            <button
+              type="button"
+              className="btn btn-sm orchestrator-goal-achieve"
+              disabled={busy}
+              title="Mark this criterion passing on your word"
+              onClick={() => onConfirm(c.id)}
+            >
+              <CheckIcon size={11} /> Confirm
+            </button>
+          )}
         </li>
       ))}
     </ul>

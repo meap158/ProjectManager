@@ -247,8 +247,12 @@ export interface GoalProgress {
 export interface GoalCriterion {
   id: number;
   text: string;
-  state: 'open' | 'passing' | 'failing';
-  /** What showed it passing or failing: a command and its result, a PR, a screenshot. */
+  /** owner: only the owner can satisfy it (a review, an approval, a decision), PM-524. */
+  state: 'open' | 'passing' | 'failing' | 'owner';
+  /**
+   * What showed it passing or failing: a command and its result, a PR, a screenshot. For owner,
+   * exactly what the owner needs to do.
+   */
   evidence?: string;
   checkedBy?: 'chat' | 'owner' | 'verifier';
   checkedAt?: string;
@@ -367,8 +371,11 @@ export interface GoalEvent {
   orchestratorName: string;
   goalId: number;
   title: string;
-  /** stuck: still active, but nothing brings the chat back to it (paused, checks off, chat closed). */
-  status: 'achieved' | 'blocked' | 'stuck';
+  /**
+   * stuck: still active, but nothing brings the chat back to it (paused, checks off, chat
+   * closed). waiting: everything left on its checklist needs the owner (PM-524).
+   */
+  status: 'achieved' | 'blocked' | 'stuck' | 'waiting';
   updatedAt: string;
   /** The latest progress note: the evidence, or what only the owner can do. For stuck, why. */
   note: string | null;

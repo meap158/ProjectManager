@@ -659,6 +659,25 @@ dialog.confirm-dialog.goal-dialog {
 .orchestrator-goal-criteria li[data-state='passing'] {
   color: var(--text-2);
 }
+/* Waiting for the owner (PM-524): their part in full, and a Confirm beside it. */
+.orchestrator-goal-criteria li[data-state='owner'] {
+  align-items: center;
+}
+.orchestrator-goal-criteria li[data-state='owner'] .orchestrator-goal-criterion-mark {
+  color: var(--status-review);
+}
+.orchestrator-goal-criterion-text {
+  flex: 1;
+  min-width: 0;
+}
+.orchestrator-goal-criterion-ask {
+  color: var(--status-review);
+}
+.orchestrator-goal-criteria li .btn {
+  flex: none;
+  height: 22px;
+  padding: 0 7px;
+}
 .orchestrator-goals-notice {
   margin: 0;
   padding: 6px 10px;

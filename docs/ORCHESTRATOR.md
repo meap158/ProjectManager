@@ -229,7 +229,12 @@ the card to a session or run leads with "This card is done when: …", and revie
 first. Each goal keeps outcome measures (PM-475): days from set to closed, automatic checks across
 budget windows, worker runs on its linked cards, the owner's notes and status changes,
 reopenings, and verification passes and failures. Closed goals show them in one line, and the
-Goals heading sums achieved goals (count, median days and checks). Details, bounds and the Grok Bot comparison are in
+Goals heading sums achieved goals (count, median days and checks). A criterion only the owner can
+satisfy (a review, an approval, a listening test, a decision) is marked `owner` with exactly what
+the owner has to do (PM-524). The page shows it with ⏳, the owner's part in full and a Confirm
+button that marks it passing on the owner's word; when everything left on a goal waits for the
+owner, automatic checks skip it and the owner gets one "Goal waiting for you" notification
+instead of the chat being nudged hourly. Details, bounds and the Grok Bot comparison are in
 [ORCHESTRATOR-SESSION-SUPERVISION.md](ORCHESTRATOR-SESSION-SUPERVISION.md).
 
 On the Orchestrators page each orchestrator has an "Ask this orchestrator" panel (Start/Open

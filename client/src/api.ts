@@ -210,6 +210,8 @@ export const api = {
       force?: boolean;
       /** With "achieved": accept its linked cards in Review as Done. */
       acceptReview?: boolean;
+      /** Criteria the owner confirms as passing (PM-524). */
+      confirmCriteria?: number[];
     },
   ) =>
     request<OrchestratorGoal>(

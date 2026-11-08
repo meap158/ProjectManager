@@ -34,6 +34,14 @@ export interface CriterionUpdate {
 /** Criteria still keeping a goal from achieved (PM-471). */
 export const unmetCriteria = (g: OrchestratorGoal) =>
   (g.criteria ?? []).filter((c) => c.state !== 'passing');
+/**
+ * An active goal whose only remaining criteria need the owner (PM-524): automatic checks leave it
+ * alone instead of chasing the owner hourly, and the owner is told once.
+ */
+export const waitingOnOwner = (g: OrchestratorGoal) => {
+  const unmet = unmetCriteria(g);
+  return g.status === 'active' && unmet.length > 0 && unmet.every((c) => c.state === 'owner');
+};
 
 /** Cards one goal may link (PM-448). */
 export const MAX_GOAL_CARDS = 60;
@@ -161,6 +169,8 @@ export function updateGoal(
       throw new Error(`No criterion ${update.id} on goal ${goalId}`);
     if (update.state === 'passing' && !update.evidence?.trim())
       throw new Error(`Criterion ${update.id} needs evidence to pass`);
+    if (update.state === 'owner' && !update.evidence?.trim())
+      throw new Error(`Criterion ${update.id} needs to say what the owner has to do`);
   }
   criteria = criteria.map((c) => {
     const update = (change.criteria ?? []).find((u) => u.id === c.id);
@@ -332,6 +342,8 @@ export function goalsDue(goals: readonly OrchestratorGoal[], now: number): Orche
   return goals.filter(
     (g) =>
       g.status === 'active' &&
+      // Waiting on the owner only: no point asking the chat again (PM-524).
+      !waitingOnOwner(g) &&
       now - (g.lastNudgeAt ?? 0) >= (isQuiet(g) ? GOAL_QUIET_NUDGE_MS : GOAL_NUDGE_MS),
   );
 }

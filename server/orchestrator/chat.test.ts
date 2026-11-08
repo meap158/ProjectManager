@@ -1312,6 +1312,46 @@ describe('goal acceptance checklist (PM-471)', () => {
   });
 });
 
+describe('criteria that wait for the owner (PM-524)', () => {
+  it('pauses checks, tells the owner once, and lets the owner confirm', async () => {
+    const { call, chat, db } = setup({ autoCheck: true });
+    await call('set_goal', {
+      title: 'Polish',
+      objective: 'o',
+      doneWhen: 'd',
+      criteria: ['captures merged', 'owner accepts the result screen'],
+    });
+    await expect(
+      call('update_goal', { goalId: 1, note: 'n', criteria: [{ id: 2, state: 'owner' }] }),
+    ).rejects.toThrow(/what the owner has to do/);
+    await call('update_goal', {
+      goalId: 1,
+      note: 'captures in; screen needs the owner',
+      criteria: [
+        { id: 1, state: 'passing', evidence: 'PR #9 merged' },
+        {
+          id: 2,
+          state: 'owner',
+          evidence: 'Open /play/neon on a phone and accept the result screen',
+        },
+      ],
+    });
+    const { goalsDue, listGoals } = await import('./goals.js');
+    expect(goalsDue(listGoals(db, 'master-1'), Date.now() + 10 * 3_600_000)).toEqual([]);
+    const goal = chat.goals('master-1')[0]!;
+    expect(goal.followUp.note).toContain('Waiting for you: 1 criterion needs you');
+    expect(chat.goalEvents()).toMatchObject([
+      { status: 'waiting', note: 'Open /play/neon on a phone and accept the result screen' },
+    ]);
+    chat.updateOwnerGoal('master-1', 1, { confirmCriteria: [2] });
+    const confirmed = chat.goals('master-1')[0]!.criteria![1]!;
+    expect(confirmed).toMatchObject({ state: 'passing', checkedBy: 'owner' });
+    expect(confirmed.evidence).toContain('Confirmed by the owner');
+    expect(chat.goalEvents()).toEqual([]);
+    db.close();
+  });
+});
+
 describe('goal outcome measures (PM-475)', () => {
   it('counts checks, owner notes and reopenings, and freezes the time when the goal closes', async () => {
     const { call, chat, db } = setup({ autoCheck: true });

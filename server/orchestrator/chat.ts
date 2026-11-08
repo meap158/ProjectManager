@@ -60,6 +60,7 @@ import {
   overBudget,
   patchGoal,
   unmetCriteria,
+  waitingOnOwner,
   isQuiet,
   GOAL_QUIET_NUDGE_MS,
   listGoals,
@@ -372,7 +373,7 @@ export const ORCHESTRATOR_TOOLS = [
             type: 'object',
             properties: {
               id: { type: 'integer' },
-              state: { type: 'string', enum: ['open', 'passing', 'failing'] },
+              state: { type: 'string', enum: ['open', 'passing', 'failing', 'owner'] },
               evidence: { type: 'string', maxLength: 1000 },
             },
             required: ['id', 'state'],
@@ -1075,6 +1076,15 @@ export class OrchestratorChat implements OrchestratorToolHost {
                 ? 'Blocked: waiting for you (see the latest note).'
                 : 'Closed.',
       };
+    // Only the owner's items are left (PM-524): checks pause until the owner acts.
+    if (waitingOnOwner(g)) {
+      const owed = unmetCriteria(g).length;
+      return {
+        lastCheckAt,
+        nextCheckAt: null,
+        note: `Waiting for you: ${owed} criteri${owed === 1 ? 'on needs' : 'a need'} you (marked ⏳ below). Automatic checks pause until you act.`,
+      };
+    }
     const stuck = this.goalStuck(instance);
     if (stuck) return { lastCheckAt, nextCheckAt: null, note: `No automatic checks: ${stuck}` };
     const allDone = cards.length > 0 && cards.every((c) => c.status === 'done');
@@ -1231,6 +1241,22 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const goals = listGoals(this.db, instance.id);
       const blocker = goals.some((g) => g.status === 'active') ? this.goalStuck(instance) : null;
       for (const g of goals) {
+        // Only the owner's items are left (PM-524): tell the owner what they are, once per change.
+        if (waitingOnOwner(g)) {
+          events.push({
+            orchestratorId: instance.id,
+            orchestratorName: instance.name,
+            goalId: g.id,
+            title: g.title,
+            status: 'waiting',
+            updatedAt: g.updatedAt,
+            note: unmetCriteria(g)
+              .map((c) => c.evidence || c.text)
+              .join('; ')
+              .slice(0, 400),
+          });
+          continue;
+        }
         // Nothing continues it, or it has gone quiet (no progress in several checks, PM-459).
         const why =
           blocker ??
@@ -1322,6 +1348,8 @@ export class OrchestratorChat implements OrchestratorToolHost {
       acceptReview?: boolean;
       /** New limits (PM-473); null removes them. A change opens a new budget window. */
       budget?: OrchestratorGoal['budget'] | null;
+      /** Criteria the owner confirms from the page (PM-524): passing, on their word. */
+      confirmCriteria?: number[];
     },
   ) {
     const instance = this.instance(id);
@@ -1355,6 +1383,15 @@ export class OrchestratorChat implements OrchestratorToolHost {
       ...cardChange,
       ...(projectIds ? { projectIds } : {}),
       ...(change.budget !== undefined ? { budget: change.budget } : {}),
+      ...(change.confirmCriteria?.length
+        ? {
+            criteria: change.confirmCriteria.map((cid) => ({
+              id: cid,
+              state: 'passing' as const,
+              evidence: `Confirmed by the owner on ${new Date().toISOString().slice(0, 10)}`,
+            })),
+          }
+        : {}),
       by: 'owner',
     });
     this.record(
@@ -2303,7 +2340,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
               z
                 .object({
                   id: z.number().int().positive(),
-                  state: z.enum(['open', 'passing', 'failing']),
+                  state: z.enum(['open', 'passing', 'failing', 'owner']),
                   evidence: z.string().trim().max(1000).optional(),
                 })
                 .strict(),
@@ -2829,7 +2866,11 @@ export function goalStatusBlock(goals: readonly OrchestratorGoalView[], now = Da
         ? (g.criteria ?? [])
             .map(
               (c) =>
-                `  [${c.state === 'passing' ? 'x' : c.state === 'failing' ? '!' : ' '}] #${c.id} ${c.text.slice(0, 160)}`,
+                `  [${c.state === 'passing' ? 'x' : c.state === 'failing' ? '!' : c.state === 'owner' ? '?' : ' '}] #${c.id} ${c.text.slice(0, 160)}${
+                  c.state === 'owner'
+                    ? ` (waiting for the owner: ${(c.evidence ?? '').slice(0, 160)}; do not chase it)`
+                    : ''
+                }`,
             )
             .join('\n')
         : '  (no acceptance checklist yet: add 2 to 8 checkable criteria with update_goal addCriteria)';
@@ -2972,7 +3013,7 @@ const GOAL_STEP_DIRECT =
  * reviewed, blocked work is unblocked or re-planned), and the goal closes only on evidence.
  */
 const GOAL_STEP_DELEGATING =
-  "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, within your worker limits: an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself when the card is small or about coordination, or when no worker can take it now (at your limits, quota below the reserve or used up, every session busy). Do not leave capacity idle while ready cards wait, and do not leave a ready card waiting for a worker you could stand in for; and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) Check the acceptance criteria as the work lands: mark each passing or failing with evidence (update_goal criteria); a failing one gets a card. When every linked card is Done, check every remaining criterion yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only when every criterion passes with evidence, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
+  "Goals: work each active goal toward done like a small team you lead (overview's goals, and the goal status below). 1) Plan: break what is left of doneWhen into independent cards in the right project, each small enough for one worker and with its own acceptance check, and link them (create_card goalId, or update_goal linkCards). 2) Staff in parallel: give every linked card that is ready and has no worker its own worker at the same time, within your worker limits: an idle session already in that project (assign_card), a new session for longer interactive work (start_session), dispatch_worker for a self-contained task, or yourself when the card is small or about coordination, or when no worker can take it now (at your limits, quota below the reserve or used up, every session busy). Do not leave capacity idle while ready cards wait, and do not leave a ready card waiting for a worker you could stand in for; and never put two workers on one card. 3) Follow through on every linked card: a worker that is idle on an unfinished card gets its next step now (message_worker); one asking a question gets an answer (reply_worker, or blocked with the question if only the owner can answer); finished work in Review is verified against the card and accepted or sent back with what is missing; a card that is stuck gets re-planned or split. 4) Check the acceptance criteria as the work lands: mark each passing or failing with evidence (update_goal criteria); a failing one gets a card. A criterion only the owner can satisfy (their review, approval, listening test or decision) is marked owner with exactly what they need to do, once: the owner is told, and you do not chase it again. Every other open criterion needs a card and a worker moving it. When every linked card is Done, check every remaining criterion yourself. Call update_goal after each check with what moved, what is next and who does it; mark it achieved only when every criterion passes with evidence, or blocked with exactly what only the owner can do. Never let a goal stall silently.";
 
 /** The line a card's notes use for its acceptance check (PM-474). */
 const ACCEPTANCE = 'Acceptance:';
