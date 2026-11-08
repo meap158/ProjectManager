@@ -75,8 +75,7 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
     fileRef = useRef<HTMLInputElement>(null),
     switchHelpRef = useRef<HTMLDialogElement>(null);
   const actionRevision = useRef(0);
-  const [chosen, setChosen] = useState<string | null>(null),
-    [renaming, setRenaming] = useState<string | null>(null),
+  const [renaming, setRenaming] = useState<string | null>(null),
     [draft, setDraft] = useState('');
   const [reordering, setReordering] = useState(false);
   const [order, setOrder] = useViewPreference<string[]>(
@@ -119,7 +118,6 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
     setError('');
     try {
       setState(await fn());
-      setChosen(null);
       setRenaming(null);
     } catch (e) {
       setError((e as Error).message);
@@ -286,7 +284,9 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
                   className="btn btn-sm"
                   disabled={busy}
                   aria-label={`Switch to account ${a!.name}`}
-                  onClick={() => setChosen(id)}
+                  // Switches on click, as in the Claude and Codex switchers (PM-527); the panel's
+                  // heading already says running sessions keep their login.
+                  onClick={() => void act(() => methods.switch(id))}
                 >
                   <AccountActionIcon action="switch" />
                   <span className="account-action-label">Switch to account</span>
@@ -338,21 +338,6 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
               Cancel
             </button>
           </form>
-        )}
-        {chosen === id && (
-          <div>
-            <p>Use {a!.name} for new launches? Running sessions will keep their current login.</p>
-            <button
-              className="btn btn-primary btn-sm"
-              disabled={busy}
-              onClick={() => void act(() => methods.switch(id))}
-            >
-              Confirm switch
-            </button>{' '}
-            <button className="btn btn-sm" onClick={() => setChosen(null)}>
-              Cancel
-            </button>
-          </div>
         )}
       </li>
     );

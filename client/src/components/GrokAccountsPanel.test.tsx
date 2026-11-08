@@ -56,7 +56,7 @@ it('uses the standard account layout, detects default email and refreshes only t
   fireEvent.click(screen.getByRole('button', { name: 'Refresh usage for default account' }));
   await waitFor(() => expect(api.refreshGrokAccount).toHaveBeenCalledWith('default'));
 });
-it('requires confirmation for switching and reports unknown usage without a fabricated meter', async () => {
+it('switches on click like the other switchers and reports unknown usage without a fabricated meter (PM-527)', async () => {
   const state: NativeAccountsState = {
     available: true,
     accounts: [
@@ -74,12 +74,12 @@ it('requires confirmation for switching and reports unknown usage without a fabr
     accounts: [{ ...state.accounts[0]!, active: true }],
   });
   render(<NativeAccountsPanel providerId="grok" />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Switch to account Personal' }));
-  expect(api.switchGrokAccount).not.toHaveBeenCalled();
-  expect(screen.getByText(/Existing sessions keep their login/)).toBeTruthy();
+  // The heading explains running sessions; one click switches, no second confirmation.
+  expect(await screen.findByText(/Existing sessions keep their login/)).toBeTruthy();
   expect(screen.queryByRole('meter')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Switch to account Personal' }));
   await waitFor(() => expect(api.switchGrokAccount).toHaveBeenCalledWith(account.id));
+  expect(screen.queryByRole('button', { name: 'Confirm switch' })).toBeNull();
 });
 
 it('offers opt-in automatic rotation with an explanation (PM-412)', async () => {

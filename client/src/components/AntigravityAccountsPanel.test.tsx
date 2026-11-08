@@ -54,7 +54,7 @@ it('uses the Codex layout and detects the default email with usage meters', asyn
   fireEvent.click(screen.getByRole('button', { name: 'Refresh usage for default account' }));
   await waitFor(() => expect(api.refreshAntigravityAccount).toHaveBeenCalledWith('default'));
 });
-it('requires explicit confirmation before changing the account and explains running sessions', async () => {
+it('switches on click and explains running sessions in the heading (PM-527)', async () => {
   const state = {
     available: true,
     accounts: [
@@ -74,10 +74,9 @@ it('requires explicit confirmation before changing the account and explains runn
     accounts: [{ ...state.accounts[0]!, active: true }],
   });
   render(<AntigravityAccountsPanel />);
+  // The heading explains running sessions; one click switches, as in the other switchers.
+  expect(await screen.findByText(/Existing sessions keep their login/)).toBeTruthy();
   fireEvent.click(await screen.findByRole('button', { name: 'Switch to account Backup' }));
-  expect(api.switchAntigravityAccount).not.toHaveBeenCalled();
-  expect(screen.getByText(/Existing sessions keep their login/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
   await waitFor(() => expect(api.switchAntigravityAccount).toHaveBeenCalledWith('acct_test'));
   await screen.findByText('active');
 });
