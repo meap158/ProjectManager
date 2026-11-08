@@ -2928,6 +2928,12 @@ export function goalFollowUpPrompt(g: OrchestratorGoalView): string {
     : '- none linked yet: find or create the cards that deliver it and link them (update_goal linkCards, create_card goalId)';
   return [
     `The owner asked you to follow up on goal ${g.id} "${g.title}" now.`,
+    // A paused goal can be followed up once without resuming it (PM-562).
+    ...(g.status === 'paused'
+      ? [
+          'This goal is paused, and it stays paused: this is a one-off follow-up. Do the work below and record it with update_goal, but never set it back to active (it may still be marked achieved when doneWhen holds with evidence). Automatic checks keep skipping it until the owner resumes it.',
+        ]
+      : []),
     `Done when: ${g.doneWhen}`,
     `Linked cards:\n${cards}`,
     'For each linked card: read its notes, the latest output of its worker (worker_output, and worker_reply for messages), and its commits or pull requests. Decide the next step and take it: message or unblock the worker, hand the card to a session or start one, dispatch a run, review and accept finished work, or do it yourself when it is small.',

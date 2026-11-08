@@ -1529,7 +1529,12 @@ describe('following up on a goal (PM-456)', () => {
     expect(prompt).toContain('follow up on goal 1 "Ship"');
     expect(prompt).toContain(`- ${mine.key} "Add login": todo, no live worker`);
     expect(prompt).toContain('update_goal with the full picture');
+    expect(prompt).not.toContain('stays paused');
     chat.updateOwnerGoal('master-1', 1, { status: 'paused' });
+    // A paused goal can be followed up once and stays paused (PM-562).
+    const paused = goalFollowUpPrompt(chat.goals('master-1')[0]!);
+    expect(paused).toContain('it stays paused');
+    expect(paused).toContain('never set it back to active');
     chat.updateOwnerGoal('master-1', 1, { status: 'active' });
     expect(chat.goals('master-1')[0]!.progress.at(-1)!.note).toBe('Resumed by the owner.');
     await expect(chat.check('master-1', 'goal', [], 99)).rejects.toThrow(/No goal 99/);

@@ -214,6 +214,19 @@ it('asks the chat to follow up on one goal now (PM-456)', async () => {
   expect(await screen.findByRole('button', { name: /Followed up/ })).toBeTruthy();
 });
 
+it('offers Follow up on a paused goal too, which stays paused (PM-562)', async () => {
+  vi.mocked(api.orchestratorGoals).mockResolvedValue([{ ...goals[0]!, status: 'paused' }]);
+  render(<OrchestratorGoals instance={instance} />, { wrapper: MemoryRouter });
+  const button = await screen.findByRole('button', { name: /Follow up/ });
+  expect(button.getAttribute('title')).toMatch(/stays paused/);
+  expect(screen.getByRole('button', { name: /Resume/ })).toBeTruthy();
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(button);
+  await waitFor(() => expect(api.followUpGoal).toHaveBeenCalledWith('o', 1));
+  expect(api.updateOrchestratorGoal).not.toHaveBeenCalled();
+  vi.mocked(api.orchestratorGoals).mockResolvedValue(goals);
+});
+
 it('shows the acceptance checklist with its evidence (PM-471)', async () => {
   vi.mocked(api.orchestratorGoals).mockResolvedValue([
     {

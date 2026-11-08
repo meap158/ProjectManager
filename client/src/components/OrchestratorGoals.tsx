@@ -348,12 +348,17 @@ export function OrchestratorGoals({
           </div>
           {!watchOnly && (
             <div className="orchestrator-goal-actions" role="group" aria-label="Goal actions">
-              {goal.status === 'active' && (
+              {/* Paused goals too (PM-562): a one-off follow-up that leaves the goal paused. */}
+              {(goal.status === 'active' || goal.status === 'paused') && (
                 <button
                   type="button"
-                  className="btn btn-sm btn-primary"
+                  className={`btn btn-sm${goal.status === 'active' ? ' btn-primary' : ''}`}
                   disabled={busy}
-                  title="Ask the chat now to check every linked card and its worker, act on them and report the full progress"
+                  title={
+                    goal.status === 'active'
+                      ? 'Ask the chat now to check every linked card and its worker, act on them and report the full progress'
+                      : 'Ask the chat to follow up on this goal once now; it stays paused and automatic checks keep skipping it'
+                  }
                   onClick={() => followUp(goal)}
                   data-done={followedUp === goal.id || undefined}
                 >
