@@ -15,7 +15,7 @@ import type { FilePin, FilePreview, FolderListing, TreeEntry } from '../../../sh
 import { api } from '../api';
 import { THEME_EVENT } from '../theme';
 import { formatBytes, formatRelative } from '../format';
-import { AUTO_LOAD_BYTES, loadOpaqueMedia } from '../lib/opaqueMedia';
+import { AUTO_LOAD_BYTES, downloadManagersPossible, loadOpaqueMedia } from '../lib/opaqueMedia';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { ConfirmDelete } from './ConfirmDelete';
 import { MoreIcon } from './icons';
@@ -1518,6 +1518,7 @@ const newNonce = () =>
  * Video and audio previews read so download managers leave them alone (PM-597): the bytes come
  * opaquely and play from a blob (see lib/opaqueMedia.ts). Small files load at once; larger ones
  * wait for Load preview, with progress and Cancel, or can be streamed directly on request.
+ * Phones and tablets stream directly from the start: they have no download managers to avoid.
  */
 function MediaPreview({
   projectId,
@@ -1531,9 +1532,10 @@ function MediaPreview({
   size: number;
 }) {
   const [failed, setFailed] = useState(false);
-  // 'wait': large file, nothing read yet. 'stream': the owner chose the direct stream.
-  const [mode, setMode] = useState<'wait' | 'load' | 'stream'>(
-    size <= AUTO_LOAD_BYTES ? 'load' : 'wait',
+  // 'wait': large file, nothing read yet. 'stream': the direct stream, chosen by the owner or
+  // used from the start on phones and tablets, where no download manager can take it over.
+  const [mode, setMode] = useState<'wait' | 'load' | 'stream'>(() =>
+    !downloadManagersPossible() ? 'stream' : size <= AUTO_LOAD_BYTES ? 'load' : 'wait',
   );
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(0);

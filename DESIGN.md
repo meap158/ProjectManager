@@ -13,7 +13,8 @@ They read the bytes opaquely (`?opaque=1&p=<base64url path>`, typed
 `application/x-projectmanager-preview`) and play from a blob with the real type, because download
 managers take over any video/* or audio/* response (PM-597, the approach TrendRelay uses). Files
 over 64 MB show their size with Load preview (progress, Cancel) and Stream instead (the direct,
-seekable byte-range stream). The 2 MB limit applies only to text previews.
+seekable byte-range stream). Phones and tablets stream directly from the start, since
+download managers are desktop programs (`downloadManagersPossible`). The 2 MB limit applies only to text previews.
 Players fit the preview pane on desktop and phone, with a download fallback for unsupported codecs.
 HTML pages above 2 MB render up to 25 MB through the same sandbox and CSP. Their source is
 downloadable instead of building a large code view; ordinary text stays capped at 2 MB.

@@ -165,6 +165,27 @@ describe('ProjectFiles', () => {
     vi.mocked(api.projectFile).mockReset();
   });
 
+  it('streams directly on a phone, with nothing read first (PM-597)', async () => {
+    const { fetchMock } = mediaFetch();
+    const agent = vi
+      .spyOn(window.navigator, 'userAgent', 'get')
+      .mockReturnValue(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
+      );
+    vi.mocked(api.projectFile).mockResolvedValue({
+      kind: 'video',
+      path: 'clip.mp4',
+      size: 36 * 1024 * 1024,
+      mtime: new Date().toISOString(),
+    });
+    show('?tab=files&file=clip.mp4');
+    const player = (await screen.findByLabelText('Video preview: clip.mp4')) as HTMLVideoElement;
+    expect(player.getAttribute('src')).toContain('/media?path=clip.mp4');
+    expect(fetchMock).not.toHaveBeenCalled();
+    agent.mockRestore();
+    vi.mocked(api.projectFile).mockReset();
+  });
+
   it('loads a large video on request and reports a failed read (PM-597)', async () => {
     const { fetchMock } = mediaFetch('', 400);
     vi.mocked(api.projectFile).mockResolvedValue({

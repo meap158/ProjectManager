@@ -214,7 +214,8 @@ anything.
 - PM-597: never point a `<video>`/`<audio>` element (or a plain fetch) at a response typed
   video/* or audio/* for a preview: download managers like IDM take it over and cancel the
   browser's copy. Read it with `loadOpaqueMedia` (`client/src/lib/opaqueMedia.ts`) and play the
-  blob; the direct stream is only for Stream instead and Download.
+  blob; the direct stream is only for Stream instead, Download, and phones and tablets
+  (`downloadManagersPossible`), where no download manager can hook the request.
 
 - PM-526: `start_session` plans with `workerKind: 'session'` against the project's saved CLI
   limit, counting stopped and owner sessions but excluding orchestrator chats. Per-project run

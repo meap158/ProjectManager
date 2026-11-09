@@ -18,6 +18,24 @@ import { MEDIA_TYPES } from '../../../shared/media';
 /** Files up to this size load on their own; larger ones wait for "Load preview". */
 export const AUTO_LOAD_BYTES = 64 * 1024 * 1024;
 
+/**
+ * Whether this browser may have a download manager hooking its requests. They are desktop
+ * programs with desktop browser extensions (IDM, Free Download Manager and the like); phones and
+ * tablets have none that can take over a page's request. There the preview streams directly, so
+ * it plays at once and can seek, instead of reading the whole file first.
+ */
+export function downloadManagersPossible(
+  nav: Pick<Navigator, 'userAgent' | 'maxTouchPoints'> & {
+    userAgentData?: { mobile?: boolean };
+  } = navigator,
+): boolean {
+  if (nav.userAgentData?.mobile) return false;
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(nav.userAgent)) return false;
+  // iPadOS reports a Mac user agent; a Mac has no touch screen.
+  if (/Macintosh/.test(nav.userAgent) && nav.maxTouchPoints > 1) return false;
+  return true;
+}
+
 const base64url = (text: string) => {
   const bytes = new TextEncoder().encode(text);
   let binary = '';

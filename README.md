@@ -13,7 +13,8 @@ exact pinned conversation against the CLI's local history. Unverified conversati
 
 Files plays video and audio with native controls. Previews are read under a type download
 managers such as IDM ignore and play from a blob, so opening one never starts a download; files
-over 64 MB wait for Load preview (with progress), or can be streamed directly on request. Media
+over 64 MB wait for Load preview (with progress), or can be streamed directly on request. Phones and tablets
+stream directly from the start, since download managers are desktop programs. Media
 is independent of the 2 MB text-preview limit. HTML pages
 up to 25 MB render in the existing sandbox; source above 2 MB is available as a download.
 
