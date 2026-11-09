@@ -19,6 +19,13 @@ import {
   type SopWaiver,
 } from '../shared/types.js';
 import type { Db } from './db.js';
+import { randomUUID } from 'node:crypto';
+import {
+  CARD_LINK_OUTBOX,
+  cardLinkingKey,
+  type CardLinkEvent,
+  type CardLinkOptions,
+} from '../shared/cardLinking.js';
 
 interface ProjectRow {
   id: number;
@@ -416,7 +423,32 @@ export function updateCard(
     next.issueUrl ?? null,
     id,
   );
-  return getCard(db, id);
+  const updated = getCard(db, id);
+  if (
+    updated &&
+    existing.status !== updated.status &&
+    (updated.status === 'review' || updated.status === 'done') &&
+    updated.issueUrl &&
+    getSetting<CardLinkOptions>(db, cardLinkingKey(updated.projectId))?.writeBack === true
+  ) {
+    const events = getSetting<CardLinkEvent[]>(db, CARD_LINK_OUTBOX) ?? [];
+    setSetting(
+      db,
+      CARD_LINK_OUTBOX,
+      [
+        ...events.filter((e) => e.cardId !== id),
+        {
+          id: randomUUID(),
+          cardId: id,
+          projectId: updated.projectId,
+          status: updated.status,
+          url: updated.issueUrl,
+          at: Date.now(),
+        },
+      ].slice(-200),
+    );
+  }
+  return updated;
 }
 
 /** Moves a card to the top of another column (used by automatic commit-reference moves). */

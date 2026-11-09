@@ -165,6 +165,13 @@ anything.
 
 ## Gotchas
 
+- PM-594: `scripts/install-card-link-hook.mjs --project <root>` installs the warn-only template
+  only on explicit request and refuses existing hooks or `core.hooksPath`. This manual installer
+  is allowed to write that one Git hook; tracking and scans never install it. `server/cardLinking.ts`
+  drains a persisted opt-in outbox for Review/Done transitions. Keep effective owner identity,
+  exact origin repository, active scoped Git autonomy, rate limits and pre-send receipts. Never
+  retry uncertain GitHub comment delivery automatically. See `docs/CARD-LINKING.md`.
+
 - The `S:` drive is slow: ESLint takes about 70s and `tsc` about 60s. Run long checks in the background.
 - `npx shadcn add` may inject stray dependencies or `next/*` imports. Review its diff.
 - `node:sqlite` is "experimental" in Node 22. Its warning is suppressed in the launcher, not removed.

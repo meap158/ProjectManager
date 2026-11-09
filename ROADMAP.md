@@ -84,3 +84,6 @@ and global safe idle checks preserve grace work. Browser and live-account accept
 
 PM-579 extends Files pin management to signed-in LAN and remote devices, using the existing
 access gates and metadata store. Project files are unchanged by pin actions.
+
+PM-594 adds optional warn-only commit hooks and card status comments on linked GitHub issues/PRs.
+Both remain off until requested, with scoped Git autonomy and owner identity required for comments.

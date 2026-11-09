@@ -12,6 +12,8 @@ vi.mock('../api', () => ({
     setPullRequestAccount: vi.fn(),
     getGitIdentity: vi.fn(),
     setGitIdentity: vi.fn(),
+    cardLinking: vi.fn(async () => ({ writeBack: false, authorized: false })),
+    setCardLinking: vi.fn(),
   },
 }));
 beforeEach(() => {

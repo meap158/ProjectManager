@@ -2,6 +2,8 @@ import { decodeMediaPath, streamMedia } from './mediaPreview.js';
 import { projectBranches } from './branches.js';
 import { GrokAccountError } from './agents/grokAccounts.js';
 import { createCardIssue, GitHubIssueError } from './githubIssues.js';
+import { CardLinkWriteBack, writeBackAuthorized } from './cardLinking.js';
+import { cardLinkingKey, type CardLinkOptions } from '../shared/cardLinking.js';
 import { jsonEtag } from './jsonEtag.js';
 import { OrchestratorService } from './orchestrator/service.js';
 import { registerOrchestratorRoutes } from './orchestrator/routes.js';
@@ -91,8 +93,8 @@ const createCardBody = z.object({
   issueUrl: z
     .string()
     .regex(
-      /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/[1-9]\d*$/,
-      'Use a GitHub issue URL',
+      /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:issues|pull)\/[1-9]\d*$/,
+      'Use a GitHub issue or pull request URL',
     )
     .nullable()
     .optional(),
@@ -120,8 +122,8 @@ const updateCardBody = z
     issueUrl: z
       .string()
       .regex(
-        /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/[1-9]\d*$/,
-        'Use a GitHub issue URL',
+        /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:issues|pull)\/[1-9]\d*$/,
+        'Use a GitHub issue or pull request URL',
       )
       .nullable(),
   })
@@ -170,6 +172,7 @@ function parseId(c: Context, name = 'id'): number {
 }
 
 export type AppWithAgents = Hono & {
+  cardLinkWriteBack: CardLinkWriteBack;
   supervisor: AgentSupervisor;
   scanner: Scanner;
   orchestrator: OrchestratorService;
@@ -341,6 +344,23 @@ export function createApp(
   app.get('/preview/:port/*', previewHandler);
 
   registerAgentRoutes(app, db, supervisor);
+  const cardLinkWriteBack = new CardLinkWriteBack(db);
+  app.get('/projects/:id/card-linking', (c) => {
+    const id = parseId(c);
+    if (!store.getProjectRow(db, id)) throw new HttpError(404, 'Project not found');
+    return c.json({
+      writeBack: store.getSetting<CardLinkOptions>(db, cardLinkingKey(id))?.writeBack ?? false,
+      authorized: writeBackAuthorized(db, id),
+      lastResult: store.getSetting(db, `card-link-result:${id}`) ?? null,
+    });
+  });
+  app.put('/projects/:id/card-linking', async (c) => {
+    const id = parseId(c);
+    if (!store.getProjectRow(db, id)) throw new HttpError(404, 'Project not found');
+    const body = await parseBody(c, z.object({ writeBack: z.boolean() }).strict());
+    store.setSetting(db, cardLinkingKey(id), body);
+    return c.json(body);
+  });
   // The SOPs (PM-316) are data: server/sops.default.yml, or the owner's copy in data/sops.yml.
   // One store, shared by Settings > SOPs and the agents' audit tools.
   const sopStore = new SopStore(options.dataDir ?? null);
@@ -1048,6 +1068,7 @@ export function createApp(
   });
 
   return Object.assign(app, {
+    cardLinkWriteBack,
     supervisor,
     scanner,
     orchestrator,

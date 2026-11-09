@@ -569,7 +569,7 @@ export function CardDialog({
               />
             </div>
             <div className="field">
-              <label htmlFor="card-issue">GitHub issue</label>
+              <label htmlFor="card-issue">GitHub issue or PR</label>
               <input
                 id="card-issue"
                 className="input"
@@ -597,7 +597,7 @@ export function CardDialog({
               )}
               {card.issueUrl && (
                 <a href={card.issueUrl} target="_blank" rel="noreferrer">
-                  Open linked issue
+                  Open linked issue or PR
                 </a>
               )}
             </div>

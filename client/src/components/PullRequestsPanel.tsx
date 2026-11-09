@@ -13,6 +13,7 @@ import { api } from '../api';
 import { formatRelative } from '../format';
 import { ConfirmDelete } from './ConfirmDelete';
 import { Dropdown } from './Dropdown';
+import { CardLinkSettings } from './CardLinkSettings';
 
 const METHOD_LABEL: Record<PullRequestMergeMethod, { option: string; button: string }> = {
   merge: { option: 'Create a merge commit', button: 'Merge pull request' },
@@ -216,6 +217,7 @@ export function PullRequestsPanel({ projectId, visible }: { projectId: number; v
           />
         )}
         <GitIdentityLine projectId={projectId} />
+        <CardLinkSettings key={projectId} projectId={projectId} />
         {message && (
           <div className="notice" role="status">
             <span>{message}</span>

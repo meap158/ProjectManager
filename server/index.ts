@@ -117,6 +117,7 @@ async function main() {
   api.autoCheck.start();
   api.workerMessenger.start();
   api.goalVerifier.start();
+  api.cardLinkWriteBack.start();
 
   const server = createServer();
   server.prependListener('upgrade', (req, socket, head) => {
@@ -222,6 +223,7 @@ async function main() {
         api.autoCheck.stop();
         api.workerMessenger.stop();
         api.goalVerifier.stop();
+        await api.cardLinkWriteBack.stop();
         await api.orchestrator.stop();
         await api.supervisor.shutdown();
       } finally {

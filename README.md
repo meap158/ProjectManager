@@ -176,6 +176,9 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
   standard (handover notes, roadmap, safe process cleanup, writing style) and turns a gap into a
   card ([docs/SOPS.md](docs/SOPS.md)).
 - **Orchestrators:** a chat that follows up on tasks and moves cards across all your projects.
+  Optional [card linking](docs/CARD-LINKING.md) adds a per-project warn-only commit hook and
+  short GitHub comments on Review/Done moves. Both require opt-in; comments also require Git on
+  its own and the repository owner's login. Configure comments in the project's Pull requests tab.
   Session starts use the project CLI limit (eight saved sessions, including stopped sessions),
   rather than the per-project run-worker allocation. Existing idle sessions can receive messages
   and cards without another slot. The total and per-provider worker limits cap run workers only (PM-571).

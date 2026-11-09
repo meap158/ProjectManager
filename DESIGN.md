@@ -4,6 +4,10 @@ This file defines how ProjectManager looks and behaves. If a component disagrees
 fix the component or update this file in the same commit, and never let design decisions live only in code
 or chat history.
 
+Project Pull requests settings include an unchecked card-comment option beside the Git identity.
+The label wraps on phones with a 44px minimum target. Help states the Git autonomy and owner-login
+requirements and rate limits; failed saves keep the previous value and use an error banner.
+
 Antigravity chat reads the pinned conversation and verifies its workspace. When workspace metadata
 is absent, the CLI history must bind that exact ID to the session folder. An unverified conversation
 shows a CLI fallback explanation rather than an empty-message prompt.

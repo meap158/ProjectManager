@@ -336,6 +336,13 @@ export const api = {
   listAllCards: () => request<CardWithProject[]>('GET', '/cards'),
   listCardsInFlight: () => request<CardWithProject[]>('GET', '/cards/in-flight'),
   listCards: (projectId: number) => request<Card[]>('GET', `/projects/${projectId}/cards`),
+  cardLinking: (projectId: number) =>
+    request<{ writeBack: boolean; authorized: boolean }>(
+      'GET',
+      `/projects/${projectId}/card-linking`,
+    ),
+  setCardLinking: (projectId: number, writeBack: boolean) =>
+    request<{ writeBack: boolean }>('PUT', `/projects/${projectId}/card-linking`, { writeBack }),
   addCard: (
     projectId: number,
     input: { title: string; description?: string; status: CardStatus; issueUrl?: string | null },
