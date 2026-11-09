@@ -30,16 +30,38 @@ export function mediaRange(value: string, size: number): { start: number; end: n
     return null;
   return { start, end: Math.min(end, size - 1) };
 }
+/**
+ * The type an opaque preview is served under (PM-597). Download managers such as Internet
+ * Download Manager hook the request, not the element that made it, and take any response typed
+ * video/* or audio/*, cancelling the browser's own copy. The Files tab therefore reads previews
+ * in this mode with fetch and gives the bytes their real type in a blob on the client. An element
+ * pointed straight at an opaque response cannot play it, which is the point.
+ */
+export const OPAQUE_MEDIA_TYPE = 'application/x-projectmanager-preview';
+
+/** A path sent base64url-encoded, so an opaque request's URL never ends in ".mp4" either. */
+export function decodeMediaPath(encoded: string): string {
+  if (!/^[A-Za-z0-9_-]{1,8192}$/.test(encoded))
+    throw new FileAccessError(400, 'Invalid media path');
+  return Buffer.from(encoded, 'base64url').toString('utf8');
+}
+
 /** Streams only allowlisted media after the same containment checks as other Files reads. */
-export async function streamMedia(root: string, rel: string, request: Request): Promise<Response> {
+export async function streamMedia(
+  root: string,
+  rel: string,
+  request: Request,
+  { opaque = false }: { opaque?: boolean } = {},
+): Promise<Response> {
   const abs = await resolveInside(root, rel);
   const type = MEDIA_TYPES[path.extname(abs).toLowerCase()];
   if (!type) throw new FileAccessError(400, 'This file is not a supported media type');
   const info = await stat(abs);
   if (!info.isFile()) throw new FileAccessError(400, 'Not a file');
-  const etag = `"${info.size.toString(16)}-${info.mtimeMs.toString(16)}"`;
+  // The opaque copy differs in type, so it must not share a cached answer with the plain one.
+  const etag = `"${info.size.toString(16)}-${info.mtimeMs.toString(16)}${opaque ? '-o' : ''}"`;
   const headers = new Headers({
-    'content-type': type,
+    'content-type': opaque ? OPAQUE_MEDIA_TYPE : type,
     'accept-ranges': 'bytes',
     'cache-control': 'private, no-cache',
     etag: etag,

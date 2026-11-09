@@ -15,6 +15,7 @@ import type { FilePin, FilePreview, FolderListing, TreeEntry } from '../../../sh
 import { api } from '../api';
 import { THEME_EVENT } from '../theme';
 import { formatBytes, formatRelative } from '../format';
+import { AUTO_LOAD_BYTES, loadOpaqueMedia } from '../lib/opaqueMedia';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { ConfirmDelete } from './ConfirmDelete';
 import { MoreIcon } from './icons';
@@ -1100,6 +1101,7 @@ function FileView({
           projectId={projectId}
           path={shownPath}
           kind={preview.kind}
+          size={preview.size}
         />
       ) : preview.kind === 'binary' ? (
         <p className="faint files-empty">Binary file: no preview.</p>
@@ -1512,33 +1514,121 @@ const newNonce = () =>
     ? crypto.randomUUID().replace(/-/g, '')
     : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 
+/**
+ * Video and audio previews read so download managers leave them alone (PM-597): the bytes come
+ * opaquely and play from a blob (see lib/opaqueMedia.ts). Small files load at once; larger ones
+ * wait for Load preview, with progress and Cancel, or can be streamed directly on request.
+ */
 function MediaPreview({
   projectId,
   path,
   kind,
+  size,
 }: {
   projectId: number;
   path: string;
   kind: 'video' | 'audio';
+  size: number;
 }) {
   const [failed, setFailed] = useState(false);
+  // 'wait': large file, nothing read yet. 'stream': the owner chose the direct stream.
+  const [mode, setMode] = useState<'wait' | 'load' | 'stream'>(
+    size <= AUTO_LOAD_BYTES ? 'load' : 'wait',
+  );
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(0);
+  const [problem, setProblem] = useState<string | null>(null);
   const src = api.projectMediaUrl(projectId, path);
+  useEffect(() => {
+    if (mode !== 'load') return;
+    const controller = new AbortController();
+    let created: string | null = null;
+    loadOpaqueMedia(projectId, path, { signal: controller.signal, onProgress: setLoaded })
+      .then((blob) => {
+        created = URL.createObjectURL(blob);
+        setBlobUrl(created);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          setProblem(error instanceof Error ? error.message : 'The file could not be read.');
+      });
+    return () => {
+      controller.abort();
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [mode, projectId, path]);
+  const playable = mode === 'stream' ? src : blobUrl;
+  if (!playable)
+    return (
+      <div className="files-media files-media-pending">
+        {problem ? (
+          <div className="error-banner">{problem}</div>
+        ) : mode === 'load' ? (
+          <>
+            <progress
+              max={size || undefined}
+              value={loaded}
+              aria-label={`Loading ${kind} preview`}
+            />
+            <span className="faint">
+              Loading {formatBytes(loaded)} of {formatBytes(size)}
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                setLoaded(0);
+                setMode('wait');
+              }}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="faint">
+              {kind === 'video' ? 'Video' : 'Audio'} file, {formatBytes(size)}. The preview reads it
+              in full before it plays.
+            </span>
+            <span className="files-media-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => setMode('load')}
+              >
+                Load preview
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                title="Plays while it loads; a download manager such as IDM may take it over"
+                onClick={() => setMode('stream')}
+              >
+                Stream instead
+              </button>
+            </span>
+          </>
+        )}
+      </div>
+    );
   return (
     <div className="files-media">
       {kind === 'video' ? (
         <video
           controls
+          controlsList="nodownload"
           playsInline
           preload="metadata"
-          src={src}
+          src={playable}
           aria-label={`Video preview: ${path}`}
           onError={() => setFailed(true)}
         />
       ) : (
         <audio
           controls
+          controlsList="nodownload"
           preload="metadata"
-          src={src}
+          src={playable}
           aria-label={`Audio preview: ${path}`}
           onError={() => setFailed(true)}
         />

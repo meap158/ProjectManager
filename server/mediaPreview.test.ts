@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync, truncateSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { expect, it } from 'vitest';
-import { mediaRange, streamMedia } from './mediaPreview.js';
+import { decodeMediaPath, mediaRange, OPAQUE_MEDIA_TYPE, streamMedia } from './mediaPreview.js';
 import { previewFile } from './projectFiles.js';
 import { createApp } from './app.js';
 import { openDb } from './db.js';
@@ -81,6 +81,22 @@ it('serves range and HEAD requests through the scoped API including LAN reads', 
     });
     expect(head.status).toBe(200);
     expect(await head.text()).toBe('');
+    // The Files preview's own read (PM-597): same bytes, a type download managers ignore, and
+    // the path encoded so the URL carries no ".webm".
+    const p = Buffer.from('clip.webm').toString('base64url');
+    const opaque = await app.request(`/api/projects/${id}/media?opaque=1&p=${p}`, { headers });
+    expect(opaque.status).toBe(200);
+    expect(opaque.headers.get('content-type')).toBe(OPAQUE_MEDIA_TYPE);
+    expect(opaque.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(opaque.headers.get('etag')).not.toBe(response.headers.get('etag'));
+    expect(await opaque.text()).toBe('0123456789');
+    const bad = await app.request(`/api/projects/${id}/media?opaque=1&p=not%20valid`, { headers });
+    expect(bad.status).toBe(400);
+    const escape = Buffer.from('../x.mp4').toString('base64url');
+    expect(
+      (await app.request(`/api/projects/${id}/media?opaque=1&p=${escape}`, { headers })).status,
+    ).toBe(400);
+    expect(decodeMediaPath(Buffer.from('a/ü.mp4').toString('base64url'))).toBe('a/ü.mp4');
   } finally {
     db.close();
   }

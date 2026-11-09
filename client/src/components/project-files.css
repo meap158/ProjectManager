@@ -523,3 +523,23 @@
 .files-media .error-banner {
   margin-top: 8px;
 }
+/* Before a media preview plays: its size, Load preview / Stream instead, or progress (PM-597). */
+.files-media-pending {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+.files-media-pending progress {
+  width: 100%;
+  max-width: 360px;
+  accent-color: var(--accent);
+}
+.files-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

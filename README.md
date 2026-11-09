@@ -11,8 +11,10 @@ Your projects and session data stay on your computer.
 Antigravity chat supports conversations whose newer metadata omits the workspace by verifying the
 exact pinned conversation against the CLI's local history. Unverified conversations show a CLI fallback.
 
-Files plays video and audio through seekable streams with native controls. Large media files
-are independent of the 2 MB text-preview limit and load metadata before playback. HTML pages
+Files plays video and audio with native controls. Previews are read under a type download
+managers such as IDM ignore and play from a blob, so opening one never starts a download; files
+over 64 MB wait for Load preview (with progress), or can be streamed directly on request. Media
+is independent of the 2 MB text-preview limit. HTML pages
 up to 25 MB render in the existing sandbox; source above 2 MB is available as a download.
 
 Files image previews open fitted to the available window, with actual-size zoom and a bounded

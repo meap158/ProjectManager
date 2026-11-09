@@ -96,35 +96,88 @@ const show = (search = '?tab=files') =>
   );
 
 describe('ProjectFiles', () => {
-  it('previews large video with native controls and metadata preload, and reports codec failure', async () => {
-    vi.mocked(api.projectFile).mockResolvedValueOnce({
-      kind: 'video',
-      path: 'clip.mp4',
-      size: 100 * 1024 * 1024,
-      mtime: new Date().toISOString(),
+  // Download managers (IDM) take any video/* or audio/* response, so previews are read opaquely
+  // and played from a blob (PM-597); large files wait to be asked.
+  const mediaFetch = (bytes = 'abcd', status = 200) => {
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(status === 200 ? bytes : JSON.stringify({ error: 'Not a file' }), {
+          status,
+          headers: {
+            'content-type':
+              status === 200 ? 'application/x-projectmanager-preview' : 'application/json',
+          },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const created: Blob[] = [];
+    URL.createObjectURL = vi.fn((blob: Blob) => {
+      created.push(blob);
+      return 'blob:preview-' + created.length;
     });
-    show('?tab=files&file=clip.mp4');
-    const player = (await screen.findByLabelText('Video preview: clip.mp4')) as HTMLVideoElement;
-    expect(player.controls).toBe(true);
-    expect(player.preload).toBe('metadata');
-    expect(player.hasAttribute('playsinline')).toBe(true);
-    expect(player.autoplay).toBe(false);
-    expect(player.getAttribute('src')).toContain('/media?path=clip.mp4');
-    expect(screen.queryByText(/2 MB max/)).toBeNull();
-    fireEvent.error(player);
-    expect(screen.getByRole('link', { name: 'Download the file' })).toBeTruthy();
-  });
-  it('previews audio without using the text renderer', async () => {
+    URL.revokeObjectURL = vi.fn();
+    return { fetchMock, created };
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('plays a small media file from an opaque read, never from a video/* URL (PM-597)', async () => {
+    const { fetchMock, created } = mediaFetch();
     vi.mocked(api.projectFile).mockResolvedValueOnce({
       kind: 'audio',
       path: 'song.mp3',
-      size: 10000000,
+      size: 4,
       mtime: new Date().toISOString(),
     });
     show('?tab=files&file=song.mp3');
     const player = (await screen.findByLabelText('Audio preview: song.mp3')) as HTMLAudioElement;
     expect(player.controls).toBe(true);
     expect(player.preload).toBe('metadata');
+    expect(player.getAttribute('src')).toBe('blob:preview-1');
+    expect(player.getAttribute('controlslist')).toBe('nodownload');
+    const url = fetchMock.mock.calls[0]![0];
+    expect(url).toContain('opaque=1&p=');
+    // No file extension anywhere in the request a download manager could match.
+    expect(url).not.toMatch(/.mp3/);
+    expect(created[0]!.type).toBe('audio/mpeg');
+  });
+
+  it('asks before reading a large video, and can stream it or load it (PM-597)', async () => {
+    const { fetchMock } = mediaFetch();
+    const big = {
+      kind: 'video' as const,
+      path: 'clip.mp4',
+      size: 100 * 1024 * 1024,
+      mtime: new Date().toISOString(),
+    };
+    vi.mocked(api.projectFile).mockResolvedValue(big);
+    show('?tab=files&file=clip.mp4');
+    await screen.findByRole('button', { name: 'Load preview' });
+    expect(screen.queryByLabelText('Video preview: clip.mp4')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Stream instead' }));
+    const player = (await screen.findByLabelText('Video preview: clip.mp4')) as HTMLVideoElement;
+    expect(player.preload).toBe('metadata');
+    expect(player.hasAttribute('playsinline')).toBe(true);
+    expect(player.autoplay).toBe(false);
+    expect(player.getAttribute('src')).toContain('/media?path=clip.mp4');
+    fireEvent.error(player);
+    expect(screen.getByRole('link', { name: 'Download the file' })).toBeTruthy();
+    vi.mocked(api.projectFile).mockReset();
+  });
+
+  it('loads a large video on request and reports a failed read (PM-597)', async () => {
+    const { fetchMock } = mediaFetch('', 400);
+    vi.mocked(api.projectFile).mockResolvedValue({
+      kind: 'video',
+      path: 'clip.webm',
+      size: 100 * 1024 * 1024,
+      mtime: new Date().toISOString(),
+    });
+    show('?tab=files&file=clip.webm');
+    fireEvent.click(await screen.findByRole('button', { name: 'Load preview' }));
+    expect(await screen.findByText('Not a file')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    vi.mocked(api.projectFile).mockReset();
   });
 
   it('lists the root, greys ignored entries, and opens folders on demand', async () => {

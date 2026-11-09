@@ -1,4 +1,4 @@
-import { streamMedia } from './mediaPreview.js';
+import { decodeMediaPath, streamMedia } from './mediaPreview.js';
 import { projectBranches } from './branches.js';
 import { GrokAccountError } from './agents/grokAccounts.js';
 import { createCardIssue, GitHubIssueError } from './githubIssues.js';
@@ -753,9 +753,19 @@ export function createApp(
 
   // Bytes for image previews and a previewed page's own styles and images. Never runnable on
   // this origin: a sandbox CSP and nosniff, so an .html or .svg can't script the app.
+  // `?opaque=1&p=<base64url path>` is the Files preview's own read (PM-597): the same bytes under
+  // a type download managers ignore, with no file extension anywhere in the URL.
   app.get('/projects/:id/media', async (c) => {
     const root = projectRoot(c);
-    return await fileErrors(() => streamMedia(root, c.req.query('path') ?? '', c.req.raw));
+    const opaque = c.req.query('opaque') === '1';
+    return await fileErrors(async () =>
+      streamMedia(
+        root,
+        opaque ? decodeMediaPath(c.req.query('p') ?? '') : (c.req.query('path') ?? ''),
+        c.req.raw,
+        { opaque },
+      ),
+    );
   });
 
   app.get('/projects/:id/raw', async (c) => {

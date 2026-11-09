@@ -211,6 +211,11 @@ anything.
   pinned conversation ID in the bounded CLI history tail, and invalidate the cache when history
   changes. Explicit metadata workspace mismatches must never be overridden by history.
 
+- PM-597: never point a `<video>`/`<audio>` element (or a plain fetch) at a response typed
+  video/* or audio/* for a preview: download managers like IDM take it over and cancel the
+  browser's copy. Read it with `loadOpaqueMedia` (`client/src/lib/opaqueMedia.ts`) and play the
+  blob; the direct stream is only for Stream instead and Download.
+
 - PM-526: `start_session` plans with `workerKind: 'session'` against the project's saved CLI
   limit, counting stopped and owner sessions but excluding orchestrator chats. Per-project run
   allocation does not block session starts, messages or assignment. Explicit wake reuses its slot.
