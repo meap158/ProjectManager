@@ -388,16 +388,15 @@ it.each(['all', 'idle', 'running', 'ended'])(
     }
     fireEvent.click(screen.getByRole('button', { name: 'Show Alpha' }));
     const header = document.querySelector('.work-panel .pane-head');
-    // The desktop copy sits with the session actions; phones show the copy beside ⋯ instead.
+    // One copy, with the session actions: phones open it from ⋯, so the name keeps its room.
     const headerContinue = header?.querySelector(
       '.pane-controls-buttons button[aria-label="Continue Alpha"]',
     );
-    const phoneContinue = header?.querySelector(
-      '.pane-continue-phone button[aria-label="Continue Alpha"]',
-    );
+    const continueCount = () =>
+      header?.querySelectorAll('button[aria-label="Continue Alpha"]').length ?? 0;
     if (status !== 'ended') {
       expect(headerContinue).toBeTruthy();
-      expect(phoneContinue).toBeTruthy();
+      expect(continueCount()).toBe(1);
       expect(headerContinue?.classList.contains('icon-btn')).toBe(true);
       const buttons = [...headerContinue!.parentElement!.querySelectorAll('button')];
       expect(
@@ -411,7 +410,7 @@ it.each(['all', 'idle', 'running', 'ended'])(
       ).toBeNull();
     } else {
       expect(headerContinue).toBeFalsy();
-      expect(phoneContinue).toBeFalsy();
+      expect(continueCount()).toBe(0);
     }
   },
 );

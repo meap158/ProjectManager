@@ -79,7 +79,9 @@ actions retain 44px touch targets with compact gaps; desktop keeps the Continue 
 Agents tab uses the same row actions in the same order (PM-425): Continue, then the same pane icon,
 which opens the session in the Agents workspace.
 The docked CLI header offers icon-only Continue between image and restart actions for supported
-live sessions in every status filter except Ended, matching the list-row rule.
+live sessions in every status filter except Ended, matching the list-row rule. On phones a
+session pane's Continue is in its ⋯ menu, left of Restart, in both the Chat and CLI views, so
+the session name keeps the header's room (PM-584).
 Mobile keeps header Continue inside the compact session actions menu.
 
 Settings > Agent CLIs keeps saved accounts inside each Codex/Claude entry's Accounts drawer.

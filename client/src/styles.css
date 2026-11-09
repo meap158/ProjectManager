@@ -6550,33 +6550,13 @@ body.is-reordering-rows {
   }
 }
 
-/* Phones keep a session's Continue beside ⋯ in its pane header in the CLI view. In the Chat view
-   it sits in the ⋯ menu, left of Restart, so the session name keeps its room (PM-584). */
-.pane-continue-phone,
+/* Phones: a session's Continue is in its ⋯ menu, left of Restart, in both views, so the session
+   name keeps the header's room (PM-584). */
 .session-continue-menu {
   /* Wide screens: the Chat view's composer has its own Continue key. */
   display: none;
 }
 @media (max-width: 768px) {
-  .pane-continue-phone {
-    display: inline-flex;
-  }
-  .pane-continue-phone .session-continue {
-    min-width: 44px;
-    min-height: 44px;
-  }
-  /* The workspace pane head is a grid with a column per control; Continue gets its own. */
-  .workspace .pane-head:has(> .pane-continue-phone) {
-    grid-template-columns: 8px minmax(0, 1fr) 44px repeat(3, var(--pane-action-size, 34px));
-  }
-  .workspace .pane-head:has(> .session-view-switch):has(> .pane-continue-phone) {
-    grid-template-columns: 8px minmax(0, 1fr) auto 44px repeat(3, var(--pane-action-size, 34px));
-  }
-  .pane-controls-buttons .session-continue,
-  .project-terminal-actions .session-continue {
-    display: none;
-  }
-  /* Chat view: Continue lives in the ⋯ menu instead (PM-584). */
   .session-continue-menu,
   .pane-controls-buttons .session-continue-menu .session-continue,
   .project-terminal-actions .session-continue-menu .session-continue {

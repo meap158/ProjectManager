@@ -876,13 +876,8 @@ function Pane({
           <ViewSwitch view={sessionView.view} onChange={sessionView.choose} />
         )}
         <span style={{ flex: 1 }} />
-        {/* Phones: in the CLI view Continue stays beside ⋯; in the Chat view it moves into the ⋯
-            menu, left of Restart, so the session name keeps its room (PM-584). */}
-        {showContinue && sessionView.view !== 'chat' && (
-          <span className="pane-continue-phone">
-            <SessionContinue session={s} onError={onError} iconOnly />
-          </span>
-        )}
+        {/* Phones: Continue is in the ⋯ menu, left of Restart, so the session name keeps its
+            room (PM-584). */}
         <div className={`pane-controls${mobileActionsOpen ? ' is-open' : ''}`}>
           <button
             type="button"
