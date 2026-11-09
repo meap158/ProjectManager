@@ -3161,10 +3161,18 @@ export class AgentSupervisor {
   /** At its prompt with nothing running: safe to type a command without interrupting work. */
   private readyForCommand(row: SessionRow, now: number): boolean {
     const session = this.toSession(row);
-    if (session.tailState === 'idle') return true;
-    // Unknown (no hook yet, no clear prompt): quiet for 20s counts as idle.
-    const last = session.lastOutputAt ? Date.parse(session.lastOutputAt) : 0;
-    return session.tailState === null && now - last > 20_000;
+    const quiet =
+      session.tailState === 'idle' ||
+      // Unknown (no hook yet, no clear prompt): quiet for 20s counts as idle.
+      (session.tailState === null &&
+        now - (session.lastOutputAt ? Date.parse(session.lastOutputAt) : 0) > 20_000);
+    if (!quiet) return false;
+    // Typed text goes to whatever has the keyboard. A dialog on screen (Codex's folder trust
+    // prompt, its agent command center) reads it as keys: one /rename once opened another
+    // project's conversation and moved the session there (PM-604). The drawn screen keeps a
+    // menu's lines apart, where the raw log can run them together.
+    const screen = this.sessionScreen(row.id, 4000);
+    return !screen || tailState(screen) !== 'input';
   }
 
   /** The CLI conversation a running session is in (Codex: found once, then remembered). */

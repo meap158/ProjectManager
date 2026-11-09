@@ -49,6 +49,16 @@ const CHOICE_PATTERNS = [
   /\((?:○|●)\)/,
   /[[(]\s*y\s*\/\s*n\s*[\])]/i,
   /resume\s+paused\s+goal\?/i,
+  // Codex's full-screen dialogs, drawn with cursor moves so their options run onto one line in
+  // the log: the folder trust prompt, the resume directory choice ("enter continue · esc back",
+  // "· esc use session"), the agent command center ("↑/↓ move", "enter open") and its delete
+  // confirmation. Text typed into these is read as keys (PM-604).
+  /trust\s*this\s*folder\s*\?/i,
+  /enter\s*continue\s*·\s*esc/i,
+  /↑\s*\/\s*↓\s*move/i,
+  /enter\s*open\b/i,
+  /agent\s*command\s*center/i,
+  /permanently\s*delete\s*(?:task|“|")/i,
   /goal\s+(?:hit\s+usage\s+lim\S*|paused)[^\n]*\/goal\s+resume/i,
 ];
 /** Choices count only near the end of the tail (the current screen, not scrollback). */

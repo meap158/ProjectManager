@@ -217,6 +217,12 @@ anything.
   blob; the direct stream is only for Stream instead, Download, and phones and tablets
   (`downloadManagersPossible`), where no download manager can hook the request.
 
+- PM-604: anything the app types into a CLI on its own (`/rename`, Continue, orchestrator
+  messages) must wait for its input box. Codex draws full-screen dialogs (folder trust, agent
+  command center, resume directory) that read typed text as keys: one `/rename` opened another
+  project's conversation and moved the session there. Those dialogs count as `input` in
+  `server/agents/activity.ts`, and `readyForCommand` also checks the drawn screen.
+
 - PM-526: `start_session` plans with `workerKind: 'session'` against the project's saved CLI
   limit, counting stopped and owner sessions but excluding orchestrator chats. Per-project run
   allocation does not block session starts, messages or assignment. Explicit wake reuses its slot.

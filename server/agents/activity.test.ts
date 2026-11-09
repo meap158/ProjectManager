@@ -153,6 +153,32 @@ ${ESC}[0mThinking…`),
         'Resume paused goal?\n› 1. Resume goal   Mark it active and continue when idle\n  2. Leave paused  Keep it paused; use /goal resume later\n› Ask Codex to do anything   enter select · esc back\nGoal hit usage limits (/goal resume)',
       ),
     ).toBe('input');
+    // Codex's full-screen dialogs as the log holds them, options run onto one line (PM-604): the
+    // folder trust prompt over the input box, the agent command center, its delete confirmation
+    // and the resume directory choice. Typing a /rename into these opened another project.
+    const composer = '› Ask Codex to do anything\n\n? for shortcuts  ';
+    expect(
+      tailState(
+        `${composer}Folder accessS:\\Vibe Coding\\PenseTrustthisfolder?Codexcanread,edit,andrunfileshere.› 1. Trust and continue        2.BacktoAgentCommandCenterenter continue · esc back`,
+      ),
+    ).toBe('input');
+    expect(
+      tailState(
+        `${composer}Agent command center  Group: Project  g All 10   Needs you 0  Working 0 › ○ continue  Inactive 17h ago ? help  esc back  ↑/↓ move  enter open  n new`,
+      ),
+    ).toBe('input');
+    expect(tailState(`${composer}› 1. Cancel  2. Permanently delete task and child agents`)).toBe(
+      'input',
+    );
+    expect(
+      tailState(
+        `${composer}Working directory · resume  › 1. Use session directory (S:\\Vibe Coding\\ProjectManager)   2. Use current directory (S:\\Vibe Coding\\Pense) enter continue · esc use session`,
+      ),
+    ).toBe('input');
+    // The plain input box, with its "← for agents" hint, is still idle.
+    expect(tailState('› Ask Codex to do anything\n\n  ← for agents · ? for shortcuts')).toBe(
+      'idle',
+    );
     expect(
       tailState(
         '■ You’ve hit your usage limit.\n› Ask Codex to do anything\nGoal hit usage lim ts (/goal resume',
