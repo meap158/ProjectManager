@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Db } from '../db.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { AgentSession } from '../../shared/types.js';
+import { sessionLabel } from '../../shared/sessionLabel.js';
 import {
   getCard,
   getSetting,
@@ -137,11 +138,7 @@ export class AutoCheck {
     for (const sessionId of previous.running)
       if (!current.state.running.includes(sessionId)) {
         const name = this.deps.listSessions().find((s) => s.id === sessionId)?.name;
-        triggers.push(
-          name
-            ? `"${name}" (session ${sessionId}) stopped working`
-            : `session ${sessionId} stopped working`,
-        );
+        triggers.push(`${sessionLabel({ id: sessionId, name })} stopped working`);
       }
     for (const cardId of current.state.review)
       if (!previous.review.includes(cardId)) triggers.push(`card ${cardId} moved to Review`);

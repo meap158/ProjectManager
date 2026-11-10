@@ -13,6 +13,7 @@ import type { AntigravityAccountsState } from '../../shared/antigravityAccounts.
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
 import { enrollmentKey, ownedSessionIds } from './ownedWorkers.js';
+import { sessionLabel } from '../../shared/sessionLabel.js';
 
 interface Enrollment {
   owner: string;
@@ -24,6 +25,8 @@ interface Enrollment {
 export interface SessionReadiness {
   sessionId: number;
   name: string;
+  /** Name with number, the way the owner reads sessions (PM-607). */
+  label: string;
   projectId: number;
   cardId: number | null;
   cardKey: string | null;
@@ -137,7 +140,7 @@ export class SessionSupervision {
     this.event(
       owner,
       enabled ? 'session-enrolled' : 'session-released',
-      `"${session.name}" (session ${id}) ${enabled ? 'enrolled for automatic continuation' : 'released from automatic continuation'}`,
+      `${sessionLabel(session)} ${enabled ? 'enrolled for automatic continuation' : 'released from automatic continuation'}`,
       session.cardId ?? undefined,
     );
     return this.inspect(owner, id);
@@ -234,6 +237,7 @@ export class SessionSupervision {
     return {
       sessionId: id,
       name: s.name,
+      label: sessionLabel(s),
       projectId: s.projectId,
       cardId: s.cardId,
       cardKey: s.cardKey,
@@ -316,7 +320,7 @@ export class SessionSupervision {
       this.event(
         owner,
         'session-delivery-unknown',
-        `"${session.name}" (session ${id}): continuation delivery is uncertain; inspect worker_output before retrying`,
+        `${sessionLabel(session)}: continuation delivery is uncertain; inspect worker_output before retrying`,
         session.cardId ?? undefined,
       );
       throw error;
@@ -324,13 +328,14 @@ export class SessionSupervision {
     this.event(
       owner,
       'session-continued',
-      `"${session.name}" (session ${id}) continued on ${session.cardKey}`,
+      `${sessionLabel(session)} continued on ${session.cardKey}`,
       session.cardId ?? undefined,
     );
     return {
       sent: true,
       queued: result.queued,
       sessionId: id,
+      label: sessionLabel(session),
       delivery: 'Check worker_output before retrying',
     };
   }
@@ -371,11 +376,12 @@ export class SessionSupervision {
     this.event(
       owner,
       'session-woken',
-      `"${session.name}" (session ${id}) resumed; inspect it before continuing`,
+      `${sessionLabel(session)} resumed; inspect it before continuing`,
       session.cardId ?? undefined,
     );
     return {
       sessionId: resumed.id,
+      label: sessionLabel(resumed),
       status: resumed.status,
       note: 'Conversation resumed; check readiness before sending another instruction',
     };

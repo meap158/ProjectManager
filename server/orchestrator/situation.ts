@@ -5,6 +5,7 @@ import type {
   SituationWorker,
 } from '../../shared/orchestrator.js';
 import { projectAttention } from '../../shared/projectAttention.js';
+import { sessionLabel } from '../../shared/sessionLabel.js';
 import type {
   AgentRun,
   AgentSession,
@@ -75,7 +76,7 @@ export function buildSituation(input: SituationInput, includeWork = true): Orche
       kind: 'needs-input',
       projectId: s.projectId,
       projectName: name(s.projectId),
-      title: `${s.name} is waiting for your choice`,
+      title: `${sessionLabel(s)} is waiting for your choice`,
       detail: asking ? `On screen: ${asking}` : 'The agent is asking you to choose or approve.',
       sessionId: s.id,
       cardId: s.cardId ?? undefined,

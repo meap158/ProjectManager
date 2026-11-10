@@ -68,6 +68,15 @@ are limited to the orchestrator's projects at call time:
 - `message_worker`: a message to a worker session, only while it is idle (never while it works
   or is asking the user something).
 - `list_sessions`: the CLI sessions in scope, with project, agent, state and linked card.
+
+**Naming sessions (PM-606, PM-607).** The owner reads sessions by name, so every session in a
+tool result carries a `label` with its name and number (`"Splash" (session 138)`), and worker
+messages carry the same in `session`. Activity lines, refusals, worker-message prompts and Home's
+"waiting for your choice" use the same form, from `sessionLabel` in `shared/sessionLabel.ts`. The
+briefing tells the chat to write sessions that way in chat, card notes, goal notes, hand-overs and
+messages to workers. Only an id that matches no session in scope stays a bare number, and so do
+activity lines recorded before this change.
+
 - `assign_card`: hand a card to a running CLI session in the card's project, the card dialog's
   Send to session (`supervisor.attachCard` with `send`): links it, moves it to In progress and
   types the task in. Only an idle session with no other live card and no undelivered input (a

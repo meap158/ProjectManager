@@ -233,6 +233,8 @@ anything.
 - PM-606: text the app writes about a session (UI, activity lines, tool answers, docs) names
   it with its number through `sessionLabel` (`shared/sessionLabel.ts`): `"Splash" (session 138)`,
   never a bare number. Only an id the caller sent that matches no session may stay a number.
+  PM-607: orchestrator tool results give each session a `label` to quote, and the chat briefing
+  tells orchestrators to write sessions that way.
 
 - PM-526: `start_session` plans with `workerKind: 'session'` against the project's saved CLI
   limit, counting stopped and owner sessions but excluding orchestrator chats. Per-project run
