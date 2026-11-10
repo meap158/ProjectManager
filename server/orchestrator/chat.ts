@@ -88,6 +88,7 @@ import {
 } from './workerMessages.js';
 import type { OrchestratorService } from './service.js';
 import { type SopStore, checkProject, sopCardText, sopInfo, sopReport } from '../sops.js';
+import { sessionLabel } from '../../shared/sessionLabel.js';
 
 // An orchestrator's own chat CLI (PM-89). The user talks to it like any agent terminal;
 // it knows the orchestrator's projects (a briefing file in its own folder, written at every open) and
@@ -1421,7 +1422,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       (m) => m.direction === 'to_worker' && m.sessionId === s.id && !m.deliveredAt && !m.dropped,
     ).length;
     if (waiting >= QUEUED_PER_SESSION)
-      fail(`Session ${s.id} already has ${waiting} messages waiting; let it catch up first`);
+      fail(`${sessionLabel(s)} already has ${waiting} messages waiting; let it catch up first`);
     noteContact(this.db, s.id, orchestratorId);
     const message = addMessage(this.db, {
       orchestratorId,
@@ -1435,7 +1436,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     this.record(
       orchestratorId,
       kind === 'reply' ? 'replied' : 'messaged',
-      `${kind === 'reply' ? `Reply to #${replyTo}` : 'Message'} queued for session ${s.id} "${s.name}": ${text.slice(0, 120)}`,
+      `${kind === 'reply' ? `Reply to #${replyTo}` : 'Message'} queued for ${sessionLabel(s)}: ${text.slice(0, 120)}`,
       s.cardId ?? undefined,
       text,
     );
@@ -1507,7 +1508,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
     this.record(
       owner!.id,
       `worker-${input.kind}`,
-      `#${message.id} from session ${s!.id} "${s!.name}": ${input.text.slice(0, 160)}`,
+      `#${message.id} from ${sessionLabel(s!)}: ${input.text.slice(0, 160)}`,
       s!.cardId ?? undefined,
       input.text,
     );
@@ -2304,21 +2305,21 @@ export class OrchestratorChat implements OrchestratorToolHost {
       const s = this.supervisor.getSession(input.sessionId);
       if (!s || !inScope(s.projectId) || s.orchestratorId)
         fail(`Session ${input.sessionId} is not a worker in your scope`);
-      if (s!.status !== 'running') fail(`Session ${s!.id} is not running`);
+      if (s!.status !== 'running') fail(`${sessionLabel(s!)} is not running`);
       if (input.queue && (s!.tailState !== 'idle' || s!.queuedInputBytes > 0))
         return this.queueForWorker(orchestratorId, s!, 'message', input.text);
       if (s!.tailState !== 'idle')
         fail(
           s!.tailState === 'input'
-            ? `Session ${s!.id} is asking the user something; leave it to them`
-            : `Session ${s!.id} is working; check back later`,
+            ? `${sessionLabel(s!)} is asking the user something; leave it to them`
+            : `${sessionLabel(s!)} is working; check back later`,
         );
       this.supervisor.sendInput(s!.id, `\x1b[200~${input.text}\x1b[201~\r`, false);
       noteContact(this.db, s!.id, orchestratorId);
       this.record(
         orchestratorId,
         'messaged',
-        `Session ${s!.id} "${s!.name}": ${input.text.slice(0, 120)}`,
+        `${sessionLabel(s!)}: ${input.text.slice(0, 120)}`,
         s!.cardId ?? undefined,
         input.text,
       );
@@ -2573,9 +2574,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
         fail(`Session ${input.sessionId} is not a CLI session in your scope`);
       if (s!.projectId !== c.projectId)
         fail(
-          `Session ${s!.id} works in ${projectName(s!.projectId)}, not ${projectName(c.projectId)}; pick a session in the card's project or start one`,
+          `${sessionLabel(s!)} works in ${projectName(s!.projectId)}, not ${projectName(c.projectId)}; pick a session in the card's project or start one`,
         );
-      if (s!.status !== 'running') fail(`Session ${s!.id} is not running`);
+      if (s!.status !== 'running') fail(`${sessionLabel(s!)} is not running`);
       // A session still linked to a card in Review or Done has finished it (PM-437): the link is
       // stale, and refusing left the chat messaging the session about a card it was not linked to.
       const linked =
@@ -2586,7 +2587,9 @@ export class OrchestratorChat implements OrchestratorToolHost {
         linked?.status !== 'review' &&
         linked?.status !== 'done'
       )
-        fail(`Session ${s!.id} is working on ${s!.cardKey}; pick an idle session without a card`);
+        fail(
+          `${sessionLabel(s!)} is working on ${s!.cardKey}; pick an idle session without a card`,
+        );
       const own = ownWorkers();
       const { sessions, runs } = own.all;
       if (
@@ -2600,15 +2603,15 @@ export class OrchestratorChat implements OrchestratorToolHost {
       // Typing into a session mid-turn or mid-question would mix into its work: re-read the
       // state right before sending.
       const fresh = this.supervisor.getSession(s!.id);
-      if (!fresh || fresh.status !== 'running') fail(`Session ${s!.id} is not running`);
+      if (!fresh || fresh.status !== 'running') fail(`${sessionLabel(s!)} is not running`);
       if (fresh!.tailState !== 'idle')
         fail(
           fresh!.tailState === 'input'
-            ? `Session ${s!.id} is asking the user something; leave it to them`
-            : `Session ${s!.id} is working; check back later or start a session instead`,
+            ? `${sessionLabel(s!)} is asking the user something; leave it to them`
+            : `${sessionLabel(s!)} is working; check back later or start a session instead`,
         );
       if (fresh!.queuedInputBytes > 0)
-        fail(`Session ${s!.id} still has input waiting to be delivered; check back later`);
+        fail(`${sessionLabel(s!)} still has input waiting to be delivered; check back later`);
       // Sessions hear how to reach this orchestrator back (PM-432).
       const prompt = defaultPrompt(
         c.key,
@@ -2637,14 +2640,14 @@ export class OrchestratorChat implements OrchestratorToolHost {
       this.record(
         orchestratorId,
         'assigned',
-        `${c.key} handed to session ${s!.id} "${s!.name}" (chat)`,
+        `${c.key} handed to ${sessionLabel(s!)} (chat)`,
         c.id,
       );
       return {
         assigned: true,
         ...(linked
           ? {
-              unlinked: `${linked.key} (${linked.status === 'review' ? 'Review' : 'Done'}) is no longer linked to session ${s!.id}`,
+              unlinked: `${linked.key} (${linked.status === 'review' ? 'Review' : 'Done'}) is no longer linked to ${sessionLabel(s!)}`,
             }
           : {}),
         delivery: result.sent
@@ -2783,7 +2786,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
       this.record(
         orchestratorId,
         'started',
-        `${c.key}: ${providerId} session ${session.id} started (chat)`,
+        `${c.key}: ${providerId} ${sessionLabel(session)} started (chat)`,
         c.id,
       );
       return {

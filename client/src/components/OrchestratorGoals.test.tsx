@@ -173,7 +173,7 @@ it('shows who works each card and when the orchestrator follows up, and confirms
   render(<OrchestratorGoals instance={instance} />, { wrapper: MemoryRouter });
   expect(await screen.findByText('Splash')).toBeTruthy();
   expect(screen.getByRole('link', { name: /PM-15/ }).getAttribute('title')).toContain(
-    'Session 138 "Splash" is working on it',
+    '"Splash" (session 138) is working on it',
   );
   // One follow-up line for the panel: a countdown, the last check and the goals it covers.
   expect(screen.getByRole('timer').textContent).toMatch(

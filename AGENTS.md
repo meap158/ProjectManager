@@ -230,6 +230,10 @@ anything.
   project's conversation and moved the session there. Those dialogs count as `input` in
   `server/agents/activity.ts`, and `readyForCommand` also checks the drawn screen.
 
+- PM-606: text the app writes about a session (UI, activity lines, tool answers, docs) names
+  it with its number through `sessionLabel` (`shared/sessionLabel.ts`): `"Splash" (session 138)`,
+  never a bare number. Only an id the caller sent that matches no session may stay a number.
+
 - PM-526: `start_session` plans with `workerKind: 'session'` against the project's saved CLI
   limit, counting stopped and owner sessions but excluding orchestrator chats. Per-project run
   allocation does not block session starts, messages or assignment. Explicit wake reuses its slot.

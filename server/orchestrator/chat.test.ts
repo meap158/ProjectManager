@@ -674,7 +674,9 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     const result = (await call('assign_card', { card: mine.key, sessionId: 42 })) as {
       unlinked: string;
     };
-    expect(result.unlinked).toBe(`${reviewed.key} (Review) is no longer linked to session 42`);
+    expect(result.unlinked).toBe(
+      `${reviewed.key} (Review) is no longer linked to "finished" (session 42)`,
+    );
     expect(attachCard).toHaveBeenCalledWith(42, mine.id, expect.anything());
     db.close();
   });

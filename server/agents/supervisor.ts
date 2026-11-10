@@ -61,6 +61,7 @@ import type {
   CodexAccountsState,
 } from '../../shared/types.js';
 import { isTerminalReport, stripTerminalReports } from '../../shared/terminalReports.js';
+import { sessionLabel as formatSessionLabel } from '../../shared/sessionLabel.js';
 import { boardConnection, boardTaskNote } from '../boardMcp.js';
 import { withAttachments, listAttachments, cardAttachmentsDir } from '../attachments.js';
 import type { Db } from '../db.js';
@@ -1721,7 +1722,7 @@ export class AgentSupervisor {
   private codexRotationWaitReason(): string | null {
     const sessionLabel = (id: number) => {
       const row = this.getSessionRow(id);
-      return `Codex session ${row?.name ? `"${row.name}" ` : ''}(#${id})`;
+      return `Codex ${formatSessionLabel({ id, name: row?.name })}`;
     };
     if (this.switchingCodexSession.size) return 'An account switch is in progress.';
     // Starting runs remain in this set until they exit. The run guard below distinguishes

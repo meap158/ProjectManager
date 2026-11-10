@@ -23,6 +23,7 @@ import { formatRelative } from '../format';
 import { serialPoll } from '../lib/serialPoll';
 import { CheckIcon, CloseIcon, LinkIcon, PauseIcon, PlayIcon, RefreshIcon } from './icons';
 import './orchestrator-chat.css';
+import { sessionLabel } from '../../../shared/sessionLabel';
 
 // Goals (PM-433): objectives the orchestrator pursues until they are done. The chat records them
 // when asked ("keep track of X and get it done"), or the owner adds one here; automatic checks
@@ -770,9 +771,9 @@ function GoalCards({
   );
 }
 
-/** "Session 138 Splash is working" etc., for a card's live worker (PM-454). */
+/** `"Splash" (session 138) is working` etc., for a card's live worker (PM-454, PM-606). */
 function workerLabel(w: NonNullable<GoalCard['worker']>): string {
-  const what = w.kind === 'session' ? `Session ${w.id} "${w.name}"` : `Run #${w.id} "${w.name}"`;
+  const what = w.kind === 'session' ? sessionLabel(w) : `Run #${w.id} "${w.name}"`;
   const state =
     w.state === 'input'
       ? 'is asking you something'
