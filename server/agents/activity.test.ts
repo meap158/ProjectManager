@@ -186,6 +186,18 @@ ${ESC}[0mThinking…`),
     ).toBe('input');
   });
 
+  it('an empty Codex input box on a wide terminal is idle, not unknown (PM-619)', () => {
+    // Real dump: the footer lines are padded with ~170 spaces, which once pushed the prompt past
+    // the tail limit and made the session report state null while it sat idle.
+    const pad = ' '.repeat(170);
+    const wide = `› Ask Codex to do anything\n\n  GPT-6.1-Sol low · S:\\Vibe Coding\\TiemNet · Assets${pad}Goal achieved (3m)\n  ← for agents · ? for shortcuts${pad}⚠ 3 warnings · f2 to view`;
+    expect(tailState(wide)).toBe('idle');
+    // Padding must not hide real work: a busy frame on a wide terminal still runs.
+    expect(
+      tailState(`Working (4s • esc to interrupt)${pad}\n› Ask Codex to do anything${pad}`),
+    ).toBe('running');
+  });
+
   it('plain numbered lists in an answer are not a choice', () => {
     expect(tailState('Steps:\n1. Install\n2. Run tests\n❯ ')).toBe('idle');
   });

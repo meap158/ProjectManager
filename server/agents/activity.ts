@@ -129,7 +129,12 @@ export function tailState(logTail: string): TailState | null {
   }
   const prompts = promptOffsets(text);
   const last = prompts.at(-1);
-  if (last === undefined || text.length - last > PROMPT_TAIL_CHARS) return null;
+  // Distance counts words, not padding: a wide terminal pads its footer lines with a hundred
+  // spaces each, which pushed an empty Codex input box past the limit and left the session
+  // "unknown" (state null) although nothing was running.
+  if (last === undefined || text.slice(last).replace(/\s+/g, ' ').length > PROMPT_TAIL_CHARS) {
+    return null;
+  }
   // The last frame: from the previous prompt draw (or a bounded window) to the end.
   const previous = prompts.length > 1 ? prompts.at(-2)! : Math.max(0, last - FRAME_CHARS);
   const frame = text.slice(Math.max(previous + 1, last - FRAME_CHARS));
