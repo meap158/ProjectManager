@@ -68,6 +68,25 @@ describe('orchestrator planning', () => {
     const asSession = planOrchestration(p, { ...state, workerKind: 'session' }, now);
     expect(asSession[0]?.action).toBe('dispatch');
   });
+  it("counts only orchestrators' workers toward the machine-wide cap (PM-668)", () => {
+    const p = { ...policy, maxWorkers: 4, maxWorkersPerProvider: 4 };
+    // 47 sessions the owner opened by hand in other projects, 4 in this one.
+    const open = (id: number, projectId: number) =>
+      ({ id, projectId, providerId: 'codex', status: 'running', cardId: null }) as AgentSession;
+    const sessions = [
+      ...Array.from({ length: 43 }, (_, i) => open(100 + i, 2)),
+      ...Array.from({ length: 4 }, (_, i) => open(200 + i, 1)),
+    ];
+    const state = { ...snapshot(), cards: [card(1)], sessions, workerKind: 'session' as const };
+    // Without the automation set every session counts, as before.
+    expect(planOrchestration(p, state, now)[0]?.waitReason).toBe('global_capacity');
+    // With it, the project still has CLI slots, so the session start goes ahead.
+    const owned = { ...state, orchestratorSessionIds: new Set<number>() };
+    expect(planOrchestration(p, owned, now)[0]?.action).toBe('dispatch');
+    // Runaway automation still stops at the cap.
+    const automated = { ...state, orchestratorSessionIds: new Set(sessions.map((s) => s.id)) };
+    expect(planOrchestration(p, automated, now)[0]?.waitReason).toBe('global_capacity');
+  });
   it('alternates projects and prefers the least recently served project across ticks', () => {
     const state = snapshot();
     state.cards = [card(1), card(2), card(3, 2), card(4, 2)];

@@ -32,6 +32,7 @@ import {
 } from './chat.js';
 import { readLimits } from '../agents/limits.js';
 import { OrchestratorAssignments } from './assignments.js';
+import { recordOwnedSession } from './ownedWorkers.js';
 import { providerStatuses } from '../agents/providers.js';
 
 vi.mock('../agents/providers.js', () => ({
@@ -292,14 +293,18 @@ describe('orchestrator chat tools (PM-89)', () => {
     db.prepare("UPDATE cards SET description = 'New instructions' WHERE id = ?").run(mine.id);
     expect(options.canCommit()).toBe(false);
     db.prepare('UPDATE cards SET description = ? WHERE id = ?').run(mine.description, mine.id);
-    sessions.push(
-      ...Array.from({ length: 32 }, (_, id) => ({
-        id,
-        projectId: b,
-        providerId: 'other',
-        status: 'running' as const,
-      })),
-    );
+    const crowd = Array.from({ length: 32 }, (_, id) => ({
+      id,
+      projectId: b,
+      providerId: 'other',
+      status: 'running' as const,
+      cardId: 999,
+    }));
+    sessions.push(...crowd);
+    // The owner's own sessions never fill the machine-wide cap (PM-668)...
+    expect(options.canCommit()).toBe(true);
+    // ...another orchestrator's workers do.
+    for (const s of crowd) recordOwnedSession(db, 'another-orchestrator', s.id, 999);
     expect(options.canCommit()).toBe(false);
     sessions.length = 0;
     expect(options.canCommit()).toBe(true);

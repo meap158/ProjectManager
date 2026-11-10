@@ -54,10 +54,17 @@ export interface OrchestratorPlanningSnapshot {
   /**
    * Sessions this orchestrator started or handed a card to (PM-417, `ownedSessionIds` in
    * ownedWorkers.ts). When given, the worker limits count only its own workers: those sessions
-   * and the runs carrying its id. Every live worker still blocks its card and counts toward the
-   * global safety cap. Without it every live worker counts, as before.
+   * and the runs carrying its id. Every live worker still blocks its card. Without it every live
+   * worker counts, as before.
    */
   ownedSessionIds?: ReadonlySet<number>;
+  /**
+   * Sessions any orchestrator owns (PM-668, `orchestratorSessionIds` in ownedWorkers.ts). When
+   * given, the machine-wide safety cap counts automation only: runs and these sessions. The
+   * owner's own terminals then never block an orchestrator from starting a session in a project
+   * that still has CLI slots. Without it every live session counts, as before.
+   */
+  orchestratorSessionIds?: ReadonlySet<number>;
   /**
    * Cards this orchestrator has worked on (PM-420, `ownedCardIds`). When given, an In progress
    * card with no live worker is only recovered when it is one of these: other In progress cards
@@ -101,7 +108,13 @@ export function planOrchestration(
     ? workers.filter((w) => !managed.includes(w))
     : workers.filter((w) => !scope(w.projectId));
   let totalScoped = managed.length;
-  let totalWorkers = workers.length;
+  // The safety cap guards against runaway automation; the owner's own terminals are not that.
+  const automated = snapshot.orchestratorSessionIds;
+  const liveSessions = snapshot.sessions.filter((s) => s.status === 'running');
+  let totalWorkers =
+    workers.length -
+    liveSessions.length +
+    (automated ? liveSessions.filter((s) => automated.has(s.id)).length : liveSessions.length);
   const GLOBAL_SAFETY_CAP = 32;
 
   const projectCounts = new Map<number, number>();

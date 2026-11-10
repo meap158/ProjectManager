@@ -12,7 +12,7 @@ import { antigravityAccounts, refreshAntigravityAccount } from '../agents/antigr
 import type { AntigravityAccountsState } from '../../shared/antigravityAccounts.js';
 import { planOrchestration } from './planner.js';
 import { planningRuns } from './planningRuns.js';
-import { enrollmentKey, ownedSessionIds } from './ownedWorkers.js';
+import { enrollmentKey, orchestratorSessionIds, ownedSessionIds } from './ownedWorkers.js';
 import { sessionLabel } from '../../shared/sessionLabel.js';
 
 interface Enrollment {
@@ -358,6 +358,7 @@ export class SessionSupervision {
         // Resuming reuses this saved CLI slot rather than creating another one.
         sessions: sessions.filter((s) => s.id !== id),
         ownedSessionIds: ownedSessionIds(this.db, owner, sessions),
+        orchestratorSessionIds: orchestratorSessionIds(this.db, sessions),
         availableProviders: [session.providerId],
         limits: this.quota(session),
       },

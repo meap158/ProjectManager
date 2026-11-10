@@ -96,3 +96,30 @@ export function ownedSessionIds(
   }
   return owned;
 }
+
+/**
+ * The ids of the given sessions that any orchestrator owns right now (the union of
+ * `ownedSessionIds` over every orchestrator with records or supervision). The machine-wide
+ * safety cap counts these, not the sessions the owner opened by hand (PM-668).
+ */
+export function orchestratorSessionIds(db: Db, sessions: readonly AgentSession[]): Set<number> {
+  const owners = new Set<string>();
+  const prefix = 'orchestrator-owned-sessions:';
+  for (const { key: name } of db
+    .prepare("SELECT key FROM settings WHERE key LIKE 'orchestrator-owned-sessions:%'")
+    .all() as { key: string }[])
+    owners.add(name.slice(prefix.length));
+  for (const { value } of db
+    .prepare("SELECT value FROM settings WHERE key LIKE 'orchestrator-session-supervision:%'")
+    .all() as { value: string }[]) {
+    try {
+      const e = JSON.parse(value) as Enrollment;
+      if (e.enabled && e.owner) owners.add(e.owner);
+    } catch {
+      // A malformed record owns nothing.
+    }
+  }
+  const all = new Set<number>();
+  for (const owner of owners) for (const id of ownedSessionIds(db, owner, sessions)) all.add(id);
+  return all;
+}

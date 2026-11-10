@@ -48,7 +48,7 @@ import type {
 import type { OrchestratorToolHost } from '../boardMcp.js';
 import { cardContext } from './situation.js';
 import { planOrchestration } from './planner.js';
-import { ownedSessionIds, recordOwnedSession } from './ownedWorkers.js';
+import { orchestratorSessionIds, ownedSessionIds, recordOwnedSession } from './ownedWorkers.js';
 import { orchestratorRunLevel } from './runLevel.js';
 import { planningRuns } from './planningRuns.js';
 import { OrchestratorAssignments } from './assignments.js';
@@ -1731,6 +1731,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
           runs: planningRuns(this.db, policy.projectIds),
           sessions,
           ownedSessionIds: ownedSessionIds(this.db, orchestratorId, sessions),
+          orchestratorSessionIds: orchestratorSessionIds(this.db, sessions),
           availableProviders:
             available.has(providerId) && policy.providers.includes(providerId) ? [providerId] : [],
           limits: readLimits(this.dataDir),
@@ -1895,7 +1896,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
           maxRunWorkersPerProject: instance.maxWorkersPerProject,
           maxSessionsPerProject: MAX_SESSIONS_PER_PROJECT,
           notCountedWorkers: all.sessions.length + all.runs.length - sessions.length - runs.length,
-          note: "maxWorkers (and the per-provider limit) cap run workers (dispatch_worker): only yourWorkers count, sessions included. Session work follows only maxSessionsPerProject: assign_card and message_worker to an existing idle session are never refused for worker limits, and start_session needs a free CLI slot in that project (all saved project CLI sessions count, stopped and the owner's included; orchestrator chats excluded). Reuse idle sessions when CLI slots are full. A card with a live worker stays theirs.",
+          note: "maxWorkers (and the per-provider limit) cap run workers (dispatch_worker): only yourWorkers count, sessions included. Session work follows only maxSessionsPerProject: assign_card and message_worker to an existing idle session are never refused for worker limits, and start_session needs a free CLI slot in that project (all saved project CLI sessions count, stopped and the owner's included; orchestrator chats excluded). Reuse idle sessions when CLI slots are full. The owner's own sessions never count against a machine-wide limit, so a project with free CLI slots can always take a new session unless memory or disk is low. A card with a live worker stays theirs.",
         },
         projects: projects.map((p) =>
           priority.has(p.id) ? { ...projectBrief(p), priority: true } : projectBrief(p),

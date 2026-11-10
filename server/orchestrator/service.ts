@@ -33,7 +33,7 @@ import {
   workspaceLiveAssignments,
 } from './workspaceRuns.js';
 import { planOrchestration, type OrchestratorPlanningSnapshot } from './planner.js';
-import { ownedCardIds, ownedSessionIds } from './ownedWorkers.js';
+import { orchestratorSessionIds, ownedCardIds, ownedSessionIds } from './ownedWorkers.js';
 import { orchestratorRunLevel } from './runLevel.js';
 import { planningRuns } from './planningRuns.js';
 import { pendingDatabasePage } from './pendingPage.js';
@@ -362,6 +362,7 @@ export class OrchestratorService {
       runs,
       sessions,
       ownedSessionIds: ownedSessionIds(this.db, instance.id, sessions),
+      orchestratorSessionIds: orchestratorSessionIds(this.db, sessions),
       ownedCardIds: ownedCardIds(this.db, instance.id),
       availableProviders: providers.filter((p) => p.available).map((p) => p.id),
       limits: readLimits(this.dataDir),
@@ -798,6 +799,7 @@ export class OrchestratorService {
           runs: planningRuns(this.db, initial.projectIds),
           sessions,
           ownedSessionIds: ownedSessionIds(this.db, initial.id, sessions),
+          orchestratorSessionIds: orchestratorSessionIds(this.db, sessions),
           ownedCardIds: ownedCardIds(this.db, initial.id),
           availableProviders: providers,
           limits: readLimits(this.dataDir),
