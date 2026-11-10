@@ -1,4 +1,5 @@
 import { decodeMediaPath, streamMedia } from './mediaPreview.js';
+import { VideoThumbs } from './videoThumbs.js';
 import { projectBranches } from './branches.js';
 import { GrokAccountError } from './agents/grokAccounts.js';
 import { createCardIssue, GitHubIssueError } from './githubIssues.js';
@@ -369,6 +370,7 @@ export function createApp(
   );
   // Card images live beside the agent logs: <dataDir>/attachments/<cardId>/.
   const attachmentsRoot = path.join(path.dirname(logDir), 'attachments');
+  const videoThumbs = new VideoThumbs(path.join(path.dirname(logDir), 'video-thumbs'));
   const orchestratorChat = new OrchestratorChat(
     db,
     supervisor,
@@ -786,6 +788,22 @@ export function createApp(
         { opaque },
       ),
     );
+  });
+
+  // A small JPEG frame of a video for the Files grid and the player's poster (PM-647). 404 when
+  // ffmpeg is missing or cannot read the file; the grid then keeps its icon.
+  app.get('/projects/:id/video-thumb', async (c) => {
+    const root = projectRoot(c);
+    const thumb = await fileErrors(() => videoThumbs.thumb(root, c.req.query('path') ?? ''));
+    if (!thumb) throw new HttpError(404, 'No thumbnail for this video');
+    const headers = {
+      'content-security-policy': "sandbox; default-src 'none'",
+      'x-content-type-options': 'nosniff',
+      'cache-control': 'private, no-cache',
+      etag: thumb.etag,
+    };
+    if (c.req.header('if-none-match') === thumb.etag) return c.body(null, 304, headers);
+    return c.body(new Uint8Array(thumb.bytes), 200, { ...headers, 'content-type': 'image/jpeg' });
   });
 
   app.get('/projects/:id/raw', async (c) => {

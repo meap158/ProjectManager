@@ -15,7 +15,11 @@ Files plays video and audio with native controls. Previews are read under a type
 managers such as IDM ignore and play from a blob, so opening one never starts a download; files
 over 64 MB wait for Load preview (with progress), or can be streamed directly on request. Phones and tablets
 stream directly from the start, since download managers are desktop programs. Media
-is independent of the 2 MB text-preview limit. HTML pages
+is independent of the 2 MB text-preview limit. The player has a Download button, which saves the
+copy it already loaded. Videos show a thumbnail in the folder grid and as the player's poster: one
+small JPEG frame per video, made by ffmpeg when it is installed (or `FFMPEG_PATH` points at it),
+at most two at a time, and cached in the data folder by path, size and modified time. Without
+ffmpeg the grid keeps the file icon. Each folder in an open file's path opens that folder. HTML pages
 up to 25 MB render in the existing sandbox; source above 2 MB is available as a download.
 
 Files image previews open fitted to the available window, with actual-size zoom and a bounded

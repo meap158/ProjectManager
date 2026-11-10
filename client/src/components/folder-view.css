@@ -275,6 +275,20 @@
   height: 100%;
   object-fit: cover;
 }
+/* Marks a video's frame as a video (PM-647). */
+.fv-play {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  background: rgb(0 0 0 / 0.6);
+  pointer-events: none;
+}
 .fv-name {
   overflow: hidden;
   font-size: 13px;

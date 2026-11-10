@@ -520,6 +520,58 @@
   display: block;
   width: 100%;
 }
+/* Download on the player (PM-647): over the video's top right corner, beside an audio bar. */
+.files-media-video {
+  position: relative;
+}
+.files-media-download {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.files-media-download:hover {
+  color: var(--text);
+}
+.files-media-download:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.files-media-video .files-media-download {
+  position: absolute;
+  top: 16px;
+  right: 8px;
+  z-index: 1;
+  color: #fff;
+  background: rgb(0 0 0 / 0.55);
+  border-color: transparent;
+}
+.files-media-video .files-media-download:hover {
+  background: rgb(0 0 0 / 0.75);
+}
+.files-media-audio {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.files-media-audio audio {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.files-media-audio .error-banner {
+  flex-basis: 100%;
+}
+@media (pointer: coarse) {
+  .files-media-download {
+    width: 44px;
+    height: 44px;
+  }
+}
 .files-media .error-banner {
   margin-top: 8px;
 }

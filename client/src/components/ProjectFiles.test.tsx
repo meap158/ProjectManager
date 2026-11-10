@@ -34,6 +34,8 @@ vi.mock('../api', () => ({
     })),
     projectMediaUrl: (id: number, path: string) => `/api/projects/${id}/media?path=${path}`,
     projectRawUrl: (id: number, path: string) => `/api/projects/${id}/raw?path=${path}`,
+    projectVideoThumbUrl: (id: number, path: string) =>
+      `/api/projects/${id}/video-thumb?path=${path}`,
     renameProjectFile: vi.fn(async (_id: number, path: string, name: string) => {
       const next = [...path.split('/').slice(0, -1), name].join('/');
       const list = FOLDERS['']!.entries;
@@ -139,6 +141,36 @@ describe('ProjectFiles', () => {
     // No file extension anywhere in the request a download manager could match.
     expect(url).not.toMatch(/.mp3/);
     expect(created[0]!.type).toBe('audio/mpeg');
+  });
+
+  it('offers Download on the player from the loaded copy, with a frame as poster (PM-647)', async () => {
+    const { fetchMock } = mediaFetch();
+    vi.mocked(api.projectFile).mockResolvedValueOnce({
+      kind: 'video',
+      path: 'docs/clip.mp4',
+      size: 4,
+      mtime: new Date().toISOString(),
+    });
+    show('?tab=files&file=docs/clip.mp4');
+    const player = (await screen.findByLabelText(
+      'Video preview: docs/clip.mp4',
+    )) as HTMLVideoElement;
+    expect(player.getAttribute('poster')).toContain('/video-thumb?path=docs/clip.mp4');
+    const link = screen.getByRole('link', { name: 'Download clip.mp4' });
+    // The bytes the player already has: no second transfer.
+    expect(link.getAttribute('href')).toBe('blob:preview-1');
+    expect(link.getAttribute('download')).toBe('clip.mp4');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a folder from the file's path (PM-647)", async () => {
+    show('?tab=files&file=docs/guide.ts');
+    const path = await screen.findByRole('navigation', { name: 'File path' });
+    expect(within(path).getByText('guide.ts').tagName).toBe('B');
+    fireEvent.click(within(path).getByRole('button', { name: 'docs' }));
+    await waitFor(() =>
+      expect(vi.mocked(api.folderInfo).mock.calls.some((call) => call[1] === 'docs')).toBe(true),
+    );
   });
 
   it('asks before reading a large video, and can stream it or load it (PM-597)', async () => {

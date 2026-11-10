@@ -43,6 +43,8 @@ vi.mock('../api', () => ({
   api: {
     folderInfo: vi.fn(async () => INFO),
     projectRawUrl: (id: number, path: string) => `/api/projects/${id}/raw?path=${path}`,
+    projectVideoThumbUrl: (id: number, path: string) =>
+      `/api/projects/${id}/video-thumb?path=${path}`,
   },
 }));
 const { FolderView } = await import('./FolderView');
@@ -410,6 +412,26 @@ describe('FolderView', () => {
     show();
     await screen.findByText('huge.png');
     expect(document.querySelector('.fv-thumb img')).toBeNull();
+  });
+
+  it("shows a video's server-made frame, never the video, and its icon when none (PM-647)", async () => {
+    const videos: FolderInfo = {
+      ...INFO,
+      files: 1,
+      folders: 0,
+      totalSize: 18 * 1024 * 1024,
+      items: [item('assets/clip.mp4', { size: 900 * 1024 * 1024 })],
+    };
+    vi.mocked(api.folderInfo).mockResolvedValueOnce(videos);
+    show();
+    await screen.findByText('clip.mp4');
+    const img = document.querySelector('.fv-thumb img') as HTMLImageElement;
+    expect(img.getAttribute('src')).toContain('/video-thumb?path=assets/clip.mp4');
+    expect(img.getAttribute('loading')).toBe('lazy');
+    expect(document.querySelector('.fv-play')).toBeTruthy();
+    fireEvent.error(img);
+    await waitFor(() => expect(document.querySelector('.fv-thumb img')).toBeNull());
+    expect(document.querySelector('.fv-play')).toBeNull();
   });
 });
 

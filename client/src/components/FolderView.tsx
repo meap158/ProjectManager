@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useSearchParams } from 'react-router';
+import { mediaKind } from '../../../shared/media';
 import type { FolderInfo, FolderItem } from '../../../shared/types';
 import { api } from '../api';
 import { formatBytes, formatRelative } from '../format';
@@ -33,6 +34,7 @@ import {
 } from './folderRules';
 import { FileTypeIcon, iconFor } from './fileIcons';
 import { FolderTypeIcon } from './FolderTypeIcon';
+import { PlayIcon } from './icons';
 import { ImageViewer } from './ImageViewer';
 import { useStuckTop } from '../stuckTop';
 import './folder-view.css';
@@ -293,12 +295,21 @@ export function FolderView({
   const modifiedId = useId();
   const sortId = useId();
   const itemsByPath = useMemo(() => new Map(data?.items.map((item) => [item.path, item])), [data]);
-  const rawUrl = useCallback(
+  const version = useCallback(
     (path: string) => {
       const item = itemsByPath.get(path);
-      return `${api.projectRawUrl(projectId, path)}&v=${encodeURIComponent(`${item?.mtime ?? ''}|${item?.size ?? ''}|${reload}`)}`;
+      return `&v=${encodeURIComponent(`${item?.mtime ?? ''}|${item?.size ?? ''}|${reload}`)}`;
     },
-    [projectId, itemsByPath, reload],
+    [itemsByPath, reload],
+  );
+  const rawUrl = useCallback(
+    (path: string) => `${api.projectRawUrl(projectId, path)}${version(path)}`,
+    [projectId, version],
+  );
+  // A video's frame, made once on the server (PM-647), never the video itself.
+  const thumbUrl = useCallback(
+    (path: string) => `${api.projectVideoThumbUrl(projectId, path)}${version(path)}`,
+    [projectId, version],
   );
 
   const open = (item: FolderItem) => {
@@ -592,6 +603,7 @@ export function FolderView({
                   item={item}
                   seenAt={seenAt}
                   rawUrl={rawUrl}
+                  thumbUrl={thumbUrl}
                   onOpen={open}
                   showPath={view.recursive}
                 />
@@ -684,22 +696,26 @@ function GridCell({
   item,
   seenAt,
   rawUrl,
+  thumbUrl,
   onOpen,
   showPath,
 }: {
   item: FolderItem;
   seenAt: number | null;
   rawUrl: (path: string) => string;
+  thumbUrl: (path: string) => string;
   onOpen: (item: FolderItem) => void;
   showPath: boolean;
 }) {
+  const video = item.kind !== 'dir' && mediaKind(item.name) === 'video';
   const canThumb =
-    typeGroupOf(item) === 'image' &&
-    canPreviewImage(item.name) &&
-    (item.size ?? 0) <= THUMB_MAX_BYTES;
+    video ||
+    (typeGroupOf(item) === 'image' &&
+      canPreviewImage(item.name) &&
+      (item.size ?? 0) <= THUMB_MAX_BYTES);
   // The failed path, not a flag: a new path renders a new thumbnail without an effect.
   const [failedPath, setFailedPath] = useState<string | null>(null);
-  const source = rawUrl(item.path);
+  const source = video ? thumbUrl(item.path) : rawUrl(item.path);
   const image = canThumb && failedPath !== source;
   const spec = iconFor(item);
   return (
@@ -723,6 +739,11 @@ function GridCell({
             />
           ) : (
             <FileTypeIcon spec={spec} size={36} />
+          )}
+          {image && video && (
+            <span className="fv-play" aria-hidden="true">
+              <PlayIcon size={12} />
+            </span>
           )}
           <Badge item={item} seenAt={seenAt} />
           <GitMarker item={item} />

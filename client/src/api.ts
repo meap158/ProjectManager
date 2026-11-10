@@ -444,6 +444,9 @@ export const api = {
   /** A file's bytes (images, a previewed page's styles), as a URL for the page to load. */
   projectRawUrl: (id: number, path: string) =>
     `/api/projects/${id}/raw?path=${encodeURIComponent(path)}`,
+  /** A small JPEG frame of a video, made once on the server (PM-647); 404 without ffmpeg. */
+  projectVideoThumbUrl: (id: number, path: string) =>
+    `/api/projects/${id}/video-thumb?path=${encodeURIComponent(path)}`,
   /** Keyboard shortcuts changed from their defaults (PM-244). */
   /** Preview (PM-253): apps listening on this computer, and the saved quick launches. */
   localApps: (fresh = false) =>

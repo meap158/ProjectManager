@@ -355,6 +355,17 @@ export function CheckIcon(props: IconProps) {
   );
 }
 
+/** Download: an arrow down onto a tray. */
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M8 2.5v7.5" />
+      <path d="M4.8 7l3.2 3.2L11.2 7" />
+      <path d="M2.5 11v1.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V11" />
+    </Base>
+  );
+}
+
 /** Link two things: a chain of two rounded links. */
 export function LinkIcon(props: IconProps) {
   return (

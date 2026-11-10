@@ -18,7 +18,7 @@ import { formatBytes, formatRelative } from '../format';
 import { AUTO_LOAD_BYTES, downloadManagersPossible, loadOpaqueMedia } from '../lib/opaqueMedia';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { ConfirmDelete } from './ConfirmDelete';
-import { MoreIcon } from './icons';
+import { DownloadIcon, MoreIcon } from './icons';
 import { FolderView } from './FolderView';
 import { ChevronIcon, FileTypeIcon, iconFor } from './fileIcons';
 import './project-files.css';
@@ -904,6 +904,7 @@ export function ProjectFiles({
             projectId={projectId}
             path={openFile}
             onOpenFile={openFromPreview}
+            onOpenDir={goDir}
             onClose={() =>
               setParams((p) => {
                 const next = Object.fromEntries(p);
@@ -995,11 +996,13 @@ function FileView({
   path,
   onClose,
   onOpenFile,
+  onOpenDir,
 }: {
   projectId: number;
   path: string;
   onClose: () => void;
   onOpenFile: (path: string) => void;
+  onOpenDir: (path: string) => void;
 }) {
   // The file on screen stays until the next one has arrived (no blank pane, no skeleton flash),
   // dimmed a little meanwhile; the header already names the new file.
@@ -1035,14 +1038,27 @@ function FileView({
         <button type="button" className="btn btn-sm files-back" onClick={onClose}>
           ← Files
         </button>
-        <span className="files-crumbs truncate" title={path}>
-          {crumbs.map((c, i) => (
-            <span key={i}>
-              {i > 0 && <span className="faint"> / </span>}
-              {i === crumbs.length - 1 ? <b>{c}</b> : c}
-            </span>
-          ))}
-        </span>
+        {/* Each folder in the path opens that folder, as the folder view's path does (PM-647). */}
+        <nav className="files-crumbs truncate" aria-label="File path" title={path}>
+          <button type="button" className="fv-crumb" onClick={() => onOpenDir('')}>
+            Project
+          </button>
+          {crumbs.map((c, i) => {
+            const dir = crumbs.slice(0, i + 1).join('/');
+            return (
+              <span key={dir}>
+                <span className="faint"> / </span>
+                {i === crumbs.length - 1 ? (
+                  <b aria-current="page">{c}</b>
+                ) : (
+                  <button type="button" className="fv-crumb" onClick={() => onOpenDir(dir)}>
+                    {c}
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </nav>
         {preview && (
           <span className="faint files-meta num">
             {formatBytes(preview.size)} · {formatRelative(preview.mtime)}
@@ -1560,6 +1576,20 @@ function MediaPreview({
     };
   }, [mode, projectId, path]);
   const playable = mode === 'stream' ? src : blobUrl;
+  const fileName = path.slice(path.lastIndexOf('/') + 1);
+  // Saves the copy the player already holds when there is one, so the file is not sent twice;
+  // otherwise the direct file (a download manager taking that one over is what a download wants).
+  const download = (
+    <a
+      className="files-media-download"
+      href={blobUrl ?? src}
+      download={fileName}
+      title={`Download ${fileName}`}
+      aria-label={`Download ${fileName}`}
+    >
+      <DownloadIcon size={16} />
+    </a>
+  );
   if (!playable)
     return (
       <div className="files-media files-media-pending">
@@ -1608,19 +1638,24 @@ function MediaPreview({
               >
                 Stream instead
               </button>
+              <a className="btn btn-sm" href={src} download={fileName}>
+                <DownloadIcon size={14} /> Download
+              </a>
             </span>
           </>
         )}
       </div>
     );
   return (
-    <div className="files-media">
+    <div className={`files-media files-media-${kind}`}>
+      {download}
       {kind === 'video' ? (
         <video
           controls
           controlsList="nodownload"
           playsInline
           preload="metadata"
+          poster={api.projectVideoThumbUrl(projectId, path)}
           src={playable}
           aria-label={`Video preview: ${path}`}
           onError={() => setFailed(true)}
