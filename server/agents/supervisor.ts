@@ -4083,7 +4083,14 @@ export class AgentSupervisor {
     if (ticking === false && !fresh) return 'idle';
     // 4. A busy line with fresh output (first sighting, or digits ticking in place).
     if (fresh && tail && workingInTail(tail)) return 'running';
-    return turnState(row.id, lastOutputAt) ?? screen;
+    const known = turnState(row.id, lastOutputAt) ?? screen;
+    if (known || fresh) return known;
+    // PM-619: the 4 KB log tail often holds only cursor-move redraws (a clock, a footer), not the
+    // input box, so an idle Codex session with an empty box read as unknown (null) for hours and
+    // its queued messages never went in. The rendered screen shows the box; it is cached per log
+    // size, so a quiet session costs nothing. Fresh output keeps the recency fallback.
+    const rendered = this.sessionScreen(row.id, 1500);
+    return rendered ? tailState(rendered) : null;
   }
 
   private modeCheckedAt = new Map<number, number>();
