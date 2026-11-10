@@ -43,6 +43,36 @@ it('uses GROK_HOME and GROK_CONFIG_DIR with explicit precedence', () => {
   );
   expect(grokHome('/users/test', {})).toBe(path.join('/users/test', '.grok'));
 });
+it('keeps saved profiles when Grok empties the live login after a rejected refresh', async () => {
+  const { service, file, data } = setup();
+  const raw = auth('a@example.com');
+  writeFileSync(file, raw);
+  const saved = (await service.saveCurrent()).accounts[0]!;
+  const encryptedFile = path.join(data, 'grok-accounts', saved.id + '.enc');
+  const encrypted = readFileSync(encryptedFile);
+  writeFileSync(file, '{}');
+  expect(service.state()).toMatchObject({
+    defaultAccount: null,
+    accounts: [{ id: saved.id, active: false }],
+    authNote: expect.stringContaining('have not been deleted'),
+  });
+  expect(readFileSync(encryptedFile)).toEqual(encrypted);
+  await service.refresh('default');
+  await expect(service.import('{}')).rejects.toThrow('supported');
+  await service.switch(saved.id);
+  expect(readFileSync(file, 'utf8')).toBe(raw);
+});
+it('lists saved profiles but refuses to overwrite a malformed live login', async () => {
+  const { service, file } = setup();
+  const saved = (await service.import(auth('a@example.com'))).accounts[0]!;
+  writeFileSync(file, '{"partial":');
+  expect(service.state()).toMatchObject({
+    accounts: [{ id: saved.id }],
+    authNote: expect.stringContaining('cannot be read'),
+  });
+  await expect(service.switch(saved.id)).rejects.toThrow('Invalid Grok credential JSON');
+  expect(readFileSync(file, 'utf8')).toBe('{"partial":');
+});
 it('parses only trusted issuer entries and separates teams while preserving identity over token rotation', () => {
   expect(parseGrokAuth(auth('a@example.com', 'new')).id).toBe(
     parseGrokAuth(auth('a@example.com', 'old')).id,

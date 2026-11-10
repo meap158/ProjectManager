@@ -159,7 +159,7 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
           {busy
             ? 'Updating...'
             : a?.usageStatus === 'expired' && a.renewable
-              ? 'Access token expired; Grok renews it from the saved login when you switch to this account'
+              ? 'Access token expired; Grok may renew it, but a revoked refresh token requires browser sign-in. Automatic switching skips this login.'
               : a?.usageStatus === 'expired'
                 ? `Login expired: sign in with ${isGrok ? 'grok' : 'agy'}, then save the login again`
                 : a?.usageStatus === 'unavailable'
@@ -395,6 +395,11 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
       )}
       {state?.available && (
         <>
+          {state.authNote && (
+            <p className="faint" role="status">
+              {state.authNote}
+            </p>
+          )}
           <p className="faint">
             Switching changes the login for new {title} launches. Existing sessions keep their login
             until restarted.
@@ -450,8 +455,8 @@ export function NativeAccountsPanel({ providerId }: { providerId: 'antigravity' 
                     </li>
                     <li>
                       It picks the saved login with the least credit used, then the one saved first.
-                      A login whose usage can&apos;t be read (its saved token has expired) is tried
-                      last.
+                      Unexpired logins with unknown usage are tried last. Expired logins are skipped
+                      because their saved refresh token may no longer work.
                     </li>
                     <li>
                       A login it leaves is skipped until its credits reset, or for a day when the

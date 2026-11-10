@@ -54,6 +54,8 @@ and known remote branches with their latest commits. Branch reads never fetch or
 
 </div>
 
+Grok account recovery and saved-login behavior are documented in [Native Grok accounts](docs/GROK-ACCOUNTS.md). Saved profiles remain visible when Grok clears its active login; automatic rotation skips expired credentials.
+
 **ProjectManager** is an open-source, self-hosted AI coding agent manager and project dashboard.
 Add your project folders, start agent CLI sessions in real terminals, link them to board cards, and
 watch commits and pull requests move the cards for you. No account, no cloud, no tracking.

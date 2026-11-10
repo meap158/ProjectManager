@@ -58,9 +58,9 @@ export function grokSkipUntil(account: NativeAccount | null | undefined, now = D
 /**
  * The saved account to switch to, or null to stay. Only when the current login is verified out
  * of credits. Candidates: saved, readable, not the current login, not skipped, and not out by
- * their own reading. One whose usage is unknown (an expired saved token is never refreshed here,
- * since that would retire its refresh token) is allowed but ranked last; if it is out too, the
- * next tick moves on. Accounts the owner left out (PM-531) are never chosen. Ranking: least credit used, then saved order.
+ * their own reading. Unexpired logins with unknown usage rank last. Expired logins are skipped:
+ * ProjectManager cannot verify their refresh token without potentially retiring it.
+ * Accounts the owner left out (PM-531) are never chosen. Ranking: least credit used, then saved order.
  */
 export function nextGrokAccount(
   state: NativeAccountsState,
@@ -79,6 +79,9 @@ export function nextGrokAccount(
         account.id !== currentId &&
         account.autoSwitchEligible !== false &&
         account.usageStatus !== 'unavailable' &&
+        // A refresh token's presence does not prove it remains valid. Loading an expired
+        // profile can make Grok erase the live login and open another authorization flow.
+        account.usageStatus !== 'expired' &&
         (skipped.get(account.id) ?? 0) <= now &&
         (used === null || used < 99),
     )

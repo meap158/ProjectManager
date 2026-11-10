@@ -85,8 +85,9 @@ describe('Grok account rotation', () => {
     const pick = (saved: NativeAccount[]) =>
       nextGrokAccount(state(current, saved), new Map(), NOW)?.id;
     expect(pick([account('b', 60), account('c', 10), account('d', 10)])).toBe('c');
-    expect(pick([account('u', null), account('b', 90)])).toBe('b');
-    expect(pick([account('u', null), account('b', 99)])).toBe('u');
+    expect(pick([account('u', null, { status: 'not_loaded' }), account('b', 90)])).toBe('b');
+    expect(pick([account('u', null, { status: 'not_loaded' }), account('b', 99)])).toBe('u');
+    expect(pick([{ ...account('expired', null), renewable: true }])).toBeUndefined();
     // A login that failed to read (or to decrypt) is never a candidate.
     expect(pick([account('x', 10, { status: 'unavailable' })])).toBeUndefined();
   });

@@ -21,6 +21,8 @@ export interface NativeAccount {
   autoSwitchEligible?: boolean;
 }
 export interface NativeAccountsState {
+  /** Safe explanation when the live login is absent or unreadable; saved profiles remain usable. */
+  authNote?: string;
   available: boolean;
   accounts: NativeAccount[];
   defaultAccount?: NativeAccount | null;

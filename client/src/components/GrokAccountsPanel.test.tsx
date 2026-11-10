@@ -41,6 +41,20 @@ const account = {
     ],
   },
 };
+it('shows saved profiles and the live-login explanation together', async () => {
+  vi.mocked(api.getGrokAccounts).mockResolvedValue({
+    available: true,
+    accounts: [account],
+    defaultAccount: null,
+    authNote: 'Grok is signed out. Saved profiles have not been deleted.',
+  });
+  render(<NativeAccountsPanel providerId="grok" />);
+  expect(
+    await screen.findByText('Grok is signed out. Saved profiles have not been deleted.'),
+  ).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Switch to account Personal' })).toBeTruthy();
+  expect(api.switchGrokAccount).not.toHaveBeenCalled();
+});
 it('uses the standard account layout, detects default email and refreshes only the requested account', async () => {
   const state: NativeAccountsState = {
     available: true,

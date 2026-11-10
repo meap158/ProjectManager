@@ -1118,3 +1118,5 @@ Files: recursive folder views show the first batch immediately, then merge and s
 batches in the background so Project includes recent descendants. Refresh, returning to the tab and a visible-tab one-minute refresh
 reload metadata and image URLs. Browser-renderable images up to the 25 MB preview limit use lazy
 thumbnails; unsupported formats retain a file icon.
+
+Grok Accounts keeps saved rows visible when the live login is empty or unreadable, with an inline status explanation above the account controls. Expired login text explains that revoked refresh tokens require sign-in and are skipped by automatic rotation.

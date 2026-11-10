@@ -162,7 +162,24 @@ export class GrokAccounts {
     return readFileSync(file, 'utf8');
   }
   private current() {
-    return existsSync(this.authFile) ? parseGrokAuth(this.read(this.authFile)) : null;
+    if (!existsSync(this.authFile)) return null;
+    const raw = this.read(this.authFile);
+    // Grok writes {} after logout or a rejected refresh token. This is signed-out state,
+    // not evidence that the independently encrypted saved profiles are missing.
+    let document: unknown;
+    try {
+      document = JSON.parse(raw);
+    } catch {
+      throw new GrokAccountError('Invalid Grok credential JSON.');
+    }
+    if (
+      document &&
+      typeof document === 'object' &&
+      !Array.isArray(document) &&
+      !Object.keys(document).length
+    )
+      return null;
+    return parseGrokAuth(raw);
   }
   private atomic(file: string, data: string | Buffer) {
     mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -290,7 +307,14 @@ export class GrokAccounts {
     }
   }
   state(refreshStale = false): NativeAccountsState {
-    const current = this.current();
+    let current: ReturnType<typeof parseGrokAuth> | null = null;
+    let authNote: string | undefined;
+    try {
+      current = this.current();
+    } catch {
+      authNote =
+        'The live Grok login cannot be read. Saved profiles are still listed; restore the live login before switching.';
+    }
     this.syncActive(current);
     const rows = this.rows();
     const accounts = rows.map((row) => {
@@ -318,7 +342,10 @@ export class GrokAccounts {
       : null;
     if (refreshStale && !this.busy && Date.now() - this.lastRefresh >= MAX_AGE)
       void this.refresh().catch(() => undefined);
-    return { available: true, accounts, defaultAccount };
+    if (!current && !authNote && rows.length)
+      authNote =
+        'Grok is signed out of its live login. Saved profiles have not been deleted. An expired saved login may require browser authorization again.';
+    return { available: true, accounts, defaultAccount, ...(authNote ? { authNote } : {}) };
   }
   private async exclusive(fn: () => NativeAccountsState | Promise<NativeAccountsState>) {
     if (this.busy) throw new GrokAccountError('A Grok account operation is already running.');

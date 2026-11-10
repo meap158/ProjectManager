@@ -165,6 +165,8 @@ anything.
 
 ## Gotchas
 
+- PM-646: Grok may write `{}` after a rejected refresh token. Treat it as signed out without hiding encrypted saved profiles. Malformed live credentials still block switching. Rotation skips expired profiles even with refresh tokens; token presence does not prove renewal will succeed. Never refresh saved tokens to test them.
+
 - PM-594: `scripts/install-card-link-hook.mjs --project <root>` installs the warn-only template
   only on explicit request and refuses existing hooks or `core.hooksPath`. This manual installer
   is allowed to write that one Git hook; tracking and scans never install it. `server/cardLinking.ts`
