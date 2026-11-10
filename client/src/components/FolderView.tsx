@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { useSearchParams } from 'react-router';
 import { mediaKind } from '../../../shared/media';
@@ -64,18 +65,43 @@ const SORTS: DropdownOption<SortKey>[] = [
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
 
+/** A picture the browser can draw: shown in the lightbox with zoom and pan. */
+const isPicture = (item: FolderItem): boolean =>
+  typeGroupOf(item) === 'image' && canPreviewImage(item.name);
+
+/**
+ * The small picture for an entry, or null for its type icon: a picture itself (up to the size
+ * cap), a video's server-made frame (PM-647), never a whole video or any other file.
+ */
+function thumbSource(
+  item: FolderItem,
+  rawUrl: (path: string) => string,
+  thumbUrl: (path: string) => string,
+): string | null {
+  if (item.kind === 'dir') return null;
+  if (mediaKind(item.name) === 'video') return thumbUrl(item.path);
+  return isPicture(item) && (item.size ?? 0) <= THUMB_MAX_BYTES ? rawUrl(item.path) : null;
+}
+
 export function FolderView({
   projectId,
   dir,
   onOpenFile,
   onOpenDir,
   onClose,
+  renderFile,
 }: {
   projectId: number;
   dir: string;
   onOpenFile: (path: string) => void;
   onOpenDir: (path: string) => void;
   onClose: () => void;
+  /**
+   * A file that is not a picture, as the lightbox shows it (PM-652). With it, every file opens
+   * in the lightbox; without it, only pictures do and the rest open in the file view.
+   * `openFile` closes the lightbox and opens a file in the file view.
+   */
+  renderFile?: (item: FolderItem, openFile: (path: string) => void) => ReactNode;
 }) {
   const [params, setParams] = useSearchParams();
   // The view comes from the address; with none there, from what was last used in the previewer.
@@ -278,7 +304,12 @@ export function FolderView({
     () => shown.filter((item) => changedSince(item, seenAt) !== null).length,
     [shown, seenAt],
   );
-  const images = useMemo(() => shown.filter((item) => typeGroupOf(item) === 'image'), [shown]);
+  // What the lightbox steps through: every file when it can show them all, else the pictures.
+  const lightboxItems = useMemo(
+    () =>
+      shown.filter((item) => (renderFile ? item.kind !== 'dir' : typeGroupOf(item) === 'image')),
+    [shown, renderFile],
+  );
 
   // A page of entries at a time; a new filter or sort starts again from the top.
   const [count, setCount] = useState(PAGE);
@@ -314,8 +345,8 @@ export function FolderView({
 
   const open = (item: FolderItem) => {
     if (item.kind === 'dir') onOpenDir(item.path);
-    else if (typeGroupOf(item) === 'image')
-      setViewer(images.findIndex((i) => i.path === item.path));
+    else if (renderFile || typeGroupOf(item) === 'image')
+      setViewer(lightboxItems.findIndex((i) => i.path === item.path));
     else onOpenFile(item.path);
   };
 
@@ -652,11 +683,25 @@ export function FolderView({
 
       {viewer !== null && viewer >= 0 && (
         <ImageViewer
-          items={images}
+          items={lightboxItems}
           index={viewer}
           rawUrl={rawUrl}
+          thumbFor={(item) => thumbSource(item, rawUrl, thumbUrl)}
+          isPicture={isPicture}
+          downloadUrl={(path) => api.projectDownloadUrl(projectId, path)}
           onIndex={setViewer}
           onClose={() => setViewer(null)}
+          {...(renderFile && {
+            renderFile: (item: FolderItem) =>
+              renderFile(item, (path) => {
+                setViewer(null);
+                onOpenFile(path);
+              }),
+            onOpenFile: (path: string) => {
+              setViewer(null);
+              onOpenFile(path);
+            },
+          })}
         />
       )}
     </div>
@@ -708,15 +753,10 @@ function GridCell({
   showPath: boolean;
 }) {
   const video = item.kind !== 'dir' && mediaKind(item.name) === 'video';
-  const canThumb =
-    video ||
-    (typeGroupOf(item) === 'image' &&
-      canPreviewImage(item.name) &&
-      (item.size ?? 0) <= THUMB_MAX_BYTES);
   // The failed path, not a flag: a new path renders a new thumbnail without an effect.
   const [failedPath, setFailedPath] = useState<string | null>(null);
-  const source = video ? thumbUrl(item.path) : rawUrl(item.path);
-  const image = canThumb && failedPath !== source;
+  const source = thumbSource(item, rawUrl, thumbUrl);
+  const image = source !== null && failedPath !== source;
   const spec = iconFor(item);
   return (
     <li>
@@ -730,7 +770,7 @@ function GridCell({
         <span className="fv-thumb">
           {image ? (
             <img
-              src={source}
+              src={source ?? undefined}
               alt=""
               loading="lazy"
               decoding="async"

@@ -45,6 +45,7 @@ vi.mock('../api', () => ({
     projectRawUrl: (id: number, path: string) => `/api/projects/${id}/raw?path=${path}`,
     projectVideoThumbUrl: (id: number, path: string) =>
       `/api/projects/${id}/video-thumb?path=${path}`,
+    projectDownloadUrl: (id: number, path: string) => `/api/projects/${id}/download?path=${path}`,
   },
 }));
 const { FolderView } = await import('./FolderView');
@@ -412,6 +413,58 @@ describe('FolderView', () => {
     show();
     await screen.findByText('huge.png');
     expect(document.querySelector('.fv-thumb img')).toBeNull();
+  });
+
+  it('opens every file type in the lightbox, with zoom for pictures only (PM-652)', async () => {
+    const mixed: FolderInfo = {
+      ...INFO,
+      files: 3,
+      folders: 0,
+      items: [
+        item('assets/logo.png', { mtime: '2026-10-25T10:00:00.000Z' }),
+        item('assets/clip.mp4', { mtime: '2026-10-24T10:00:00.000Z' }),
+        item('assets/main.ts', { mtime: '2026-10-23T10:00:00.000Z' }),
+      ],
+    };
+    vi.mocked(api.folderInfo).mockResolvedValue(mixed);
+    const opened = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/projects/1?tab=files&dir=assets']}>
+        <FolderView
+          projectId={1}
+          dir="assets"
+          onOpenFile={opened}
+          onOpenDir={() => undefined}
+          onClose={() => undefined}
+          renderFile={(entry) => <p>Preview of {entry.name}</p>}
+        />
+      </MemoryRouter>,
+    );
+    await screen.findByText('clip.mp4');
+    fireEvent.click(screen.getByText('clip.mp4'));
+    const dialog = await screen.findByRole('dialog', { name: /File 2 of 3: clip\.mp4/ });
+    expect(within(dialog).getByText('Preview of clip.mp4')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Zoom in' })).toBeNull();
+    // The video's frame in the strip, the code file's icon, never the video or the code itself.
+    const strip = within(dialog).getByRole('listbox');
+    const thumb = (name: string) =>
+      within(strip).getByRole('option', { name }).querySelector('img')?.getAttribute('src');
+    expect(thumb('clip.mp4')).toContain('/video-thumb?path=assets/clip.mp4');
+    expect(thumb('main.ts')).toBeUndefined();
+    expect(thumb('logo.png')).toContain('/raw?path=assets/logo.png');
+    fireEvent.keyDown(dialog, { key: 'ArrowRight' });
+    const code = await screen.findByRole('dialog', { name: /File 3 of 3: main\.ts/ });
+    expect(within(code).getByText('Preview of main.ts')).toBeTruthy();
+    expect(
+      within(code).getByRole('link', { name: 'Download main.ts' }).getAttribute('href'),
+    ).toContain('/download?path=assets/main.ts');
+    fireEvent.keyDown(code, { key: 'ArrowRight' });
+    const picture = await screen.findByRole('dialog', { name: /Image 1 of 3: logo\.png/ });
+    expect(within(picture).getByRole('button', { name: 'Zoom in' })).toBeTruthy();
+    fireEvent.click(within(picture).getByRole('button', { name: 'Open' }));
+    expect(opened).toHaveBeenCalledWith('assets/logo.png');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.mocked(api.folderInfo).mockResolvedValue(INFO);
   });
 
   it("shows a video's server-made frame, never the video, and its icon when none (PM-647)", async () => {

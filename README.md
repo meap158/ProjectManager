@@ -176,7 +176,10 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
   the most quota left when one runs out (see [the account audit](docs/ACCOUNT-SWITCHER-AUDIT.md)).
 - **Files:** a VS Code-style explorer with Markdown, HTML, image and code previews. Pins support
   adding, removing and reordering from signed-in LAN and remote devices, just as on the host
-  computer, and change app metadata only. The lightbox keeps the selected thumbnail visible
+  computer, and change app metadata only. Every file in a folder opens in the lightbox: pictures
+  with zoom and pan, video and audio in the player, Markdown and HTML rendered, code and other
+  text as source, with the same arrows, filmstrip, Info, Copy path, Download (any size) and Open
+  (the full file view) for each. The lightbox keeps the selected thumbnail visible
   during navigation and resizing. Very large
   folders load in batches with a Load more button.
 - **SOPs:** **Settings > SOPs** checks every project's agent instructions against a shared

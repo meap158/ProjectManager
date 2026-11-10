@@ -5,11 +5,14 @@ import {
   useState,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { mediaKind } from '../../../shared/media';
 import type { FolderItem } from '../../../shared/types';
 import { formatBytes } from '../format';
-import { CloseIcon } from './icons';
+import { FileTypeIcon, iconFor } from './fileIcons';
+import { CloseIcon, DownloadIcon } from './icons';
 import './image-viewer.css';
 
 // The folder previewer's image viewer (PM-286): a lightbox, like TrendRelay's. The page stays behind a
@@ -212,18 +215,54 @@ function fitFor(natural: { w: number; h: number }, stage: HTMLElement): number {
   return fit > 0 ? clamp(1 / fit) : 1;
 }
 
+/** One filmstrip picture, or the file's type icon when it has none or it fails to load. */
+function StripThumb({ item, src }: { item: FolderItem; src: string | null }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (!src || failed === src) return <FileTypeIcon spec={iconFor(item)} size={22} />;
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      onError={() => setFailed(src)}
+    />
+  );
+}
+
+/**
+ * The folder lightbox (PM-286, every file type since PM-652). Pictures get the zoom and pan
+ * stage; other files show through `renderFile` (the player for video and audio, rendered
+ * markdown and HTML, source for code) on a plain stage where clicks, text selection and the
+ * player's own controls work as usual. Arrows, chevrons, the filmstrip, Info, Copy path,
+ * Download and the focus trap are the same for every kind.
+ */
 export function ImageViewer({
   items,
   index,
   rawUrl,
   onIndex,
   onClose,
+  thumbFor = (item) => rawUrl(item.path),
+  isPicture = () => true,
+  renderFile,
+  onOpenFile,
+  downloadUrl,
 }: {
   items: readonly FolderItem[];
   index: number;
   rawUrl: (path: string) => string;
   onIndex: (index: number) => void;
   onClose: () => void;
+  /** The filmstrip picture for an entry, or null for its type icon. */
+  thumbFor?: (item: FolderItem) => string | null;
+  /** Whether an entry is a picture for the zoom stage; others go to `renderFile`. */
+  isPicture?: (item: FolderItem) => boolean;
+  renderFile?: (item: FolderItem) => ReactNode;
+  /** Opens the entry in the full file view. */
+  onOpenFile?: (path: string) => void;
+  downloadUrl?: (path: string) => string;
 }) {
   const item = items[index];
   const [info, setInfo] = useState(false);
@@ -266,47 +305,71 @@ export function ImageViewer({
   }, [index, item?.path, items.length]);
 
   if (!item) return null;
-  // Keep the filmstrip bounded even for project-wide collections with thousands of pictures.
+  const picture = !renderFile || isPicture(item);
+  const media = mediaKind(item.name);
+  // Keep the filmstrip bounded even for project-wide collections with thousands of files.
   const stripStart = Math.max(0, Math.min(index - 20, items.length - 41));
   const step = (by: 1 | -1) => onIndex((index + by + items.length) % items.length);
   const zoom = (detail: 'in' | 'out' | 'fit' | 'actual') =>
     dialog.current
       ?.querySelector('.iv-stage')
       ?.dispatchEvent(new CustomEvent('pm-zoom', { detail }));
+  const player = () =>
+    dialog.current?.querySelector<HTMLMediaElement>('.iv-panel video, .iv-panel audio') ?? null;
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = event.target as HTMLElement;
+    // A focused player keeps its own keys (arrows seek, space plays); so do text fields.
+    const ownKeys = target.closest('video, audio, input, textarea, select') !== null;
     switch (event.key) {
       case 'Escape':
         onClose();
         break;
       case 'ArrowLeft':
+        if (ownKeys) return;
         step(-1);
         break;
       case 'ArrowRight':
+        if (ownKeys) return;
         step(1);
         break;
       case '+':
       case '=':
+        if (!picture) return;
         zoom('in');
         break;
       case '-':
+        if (!picture) return;
         zoom('out');
         break;
       case '0':
+        if (!picture) return;
         zoom('fit');
         break;
       case '1':
+        if (!picture) return;
         zoom('actual');
         break;
+      case ' ': {
+        // Space plays and pauses the video or audio when nothing else has focus.
+        const playing = player();
+        if (!playing || target !== dialog.current) return;
+        if (playing.paused) void playing.play().catch(() => undefined);
+        else playing.pause();
+        break;
+      }
       case 'i':
       case 'I':
+        if (ownKeys) return;
         setInfo((v) => !v);
         break;
       case 'Tab': {
         // Keep Tab inside the dialog.
         const focusable = [
-          ...(dialog.current?.querySelectorAll<HTMLElement>('button, [href]') ?? []),
+          ...(dialog.current?.querySelectorAll<HTMLElement>(
+            'button, [href], video, audio, iframe, [tabindex]:not([tabindex="-1"])',
+          ) ?? []),
         ];
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -333,43 +396,92 @@ export function ImageViewer({
       className="iv"
       role="dialog"
       aria-modal="true"
-      aria-label={`Image ${index + 1} of ${items.length}: ${item.name}`}
+      aria-label={`${picture ? 'Image' : 'File'} ${index + 1} of ${items.length}: ${item.name}`}
       tabIndex={-1}
       onKeyDown={onKeyDown}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <Stage
-        key={item.path}
-        src={rawUrl(item.path)}
-        name={item.name}
-        onSwipe={step}
-        onDismiss={onClose}
-      />
+      {picture ? (
+        <Stage
+          key={item.path}
+          src={rawUrl(item.path)}
+          name={item.name}
+          onSwipe={step}
+          onDismiss={onClose}
+        />
+      ) : (
+        <div
+          className="iv-stage iv-plain"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) onClose();
+          }}
+        >
+          <div key={item.path} className={`iv-panel${media ? ' iv-panel-media' : ''}`}>
+            {renderFile?.(item)}
+          </div>
+        </div>
+      )}
       <div className="iv-tools" role="toolbar" aria-label="Viewer tools">
-        <button type="button" className="iv-btn" aria-label="Zoom out" onClick={() => zoom('out')}>
-          −
-        </button>
-        <button type="button" className="iv-btn" aria-label="Zoom in" onClick={() => zoom('in')}>
-          +
-        </button>
-        <button
-          type="button"
-          className="iv-btn iv-text"
-          onClick={() => zoom('fit')}
-          title="Fit to window (0)"
-        >
-          Fit
-        </button>
-        <button
-          type="button"
-          className="iv-btn iv-text"
-          onClick={() => zoom('actual')}
-          title="Actual size (1)"
-        >
-          100%
-        </button>
+        {picture && (
+          <>
+            <button
+              type="button"
+              className="iv-btn"
+              aria-label="Zoom out"
+              onClick={() => zoom('out')}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              className="iv-btn"
+              aria-label="Zoom in"
+              onClick={() => zoom('in')}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="iv-btn iv-text"
+              onClick={() => zoom('fit')}
+              title="Fit to window (0)"
+            >
+              Fit
+            </button>
+            <button
+              type="button"
+              className="iv-btn iv-text"
+              onClick={() => zoom('actual')}
+              title="Actual size (1)"
+            >
+              100%
+            </button>
+          </>
+        )}
+        {onOpenFile && (
+          <button
+            type="button"
+            className="iv-btn iv-text"
+            onClick={() => onOpenFile(item.path)}
+            title="Open in the file view"
+          >
+            Open
+          </button>
+        )}
+        {/* Video and audio carry Download on the player itself (it saves the loaded copy). */}
+        {downloadUrl && !media && (
+          <a
+            className="iv-btn"
+            href={downloadUrl(item.path)}
+            download={item.name}
+            aria-label={`Download ${item.name}`}
+            title="Download"
+          >
+            <DownloadIcon size={16} />
+          </a>
+        )}
         <button
           type="button"
           className="iv-btn iv-text"
@@ -388,7 +500,7 @@ export function ImageViewer({
           <button
             type="button"
             className="iv-nav iv-prev"
-            aria-label="Previous picture"
+            aria-label="Previous file"
             onClick={() => step(-1)}
           >
             ‹
@@ -396,7 +508,7 @@ export function ImageViewer({
           <button
             type="button"
             className="iv-nav iv-next"
-            aria-label="Next picture"
+            aria-label="Next file"
             onClick={() => step(1)}
           >
             ›
@@ -404,7 +516,7 @@ export function ImageViewer({
         </>
       )}
       {info && (
-        <aside className="iv-info" aria-label="Picture details">
+        <aside className="iv-info" aria-label="File details">
           <dl>
             <dt>Name</dt>
             <dd>{item.name}</dd>
@@ -440,7 +552,7 @@ export function ImageViewer({
           </span>
         </span>
         {items.length > 1 && (
-          <div className="iv-strip" ref={strip} role="listbox" aria-label="Pictures in this folder">
+          <div className="iv-strip" ref={strip} role="listbox" aria-label="Files in this folder">
             {items.slice(stripStart, stripStart + 41).map((entry, at) => (
               <button
                 key={entry.path}
@@ -454,15 +566,7 @@ export function ImageViewer({
                 className="iv-thumb"
                 onClick={() => onIndex(at + stripStart)}
               >
-                {Math.abs(at + stripStart - index) <= 40 && (
-                  <img
-                    src={rawUrl(entry.path)}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    draggable={false}
-                  />
-                )}
+                <StripThumb item={entry} src={thumbFor(entry)} />
               </button>
             ))}
           </div>

@@ -11,7 +11,14 @@ import {
 } from 'react';
 import { useSearchParams } from 'react-router';
 import { marked } from 'marked';
-import type { FilePin, FilePreview, FolderListing, TreeEntry } from '../../../shared/types';
+import { mediaKind } from '../../../shared/media';
+import type {
+  FilePin,
+  FilePreview,
+  FolderItem,
+  FolderListing,
+  TreeEntry,
+} from '../../../shared/types';
 import { api } from '../api';
 import { THEME_EVENT } from '../theme';
 import { formatBytes, formatRelative } from '../format';
@@ -922,6 +929,9 @@ export function ProjectFiles({
               setParams((p) => ({ ...Object.fromEntries(p), tab: 'files', file: path }))
             }
             onOpenDir={goDir}
+            renderFile={(item, openFile) => (
+              <LightboxFile projectId={projectId} item={item} onOpenFile={openFile} />
+            )}
             onClose={() =>
               setParams((p) => {
                 const next = Object.fromEntries(p);
@@ -1098,49 +1108,132 @@ function FileView({
         <div className="error-banner">{error}</div>
       ) : !preview ? (
         <div className="skeleton" style={{ height: 240 }} />
-      ) : preview.kind === 'html' ? (
-        <RenderedFrame
-          projectId={projectId}
-          path={shownPath}
-          source={preview.content}
-          markdown={false}
-          onOpenFile={onOpenFile}
-          loading={loading}
-        />
-      ) : preview.kind === 'image' ? (
-        <div className={`files-image${loading ? ' is-loading' : ''}`}>
-          <img src={api.projectRawUrl(projectId, shownPath)} alt={shownPath} />
-        </div>
-      ) : preview.kind === 'video' || preview.kind === 'audio' ? (
-        <MediaPreview
-          key={`${projectId}:${shownPath}`}
-          projectId={projectId}
-          path={shownPath}
-          kind={preview.kind}
-          size={preview.size}
-        />
-      ) : preview.kind === 'binary' ? (
-        <p className="faint files-empty">Binary file: no preview.</p>
-      ) : preview.kind === 'too-large' ? (
-        <p className="faint files-empty">
-          Too large to preview ({formatBytes(preview.size)};{' '}
-          {formatBytes(preview.maxBytes ?? 2 * 1024 * 1024)} max).
-        </p>
-      ) : preview.kind !== 'text' ? null : rendered && RENDERED.has(ext) ? (
-        <RenderedFrame
-          projectId={projectId}
-          path={shownPath}
-          source={preview.content}
-          markdown={ext !== 'html' && ext !== 'htm'}
-          onOpenFile={onOpenFile}
-          loading={loading}
-        />
       ) : (
-        <div className={loading ? 'files-stale' : undefined}>
-          <SourceView content={preview.content} />
-        </div>
+        <FileBody
+          projectId={projectId}
+          path={shownPath}
+          preview={preview}
+          rendered={rendered}
+          loading={loading}
+          onOpenFile={onOpenFile}
+        />
       )}
     </div>
+  );
+}
+
+/** A file's preview by kind: shared by the file view and the lightbox (PM-652). */
+function FileBody({
+  projectId,
+  path,
+  preview,
+  rendered,
+  loading,
+  onOpenFile,
+}: {
+  projectId: number;
+  path: string;
+  preview: FilePreview;
+  rendered: boolean;
+  loading: boolean;
+  onOpenFile: (path: string) => void;
+}) {
+  const ext = extOf(path);
+  return preview.kind === 'html' ? (
+    <RenderedFrame
+      projectId={projectId}
+      path={path}
+      source={preview.content}
+      markdown={false}
+      onOpenFile={onOpenFile}
+      loading={loading}
+    />
+  ) : preview.kind === 'image' ? (
+    <div className={`files-image${loading ? ' is-loading' : ''}`}>
+      <img src={api.projectRawUrl(projectId, path)} alt={path} />
+    </div>
+  ) : preview.kind === 'video' || preview.kind === 'audio' ? (
+    <MediaPreview
+      key={`${projectId}:${path}`}
+      projectId={projectId}
+      path={path}
+      kind={preview.kind}
+      size={preview.size}
+    />
+  ) : preview.kind === 'binary' ? (
+    <p className="faint files-empty">Binary file: no preview.</p>
+  ) : preview.kind === 'too-large' ? (
+    <p className="faint files-empty">
+      Too large to preview ({formatBytes(preview.size)};{' '}
+      {formatBytes(preview.maxBytes ?? 2 * 1024 * 1024)} max).
+    </p>
+  ) : preview.kind !== 'text' ? null : rendered && RENDERED.has(ext) ? (
+    <RenderedFrame
+      projectId={projectId}
+      path={path}
+      source={preview.content}
+      markdown={ext !== 'html' && ext !== 'htm'}
+      onOpenFile={onOpenFile}
+      loading={loading}
+    />
+  ) : (
+    <div className={loading ? 'files-stale' : undefined}>
+      <SourceView content={preview.content} />
+    </div>
+  );
+}
+
+/**
+ * One file in the folder lightbox (PM-652). Video and audio go straight to the player from what
+ * the folder listing already knows (no extra request); other kinds read their preview once, and
+ * markdown and HTML show rendered.
+ */
+export function LightboxFile({
+  projectId,
+  item,
+  onOpenFile,
+}: {
+  projectId: number;
+  item: FolderItem;
+  onOpenFile: (path: string) => void;
+}) {
+  const media = mediaKind(item.name);
+  const [state, setState] = useState<{ path: string; preview?: FilePreview; error?: string }>({
+    path: item.path,
+  });
+  useEffect(() => {
+    if (media) return;
+    let current = true;
+    api.projectFile(projectId, item.path).then(
+      (preview) => current && setState({ path: item.path, preview }),
+      (e: Error) => current && setState({ path: item.path, error: e.message }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [projectId, item.path, media]);
+  if (media)
+    return (
+      <MediaPreview
+        key={`${projectId}:${item.path}`}
+        projectId={projectId}
+        path={item.path}
+        kind={media}
+        size={item.size ?? 0}
+      />
+    );
+  if (state.path !== item.path || (!state.preview && !state.error))
+    return <div className="skeleton" style={{ height: 240 }} />;
+  if (state.error) return <div className="error-banner">{state.error}</div>;
+  return (
+    <FileBody
+      projectId={projectId}
+      path={item.path}
+      preview={state.preview!}
+      rendered
+      loading={false}
+      onOpenFile={onOpenFile}
+    />
   );
 }
 

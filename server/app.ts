@@ -1,5 +1,6 @@
 import { decodeMediaPath, streamMedia } from './mediaPreview.js';
 import { VideoThumbs } from './videoThumbs.js';
+import { streamDownload } from './fileDownload.js';
 import { projectBranches } from './branches.js';
 import { GrokAccountError } from './agents/grokAccounts.js';
 import { createCardIssue, GitHubIssueError } from './githubIssues.js';
@@ -788,6 +789,12 @@ export function createApp(
         { opaque },
       ),
     );
+  });
+
+  // Any project file as a download, streamed, of any size (PM-652).
+  app.get('/projects/:id/download', async (c) => {
+    const root = projectRoot(c);
+    return await fileErrors(() => streamDownload(root, c.req.query('path') ?? ''));
   });
 
   // A small JPEG frame of a video for the Files grid and the player's poster (PM-647). 404 when

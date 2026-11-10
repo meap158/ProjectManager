@@ -36,6 +36,7 @@ vi.mock('../api', () => ({
     projectRawUrl: (id: number, path: string) => `/api/projects/${id}/raw?path=${path}`,
     projectVideoThumbUrl: (id: number, path: string) =>
       `/api/projects/${id}/video-thumb?path=${path}`,
+    projectDownloadUrl: (id: number, path: string) => `/api/projects/${id}/download?path=${path}`,
     renameProjectFile: vi.fn(async (_id: number, path: string, name: string) => {
       const next = [...path.split('/').slice(0, -1), name].join('/');
       const list = FOLDERS['']!.entries;
@@ -402,8 +403,16 @@ describe('ProjectFiles', () => {
     expect(await screen.findByRole('navigation', { name: 'Folder path' })).toBeTruthy();
     expect(await screen.findByText(/1 file · 0 folders/)).toBeTruthy();
     expect(tree.querySelector('[data-path="docs"]')?.getAttribute('aria-selected')).toBe('true');
-    // Opening a file from it shows the file; "Files" goes back to the folder, not to nothing.
+    // A file from it opens in the lightbox (PM-652); Open shows it in the file view, and "Files"
+    // goes back to the folder, not to nothing.
     fireEvent.click(await screen.findByText('guide.ts', { selector: '.fv-name' }));
+    const lightbox = await screen.findByRole('dialog', { name: /File 1 of 1: guide\.ts/ });
+    expect(await within(lightbox).findByText('line two')).toBeTruthy();
+    expect(
+      within(lightbox).getByRole('link', { name: 'Download guide.ts' }).getAttribute('href'),
+    ).toContain('/download?path=docs/guide.ts');
+    fireEvent.click(within(lightbox).getByRole('button', { name: 'Open' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(await screen.findByText('line two')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '← Files' }));
     expect(await screen.findByRole('navigation', { name: 'Folder path' })).toBeTruthy();
