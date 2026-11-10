@@ -248,17 +248,28 @@
 .iv-panel-media .files-media-video {
   width: 100%;
 }
-/* The whole stage, letterboxed: the video's own size is unknown until it loads. The height is
-   the stage's own (its padding taken off), so the controls stay above the filmstrip. */
+/* As wide as the stage at the video's own shape, never taller than the stage (its padding taken
+   off), so the controls stay on the picture and above the filmstrip. */
 .iv-panel-media .files-media video {
   width: 100%;
-  height: calc(100dvh - 168px);
-  max-height: none;
+  height: auto;
+  max-height: calc(100dvh - 168px);
   object-fit: contain;
   background: #000;
 }
-.iv-panel-media .files-media-video .files-media-download {
-  top: 8px;
+/* The lightbox's Download is in its tools; nothing sits over the video. */
+.iv-panel .files-media-download {
+  display: none;
+}
+/* With Info open on a wide screen, the file moves aside for the card instead of under it, and
+   the next chevron sits between them. */
+@media (min-width: 641px) and (pointer: fine) {
+  .iv[data-info] .iv-stage {
+    padding-right: 340px;
+  }
+  .iv[data-info] .iv-next {
+    right: 284px;
+  }
 }
 .iv-panel-media .files-media-audio {
   width: min(560px, calc(100vw - 144px));
@@ -270,26 +281,29 @@
   width: min(560px, calc(100vw - 144px));
   color: var(--text);
 }
-/* A phone: the picture gets nearly the whole screen, controls are 44px, the chevrons stay at the
-   edges (swiping works too), and the info card sits above the strip. */
+/* A phone: the file gets nearly the whole screen and controls are 44px. Nothing sits over the
+   file: the chevrons move down beside the caption (swiping works too for pictures), the zoom
+   readout goes to the top bar, and the info card sits above the strip. */
 @media (max-width: 640px), (pointer: coarse) {
   .iv-stage {
-    padding: 56px 8px 120px;
+    padding: 56px 8px 136px;
   }
   .iv-image {
     max-width: calc(100vw - 16px);
-    max-height: calc(100dvh - 176px);
+    max-height: calc(100dvh - 192px);
   }
   .iv-panel-media .files-media video {
-    height: calc(100dvh - 176px);
+    max-height: calc(100dvh - 192px);
+  }
+  .iv-caption {
+    max-width: calc(100% - 112px);
   }
   .iv-panel-media .files-media-audio,
   .iv-panel-media .files-media-pending {
     width: calc(100vw - 16px);
   }
   .iv-zoom {
-    top: auto;
-    bottom: 96px;
+    top: 18px;
     left: 8px;
   }
   .iv-btn {
@@ -301,15 +315,17 @@
     right: 6px;
   }
   .iv-nav {
+    top: auto;
+    bottom: calc(88px + env(safe-area-inset-bottom));
     width: 44px;
-    height: 64px;
-    top: calc(50% - 32px);
+    height: 44px;
+    font-size: 26px;
   }
   .iv-prev {
-    left: 4px;
+    left: 8px;
   }
   .iv-next {
-    right: 4px;
+    right: 8px;
   }
   .iv-thumb {
     width: 52px;
@@ -318,9 +334,25 @@
   .iv-info {
     top: auto;
     right: 8px;
-    bottom: 132px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
     left: 8px;
     width: auto;
-    max-height: 42%;
+    height: 40dvh;
+    max-height: none;
+  }
+  /* Info open on a phone: the card takes the strip's place as a bottom sheet, the file shrinks to
+     the space above it and the chevrons sit between the two. */
+  .iv[data-info] .iv-stage {
+    padding-bottom: calc(40dvh + 68px + env(safe-area-inset-bottom));
+  }
+  .iv[data-info] .iv-image,
+  .iv[data-info] .iv-panel-media .files-media video {
+    max-height: calc(60dvh - 124px);
+  }
+  .iv[data-info] .iv-foot {
+    display: none;
+  }
+  .iv[data-info] .iv-nav {
+    bottom: calc(40dvh + 16px + env(safe-area-inset-bottom));
   }
 }

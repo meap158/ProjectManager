@@ -394,6 +394,7 @@ export function ImageViewer({
     <div
       ref={dialog}
       className="iv"
+      data-info={info || undefined}
       role="dialog"
       aria-modal="true"
       aria-label={`${picture ? 'Image' : 'File'} ${index + 1} of ${items.length}: ${item.name}`}
@@ -470,8 +471,9 @@ export function ImageViewer({
             Open
           </button>
         )}
-        {/* Video and audio carry Download on the player itself (it saves the loaded copy). */}
-        {downloadUrl && !media && (
+        {/* One Download for every kind, here in the tools: nothing sits over the file itself
+            (the player's own button is hidden in the lightbox). */}
+        {downloadUrl && (
           <a
             className="iv-btn"
             href={downloadUrl(item.path)}
