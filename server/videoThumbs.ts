@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { mediaKind } from '../shared/media.js';
 import { FileAccessError, resolveInside } from './projectFiles.js';
@@ -16,11 +16,16 @@ import { FileAccessError, resolveInside } from './projectFiles.js';
  * - Without ffmpeg (or for a file it cannot read) the answer is 404 and the grid keeps its icon.
  *   A failure is remembered for the same key, so it is not retried on every scroll.
  * - Project files are only read, never written: frames go to the app's own data folder.
+ * - The folder is capped: past MAX_FILES frames (about 10 KB each), the oldest are removed. It is
+ *   checked on the first frame made after a start and then every PRUNE_EVERY frames, never on a
+ *   read, so showing a grid stays a plain file read.
  */
 
 const WIDTH = 320;
 const MAX_RUNNING = 2;
 const TIMEOUT_MS = 20_000;
+const MAX_FILES = 5000;
+const PRUNE_EVERY = 100;
 
 export type ThumbResult = { bytes: Buffer; etag: string };
 
@@ -30,11 +35,31 @@ export class VideoThumbs {
   private readonly pending = new Map<string, Promise<Buffer | null>>();
   private readonly failed = new Set<string>();
   private missingFfmpeg = false;
+  private made = 0;
 
   constructor(
     private readonly cacheDir: string,
     private readonly ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg',
+    private readonly limits = { maxFiles: MAX_FILES, pruneEvery: PRUNE_EVERY },
   ) {}
+
+  /** Removes the oldest frames once the folder holds more than the cap. */
+  async prune(): Promise<void> {
+    const names = (await readdir(this.cacheDir).catch(() => [] as string[])).filter((n) =>
+      /^[0-9a-f]{32}\.jpg$/.test(n),
+    );
+    if (names.length <= this.limits.maxFiles) return;
+    const dated = await Promise.all(
+      names.map(async (name) => {
+        const file = path.join(this.cacheDir, name);
+        const info = await stat(file).catch(() => null);
+        return { file, at: info?.mtimeMs ?? 0 };
+      }),
+    );
+    dated.sort((a, b) => a.at - b.at);
+    for (const { file } of dated.slice(0, dated.length - this.limits.maxFiles))
+      await rm(file, { force: true });
+  }
 
   /** The frame for a video in the project, or null when none can be made. */
   async thumb(root: string, rel: string): Promise<ThumbResult | null> {
@@ -86,6 +111,10 @@ export class VideoThumbs {
         const bytes = await readFile(temp).catch(() => null);
         if (bytes && bytes.length > 0) {
           await rename(temp, file);
+          if (this.made++ % this.limits.pruneEvery === 0)
+            await this.prune().catch((error: unknown) =>
+              console.warn('[files] video thumbnail cache cleanup failed', error),
+            );
           return bytes;
         }
       }

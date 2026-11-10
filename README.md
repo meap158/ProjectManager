@@ -18,7 +18,8 @@ stream directly from the start, since download managers are desktop programs. Me
 is independent of the 2 MB text-preview limit. The player has a Download button, which saves the
 copy it already loaded. Videos show a thumbnail in the folder grid and as the player's poster: one
 small JPEG frame per video, made by ffmpeg when it is installed (or `FFMPEG_PATH` points at it),
-at most two at a time, and cached in the data folder by path, size and modified time. Without
+at most two at a time, and cached in the data folder by path, size and modified time (the newest
+5,000 frames are kept). Without
 ffmpeg the grid keeps the file icon. Each folder in an open file's path opens that folder. HTML pages
 up to 25 MB render in the existing sandbox; source above 2 MB is available as a download.
 

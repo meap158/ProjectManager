@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -69,6 +69,23 @@ describe('VideoThumbs', () => {
     );
     expect(again?.etag).toBe(first!.etag);
     expect(readdirSync(root).sort()).toEqual(before);
+  });
+
+  it('keeps the newest frames once the folder passes its cap, and nothing else', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'pm-thumbs-prune-'));
+    try {
+      const names = ['a', 'b', 'c', 'd'].map((c) => `${c.repeat(32)}.jpg`);
+      names.forEach((name, i) => {
+        const file = path.join(dir, name);
+        writeFileSync(file, 'x');
+        utimesSync(file, 1000 + i, 1000 + i);
+      });
+      writeFileSync(path.join(dir, 'notes.txt'), 'kept');
+      await new VideoThumbs(dir, 'ffmpeg', { maxFiles: 2, pruneEvery: 1 }).prune();
+      expect(readdirSync(dir).sort()).toEqual([names[2], names[3], 'notes.txt']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it.skipIf(!ffmpegAvailable)('remembers a file ffmpeg cannot read', async () => {
