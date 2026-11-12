@@ -53,6 +53,17 @@
 .session-progress-error {
   color: var(--danger);
 }
+
+.session-primary-actions,
+.session-secondary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.session-secondary-actions {
+  flex-wrap: wrap;
+}
 .session-progress > .dropdown {
   min-width: 0;
   max-width: 100%;

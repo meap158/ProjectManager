@@ -405,6 +405,35 @@
   flex-wrap: wrap;
 }
 
+@container project-cli (min-width: 760px) {
+  .project-terminal-head > .project-terminal-actions,
+  .project-terminal-head > .project-terminal-actions.is-open {
+    display: flex;
+    position: static;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .project-terminal-head:has(.session-progress.is-limited) .session-secondary-actions {
+    display: none;
+  }
+  .project-terminal-head:has(.session-progress.is-limited) .is-open > .session-secondary-actions {
+    display: flex;
+    position: absolute;
+    top: 100%;
+    left: 4px;
+    right: 4px;
+    z-index: 30;
+    padding: 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
 .project-cli-dock {
   container: project-cli / inline-size;
 }
@@ -453,6 +482,21 @@
 @container project-cli (min-width: 1280px) {
   .project-terminal-head > .project-terminal-actions.is-open {
     position: static;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+@container project-cli (min-width: 760px) {
+  .project-terminal-head:has(.session-progress.is-limited) > .project-actions-toggle {
+    display: inline-grid;
+  }
+  .project-terminal-head:has(.session-progress.is-limited) > .project-terminal-actions {
+    display: flex;
+    position: static;
+    flex: 0 0 auto;
     padding: 0;
     border: 0;
     background: transparent;

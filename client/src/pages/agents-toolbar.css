@@ -446,3 +446,33 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+@container workspace-cli (min-width: 760px) {
+  .workspace .pane-head:has(.session-progress.is-limited) .pane-controls-toggle {
+    display: grid;
+  }
+  .workspace .pane-head:has(.session-progress.is-limited) .pane-controls-buttons {
+    display: flex;
+    position: static;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .workspace .pane-head:has(.session-progress.is-limited) .session-secondary-actions {
+    display: none;
+  }
+  .workspace .pane-head:has(.session-progress.is-limited) .is-open .session-secondary-actions {
+    display: flex;
+    position: absolute;
+    top: 100%;
+    left: 4px;
+    right: 4px;
+    z-index: 30;
+    padding: 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-lg);
+  }
+}

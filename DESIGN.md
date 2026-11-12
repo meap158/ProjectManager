@@ -76,9 +76,10 @@ pressure. Desktop project/card metadata gives way first; mobile metadata can wra
 name. Rename and terminal controls remain available, with full names exposed in tooltips.
 
 CLI Close shares the right-aligned icon row, spacing and vertical center with Fullscreen and the
-other actions. Buttons stay visible in panes at least 760px wide; usage-limit recovery needs 1280px
-because it has more controls. Narrower panes use Session actions and a bounded wrapping panel below
-the header. Breakpoints follow the pane width, including split layouts, rather than the screen width.
+other actions. Continue, Restart, Stop and Attach image stay visible in panes at least 760px wide,
+including when usage is limited. Account and usage-limit recovery controls open separately from
+Session actions. Narrower panes use a bounded wrapping panel below the header. Breakpoints follow
+the pane width, including split layouts, rather than the screen width.
 
 Agents list rows offer Continue for running AI CLIs in every status filter except Ended, immediately
 before the Show in pane icon, submitting a message without restarting. Ended sessions never offer it.

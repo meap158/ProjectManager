@@ -68,102 +68,106 @@ export function SessionPaneActions({
 
   return (
     <>
-      {cardNote && (
-        <span className="badge badge-live" role="status">
-          {cardNote}
-        </span>
-      )}
-      {s.cardId && !cardNote && (
-        <button
-          type="button"
-          className="icon-btn icon-btn-text"
-          title={`Move ${s.cardKey} to Review`}
-          onClick={() => void sendCardToReview()}
-        >
-          → Review
-        </button>
-      )}
-      {showProgress && s.terminal === 'pty' && (
-        <SessionProgress session={s} onChanged={onChanged} />
-      )}
-      {showContinue &&
-        (view !== 'chat' ? (
-          <SessionContinue session={s} onError={onError} iconOnly />
-        ) : (
-          // Chat view: the composer has a Continue key on wide screens; phones get this copy in
-          // the ⋯ menu, left of Restart, instead of one in the crowded header (PM-584).
-          <span className="session-continue-menu">
-            <SessionContinue session={s} onError={onError} iconOnly />
+      <span className="session-secondary-actions">
+        {cardNote && (
+          <span className="badge badge-live" role="status">
+            {cardNote}
           </span>
-        ))}
-      {running ? (
-        <>
+        )}
+        {s.cardId && !cardNote && (
+          <button
+            type="button"
+            className="icon-btn icon-btn-text"
+            title={`Move ${s.cardKey} to Review`}
+            onClick={() => void sendCardToReview()}
+          >
+            → Review
+          </button>
+        )}
+        {showProgress && s.terminal === 'pty' && (
+          <SessionProgress session={s} onChanged={onChanged} />
+        )}
+      </span>
+      <span className="session-primary-actions">
+        {showContinue &&
+          (view !== 'chat' ? (
+            <SessionContinue session={s} onError={onError} iconOnly />
+          ) : (
+            // Chat view: the composer has a Continue key on wide screens; phones get this copy in
+            // the ⋯ menu, left of Restart, instead of one in the crowded header (PM-584).
+            <span className="session-continue-menu">
+              <SessionContinue session={s} onError={onError} iconOnly />
+            </span>
+          ))}
+        {running ? (
+          <>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={`Restart ${s.name}`}
+              title="Restart session (stop, then start)"
+              disabled={restartBusy}
+              onClick={async () => {
+                setRestarting(true);
+                try {
+                  await act(() => api.restartSession(s.id));
+                } finally {
+                  setRestarting(false);
+                }
+              }}
+            >
+              {restarting ? (
+                <span className="spinner" aria-hidden="true" />
+              ) : (
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M20 7v5h-5M20 12a8 8 0 1 0-2 6M20 7l-2 2" />
+                </svg>
+              )}
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Stop session"
+              title="Stop session"
+              disabled={restarting}
+              onClick={() => void act(() => api.stopSession(s.id))}
+            >
+              ■
+            </button>
+          </>
+        ) : (
           <button
             type="button"
             className="icon-btn"
-            aria-label={`Restart ${s.name}`}
-            title="Restart session (stop, then start)"
-            disabled={restartBusy}
-            onClick={async () => {
-              setRestarting(true);
-              try {
-                await act(() => api.restartSession(s.id));
-              } finally {
-                setRestarting(false);
-              }
-            }}
+            aria-label="Start session"
+            title="Start session"
+            onClick={() => void act(() => api.startSession(s.id))}
           >
-            {restarting ? (
-              <span className="spinner" aria-hidden="true" />
-            ) : (
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M20 7v5h-5M20 12a8 8 0 1 0-2 6M20 7l-2 2" />
-              </svg>
-            )}
+            ▶
           </button>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Stop session"
-            title="Stop session"
-            disabled={restarting}
-            onClick={() => void act(() => api.stopSession(s.id))}
-          >
-            ■
-          </button>
-        </>
-      ) : (
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Start session"
-          title="Start session"
-          onClick={() => void act(() => api.startSession(s.id))}
-        >
-          ▶
-        </button>
-      )}
-      {running && s.terminal === 'pty' && view !== 'chat' && (
-        <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
-      )}
-      {!running && s.cardId && !s.supervise && onDeleted && (
-        <ConfirmDelete
-          small
-          label={`Dispose ${s.name}`}
-          heading={`Dispose task session ${s.name}?`}
-          message="This removes the ended session and its recorded output. The linked task stays on the board."
-          confirmLabel="Dispose session"
-          onConfirm={() => onDeleted(s.id)}
-        />
-      )}
+        )}
+        {running && s.terminal === 'pty' && view !== 'chat' && (
+          <SessionImageButton sessionId={s.id} pasteRef={pasteRef} onError={onError} />
+        )}
+        {!running && s.cardId && !s.supervise && onDeleted && (
+          <ConfirmDelete
+            small
+            label={`Dispose ${s.name}`}
+            heading={`Dispose task session ${s.name}?`}
+            message="This removes the ended session and its recorded output. The linked task stays on the board."
+            confirmLabel="Dispose session"
+            onConfirm={() => onDeleted(s.id)}
+          />
+        )}
+      </span>
     </>
   );
 }

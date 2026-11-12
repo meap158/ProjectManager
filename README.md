@@ -4,7 +4,7 @@
 
 # ProjectManager
 
-CLI panes keep Close at the top right. Open Session actions for recovery, account switching and lifecycle controls.
+CLI panes keep everyday controls beside Close at the top right when space permits. Session actions holds extra recovery and account-switching controls.
 
 **A local-first workspace for running Claude Code, Codex, Grok, Antigravity and OpenCode across all your projects, with a self-updating Kanban board.**<br>
 Persistent AI coding agent sessions. Every project. Any screen, including your phone.
