@@ -75,9 +75,10 @@ Terminal header session names use their natural width, truncating only under act
 pressure. Desktop project/card metadata gives way first; mobile metadata can wrap beneath the
 name. Rename and terminal controls remain available, with full names exposed in tooltips.
 
-CLI Close stays in a reserved top-right corner at every width. Session actions opens the shared
-recovery and lifecycle controls on desktop as well as phones. Project panes expand those controls
-below the identity; workspace panes use a bounded wrapping panel. Fullscreen stays directly available.
+CLI Close shares the right-aligned icon row, spacing and vertical center with Fullscreen and the
+other actions. Buttons stay visible in panes at least 760px wide; usage-limit recovery needs 1280px
+because it has more controls. Narrower panes use Session actions and a bounded wrapping panel below
+the header. Breakpoints follow the pane width, including split layouts, rather than the screen width.
 
 Agents list rows offer Continue for running AI CLIs in every status filter except Ended, immediately
 before the Show in pane icon, submitting a message without restarting. Ended sessions never offer it.

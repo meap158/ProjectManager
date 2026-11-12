@@ -353,7 +353,6 @@
 @media (max-width: 768px) {
   .project-cli-dock > .pane .project-terminal-head {
     display: flex;
-    padding-right: 52px;
   }
   .project-terminal-head > .pane-identity {
     flex: 1 1 100px;
@@ -363,14 +362,17 @@
   }
 }
 
-/* Keep pane navigation independent of the optional, wrapping session controls. */
+/* Close shares the icon row; overflow opens below it. */
 .project-cli-dock > .pane .project-terminal-head {
-  padding-right: 48px;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  padding-right: 4px;
 }
 .project-terminal-head > .project-terminal-close {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+  position: static;
+  flex-shrink: 0;
+  align-self: center;
   margin: 0;
 }
 .project-terminal-head > .project-actions-toggle {
@@ -383,21 +385,77 @@
 }
 .project-terminal-head > .project-terminal-actions.is-open {
   display: flex;
-  position: static;
-  order: 20;
-  flex: 1 1 100%;
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  left: 4px;
+  z-index: 30;
   flex-wrap: wrap;
   max-width: 100%;
   min-width: 0;
   overflow: visible;
   white-space: normal;
-  padding: 6px 0 0;
-  border: 0;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
 }
 .project-terminal-actions.is-open .session-progress {
   flex-wrap: wrap;
+}
+
+.project-cli-dock {
+  container: project-cli / inline-size;
+}
+@container project-cli (min-width: 760px) {
+  .project-terminal-head:not(:has(.session-progress.is-limited)) > .project-actions-toggle {
+    display: none;
+  }
+  .project-terminal-head:not(:has(.session-progress.is-limited)) > .project-terminal-actions {
+    display: flex;
+    position: static;
+    order: 0;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    padding: 0;
+    border: 0;
+  }
+}
+@container project-cli (min-width: 1280px) {
+  .project-terminal-head > .project-actions-toggle {
+    display: none;
+  }
+  .project-terminal-head > .project-terminal-actions {
+    display: flex;
+    position: static;
+    order: 0;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    padding: 0;
+    border: 0;
+  }
+  .project-terminal-head > .badge {
+    display: none;
+  }
+}
+
+@container project-cli (min-width: 760px) {
+  .project-terminal-head:not(:has(.session-progress.is-limited))
+    > .project-terminal-actions.is-open {
+    position: static;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+}
+@container project-cli (min-width: 1280px) {
+  .project-terminal-head > .project-terminal-actions.is-open {
+    position: static;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
 }

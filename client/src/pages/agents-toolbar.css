@@ -362,15 +362,18 @@
   }
 }
 
-/* Session controls expand on demand; Close owns the top-right corner at every width. */
+/* Close shares the icon row; overflow opens below it. */
 .workspace .pane-head {
   position: relative;
-  padding-right: 48px;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  padding-right: 4px;
 }
 .workspace .pane-head > .pane-close {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+  position: static;
+  align-self: center;
+  flex-shrink: 0;
   margin: 0;
 }
 .workspace .pane-head .pane-controls {
@@ -403,9 +406,43 @@
   flex-wrap: wrap;
 }
 
-@media (max-width: 768px) {
-  .workspace .pane-head {
-    grid-template-columns: 8px minmax(0, 1fr) repeat(2, 34px);
-    padding-right: 48px;
+.workspace .pane {
+  container: workspace-cli / inline-size;
+}
+@container workspace-cli (min-width: 760px) {
+  .workspace .pane-head:not(:has(.session-progress.is-limited)) .pane-controls-toggle {
+    display: none;
   }
+  .workspace
+    .pane-head:not(:has(.session-progress.is-limited))
+    .pane-controls
+    .pane-controls-buttons {
+    display: flex;
+    position: static;
+    flex-wrap: wrap;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+}
+@container workspace-cli (min-width: 1280px) {
+  .workspace .pane-head .pane-controls-toggle {
+    display: none;
+  }
+  .workspace .pane-head .pane-controls .pane-controls-buttons,
+  .workspace .pane-head .pane-controls.is-open .pane-controls-buttons {
+    display: flex;
+    position: static;
+    flex-wrap: wrap;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+.workspace .pane-head > .pane-identity {
+  flex: 1 1 auto;
+  min-width: 0;
 }
