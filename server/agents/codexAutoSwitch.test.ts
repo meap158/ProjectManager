@@ -398,7 +398,8 @@ it('reports the same busy guard in Settings and exposes failed attempts for retr
   await h.quota();
   vi.mocked(h.inside.sessionActivity).mockReturnValue('running');
   expect(h.supervisor.codexAccountsState().rotation).toMatchObject({
-    waiting: `Codex session "fixture" (#${id}) is still working.`,
+    // Sessions are named with their number (PM-606).
+    waiting: `Codex "fixture" (session ${id}) is still working.`,
     error: null,
   });
   expect(Date.parse(h.supervisor.codexAccountsState().rotation!.nextCheckAt)).toBeGreaterThan(
