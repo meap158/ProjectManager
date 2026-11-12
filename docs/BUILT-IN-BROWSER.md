@@ -39,8 +39,11 @@ is not owned by one project. There are three ways to show an app:
      checks apply to every frame and no WebSocket crosses the tunnel. The page state (address,
      title, back and forward) rides in a header.
    - Mouse, touch, wheel and keys go back as JSON batches (`POST .../input`, at most 64 events) and
-     are replayed with `Input.dispatch*`. A tap clicks, a finger drag scrolls, and a phone keyboard
-     opens only when the click landed in a text field. Back, forward, reload and the address field
+     are replayed with `Input.dispatch*`. A tap clicks, a finger drag scrolls, and when a tap lands in a
+     text field a Keyboard button appears (phones open their keyboard only from a focus inside the
+     tap itself, and the answer comes after it). Double and triple clicks are counted in the panel,
+     since a pointer event carries no click count. A preview in a background browser tab stops
+     polling. Back, forward, reload and the address field
      act on that browser (`.../navigate`); the viewport follows the panel's size and the app's theme
      (`.../resize`).
    - The top-level page may only be the app itself (loopback on that port); any other main-frame

@@ -147,15 +147,34 @@ export function PreviewStream({
     moved: boolean;
   } | null>(null);
   const lastMove = useRef(0);
+  /** The last press, to count double and triple clicks (a PointerEvent's `detail` is always 0). */
+  const lastPress = useRef({ at: 0, x: 0, y: 0, count: 0 });
+  /**
+   * A touch screen opens its keyboard only from a focus() inside the tap itself, and whether the
+   * tap hit a text field is known only after the browser answers. So a "Keyboard" button appears
+   * then, and tapping it opens the keyboard.
+   */
+  const [offerKeys, setOfferKeys] = useState(false);
+  const [visible, setVisible] = useState(() => !document.hidden);
   const queue = useRef<InputQueue | null>(null);
   queue.current ??= new InputQueue(
     () => idRef.current,
     (editable) => {
-      // On a touch screen the keyboard opens only for a text field; elsewhere keys always go.
-      if (editable) keysRef.current?.focus({ preventScroll: true });
-      else if (matchMedia('(pointer: coarse)').matches) keysRef.current?.blur();
+      if (!matchMedia('(pointer: coarse)').matches) return;
+      setOfferKeys(editable);
+      if (!editable) keysRef.current?.blur();
     },
   );
+
+  /** Counts a press as the 1st, 2nd or 3rd of a quick series at about the same place. */
+  const clickCount = (x: number, y: number) => {
+    const now = performance.now();
+    const last = lastPress.current;
+    const series = now - last.at < 400 && Math.hypot(x - last.x, y - last.y) < 4;
+    const count = series ? Math.min(3, last.count + 1) : 1;
+    lastPress.current = { at: now, x, y, count };
+    return count;
+  };
 
   const report = (state: PreviewStreamState) => {
     // Every frame carries the state; only a change reaches the workspace (and re-renders it).
@@ -165,22 +184,20 @@ export function PreviewStream({
     const path = streamPath(state.url);
     if (path) pathRef.current = path;
     onState(tabId, state);
+    if (!state.loading) onLoaded(tabId);
   };
 
-  // A new address typed for this tab (same port) navigates the open stream.
+  // A browser tab in the background stops polling, like the app list does.
   useEffect(() => {
-    const id = idRef.current;
-    if (!id || target.path === pathRef.current) return;
-    pathRef.current = target.path;
-    void api.previewStreamNavigate(id, { action: 'go', path: target.path }).catch((e: Error) => {
-      setError(e.message);
-    });
-  }, [target.path]);
+    const onVisibility = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
 
   // Open, then poll frames while shown. Leaving (or hiding the tab) stops polling; unmounting
   // closes the stream.
   useEffect(() => {
-    if (!shown) return;
+    if (!shown || !visible) return;
     const box = boxRef.current;
     if (!box) return;
     const abort = new AbortController();
@@ -249,7 +266,7 @@ export function PreviewStream({
       // The last frame stays on screen; its URL is freed when the next one replaces it.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown, attempt, target.port]);
+  }, [shown, visible, attempt, target.port]);
 
   // Closing the tab closes its browser tab on this computer.
   useEffect(
@@ -372,9 +389,10 @@ export function PreviewStream({
     if (e.pointerType === 'mouse') {
       keysRef.current?.focus({ preventScroll: true });
       e.currentTarget.setPointerCapture(e.pointerId);
-      mouse('down', e, e.detail || 1);
+      mouse('down', e, clickCount(e.clientX, e.clientY));
       return;
     }
+    setOfferKeys(false);
     touch.current = {
       x: e.clientX,
       y: e.clientY,
@@ -412,7 +430,7 @@ export function PreviewStream({
   };
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse') {
-      mouse('up', e, e.detail || 1);
+      mouse('up', e, lastPress.current.count || 1);
       return;
     }
     const t = touch.current;
@@ -429,9 +447,10 @@ export function PreviewStream({
       metaKey: false,
       shiftKey: false,
     };
+    const count = clickCount(t.x, t.y);
     mouse('move', tap);
-    mouse('down', tap);
-    mouse('up', { ...tap, buttons: 0 });
+    mouse('down', tap, count);
+    mouse('up', { ...tap, buttons: 0 }, count);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -502,6 +521,20 @@ export function PreviewStream({
           if (text) queue.current!.push({ type: 'text', text: text.slice(0, 10_000) });
         }}
       />
+      {offerKeys && (
+        <button
+          type="button"
+          className="btn btn-sm preview-stream-type"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onClick={() => {
+            keysRef.current?.focus({ preventScroll: true });
+            setOfferKeys(false);
+          }}
+        >
+          Keyboard
+        </button>
+      )}
       {error && (
         <div className="preview-stream-error" role="alert">
           <span>{error}</span>

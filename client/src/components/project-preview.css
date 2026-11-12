@@ -851,6 +851,13 @@
   font-size: 16px;
   pointer-events: none;
 }
+/* Opens the phone keyboard after a tap lands in a text field of the streamed page. */
+.preview-stream-type {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  box-shadow: var(--shadow);
+}
 .preview-stream-error {
   position: absolute;
   left: 50%;
