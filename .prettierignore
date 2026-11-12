@@ -3,6 +3,8 @@ data/
 node_modules/
 Research/
 References/
+tmp/
+.temp/
 package-lock.json
 docs/screenshots/
 # Hand-formatted on purpose (a bullet sits inside its table); never reformat it (AGENTS.md rule).
