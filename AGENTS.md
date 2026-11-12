@@ -173,6 +173,9 @@ anything.
 
 ## Gotchas
 
+- PM-712: project Agents row buttons use the same shortcut bindings as the global selected work
+  row. Project pane Alt+1/Alt+Enter capture only their navigation keys; preserve text/dialog/IME guards.
+
 - PM-698: CLI Close shares the right-aligned icon row and its vertical center. Keep buttons visible
   when the pane has room; use Session actions for narrow panes and crowded usage-limit recovery.
 

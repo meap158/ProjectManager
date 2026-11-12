@@ -75,6 +75,10 @@ Terminal header session names use their natural width, truncating only under act
 pressure. Desktop project/card metadata gives way first; mobile metadata can wrap beneath the
 name. Rename and terminal controls remain available, with full names exposed in tooltips.
 
+Project Agents uses the selected-session shortcuts from Settings, including Continue, Restart,
+Stop/Start, Delete and Open in workspace. Alt+1 focuses its CLI; Alt+Enter toggles fullscreen while
+focus is in that pane. Editing fields, open dialogs, repeated keys and IME composition keep their keys.
+
 CLI Close shares the right-aligned icon row, spacing and vertical center with Fullscreen and the
 other actions. Continue, Restart, Stop and Attach image stay visible in panes at least 760px wide,
 including when usage is limited. Account and usage-limit recovery controls open separately from

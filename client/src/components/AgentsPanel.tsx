@@ -27,6 +27,8 @@ import { SessionChat, ViewSwitch, useSessionView } from './SessionChat';
 import { RecentCache } from '../lib/recentCache';
 import { TerminalInputQueue } from '../lib/terminalInputQueue';
 import { ACTIVITY_LABEL, sessionActivity } from '../sessionActivity';
+import { useShortcutProps } from '../shortcuts';
+import { useProjectTerminalShortcuts } from '../lib/projectTerminalShortcuts';
 
 // Preload TerminalView chunk as soon as agents panel loads so it is ready when terminal renders.
 const terminalViewPromise = import('./TerminalView');
@@ -216,6 +218,10 @@ export function AgentsPanel({
   }, [visible, alive, sessions, runs, load]);
 
   const active = sessions?.find((s) => `session:${s.id}` === selected) ?? null;
+  const showPaneKeys = useShortcutProps('session.showInPane');
+  useProjectTerminalShortcuts(dockContainer, visible && !!active, () =>
+    setDockMax((value) => !value),
+  );
   // Phones: the open session as a chat (its CLI's transcript) or the terminal.
   const sessionView = useSessionView(active);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -238,12 +244,13 @@ export function AgentsPanel({
     return (
       <>
         {/* The same row actions, in the same order and look, as the global Agents list. */}
-        <SessionContinue session={s} onError={setError} />
+        <SessionContinue session={s} onError={setError} shortcut="session.continue" />
         <Link
           className="btn btn-sm btn-icon session-show-pane"
           to={`/workspace?open=${s.id}`}
           title="Open in the Agents workspace"
           aria-label="Open in workspace"
+          {...showPaneKeys}
         >
           <svg
             width="15"
@@ -260,6 +267,7 @@ export function AgentsPanel({
         </Link>
         <SessionToggle
           session={s}
+          shortcuts={{ restart: 'session.restart', toggle: 'session.toggle' }}
           onStart={() => changeSession(() => api.startSession(s.id))}
           onStop={() => changeSession(() => api.stopSession(s.id))}
           onRestart={() =>
@@ -269,6 +277,7 @@ export function AgentsPanel({
           }
         />
         <ConfirmDelete
+          shortcut="session.delete"
           label={`Delete session "${s.name}"`}
           heading={`Delete session "${s.name}"?`}
           message="Stops the process if it's running and deletes its log. This can't be undone."
@@ -600,7 +609,8 @@ export function AgentsPanel({
                     type="button"
                     className="icon-btn project-terminal-max"
                     aria-label={dockMax ? 'Restore layout' : 'Full screen'}
-                    title={dockMax ? 'Restore layout' : 'Maximise pane'}
+                    title={dockMax ? 'Restore layout (Alt+Enter)' : 'Maximise pane (Alt+Enter)'}
+                    aria-keyshortcuts="Alt+Enter"
                     aria-pressed={dockMax}
                     onClick={() => setDockMax((v) => !v)}
                   >

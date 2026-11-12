@@ -6,6 +6,8 @@
 
 CLI panes keep everyday controls beside Close at the top right when space permits. Session actions holds extra recovery and account-switching controls.
 
+Project Agents supports the selected-session shortcuts configured in Settings. Alt+1 focuses the project CLI and Alt+Enter toggles its fullscreen view.
+
 **A local-first workspace for running Claude Code, Codex, Grok, Antigravity and OpenCode across all your projects, with a self-updating Kanban board.**<br>
 Persistent AI coding agent sessions. Every project. Any screen, including your phone.
 Your projects and session data stay on your computer.
