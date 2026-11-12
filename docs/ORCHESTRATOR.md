@@ -240,8 +240,15 @@ the card to a session or run leads with "This card is done when: …", and revie
 first. Each goal keeps outcome measures (PM-475): days from set to closed, automatic checks across
 budget windows, worker runs on its linked cards, the owner's notes and status changes,
 reopenings, and verification passes and failures. Closed goals show them in one line, and the
-Goals heading sums achieved goals (count, median days and checks). A criterion only the owner can
-satisfy (a review, an approval, a listening test, a decision) is marked `owner` with exactly what
+Goals heading sums achieved goals (count, median days and checks). Goals run at the
+orchestrator's own discretion (PM-686): it stops only for what is strictly the owner's
+(`OWNER_ONLY` in `chat.ts`: signing in and credentials, spending money beyond free tiers or an
+approved budget, legal terms and rights, publishing or sending on the owner's behalf,
+destructive actions, real devices, and anything the owner reserved). Every other choice
+(creative, product, technical, quality and taste) it makes itself with best practices, records
+with a one-line reason so the owner can change it, and keeps going; reports list those under
+Decided and only owner-only items under Needs you. Every goal prompt carries the same rule
+(`GOAL_DISCRETION`). A criterion that is strictly the owner's is marked `owner` with exactly what
 the owner has to do (PM-524). The page shows it with ⏳, the owner's part in full and a Confirm
 button that marks it passing on the owner's word; when everything left on a goal waits for the
 owner, automatic checks skip it and the owner gets one "Goal waiting for you" notification

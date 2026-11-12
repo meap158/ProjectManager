@@ -24,6 +24,8 @@ import {
   briefing,
   checkPrompt,
   goalFollowUpPrompt,
+  GOAL_DISCRETION,
+  OWNER_ONLY,
   goalStatusBlock,
   parseVerdict,
   withAcceptance,
@@ -797,6 +799,27 @@ describe('orchestrator chat hands cards to CLI sessions (PM-399)', () => {
     const off = { ...base, delegateToSessions: false };
     expect(checkPrompt(off, 'todo')).toContain('do not dispatch workers or delegate');
     expect(briefing(off, [])).toContain('Do not dispatch workers or delegate');
+  });
+
+  it('works goals at its own discretion and stops only for what is strictly the owner (PM-686)', () => {
+    const base = {
+      name: 'X',
+      providers: ['codex'],
+      projectIds: [],
+    } as unknown as OrchestratorConfig;
+    // Both goal steps (handing work out, and working directly) and the briefing carry the rule.
+    for (const instance of [base, { ...base, delegateToSessions: false }]) {
+      expect(checkPrompt(instance, 'goal', [], true)).toContain(GOAL_DISCRETION);
+      expect(briefing(instance, [])).toContain(GOAL_DISCRETION);
+    }
+    expect(GOAL_DISCRETION).toContain(OWNER_ONLY);
+    for (const kept of ['credentials', 'spending money', 'legal terms', 'real-device'])
+      expect(OWNER_ONLY).toContain(kept);
+    // Taste is the orchestrator's call, never a reason to wait for the owner.
+    const delegating = checkPrompt(base, 'goal', [], true);
+    expect(delegating).not.toContain('listening test');
+    expect(delegating).toContain('quality or taste');
+    expect(delegating).toContain('answer it yourself');
   });
 
   it('accepts or rejects finished runs with the card, with evidence, only when on (PM-427)', async () => {
@@ -1593,6 +1616,8 @@ describe('following up on a goal (PM-456)', () => {
       cards: [mine.key],
     });
     const prompt = goalFollowUpPrompt(chat.goals('master-1')[0]!);
+    // Goals run at the orchestrator's discretion; only the owner-only list stops it (PM-686).
+    expect(prompt).toContain(GOAL_DISCRETION);
     expect(prompt).toContain('follow up on goal 1 "Ship"');
     expect(prompt).toContain(`- ${mine.key} "Add login": todo, no live worker`);
     expect(prompt).toContain('update_goal with the full picture');
