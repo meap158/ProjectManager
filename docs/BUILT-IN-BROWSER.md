@@ -12,7 +12,7 @@ quote-aware), otherwise the declared path, then `/favicon.ico`, `/favicon.svg`, 
 fetched and kept only if it really is an image (a single-page dev server answers every path with its
 HTML). The **Preview** page (top bar; on phones the
 Agents tools menu) lists them beside a small browser. It is a global page on purpose: a dev server
-is not owned by one project. There are two ways to show an app:
+is not owned by one project. There are three ways to show an app:
 
 1. **Its own origin (this computer).** Opened on `localhost`, `127.0.0.1` or `[::1]`, the frame
    loads `http://p<port>.localhost:<our port>` (`server/previewHost.ts`, routed first in
@@ -27,6 +27,35 @@ is not owned by one project. There are two ways to show an app:
    GET and HEAD only, a sandbox with no origin of its own, HTML URLs rewritten. Pages that build
    root-absolute URLs in JavaScript (Vite, Next) miss the proxy, and there is no WebSocket, so no
    live reload. It cannot be fixed without a host name per app. Simple and static pages work.
+   In practice it showed most apps blank: Chrome sends no cookies at all on requests from an
+   opaque-origin frame, so the LAN and remote gates (and Cloudflare Access) refuse every script,
+   style and image. It is now only the fallback for a computer without Chrome or Edge.
+3. **Streamed (phones on the LAN, the remote listener; PM-693).** A headless Chrome or Edge on this
+   computer (the element picker's capture browser, `server/previewCapture.ts`) opens the app at
+   `http://127.0.0.1:<port>`, where it works exactly as it does locally, and the viewer sees its
+   screen (`server/previewStream.ts`, `client/src/components/PreviewStream.tsx`):
+   - Frames come from `Page.startScreencast` as JPEG and are fetched by long-poll
+     (`GET /api/preview-stream/<id>/frame?after=<version>`, at most 20 s), so the gates' session
+     checks apply to every frame and no WebSocket crosses the tunnel. The page state (address,
+     title, back and forward) rides in a header.
+   - Mouse, touch, wheel and keys go back as JSON batches (`POST .../input`, at most 64 events) and
+     are replayed with `Input.dispatch*`. A tap clicks, a finger drag scrolls, and a phone keyboard
+     opens only when the click landed in a text field. Back, forward, reload and the address field
+     act on that browser (`.../navigate`); the viewport follows the panel's size and the app's theme
+     (`.../resize`).
+   - The top-level page may only be the app itself (loopback on that port); any other main-frame
+     load is refused, so it is not a general web browser. Frames inside the page load as they would
+     locally, except loopback documents on ports below 1024, this app's own ports and the capture
+     browser's DevTools port. Downloads are denied, file pickers never open, dialogs are answered at
+     once (alerts accepted, confirms and prompts declined), and links that would open a window open
+     in place.
+   - At most 4 streams at once (each is a tab in that browser); a new one past that replaces the one
+     used least recently, and one nobody polls for 45 s is closed. A hidden preview tab stops
+     polling and reopens where it was when shown again. The browser stays open while any stream
+     holds it.
+   - Unlike the path mode, this is interactive: a signed-in LAN device or remote session can click
+     and type in any local app on a 1024+ port, including its own writes. PM-693 asks for exactly
+     that, for both listeners.
 
 The browser has real tabs (`previewTabs.ts` holds the state transitions, `PreviewTabStrip.tsx` the strip
 and context menu): new, close, close others or to the right, duplicate, pin, reorder, reload, per-tab

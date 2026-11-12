@@ -45,6 +45,7 @@ import {
 } from './projectFiles.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
 import { PreviewCapture, normaliseCapture, type CaptureRequest } from './previewCapture.js';
+import { PreviewStreams } from './previewStream.js';
 import { SopFileError, SopStore, checkProject, sopCardText, sopInfo, sopReport } from './sops.js';
 import { config } from './config.js';
 import { detectLocalApps, stopLocalApp } from './localPorts.js';
@@ -341,6 +342,48 @@ export function createApp(
       // Where the picked element is in this image (measured in the capture), for its box.
       ...(element ? { 'x-pm-element': JSON.stringify(element) } : {}),
     });
+  });
+  // Streamed preview (PM-693): off this computer the Preview shows a headless browser on this
+  // computer instead of the path mode, which cannot load most apps there (see previewStream.ts).
+  // Every listener may use it: the gates have already signed the viewer in.
+  const streams = new PreviewStreams(capture, ownPorts);
+  app.get('/preview-stream', (c) => c.json({ available: streams.available }));
+  app.post('/preview-stream', async (c) =>
+    c.json(await streams.open(await c.req.json().catch(() => null))),
+  );
+  app.get('/preview-stream/:id/frame', async (c) => {
+    const after = Number(c.req.query('after') ?? 0);
+    const next = await streams.frame(
+      c.req.param('id'),
+      Number.isFinite(after) ? after : 0,
+      c.req.raw.signal,
+    );
+    const headers = {
+      'cache-control': 'no-store',
+      ...(next
+        ? {
+            'x-pm-version': String(next.version),
+            'x-pm-state': encodeURIComponent(JSON.stringify(next.state)),
+          }
+        : {}),
+    };
+    if (!next || !next.frame) return c.body(null, 204, headers);
+    return c.body(new Uint8Array(next.frame), 200, { ...headers, 'content-type': 'image/jpeg' });
+  });
+  app.post('/preview-stream/:id/input', async (c) =>
+    c.json(await streams.input(c.req.param('id'), await c.req.json().catch(() => null))),
+  );
+  app.post('/preview-stream/:id/navigate', async (c) => {
+    await streams.navigate(c.req.param('id'), await c.req.json().catch(() => null));
+    return c.body(null, 204);
+  });
+  app.post('/preview-stream/:id/resize', async (c) => {
+    await streams.resize(c.req.param('id'), await c.req.json().catch(() => null));
+    return c.body(null, 204);
+  });
+  app.post('/preview-stream/:id/close', async (c) => {
+    await streams.close(c.req.param('id'));
+    return c.body(null, 204);
   });
   app.get('/preview/:port', previewHandler);
   app.get('/preview/:port/*', previewHandler);

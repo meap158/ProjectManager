@@ -34,6 +34,7 @@ anything.
 - **Owner pages and roadmap audit (PM-289):** the Owner Pages index links `ROADMAP.md`, and the generator fails (build and `--check`) when the project has no `ROADMAP.md`. Whenever you change the project's state (a phase starts or ends, scope changes, a task only the owner can do appears or is completed), update `ROADMAP.md` and `owner-desk.json` in the same unit of work so both match reality, rebuild the pages, and match the project's own design (tokens and DESIGN.md where it has one). Do not leave a draft roadmap unmarked: say "Draft" until the owner has confirmed it.
 | `server/sops.ts`               | SOP engine: YAML SOPs (`sops.default.yml`, data/sops.yml), read-only checks (`docs/SOPS.md`) |
 | `server/preview.ts`            | Built-in browser proxy: read-only, loopback ports only (`docs/BUILT-IN-BROWSER.md`)        |
+| `server/previewStream.ts`      | Streamed preview off this computer: headless Chrome screencast + input (PM-693)            |
 | `server/jsonEtag.ts`           | ETag + 304 for JSON GETs, so polls of unchanged lists cost no body (`docs/PERFORMANCE.md`) |
 | `scripts/benchmark-app.mjs`    | `npm run bench`: bundle size and API latency, read-only (`docs/PERFORMANCE.md`)            |
 | `server/scanner.ts`            | Background scans; cards auto-move from commits, branches and PRs (no agent)                |
@@ -81,6 +82,13 @@ anything.
   Under a strict page policy (`'strict-dynamic'`, as Next.js sets) the own-origin proxy gives the
   picker's tag the page's own nonce, or adds one nonce of its own to `script-src` when the page has
   none (`pickerCsp` in `server/previewPicker.ts`); it never loosens the policy otherwise.
+  **Streamed preview (PM-693, `server/previewStream.ts`):** off this computer the Preview shows a
+  headless browser on this computer instead of the path mode. It is interactive by the card's
+  scope (LAN and remote viewers click and type in the app), so keep its limits: it opens only
+  `127.0.0.1:<port>` with the preview's port rules, refuses any other main-frame load, refuses
+  loopback subframe documents below 1024, on this app's ports or on the browser's DevTools port,
+  denies downloads and file pickers, answers dialogs itself, caps streams at 4 and input batches at
+  64 events, and serves frames and input only under `/api/` so the gates check every request.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
   the user explicitly starts may change project files. The one other exception is a pull request
   action the user confirms in the Pull requests tab: it may delete the PR's _local_ branch, and only

@@ -115,11 +115,20 @@ export function onTheApp(url: string, port: number): boolean {
 
 type Pending = (message: { result?: Record<string, unknown>; error?: { message: string } }) => void;
 
-class Cdp {
+export class Cdp {
   private seq = 0;
   private pending = new Map<number, Pending>();
   private listeners = new Set<(method: string, params: Record<string, unknown>) => void>();
+  /** Settles when the connection ends (the tab or the browser closed); pending calls fail. */
+  readonly closed: Promise<void>;
   constructor(private ws: WebSocket) {
+    this.closed = new Promise((resolve) => {
+      ws.addEventListener('close', () => {
+        for (const reply of [...this.pending.values()])
+          reply({ error: { message: 'DevTools connection closed' } });
+        resolve();
+      });
+    });
     ws.addEventListener('message', (e) => {
       const m = JSON.parse(String(e.data)) as {
         id?: number;
@@ -148,6 +157,11 @@ class Cdp {
         if (m.error) reject(new Error(m.error.message));
         else resolve(m.result ?? {});
       });
+      if (this.ws.readyState !== WebSocket.OPEN) {
+        this.pending.delete(id);
+        reject(new Error('DevTools connection closed'));
+        return;
+      }
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -169,6 +183,9 @@ export class PreviewCapture {
   private http: string | null = null;
   private idle: ReturnType<typeof setTimeout> | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  private starting: Promise<string> | null = null;
+  /** Streamed previews (PM-693) using the browser: it is never closed for idleness while held. */
+  private holds = 0;
 
   constructor(
     private dataDir: string,
@@ -200,10 +217,36 @@ export class PreviewCapture {
       } catch {
         return; // A capture will report the problem.
       }
-      if (this.idle) clearTimeout(this.idle);
-      this.idle = setTimeout(() => this.close(), IDLE_MS);
-      this.idle.unref?.();
+      this.scheduleIdle();
     });
+  }
+
+  /**
+   * The browser's DevTools address for a streamed preview (PM-693), started if needed. The browser
+   * stays open until every holder calls `release`.
+   */
+  async acquire(): Promise<string> {
+    this.holds++;
+    if (this.idle) clearTimeout(this.idle);
+    try {
+      return await this.start();
+    } catch (error) {
+      this.release();
+      throw error;
+    }
+  }
+
+  release(): void {
+    this.holds = Math.max(0, this.holds - 1);
+    this.scheduleIdle();
+  }
+
+  private scheduleIdle(): void {
+    if (this.idle) clearTimeout(this.idle);
+    this.idle = null;
+    if (this.holds > 0) return;
+    this.idle = setTimeout(() => this.close(), IDLE_MS);
+    this.idle.unref?.();
   }
 
   capture(request: CaptureRequest): Promise<{ png: Buffer; element: CapturedRect }> {
@@ -219,8 +262,17 @@ export class PreviewCapture {
     this.http = null;
   }
 
-  private async start(): Promise<string> {
-    if (this.http && this.browser && this.browser.exitCode === null) return this.http;
+  /** One start at a time: a capture and a stream asking together share one browser. */
+  private start(): Promise<string> {
+    if (this.http && this.browser && this.browser.exitCode === null)
+      return Promise.resolve(this.http);
+    this.starting ??= this.launch().finally(() => {
+      this.starting = null;
+    });
+    return this.starting;
+  }
+
+  private async launch(): Promise<string> {
     if (!this.browserPath) throw new PreviewError(502, 'No Chrome or Edge on this computer');
     // A profile per server process: a restart that ended this process without cleanup (the dev
     // watcher does) leaves its browser holding its own folder, and a shared one made the next
@@ -396,8 +448,7 @@ export class PreviewCapture {
       clearTimeout(timeout);
       cdp.close();
       await fetch(`${http}/json/close/${target.id}`).catch(() => undefined);
-      this.idle = setTimeout(() => this.close(), IDLE_MS);
-      this.idle.unref?.();
+      this.scheduleIdle();
     }
   }
 }

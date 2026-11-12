@@ -10,7 +10,7 @@ import { PICKER_INLINE, injectPicker } from './previewPicker.js';
 
 export class PreviewError extends Error {
   constructor(
-    public status: 400 | 403 | 502 | 504,
+    public status: 400 | 403 | 404 | 502 | 504,
     message: string,
   ) {
     super(message);

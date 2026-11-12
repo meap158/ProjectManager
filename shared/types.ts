@@ -892,6 +892,19 @@ export interface PreviewLaunch {
   projectId: number | null;
 }
 
+/** A streamed preview's page (PM-693): what the headless browser on this computer shows. */
+export interface PreviewStreamState {
+  /** The page's address on this computer, e.g. http://127.0.0.1:3000/docs. */
+  url: string;
+  title: string;
+  loading: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  /** The viewport in CSS pixels: input coordinates are in this space. */
+  width: number;
+  height: number;
+}
+
 /** A pinned file or folder on the Files tab (PM-284). */
 export interface FilePin {
   id: number;

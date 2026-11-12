@@ -818,6 +818,56 @@
 .preview-frame.is-hidden {
   display: none;
 }
+/* Streamed preview (PM-693): the page is an image of a browser on the host. The panel takes the
+   pointer and touch itself (taps click, drags scroll the page), so the browser gets no gestures. */
+.preview-stream {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  background: var(--surface);
+}
+.preview-stream-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+/* Keys and phone keyboards type into this field; it is invisible but must stay focusable. 16px
+   keeps iOS from zooming in when it takes focus. */
+.preview-stream-keys {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  font-size: 16px;
+  pointer-events: none;
+}
+.preview-stream-error {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
 /* The loader sits in the exact centre of the viewer, over the frame until it has loaded. */
 .preview-loading {
   position: absolute;

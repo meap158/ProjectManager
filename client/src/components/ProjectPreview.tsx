@@ -10,7 +10,12 @@ import {
   type MouseEvent,
 } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import type { LocalApp, PreviewLaunch, ProjectSummary } from '../../../shared/types';
+import type {
+  LocalApp,
+  PreviewLaunch,
+  PreviewStreamState,
+  ProjectSummary,
+} from '../../../shared/types';
 import { api } from '../api';
 import { ConfirmDelete } from './ConfirmDelete';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
@@ -25,6 +30,7 @@ import {
 } from './icons';
 import { LoadingMark } from './LoadingMark';
 import { PreviewPickDialog } from './PreviewPickDialog';
+import { PreviewStream, streamPath, type StreamControl } from './PreviewStream';
 import { useShortcut, useShortcutProps, useShortcutTitle } from '../shortcuts';
 import { PreviewMarkup, type Markup } from './PreviewMarkup';
 import { PreviewTabStrip, type StripTab, type TabCommand } from './PreviewTabStrip';
@@ -336,7 +342,30 @@ export function PreviewWorkspace() {
   const target = targetOf(active);
   // What is typed in the address field. Switching tabs drops it (the id no longer matches).
   const [draft, setDraft] = useState<{ id: string; text: string } | null>(null);
-  const text = draft?.id === active.id ? draft.text : target ? targetText(target) : '';
+  // Off this computer, pages are streamed from a browser on it when it has Chrome or Edge (PM-693).
+  const [streamable, setStreamable] = useState(false);
+  const [streamStates, setStreamStates] = useState<Record<string, PreviewStreamState>>({});
+  const streamControls = useRef(new Map<string, StreamControl>());
+  const onStreamState = useCallback((id: string, next: PreviewStreamState | null) => {
+    setStreamStates((prev) => {
+      if (next) return { ...prev, [id]: next };
+      if (!(id in prev)) return prev;
+      const rest = { ...prev };
+      delete rest[id];
+      return rest;
+    });
+  }, []);
+  const onStreamControl = useCallback((id: string, control: StreamControl | null) => {
+    if (control) streamControls.current.set(id, control);
+    else streamControls.current.delete(id);
+  }, []);
+  const onStreamLoaded = useCallback((id: string) => dispatch({ type: 'loaded', id }), []);
+  const streamed = (t: PreviewTarget) => streamable && !previewFrame(t).ownOrigin;
+  const activeStream = target && streamed(target) ? (streamStates[active.id] ?? null) : null;
+  const streamedPath = activeStream ? streamPath(activeStream.url) : null;
+  const shownTarget =
+    target && streamedPath !== null ? { port: target.port, path: streamedPath } : target;
+  const text = draft?.id === active.id ? draft.text : shownTarget ? targetText(shownTarget) : '';
   const [error, setError] = useState<string | null>(null);
   /**
    * Phones show the list or the page, one at a time. "Apps" shows the list while the page stays
@@ -396,6 +425,13 @@ export function PreviewWorkspace() {
     };
   }, [load]);
   useEffect(() => {
+    if (previewFrame({ port: 1024, path: '/' }).ownOrigin) return;
+    void api
+      .previewStreamAvailable()
+      .then((r) => setStreamable(r.available))
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => {
     void api
       .previewLaunches()
       .then((r) => setLaunches(r.launches))
@@ -450,7 +486,12 @@ export function PreviewWorkspace() {
   const step = (delta: -1 | 1) => {
     setDraft(null);
     setError(null);
-    dispatch({ type: 'step', id: active.id, delta });
+    if (activeStream) streamControls.current.get(active.id)?.run(delta < 0 ? 'back' : 'forward');
+    else dispatch({ type: 'step', id: active.id, delta });
+  };
+  const reload = () => {
+    if (activeStream) streamControls.current.get(active.id)?.run('reload');
+    else dispatch({ type: 'reload', id: active.id });
   };
 
   const go = (event: FormEvent) => {
@@ -899,7 +940,7 @@ export function PreviewWorkspace() {
             className="preview-tool"
             aria-label="Back"
             title="Back"
-            disabled={active.trail.index <= 0}
+            disabled={activeStream ? !activeStream.canGoBack : active.trail.index <= 0}
             onClick={() => step(-1)}
           >
             <ArrowLeftIcon size={15} />
@@ -909,7 +950,11 @@ export function PreviewWorkspace() {
             className="preview-tool preview-forward"
             aria-label="Forward"
             title="Forward"
-            disabled={active.trail.index >= active.trail.stack.length - 1}
+            disabled={
+              activeStream
+                ? !activeStream.canGoForward
+                : active.trail.index >= active.trail.stack.length - 1
+            }
             onClick={() => step(1)}
           >
             <ArrowRightIcon size={15} />
@@ -920,7 +965,7 @@ export function PreviewWorkspace() {
             aria-label="Reload"
             title="Reload"
             disabled={!target}
-            onClick={() => dispatch({ type: 'reload', id: active.id })}
+            onClick={reload}
           >
             <RefreshIcon size={15} />
           </button>
@@ -1002,6 +1047,19 @@ export function PreviewWorkspace() {
             const t = targetOf(tab);
             if (!t) return null;
             const f = previewFrame(t);
+            if (streamed(t))
+              return (
+                <PreviewStream
+                  key={`${tab.id}:${tab.reloads}:${t.port}`}
+                  tabId={tab.id}
+                  target={t}
+                  shown={tab.id === active.id && !listing}
+                  title={`Preview of localhost:${t.port}`}
+                  control={onStreamControl}
+                  onState={onStreamState}
+                  onLoaded={onStreamLoaded}
+                />
+              );
             return (
               <iframe
                 key={`${tab.id}:${tab.reloads}`}
@@ -1053,8 +1111,9 @@ export function PreviewWorkspace() {
               <GlobeIcon size={26} />
               <strong>Browse localhost</strong>
               <span>
-                Pick an app from the list, or type a port above. Read-only and isolated from
-                ProjectManager, so it works from your phone too.
+                {streamable
+                  ? 'Pick an app from the list, or type a port above. A browser on your computer opens it and you see and use its screen here.'
+                  : 'Pick an app from the list, or type a port above. Read-only and isolated from ProjectManager, so it works from your phone too.'}
               </span>
             </div>
           )}

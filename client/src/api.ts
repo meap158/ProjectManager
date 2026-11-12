@@ -18,6 +18,7 @@ import type {
   AgentAutonomy,
   LocalApp,
   PreviewLaunch,
+  PreviewStreamState,
   ChatItem,
   AgentInstall,
   AgentOutput,
@@ -458,6 +459,27 @@ export const api = {
   stopLocalApp: (port: number, pid: number) =>
     request<{ ok: true }>('POST', `/local-apps/${port}/stop`, { pid }),
   previewLaunches: () => request<{ launches: PreviewLaunch[] }>('GET', '/preview-launches'),
+  /** Streamed preview (PM-693): a headless browser on this computer, shown off it. */
+  previewStreamAvailable: () => request<{ available: boolean }>('GET', '/preview-stream'),
+  openPreviewStream: (body: {
+    port: number;
+    path: string;
+    width: number;
+    height: number;
+    scale: number;
+    dark: boolean;
+  }) => request<{ id: string; state: PreviewStreamState }>('POST', '/preview-stream', body),
+  previewStreamInput: (id: string, events: unknown[]) =>
+    request<{ editable: boolean | null }>('POST', `/preview-stream/${id}/input`, { events }),
+  previewStreamNavigate: (
+    id: string,
+    body: { action: 'back' | 'forward' | 'reload' } | { action: 'go'; path: string },
+  ) => request<void>('POST', `/preview-stream/${id}/navigate`, body),
+  resizePreviewStream: (
+    id: string,
+    body: { width: number; height: number; scale: number; dark: boolean },
+  ) => request<void>('POST', `/preview-stream/${id}/resize`, body),
+  closePreviewStream: (id: string) => request<void>('POST', `/preview-stream/${id}/close`, {}),
   savePreviewLaunches: (launches: PreviewLaunch[]) =>
     request<{ launches: PreviewLaunch[] }>('PUT', '/preview-launches', { launches }),
   getShortcuts: () => request<{ overrides: ShortcutOverrides }>('GET', '/preferences/shortcuts'),
