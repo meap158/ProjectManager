@@ -361,3 +361,51 @@
     display: none;
   }
 }
+
+/* Session controls expand on demand; Close owns the top-right corner at every width. */
+.workspace .pane-head {
+  position: relative;
+  padding-right: 48px;
+}
+.workspace .pane-head > .pane-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  margin: 0;
+}
+.workspace .pane-head .pane-controls {
+  position: static;
+}
+.workspace .pane-head .pane-controls-toggle {
+  display: grid;
+}
+.workspace .pane-head .pane-controls-buttons {
+  display: none;
+}
+.workspace .pane-head .pane-controls.is-open .pane-controls-buttons {
+  display: flex;
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  left: 4px;
+  z-index: 30;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  white-space: normal;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+.workspace .pane-head .pane-controls-buttons .session-progress {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .workspace .pane-head {
+    grid-template-columns: 8px minmax(0, 1fr) repeat(2, 34px);
+    padding-right: 48px;
+  }
+}

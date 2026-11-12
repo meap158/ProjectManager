@@ -173,6 +173,9 @@ anything.
 
 ## Gotchas
 
+- PM-698: CLI Close must keep its reserved top-right position, outside wrapping session actions.
+  Both project and workspace panes consolidate recovery controls under Session actions at every width.
+
 - PM-646: Grok may write `{}` after a rejected refresh token. Treat it as signed out without hiding encrypted saved profiles. Malformed live credentials still block switching. Rotation skips expired profiles even with refresh tokens; token presence does not prove renewal will succeed. Never refresh saved tokens to test them.
 
 - PM-594: `scripts/install-card-link-hook.mjs --project <root>` installs the warn-only template

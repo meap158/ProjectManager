@@ -75,6 +75,10 @@ Terminal header session names use their natural width, truncating only under act
 pressure. Desktop project/card metadata gives way first; mobile metadata can wrap beneath the
 name. Rename and terminal controls remain available, with full names exposed in tooltips.
 
+CLI Close stays in a reserved top-right corner at every width. Session actions opens the shared
+recovery and lifecycle controls on desktop as well as phones. Project panes expand those controls
+below the identity; workspace panes use a bounded wrapping panel. Fullscreen stays directly available.
+
 Agents list rows offer Continue for running AI CLIs in every status filter except Ended, immediately
 before the Show in pane icon, submitting a message without restarting. Ended sessions never offer it.
 Continue shows pending/sent/queued feedback and prevents duplicate in-flight sends. Show in pane

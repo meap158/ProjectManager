@@ -565,16 +565,17 @@ export function AgentsPanel({
                     </span>
                   </div>
                   <SessionRestartStatus session={active} />
+                  {active.usageLimit && <span className="badge">Usage limit</span>}
                   {sessionView.available && (
                     <ViewSwitch view={sessionView.view} onChange={sessionView.choose} />
                   )}
                   <span className="project-terminal-spacer" style={{ flex: 1 }} />
-                  {/* Phones: the title gets the room; the actions, Continue included, open from
-                      ⋯ in a row below (PM-584). */}
+                  {/* Secondary actions expand below the title at every screen size. */}
                   <button
                     type="button"
                     className="icon-btn project-actions-toggle"
                     aria-label="Session actions"
+                    title="Session actions"
                     aria-expanded={actionsOpen}
                     onClick={() => setActionsOpen((open) => !open)}
                   >

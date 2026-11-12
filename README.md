@@ -4,6 +4,8 @@
 
 # ProjectManager
 
+CLI panes keep Close at the top right. Open Session actions for recovery, account switching and lifecycle controls.
+
 **A local-first workspace for running Claude Code, Codex, Grok, Antigravity and OpenCode across all your projects, with a self-updating Kanban board.**<br>
 Persistent AI coding agent sessions. Every project. Any screen, including your phone.
 Your projects and session data stay on your computer.

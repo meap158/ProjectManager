@@ -883,6 +883,7 @@ function Pane({
             type="button"
             className="icon-btn pane-controls-toggle"
             aria-label="Session actions"
+            title={s.usageLimit ? 'Session actions: usage limit reached' : 'Session actions'}
             aria-expanded={mobileActionsOpen}
             onClick={() => setMobileActionsOpen(!mobileActionsOpen)}
           >
@@ -928,7 +929,7 @@ function Pane({
           </svg>
         </button>
         <button
-          className="icon-btn"
+          className="icon-btn pane-close"
           title="Remove from layout (keeps the session running)"
           onClick={onClose}
         >
