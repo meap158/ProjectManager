@@ -186,6 +186,18 @@ ${ESC}[0mThinking…`),
     ).toBe('input');
   });
 
+  it('a finished Codex turn with no input box in the log is idle (PM-619)', () => {
+    expect(tailState('• Splash ready, checks pass.\n\n  Worked for 7m 18s • 7:29 PM\n')).toBe(
+      'idle',
+    );
+    // A new turn drawn after it is still running.
+    expect(
+      tailState(
+        '  Worked for 7m 18s • 7:29 PM\n\n• Working (3s • esc to interrupt)\n› Ask Codex to do anything',
+      ),
+    ).toBe('running');
+  });
+
   it('an empty Codex input box on a wide terminal is idle, not unknown (PM-619)', () => {
     // Real dump: the footer lines are padded with ~170 spaces, which once pushed the prompt past
     // the tail limit and made the session report state null while it sat idle.

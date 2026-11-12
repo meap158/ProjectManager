@@ -23,6 +23,10 @@ const PROMPT_PATTERNS = [
   /esc\s*to\s*cancel/gi,
   // OpenCode: footer commands shortcut in its status line
   /ctrl\s*\+\s*p\s*commands/gi,
+  // Codex: the summary it prints when a turn ends ("Worked for 7m 18s • 7:29 PM"). The input box
+  // below it is not always in the log, so a finished turn would read as unknown (PM-619). Kept
+  // last: tailState slices the first three entries as "conversation" prompts.
+  /worked\s+for\s+(?:\d+\s*[hms]\s*)+•/gi,
 ];
 
 /** The CLI is working on a turn right now. */
