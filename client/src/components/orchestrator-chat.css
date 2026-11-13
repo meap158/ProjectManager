@@ -117,6 +117,24 @@
   min-width: 0;
   box-sizing: border-box;
 }
+/* The message box under the terminal (PM-726): your draft stays here, not in the CLI. */
+.terminal-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.terminal-composer-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  max-height: 160px;
+  resize: none;
+  line-height: 1.4;
+  font-size: 13px;
+}
 .orchestrator-terminal-body > .work-resizer {
   margin: 3px 0 0;
   width: 100%;

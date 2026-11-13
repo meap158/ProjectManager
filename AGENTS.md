@@ -173,6 +173,11 @@ anything.
 
 ## Gotchas
 
+- PM-726: anything the app types into a CLI on its own must also wait while the owner has unsent
+  text there (`ownerDrafting` in `server/agents/drafting.ts`, from `lastKeyAt`), or it joins
+  their draft and sends it. Owner actions refuse instead. The desktop orchestrator chat has a
+  message box (`TerminalComposer.tsx`) so the draft stays out of the CLI. See `docs/ORCHESTRATOR.md`.
+
 - PM-712: project Agents row buttons use the same shortcut bindings as the global selected work
   row. Project pane Alt+1/Alt+Enter capture only their navigation keys; preserve text/dialog/IME guards.
 

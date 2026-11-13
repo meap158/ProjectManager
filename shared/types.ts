@@ -560,6 +560,11 @@ export interface AgentSession {
   orchestratorId?: string | null;
   /** When you last sent it a message (Enter or a pasted line); null if never (PM-94). */
   lastInputAt?: string | null;
+  /**
+   * When you last pressed a key in its terminal, sent or not (PM-726). Automatic messages wait
+   * while this is recent: they would land in the middle of your draft and send it.
+   */
+  lastKeyAt?: string | null;
   cardKey: string | null;
   pid: number | null;
   status: AgentSessionStatus;

@@ -6,6 +6,7 @@ import { TerminalInputQueue } from '../lib/terminalInputQueue';
 import { sendImageToSession } from '../sessionImages';
 import { SessionChat, ViewSwitch, useSessionView } from './SessionChat';
 import { SessionImageButton } from './SessionImageButton';
+import { TerminalComposer } from './TerminalComposer';
 import { SessionToggle } from './SessionToggle';
 import { SessionRestartStatus } from './SessionProgress';
 const TerminalView = lazy(() =>
@@ -223,7 +224,8 @@ export function OrchestratorTerminal({
             >
               <TerminalView
                 key={`${session.id}-${session.startedAt}`}
-                height={maxed ? '100%' : terminalHeight}
+                // Full screen leaves room for the message box below (PM-726).
+                height={maxed ? 'calc(100% - 46px)' : terminalHeight}
                 historyBytes={session.logBytes}
                 stopped={session.status !== 'running'}
                 fetchOutput={(after) => api.sessionOutput(session.id, after)}
@@ -240,6 +242,11 @@ export function OrchestratorTerminal({
                 }}
               />
             </Suspense>
+            <TerminalComposer
+              sessionId={session.id}
+              disabled={session.status !== 'running'}
+              onError={setError}
+            />
             {!maxed && (
               <div
                 role="separator"

@@ -89,6 +89,11 @@ import {
 import type { OrchestratorService } from './service.js';
 import { type SopStore, checkProject, sopCardText, sopInfo, sopReport } from '../sops.js';
 import { sessionLabel } from '../../shared/sessionLabel.js';
+import { ownerDrafting } from '../agents/drafting.js';
+
+/** A check or card would be typed into the owner's half-written message and send it (PM-726). */
+const DRAFT_REFUSAL =
+  "You have unsent text in the chat's input box. Send or clear it first, or type in the box below the chat.";
 
 // An orchestrator's own chat CLI (PM-89). The user talks to it like any agent terminal;
 // it knows the orchestrator's projects (a briefing file in its own folder, written at every open) and
@@ -752,6 +757,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
           ? 'The orchestrator chat is asking you something; answer it first'
           : 'The orchestrator chat is busy; wait for it or open it to steer',
       );
+    if (ownerDrafting(live)) throw new AgentError(409, DRAFT_REFUSAL);
     this.writeBriefing(currentInstance);
     this.supervisor.sendInput(live.id, `\x1b[200~${prompt(currentInstance)}\x1b[201~\r`, false);
     this.record(
@@ -799,6 +805,7 @@ export class OrchestratorChat implements OrchestratorToolHost {
           ? 'The orchestrator chat is asking you something; answer it first'
           : 'The orchestrator chat is busy; wait for it or open it to steer',
       );
+    if (ownerDrafting(live)) throw new AgentError(409, DRAFT_REFUSAL);
     const projectLabel =
       this.scope(instance).find((p) => p.id === found.projectId)?.name ?? ALL_PROJECTS;
     this.supervisor.sendInput(
@@ -2316,8 +2323,13 @@ export class OrchestratorChat implements OrchestratorToolHost {
       if (!s || !inScope(s.projectId) || s.orchestratorId)
         fail(`Session ${input.sessionId} is not a worker in your scope`);
       if (s!.status !== 'running') fail(`${sessionLabel(s!)} is not running`);
-      if (input.queue && (s!.tailState !== 'idle' || s!.queuedInputBytes > 0))
+      const drafting = ownerDrafting(s);
+      if (input.queue && (s!.tailState !== 'idle' || s!.queuedInputBytes > 0 || drafting))
         return this.queueForWorker(orchestratorId, s!, 'message', input.text);
+      if (drafting)
+        fail(
+          `The owner is typing in ${sessionLabel(s!)}; send with queue: true to deliver it once they finish`,
+        );
       if (s!.tailState !== 'idle')
         fail(
           s!.tailState === 'input'

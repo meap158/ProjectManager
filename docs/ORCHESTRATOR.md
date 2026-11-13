@@ -53,6 +53,24 @@ the orchestrator's briefing: its settings, each project in scope (path, git stat
 tools and its rules (read projects freely, change them only through workers; never push, merge
 or delete branches; every card move gets a note).
 
+**The owner's draft (PM-726).** The app types into a CLI the way a person would: a paste and Enter
+(`supervisor.sendInput`). Typed into a half-written message in the CLI's input box, an automatic
+message would join it and send both. Two things prevent that:
+
+- A message box under the desktop chat terminal (`client/src/components/TerminalComposer.tsx`).
+  The draft stays in the page (and survives a reload) until Send or Enter, then goes in as one
+  paste and Enter. The CLI's input box stays empty meanwhile, so automatic messages go in on time.
+  A CLI that is working queues a message sent meanwhile.
+- A guard on every automatic sender (`server/agents/drafting.ts`). A key pressed in the terminal
+  without sending the line (no Enter at the end) marks the session as `lastKeyAt`; for two minutes
+  after that, automatic checks, worker messages in both directions, session supervision's
+  continuations and `/rename` wait, and the chat's own Check, Follow up and Send card refuse with a
+  message. `message_worker` refuses too, or queues with `queue: true`. Sending the line clears it.
+
+Claude Code also documents "channels" (an MCP server pushing a message into a running session
+without typing). They are a research preview that needs a launch flag with a confirmation for a
+server of our own, so they are not used yet.
+
 Its `projectmanager` MCP server gives it the orchestrator's tools instead of the single-card ones (same
 transport and capability token, `registerBoardMcp` asks the `OrchestratorToolHost`). All of them
 are limited to the orchestrator's projects at call time:

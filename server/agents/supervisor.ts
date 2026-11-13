@@ -135,6 +135,7 @@ import { renderScreen } from './screen.js';
 import { logBase, logicalSize, physicalSize, removeLog } from './logFile.js';
 import { ClaudeAccounts, CodexAccountError, CodexAccounts } from './codexAccounts.js';
 import { GrokAccountError, GrokAccounts } from './grokAccounts.js';
+import { ownerDrafting } from './drafting.js';
 import {
   grokCurrentExhausted,
   grokLimitOnScreen,
@@ -406,6 +407,8 @@ export class AgentSupervisor {
   private timers: TimerMemo = new Map();
   /** When each session last got a key typed by a person (not terminal reports). */
   private lastKeystroke = new Map<number, number>();
+  /** The last key you pressed that left text unsent in the input box (PM-726). */
+  private draftKeystroke = new Map<number, number>();
   private closed = false;
   private restarting = new Map<
     number,
@@ -1446,6 +1449,12 @@ export class AgentSupervisor {
     if (manual && !isTerminalReport(data)) this.cancelContinuation(id, 'Cancelled by manual input');
     // Typed keys come back as echo output; remembered so it isn't mistaken for work (PM-67).
     if (manual && !isTerminalReport(data)) this.lastKeystroke.set(id, Date.now());
+    // Keys that leave text in the input box hold automatic messages back (PM-726); sending the
+    // line (Enter at the end) empties it again.
+    if (manual && !isTerminalReport(data)) {
+      if (/[\r\n]$/.test(data)) this.draftKeystroke.delete(id);
+      else this.draftKeystroke.set(id, Date.now());
+    }
     // A message sent (Enter, or a paste ending a line), not each keystroke: the list sorts by it.
     if (manual && !isTerminalReport(data) && /[\r\n]/.test(data)) {
       this.db.prepare('UPDATE agent_sessions SET last_input_at = ? WHERE id = ?').run(now(), id);
@@ -3168,6 +3177,8 @@ export class AgentSupervisor {
       (session.tailState === null &&
         now - (session.lastOutputAt ? Date.parse(session.lastOutputAt) : 0) > 20_000);
     if (!quiet) return false;
+    // Your unsent text would become part of the command and be sent with it (PM-726).
+    if (ownerDrafting(session, now)) return false;
     // Typed text goes to whatever has the keyboard. A dialog on screen (Codex's folder trust
     // prompt, its agent command center) reads it as keys: one /rename once opened another
     // project's conversation and moved the session there (PM-604). The drawn screen keeps a
@@ -3933,6 +3944,9 @@ export class AgentSupervisor {
       cardKey: row.card_id ? (getCard(this.db, row.card_id)?.key ?? null) : null,
       orchestratorId: row.orchestrator_id ?? null,
       lastInputAt: row.last_input_at ?? null,
+      lastKeyAt: this.draftKeystroke.has(row.id)
+        ? new Date(this.draftKeystroke.get(row.id)!).toISOString()
+        : null,
       pid: live?.proc.pid ?? row.pid,
       status: live ? 'running' : row.status,
       exitCode: row.exit_code,

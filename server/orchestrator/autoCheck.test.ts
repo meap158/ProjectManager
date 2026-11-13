@@ -7,6 +7,7 @@ import { insertProject, insertCard, updateCard, setSetting } from '../store.js';
 import type { AgentSession } from '../../shared/types.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import type { ProviderLimits } from '../../shared/limits.js';
+import { DRAFT_HOLD_MS } from '../agents/drafting.js';
 import {
   AutoCheck,
   AUTO_CHECK_FALLBACK_MS,
@@ -427,4 +428,22 @@ it('asks for a closing report when a goal reaches its budget, then lets it wait 
   t.state.now += GOAL_NUDGE_MS;
   await t.auto.tick();
   expect(t.state.checks).toBe(3); // waiting for the owner
+});
+
+it('waits while the owner is typing in the chat, then sends (PM-726)', async () => {
+  const t = setup();
+  await t.auto.tick();
+  updateCard(t.db, t.card, { status: 'review' });
+  t.state.now += AUTO_CHECK_MIN_GAP_MS;
+  const typing = (agoMs: number) =>
+    ({
+      ...idleChat,
+      lastKeyAt: new Date(t.state.now - agoMs).toISOString(),
+    }) as unknown as AgentSession;
+  t.state.chat = typing(10_000);
+  await t.auto.tick();
+  expect(t.state.checks).toBe(0);
+  t.state.chat = typing(DRAFT_HOLD_MS + 1);
+  await t.auto.tick();
+  expect(t.state.checks).toBe(1);
 });

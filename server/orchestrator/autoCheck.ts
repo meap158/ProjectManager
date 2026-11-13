@@ -15,6 +15,7 @@ import {
   setSetting,
 } from '../store.js';
 import { readLimits } from '../agents/limits.js';
+import { ownerDrafting } from '../agents/drafting.js';
 import { ownedSessionIds } from './ownedWorkers.js';
 import { sessionQuota } from './sessionSupervision.js';
 import { plans, type CheckFocus } from './chat.js';
@@ -226,7 +227,9 @@ export class AutoCheck {
       chat.status !== 'running' ||
       chat.tailState === 'running' ||
       chat.tailState === 'input' ||
-      chat.queuedInputBytes > 0
+      chat.queuedInputBytes > 0 ||
+      // The owner is writing in the chat's input box: the check would join their draft (PM-726).
+      ownerDrafting(chat, now)
     ) {
       this.save(id, deferred);
       return;

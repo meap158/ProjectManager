@@ -6,6 +6,7 @@ import type { ProviderLimits } from '../../shared/limits.js';
 import { getCard, getSetting, setSetting } from '../store.js';
 import { AgentError, type AgentSupervisor } from '../agents/supervisor.js';
 import { emptyCodexPrompt, emptyGrokPrompt } from '../agents/continuation.js';
+import { ownerDrafting } from '../agents/drafting.js';
 import { stripTerminal } from '../agents/activity.js';
 import { readLimits } from '../agents/limits.js';
 import { antigravityAccounts, refreshAntigravityAccount } from '../agents/antigravityAccounts.js';
@@ -215,6 +216,7 @@ export class SessionSupervision {
           : 'Session is working or its state is unknown';
     else if (s.question) reason = 'Session has a question for the owner';
     else if (s.queuedInputBytes > 0) reason = 'Session has queued input';
+    else if (ownerDrafting(s)) reason = 'The owner is typing in this session';
     else if (
       s.usageLimit ||
       s.autoContinue?.resumesAt ||

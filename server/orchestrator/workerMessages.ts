@@ -3,6 +3,7 @@ import type { AgentSession } from '../../shared/types.js';
 import type { OrchestratorConfig } from '../../shared/orchestrator.js';
 import { getSetting, setSetting } from '../store.js';
 import { sessionLabel } from '../../shared/sessionLabel.js';
+import { ownerDrafting } from '../agents/drafting.js';
 
 /*
  * Messages between an orchestrator and the sessions it owns (PM-432), after Grok Bot's
@@ -178,8 +179,13 @@ interface Deps {
   now?: () => number;
 }
 
-const idle = (s: AgentSession | null): s is AgentSession =>
-  !!s && s.status === 'running' && s.tailState === 'idle' && !(s.queuedInputBytes > 0);
+/** At an empty prompt: idle, nothing queued, and no unsent text the owner is typing (PM-726). */
+const idle = (s: AgentSession | null, now: number): s is AgentSession =>
+  !!s &&
+  s.status === 'running' &&
+  s.tailState === 'idle' &&
+  !(s.queuedInputBytes > 0) &&
+  !ownerDrafting(s, now);
 
 /**
  * Delivers waiting messages in both directions. A reply reaches its session only when that
@@ -239,7 +245,7 @@ export class WorkerMessenger {
         continue;
       }
       // One message per session per tick, and only into an idle prompt.
-      if (delivered.has(s.id) || !idle(s) || s.restartProgress) continue;
+      if (delivered.has(s.id) || !idle(s, Date.parse(at)) || s.restartProgress) continue;
       this.deps.send(s.id, workerText(instance.name, m));
       delivered.add(s.id);
       updateMessages(db, instance.id, [m.id], { deliveredAt: at });
@@ -264,7 +270,7 @@ export class WorkerMessenger {
     if (wakes.length >= WAKES_PER_HOUR || (wakes.length && now - wakes.at(-1)! < WAKE_GAP_MS))
       return;
     const chat = this.deps.chatSession(instance.id);
-    if (!idle(chat)) return;
+    if (!idle(chat, now)) return;
     // An automatic check may have just been typed in before the chat shows as working.
     if (chat.lastInputAt && now - Date.parse(chat.lastInputAt) < RECENT_INPUT_MS) return;
     const name = (id: number) => this.deps.getSession(id)?.name;

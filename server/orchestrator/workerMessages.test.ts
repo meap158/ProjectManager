@@ -205,3 +205,27 @@ describe('worker message hardening (PM-432)', () => {
     expect(state.sent).toHaveLength(1);
   });
 });
+
+describe('the owner typing (PM-726)', () => {
+  it('holds a reply and a chat wake while the owner has unsent text, then delivers', () => {
+    const { db, state, messenger } = setup();
+    fromWorker(db);
+    addMessage(db, {
+      orchestratorId: 'm',
+      sessionId: 7,
+      cardId: 3,
+      direction: 'to_worker',
+      kind: 'reply',
+      text: 'Go ahead',
+    });
+    const typedAt = new Date(state.now - 5_000).toISOString();
+    state.sessions.get(7)!.tailState = 'idle';
+    state.sessions.get(7)!.lastKeyAt = typedAt;
+    state.chat.lastKeyAt = typedAt;
+    messenger.tick();
+    expect(state.sent).toEqual([]);
+    state.now += 3 * 60_000;
+    messenger.tick();
+    expect(state.sent.map(([id]) => id).sort()).toEqual([7, 99]);
+  });
+});
