@@ -5,9 +5,12 @@ import type { PreviewTarget } from './previewTabs';
 
 // Streamed preview (PM-693, docs/BUILT-IN-BROWSER.md). Off this computer the Preview shows a
 // headless browser on this computer (server/previewStream.ts) instead of the read-only path mode,
-// which cannot load most apps there. Frames arrive by long-poll as JPEG images; pointer, wheel and
-// keyboard input go back as small JSON batches. Nothing of the app runs in this page: it is an
-// image, so the app can never reach ProjectManager's origin.
+// which cannot load most apps there. Frames arrive as JPEG images pushed on one event stream
+// (PM-727), each acknowledged once shown so the server never sends faster than this page can take
+// them; a connection that holds the stream back falls back to long-poll, one frame per request.
+// Pointer, wheel and keyboard input go back as small numbered JSON batches, sent without waiting
+// for the previous one. Nothing of the app runs in this page: it is an image, so the app can never
+// reach ProjectManager's origin.
 //
 // A tab that is not shown stops polling; the server closes a stream nobody polls for a while, and
 // coming back reopens it on the page it was on.
@@ -54,6 +57,45 @@ export function streamPath(url: string): string | null {
   }
 }
 
+export interface FeedFrame {
+  v: number;
+  state: PreviewStreamState;
+  /** The picture (base64 JPEG), or null when only the state changed. */
+  jpeg: string | null;
+}
+
+/** Splits server-sent events off the front of `buffer`: the frames found and what is left. */
+export function parseFeed(buffer: string): { frames: FeedFrame[]; rest: string } {
+  const frames: FeedFrame[] = [];
+  let rest = buffer.replaceAll('\r\n', '\n');
+  let end: number;
+  while ((end = rest.indexOf('\n\n')) >= 0) {
+    const block = rest.slice(0, end);
+    rest = rest.slice(end + 2);
+    const data = block
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(line.startsWith('data: ') ? 6 : 5))
+      .join('\n');
+    if (!data) continue; // a heartbeat comment
+    try {
+      frames.push(JSON.parse(data) as FeedFrame);
+    } catch {
+      // A malformed event is skipped; the next frame replaces it anyway.
+    }
+  }
+  return { frames, rest };
+}
+
+/** With no first event this long, the connection is holding the stream back: long-poll instead. */
+const FEED_FIRST_EVENT_MS = 5_000;
+/** Acknowledgements are batched this long: the newest shown frame covers the ones before it. */
+const ACK_EVERY_MS = 40;
+/** Input posts are gathered this long, so a burst of keys goes in one post. */
+const INPUT_FLUSH_MS = 8;
+/** Input posts on their way at once; more wait (and merge) until one answers. */
+const INPUT_IN_FLIGHT = 6;
+
 const BUTTONS = ['left', 'middle', 'right'] as const;
 /** A touch that moves this far is a scroll, not a tap. */
 const TAP_SLOP = 8;
@@ -62,15 +104,26 @@ const MOVE_EVERY_MS = 50;
 type Pending = Record<string, unknown> & { type: string; kind?: string };
 
 /**
- * Sends input in order, one request at a time. Moves waiting to go are merged into the newest, so
- * a slow connection never builds a backlog of pointer positions.
+ * Sends input without waiting for the previous post (PM-727): each post carries a sequence number
+ * and the server runs them in that order. Up to INPUT_IN_FLIGHT posts travel at once; beyond that
+ * input waits, and moves waiting to go are merged into the newest, so a slow connection never
+ * builds a backlog of pointer positions.
  */
-class InputQueue {
+export class InputQueue {
   private pending: Pending[] = [];
-  private busy = false;
+  private inFlight = 0;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private seq = 0;
+  private seqFor: string | null = null;
+  private editableSeq = 0;
   constructor(
     private id: () => string | null,
     private onEditable: (editable: boolean) => void,
+    private send: (
+      id: string,
+      events: Pending[],
+      seq: number,
+    ) => Promise<{ editable: boolean | null }> = api.previewStreamInput,
   ) {}
 
   push(event: Pending): void {
@@ -89,24 +142,39 @@ class InputQueue {
         deltaY: Number(last.deltaY) + Number(event.deltaY),
       };
     else this.pending.push(event);
-    void this.flush();
+    this.timer ??= setTimeout(() => {
+      this.timer = null;
+      this.flush();
+    }, INPUT_FLUSH_MS);
   }
 
-  private async flush(): Promise<void> {
-    if (this.busy) return;
+  private flush(): void {
     const id = this.id();
-    if (!id || this.pending.length === 0) return;
-    this.busy = true;
-    const batch = this.pending.splice(0, 64);
-    try {
-      const { editable } = await api.previewStreamInput(id, batch);
-      if (editable !== null) this.onEditable(editable);
-    } catch {
-      // A closed stream reopens through the frame loop; input sent meanwhile is dropped.
-    } finally {
-      this.busy = false;
-      if (this.pending.length) void this.flush();
+    if (!id || this.pending.length === 0 || this.inFlight >= INPUT_IN_FLIGHT) return;
+    // A reopened stream is a new browser tab here, numbered from 1 again.
+    if (id !== this.seqFor) {
+      this.seqFor = id;
+      this.seq = 0;
     }
+    const seq = ++this.seq;
+    const batch = this.pending.splice(0, 64);
+    this.inFlight++;
+    this.send(id, batch, seq)
+      .then(({ editable }) => {
+        // Only the newest answer says where the focus is now.
+        if (editable !== null && seq > this.editableSeq) {
+          this.editableSeq = seq;
+          this.onEditable(editable);
+        }
+      })
+      .catch(() => {
+        // A closed stream reopens through the frame loop; input sent meanwhile is dropped.
+      })
+      .finally(() => {
+        this.inFlight--;
+        this.flush();
+      });
+    if (this.pending.length) this.flush();
   }
 }
 
@@ -139,6 +207,8 @@ export function PreviewStream({
   const [image, setImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  /** Set once this connection held the pushed feed back; long-poll from then on. */
+  const feedBuffered = useRef(false);
   const touch = useRef<{
     x: number;
     y: number;
@@ -203,6 +273,72 @@ export function PreviewStream({
     const abort = new AbortController();
     let urlToRevoke: string | null = null;
     let loadedOnce = false;
+    const show = (url: string) => {
+      setImage(url);
+      if (urlToRevoke) URL.revokeObjectURL(urlToRevoke);
+      urlToRevoke = url.startsWith('blob:') ? url : null;
+      if (!loadedOnce) {
+        loadedOnce = true;
+        onLoaded(tabId);
+      }
+    };
+    /**
+     * Reads the pushed feed until it ends: 'gone' (the stream closed), 'buffered' (no first event:
+     * something on the way holds the stream back) or 'retry' (the connection dropped).
+     */
+    const feed = async (id: string): Promise<'gone' | 'buffered' | 'retry'> => {
+      const local = new AbortController();
+      const stop = () => local.abort();
+      abort.signal.addEventListener('abort', stop, { once: true });
+      let first = false;
+      let failed: Error | null = null;
+      const firstTimer = setTimeout(() => {
+        if (!first) local.abort();
+      }, FEED_FIRST_EVENT_MS);
+      let ackTimer: ReturnType<typeof setTimeout> | null = null;
+      let toAck = 0;
+      try {
+        const res = await fetch(`/api/preview-stream/${id}/feed`, {
+          signal: local.signal,
+          cache: 'no-store',
+        });
+        if (res.status === 404) return 'gone';
+        if (!res.ok || !res.body) {
+          const data = (await res.json().catch(() => null)) as { error?: string } | null;
+          failed = new Error(data?.error ?? `The preview stopped (${res.status})`);
+          throw failed;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) return 'retry';
+          const parsed = parseFeed(buffer + decoder.decode(value, { stream: true }));
+          buffer = parsed.rest;
+          for (const frame of parsed.frames) {
+            first = true;
+            report(frame.state);
+            if (!frame.jpeg) continue;
+            show(`data:image/jpeg;base64,${frame.jpeg}`);
+            // Shown: the server may send the next one. One post covers every frame since.
+            toAck = frame.v;
+            ackTimer ??= setTimeout(() => {
+              ackTimer = null;
+              void api.previewStreamAck(id, toAck).catch(() => undefined);
+            }, ACK_EVERY_MS);
+          }
+        }
+      } catch (e) {
+        if (failed) throw e;
+        if (abort.signal.aborted) return 'retry';
+        return first ? 'retry' : 'buffered';
+      } finally {
+        clearTimeout(firstTimer);
+        if (ackTimer) clearTimeout(ackTimer);
+        abort.signal.removeEventListener('abort', stop);
+      }
+    };
     const run = async () => {
       setError(null);
       if (!idRef.current) {
@@ -220,6 +356,16 @@ export function PreviewStream({
         }
         idRef.current = opened.id;
         report(opened.state);
+      }
+      // The pushed feed first; long-poll once a connection has shown it holds the feed back.
+      while (!abort.signal.aborted && idRef.current && !feedBuffered.current) {
+        const outcome = await feed(idRef.current);
+        if (outcome === 'gone') {
+          idRef.current = null;
+          return run();
+        }
+        if (outcome === 'buffered') feedBuffered.current = true;
+        else if (!abort.signal.aborted) await new Promise((r) => setTimeout(r, 300));
       }
       let after = 0;
       while (!abort.signal.aborted && idRef.current) {
@@ -246,13 +392,7 @@ export function PreviewStream({
             URL.revokeObjectURL(url);
             return;
           }
-          setImage(url);
-          if (urlToRevoke) URL.revokeObjectURL(urlToRevoke);
-          urlToRevoke = url;
-          if (!loadedOnce) {
-            loadedOnce = true;
-            onLoaded(tabId);
-          }
+          show(url);
         }
       }
     };

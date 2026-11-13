@@ -9,9 +9,14 @@ import type { PreviewStreamState } from '../shared/types.js';
 // gates (and Cloudflare Access in front of the remote one) refuse every script, style and image.
 // Instead, a headless Chrome on this computer (the capture browser) opens the app on its own
 // loopback port, where it works exactly as it does locally, and the viewer sees its screen:
-//  - Frames come from Page.startScreencast and are served by long-poll under /api/, so the gates'
-//    session checks apply to every one and no WebSocket has to cross the tunnel.
+//  - Frames come from Page.startScreencast and are pushed on one event stream under /api/ (PM-727),
+//    so the gates' session checks apply and no WebSocket has to cross the tunnel. Only the newest
+//    frame is ever sent, at most FEED_FPS a second, and no more than FEED_WINDOW frames the viewer
+//    has not acknowledged yet: a slow link drops frames instead of falling behind. Long-poll
+//    (one frame per request) stays as the fallback for a connection that buffers the stream.
 //  - Mouse, wheel and keyboard input arrive as JSON posts and are replayed with Input.dispatch*.
+//    The viewer sends them without waiting for the previous post; a sequence number puts them
+//    back in order here, so keys and clicks never interleave.
 //  - The top-level page may only be the app itself (127.0.0.1, localhost or [::1] on that port,
 //    the preview's port rules: 1024+, never this app's own ports); any other main-frame load is
 //    refused, so this is not a general web browser. Downloads are denied, file pickers never
@@ -26,6 +31,14 @@ const SWEEP_MS = 15_000;
 export const POLL_WAIT_MS = 20_000;
 const MAX_EVENTS = 64;
 const MAX_TEXT = 10_000;
+/** The pushed feed's limits (PM-727): frames a second, unacknowledged frames, heartbeat. */
+export const FEED_FPS = 24;
+export const FEED_WINDOW = 4;
+/** With no acknowledgement for this long, one more frame goes out (a lost ack never stalls it). */
+const FEED_ACK_WAIT_MS = 2_000;
+const FEED_HEARTBEAT_MS = 15_000;
+/** An input post whose predecessor never arrives runs after this long anyway. */
+const INPUT_GAP_MS = 1_000;
 
 export type StreamState = PreviewStreamState;
 
@@ -93,6 +106,17 @@ export function parseSize(body: unknown): { width: number; height: number; scale
     height: int(b.height, 200, 2560, 800),
     scale: num(b.scale, 1, 2, 1),
   };
+}
+
+/** An input post's sequence number (1, 2, ...), or null for a post sent without one. */
+export function parseSeq(body: unknown): number | null {
+  const seq = (body as { seq?: unknown } | null)?.seq;
+  return typeof seq === 'number' && Number.isSafeInteger(seq) && seq > 0 ? seq : null;
+}
+
+/** One frame of the pushed feed, as a server-sent event. */
+export function feedEvent(version: number, state: StreamState, jpeg: string | null): string {
+  return `event: frame\ndata: ${JSON.stringify({ v: version, t: Date.now(), state, jpeg })}\n\n`;
 }
 
 /** The input events of one post, validated; anything malformed refuses the whole batch. */
@@ -223,12 +247,26 @@ const IN_PLACE = `(() => {
 
 const EDITABLE = `(() => { const a = document.activeElement; return !!a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); })()`;
 
-class Stream {
+/** One streamed preview: a browser tab on this computer (exported for tests). */
+export class Stream {
   version = 0;
   frame: Buffer | null = null;
+  /** The newest frame as Chrome sent it (base64), for the pushed feed. */
+  frameB64: string | null = null;
+  /** The version at which the frame last changed (a state change alone keeps the picture). */
+  frameAt = 0;
   lastSeen = Date.now();
   ended = false;
   private waiters = new Set<() => void>();
+  /** The pushed feed (PM-727): which one is current, what it sent and what the viewer has shown. */
+  private feedGen = 0;
+  private sent: number[] = [];
+  private acked = 0;
+  private ackAt = 0;
+  /** Input posts in order: the next sequence number to run and the posts waiting for their turn. */
+  private inputNext = 1;
+  private inputTurns = new Map<number, () => void>();
+  private inputChain: Promise<unknown> = Promise.resolve();
   private size: { width: number; height: number; scale: number };
 
   constructor(
@@ -248,8 +286,142 @@ class Stream {
   /** Wakes every frame request waiting on this stream. */
   bump(): void {
     this.version++;
-    for (const wake of this.waiters) wake();
+    this.wake();
+  }
+
+  private wake(): void {
+    for (const wake of [...this.waiters]) wake();
     this.waiters.clear();
+  }
+
+  /** Resolves on the next bump or acknowledgement, abort, or after `ms`. */
+  private nap(ms: number, signal?: AbortSignal): Promise<void> {
+    if (this.ended || signal?.aborted) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.waiters.delete(done);
+        signal?.removeEventListener('abort', done);
+        resolve();
+      };
+      const timer = setTimeout(done, Math.max(0, ms));
+      this.waiters.add(done);
+      signal?.addEventListener('abort', done, { once: true });
+    });
+  }
+
+  /** The viewer has shown frame `version`; frames up to it no longer count against the window. */
+  ack(version: number): void {
+    if (version <= this.acked) return;
+    this.acked = version;
+    this.ackAt = Date.now();
+    this.sent = this.sent.filter((v) => v > version);
+    this.wake();
+  }
+
+  /**
+   * The pushed feed (PM-727): server-sent events, the newest frame each time, paced by FEED_FPS
+   * and FEED_WINDOW. It pulls one event at a time, so nothing queues here either. A newer feed
+   * for the same stream ends this one.
+   */
+  feed(signal?: AbortSignal): ReadableStream<Uint8Array> {
+    const gen = ++this.feedGen;
+    this.sent = [];
+    this.acked = 0;
+    this.ackAt = Date.now();
+    const encoder = new TextEncoder();
+    const gap = 1000 / FEED_FPS;
+    let after = 0;
+    let started = false;
+    let lastSent = 0;
+    let lastWrite = Date.now();
+    let cancelled = false;
+    const live = () => !cancelled && !this.ended && !signal?.aborted && gen === this.feedGen;
+    const next = async (): Promise<string | null> => {
+      // The first event goes out at once, so the viewer can tell the stream is not buffered.
+      if (!started) {
+        started = true;
+        after = this.version;
+        lastSent = lastWrite = Date.now();
+        return feedEvent(this.version, this.state, this.frameB64);
+      }
+      while (live()) {
+        const now = Date.now();
+        this.lastSeen = now;
+        const inFlight = this.sent.length;
+        const windowOpen = inFlight < FEED_WINDOW || now - this.ackAt >= FEED_ACK_WAIT_MS;
+        if (this.version > after && windowOpen && now - lastSent >= gap) {
+          // The picture goes only when it changed; a state change alone sends just the state.
+          const jpeg = this.frameAt > after ? this.frameB64 : null;
+          after = this.version;
+          lastSent = lastWrite = now;
+          if (jpeg) {
+            this.sent.push(after);
+            // A frame sent past a full window restarts the wait for an acknowledgement.
+            if (inFlight >= FEED_WINDOW) this.ackAt = now;
+          }
+          return feedEvent(after, this.state, jpeg);
+        }
+        if (now - lastWrite >= FEED_HEARTBEAT_MS) {
+          lastWrite = now;
+          return ': still here\n\n';
+        }
+        const until = Math.min(
+          lastWrite + FEED_HEARTBEAT_MS,
+          this.version > after && windowOpen
+            ? lastSent + gap
+            : this.version > after
+              ? this.ackAt + FEED_ACK_WAIT_MS
+              : Infinity,
+        );
+        await this.nap(until - now, signal);
+      }
+      return null;
+    };
+    return new ReadableStream<Uint8Array>(
+      {
+        pull: async (controller) => {
+          const chunk = await next();
+          if (chunk === null) controller.close();
+          else controller.enqueue(encoder.encode(chunk));
+        },
+        cancel: () => {
+          cancelled = true;
+          this.wake();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+  }
+
+  /**
+   * Runs one input post in its sequence order: post n waits for n-1 to finish (or INPUT_GAP_MS,
+   * if n-1 never arrives). A post without a number runs after whatever is running.
+   */
+  async ordered<T>(seq: number | null, run: () => Promise<T>): Promise<T> {
+    if (seq !== null) {
+      while (seq > this.inputNext && !this.ended) {
+        const turn = new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => resolve(false), INPUT_GAP_MS);
+          this.inputTurns.set(seq, () => {
+            clearTimeout(timer);
+            resolve(true);
+          });
+        });
+        if (!(await turn)) this.inputNext = Math.max(this.inputNext, seq);
+        this.inputTurns.delete(seq);
+      }
+    }
+    const result = this.inputChain.then(run);
+    this.inputChain = result.catch(() => undefined);
+    try {
+      return await result;
+    } finally {
+      if (seq !== null && seq >= this.inputNext) {
+        this.inputNext = seq + 1;
+        this.inputTurns.get(this.inputNext)?.();
+      }
+    }
   }
 
   end(): void {
@@ -342,8 +514,10 @@ class Stream {
         void this.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(
           () => undefined,
         );
-        this.frame = Buffer.from(String(params.data), 'base64');
+        this.frameB64 = String(params.data);
+        this.frame = Buffer.from(this.frameB64, 'base64');
         this.bump();
+        this.frameAt = this.version;
       } else if (method === 'Page.javascriptDialogOpening') {
         // Nobody can see a dialog here: alerts are dismissed, confirms and prompts declined.
         const type = String(params.type);
@@ -534,9 +708,22 @@ export class PreviewStreams {
     return { version: stream.version, frame: stream.frame, state: stream.state };
   }
 
+  /** The pushed feed of one stream (PM-727). */
+  feed(id: string, signal?: AbortSignal): ReadableStream<Uint8Array> {
+    return this.get(id).feed(signal);
+  }
+
+  ack(id: string, body: unknown): void {
+    const v = (body as { version?: unknown } | null)?.version;
+    if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0)
+      throw new PreviewError(400, 'Expected a frame version');
+    this.get(id).ack(v);
+  }
+
   async input(id: string, body: unknown) {
     const events = parseInput(body);
-    return this.get(id).input(events);
+    const stream = this.get(id);
+    return stream.ordered(parseSeq(body), () => stream.input(events));
   }
 
   async navigate(id: string, body: unknown): Promise<void> {

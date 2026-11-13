@@ -370,6 +370,19 @@ export function createApp(
     if (!next || !next.frame) return c.body(null, 204, headers);
     return c.body(new Uint8Array(next.frame), 200, { ...headers, 'content-type': 'image/jpeg' });
   });
+  // The pushed feed (PM-727): one event stream instead of a request per frame. `no-transform`
+  // and `x-accel-buffering` keep proxies (Cloudflare among them) from holding it back.
+  app.get('/preview-stream/:id/feed', (c) =>
+    c.body(streams.feed(c.req.param('id'), c.req.raw.signal), 200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      'x-accel-buffering': 'no',
+    }),
+  );
+  app.post('/preview-stream/:id/ack', async (c) => {
+    streams.ack(c.req.param('id'), await c.req.json().catch(() => null));
+    return c.body(null, 204);
+  });
   app.post('/preview-stream/:id/input', async (c) =>
     c.json(await streams.input(c.req.param('id'), await c.req.json().catch(() => null))),
   );

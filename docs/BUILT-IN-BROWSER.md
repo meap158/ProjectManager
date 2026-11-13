@@ -34,12 +34,23 @@ is not owned by one project. There are three ways to show an app:
    computer (the element picker's capture browser, `server/previewCapture.ts`) opens the app at
    `http://127.0.0.1:<port>`, where it works exactly as it does locally, and the viewer sees its
    screen (`server/previewStream.ts`, `client/src/components/PreviewStream.tsx`):
-   - Frames come from `Page.startScreencast` as JPEG and are fetched by long-poll
-     (`GET /api/preview-stream/<id>/frame?after=<version>`, at most 20 s), so the gates' session
-     checks apply to every frame and no WebSocket crosses the tunnel. The page state (address,
-     title, back and forward) rides in a header.
+   - Frames come from `Page.startScreencast` as JPEG and are pushed on one event stream
+     (`GET /api/preview-stream/<id>/feed`, server-sent events, PM-727), so the gates' session checks
+     apply and no WebSocket crosses the tunnel. Each event carries the page state (address, title,
+     back and forward) and the picture when it changed. Only the newest frame is sent, at most 24 a
+     second, and at most 4 the viewer has not acknowledged (`POST .../ack`, sent once a frame is
+     shown); with no acknowledgement for 2 s one more goes out. So a slow link drops frames instead
+     of falling behind. A comment every 15 s keeps the connection open through Cloudflare.
+     If no first event arrives within 5 s (something on the way holds the stream back), the panel
+     falls back to long-poll, one frame per request
+     (`GET .../frame?after=<version>`, at most 20 s, state in a header).
+     Measured through a proxy that adds 150 ms each way: long-poll gave 3 frames a second, the
+     feed 11, with the delay flat at about 160 ms over 8 s of scrolling; capped to 100 KB/s it stayed
+     flat at about 330 ms.
    - Mouse, touch, wheel and keys go back as JSON batches (`POST .../input`, at most 64 events) and
-     are replayed with `Input.dispatch*`. A tap clicks, a finger drag scrolls, and when a tap lands in a
+     are replayed with `Input.dispatch*`. Batches go out without waiting for the previous one (up
+     to 6 on their way), numbered; the server runs them in that order, and one whose predecessor
+     never arrives runs after 1 s. A tap clicks, a finger drag scrolls, and when a tap lands in a
      text field a Keyboard button appears (phones open their keyboard only from a focus inside the
      tap itself, and the answer comes after it). Double and triple clicks are counted in the panel,
      since a pointer event carries no click count. A preview in a background browser tab stops

@@ -1,16 +1,130 @@
-import { describe, expect, it } from 'vitest';
-import type { PreviewCapture } from './previewCapture.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Cdp, PreviewCapture } from './previewCapture.js';
 import { PreviewError } from './preview.js';
 import {
+  FEED_WINDOW,
   PreviewStreams,
+  Stream,
+  feedEvent,
   keyEvent,
   parseInput,
   parseOpen,
+  parseSeq,
   parseSize,
   subframeAllowed,
 } from './previewStream.js';
 
 const blocked = new Set([5180, 5181]);
+
+function fakeStream(): Stream {
+  const cdp = { on() {}, send: async () => ({}), close() {} } as unknown as Cdp;
+  const open = { port: 3000, path: '/', width: 800, height: 600, scale: 1, dark: false };
+  const state = {
+    url: 'http://127.0.0.1:3000/',
+    title: '',
+    loading: false,
+    canGoBack: false,
+    canGoForward: false,
+    width: 800,
+    height: 600,
+  };
+  return new Stream('s1', 3000, cdp, 't1', 'http://127.0.0.1:9', () => blocked, open, state);
+}
+
+/** A new picture, the way the screencast handler stores one. */
+function paint(stream: Stream, jpeg: string): void {
+  stream.frameB64 = jpeg;
+  stream.bump();
+  stream.frameAt = stream.version;
+}
+
+async function nextEvent(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  const { value } = await reader.read();
+  const text = new TextDecoder().decode(value);
+  const data = text.split('\n').find((l) => l.startsWith('data: '));
+  return data ? (JSON.parse(data.slice(6)) as { v: number; jpeg: string | null }) : text;
+}
+
+describe('pushed feed (PM-727)', () => {
+  it('sends the current frame at once, then only new pictures, and never past the window', async () => {
+    const stream = fakeStream();
+    paint(stream, 'A');
+    const reader = stream.feed().getReader();
+    expect(await nextEvent(reader)).toMatchObject({ jpeg: 'A' });
+    // A state change alone sends no picture.
+    stream.bump();
+    expect(await nextEvent(reader)).toMatchObject({ jpeg: null });
+    for (let i = 0; i < FEED_WINDOW; i++) {
+      paint(stream, `F${i}`);
+      expect(await nextEvent(reader)).toMatchObject({ jpeg: `F${i}` });
+    }
+    // The window is full: a new picture waits for an acknowledgement.
+    paint(stream, 'late');
+    const pending = nextEvent(reader);
+    const raced = await Promise.race([
+      pending,
+      new Promise((r) => setTimeout(() => r('waiting'), 300)),
+    ]);
+    expect(raced).toBe('waiting');
+    stream.ack(stream.version);
+    expect(await pending).toMatchObject({ jpeg: 'late' });
+    await reader.cancel();
+  });
+
+  it('a newer feed ends the older one', async () => {
+    const stream = fakeStream();
+    const first = stream.feed().getReader();
+    await first.read();
+    stream.feed();
+    stream.bump();
+    expect((await first.read()).done).toBe(true);
+  });
+
+  it('writes server-sent events', () => {
+    expect(feedEvent(7, fakeStream().state, 'QQ')).toMatch(
+      /^event: frame\ndata: \{"v":7,"t":\d+,"state":\{.*\},"jpeg":"QQ"\}\n\n$/,
+    );
+  });
+});
+
+describe('ordered input (PM-727)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('reads a sequence number', () => {
+    expect(parseSeq({ seq: 3 })).toBe(3);
+    expect(parseSeq({ seq: 0 })).toBeNull();
+    expect(parseSeq({ seq: 1.5 })).toBeNull();
+    expect(parseSeq({})).toBeNull();
+  });
+
+  it('runs posts in their numbered order, whatever order they arrive in', async () => {
+    const stream = fakeStream();
+    const ran: number[] = [];
+    const work = (n: number) => async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      ran.push(n);
+    };
+    await Promise.all([
+      stream.ordered(3, work(3)),
+      stream.ordered(2, work(2)),
+      stream.ordered(1, work(1)),
+    ]);
+    expect(ran).toEqual([1, 2, 3]);
+  });
+
+  it('runs a post whose predecessor never arrives after a short wait', async () => {
+    vi.useFakeTimers();
+    const stream = fakeStream();
+    const ran: number[] = [];
+    await stream.ordered(1, async () => ran.push(1));
+    const late = stream.ordered(3, async () => ran.push(3));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(ran).toEqual([1]);
+    await vi.advanceTimersByTimeAsync(600);
+    await late;
+    expect(ran).toEqual([1, 3]);
+  });
+});
 
 describe('parseOpen', () => {
   it('keeps the port rules of the preview', () => {

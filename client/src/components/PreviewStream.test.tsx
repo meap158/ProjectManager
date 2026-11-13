@@ -3,7 +3,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PreviewStreamState } from '../../../shared/types';
 import { api } from '../api';
-import { PreviewStream, modifiersOf, streamPath, toStreamPoint } from './PreviewStream';
+import {
+  InputQueue,
+  PreviewStream,
+  modifiersOf,
+  parseFeed,
+  streamPath,
+  toStreamPoint,
+} from './PreviewStream';
 
 vi.mock('../api', () => ({
   api: {
@@ -12,6 +19,7 @@ vi.mock('../api', () => ({
     previewStreamNavigate: vi.fn(),
     resizePreviewStream: vi.fn(),
     closePreviewStream: vi.fn(),
+    previewStreamAck: vi.fn(),
   },
 }));
 
@@ -35,6 +43,68 @@ describe('streamed preview helpers', () => {
     expect(streamPath('http://127.0.0.1:3000/docs?a=1#b')).toBe('/docs?a=1#b');
     expect(streamPath('about:blank')).toBeNull();
     expect(streamPath('not a url')).toBeNull();
+  });
+
+  it('splits frames off the pushed feed and keeps a partial event for later (PM-727)', () => {
+    const state = { url: 'http://127.0.0.1:3000/' } as PreviewStreamState;
+    const one = `event: frame\ndata: ${JSON.stringify({ v: 1, state, jpeg: 'AA' })}\n\n`;
+    const two = `event: frame\r\ndata: ${JSON.stringify({ v: 2, state, jpeg: null })}\r\n\r\n`;
+    const { frames, rest } = parseFeed(`${one}: still here\n\n${two}event: frame\ndata: {"v"`);
+    expect(frames.map((f) => [f.v, f.jpeg])).toEqual([
+      [1, 'AA'],
+      [2, null],
+    ]);
+    expect(rest).toBe('event: frame\ndata: {"v"');
+  });
+});
+
+describe('InputQueue (PM-727)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('sends batches without waiting, numbered, and keeps only the newest focus answer', async () => {
+    vi.useFakeTimers();
+    const answers: ((v: { editable: boolean | null }) => void)[] = [];
+    const send = vi.fn(
+      (_id: string, _events: unknown[], _seq: number) =>
+        new Promise<{ editable: boolean | null }>((resolve) => answers.push(resolve)),
+    );
+    const editable = vi.fn();
+    const queue = new InputQueue(() => 's1', editable, send);
+    queue.push({ type: 'key', kind: 'down', key: 'a' });
+    await vi.advanceTimersByTimeAsync(20);
+    queue.push({ type: 'key', kind: 'down', key: 'b' });
+    await vi.advanceTimersByTimeAsync(20);
+    // The second went out while the first was still on its way.
+    expect(send.mock.calls.map(([, events, seq]) => [seq, events.length])).toEqual([
+      [1, 1],
+      [2, 1],
+    ]);
+    answers[1]?.({ editable: true });
+    answers[0]?.({ editable: false });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(editable.mock.calls).toEqual([[true]]);
+  });
+
+  it('merges moves waiting to go and numbers a reopened stream from 1', async () => {
+    vi.useFakeTimers();
+    let id = 's1';
+    const send = vi.fn((_id: string, _events: unknown[], _seq: number) =>
+      Promise.resolve({ editable: null }),
+    );
+    const queue = new InputQueue(
+      () => id,
+      () => undefined,
+      send,
+    );
+    queue.push({ type: 'mouse', kind: 'move', x: 1, y: 1 });
+    queue.push({ type: 'mouse', kind: 'move', x: 2, y: 2 });
+    await vi.advanceTimersByTimeAsync(20);
+    expect(send.mock.calls[0]?.[1]).toEqual([{ type: 'mouse', kind: 'move', x: 2, y: 2 }]);
+    id = 's2';
+    queue.push({ type: 'key', kind: 'down', key: 'a' });
+    await vi.advanceTimersByTimeAsync(20);
+    const [sentTo, , seq] = send.mock.calls[1] ?? [];
+    expect([sentTo, seq]).toEqual(['s2', 1]);
   });
 });
 
@@ -74,26 +144,24 @@ describe('PreviewStream', () => {
     vi.mocked(api.openPreviewStream).mockResolvedValue({ id: 's1', state });
     vi.mocked(api.previewStreamInput).mockResolvedValue({ editable: false });
     vi.mocked(api.closePreviewStream).mockResolvedValue(undefined);
-    let served = false;
+    vi.mocked(api.previewStreamAck).mockResolvedValue(undefined);
+    // The pushed feed sends one frame, then stays open until the stream is left.
     vi.stubGlobal(
       'fetch',
       vi.fn((_url: string, init: RequestInit) => {
-        if (!served) {
-          served = true;
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            headers: new Headers({
-              'x-pm-version': '1',
-              'x-pm-state': encodeURIComponent(JSON.stringify(state)),
-            }),
-            blob: () => Promise.resolve(new Blob(['jpeg'])),
-          });
-        }
-        // The next poll waits until the stream is left.
-        return new Promise((_, reject) =>
-          init.signal?.addEventListener('abort', () => reject(new Error('aborted'))),
-        );
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `event: frame\ndata: ${JSON.stringify({ v: 3, t: 0, state, jpeg: 'AAAA' })}\n\n`,
+              ),
+            );
+            init.signal?.addEventListener('abort', () =>
+              controller.error(new DOMException('aborted', 'AbortError')),
+            );
+          },
+        });
+        return Promise.resolve({ ok: true, status: 200, body });
       }),
     );
   });
@@ -119,7 +187,13 @@ describe('PreviewStream', () => {
       />,
     );
     await waitFor(() => expect(view.container.querySelector('img')).not.toBeNull());
+    expect(view.container.querySelector('img')?.getAttribute('src')).toBe(
+      'data:image/jpeg;base64,AAAA',
+    );
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe('/api/preview-stream/s1/feed');
     expect(onLoaded).toHaveBeenCalledWith('t1');
+    // Shown, so acknowledged: the server may send the next frame.
+    await waitFor(() => expect(api.previewStreamAck).toHaveBeenCalledWith('s1', 3));
     expect(api.openPreviewStream).toHaveBeenCalledWith(
       expect.objectContaining({ port: 3000, path: '/' }),
     );
