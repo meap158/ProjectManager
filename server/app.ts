@@ -287,6 +287,8 @@ export function createApp(
       .map((p) => ({
         id: p.id,
         path: p.path,
+        // A server started with a relative path is matched by its page title (PM-729).
+        name: p.name,
       }));
     return c.json({
       apps: await detectLocalApps(projects, ownPorts(), c.req.query('fresh') === '1'),

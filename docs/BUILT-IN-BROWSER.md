@@ -5,7 +5,11 @@ is running on this computer's `localhost` ports, next to the sessions.
 
 Status: built (PM-253). `server/localPorts.ts` detects listening apps (netstat on Windows, lsof
 elsewhere), attributes them to a project by command line, and reads each app's page title and
-icon. The cue that splits front ends (**Apps**) from back ends (**Services**) is `web`: "/" answered
+icon. A server started with a relative path (`node --import tsx console/server/main.ts`) names no
+folder, so a web app whose command matches no project is matched by its page title instead
+(PM-729, `projectForTitle`): a part of the title ("Library · FrameMotion") must equal exactly one
+project's name or folder name, ignoring case, spaces and accents. Windows has no cheap way to read
+another process's working folder, so the title is the fallback. The cue that splits front ends (**Apps**) from back ends (**Services**) is `web`: "/" answered
 2xx with an HTML content type and a body that is a page (an empty HTML reply from a back end is not
 one). The icon is separate: a small inline `data:image/...` icon is used as declared (parsed
 quote-aware), otherwise the declared path, then `/favicon.ico`, `/favicon.svg`, `/favicon.png`, each

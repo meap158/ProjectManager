@@ -78,7 +78,7 @@ const normalize = (value: string) => value.replace(/\\/g, '/').toLowerCase();
 /** The project whose folder appears in `command`; the longest path wins (nested projects). */
 export function projectForCommand(
   command: string,
-  projects: { id: number; path: string }[],
+  projects: { id: number; path: string; name?: string }[],
 ): number | null {
   const text = normalize(command);
   let best: { id: number; length: number } | null = null;
@@ -89,6 +89,37 @@ export function projectForCommand(
     }
   }
   return best?.id ?? null;
+}
+
+/**
+ * The project a page names in its title, when its command line names no project folder (PM-729).
+ * A server started with a relative path (`node --import tsx console/server/main.ts`) carries no
+ * folder, and Windows offers no cheap way to read another process's working folder. The title is
+ * split at the usual separators ("Library · FrameMotion") and a part must equal a project's name
+ * or folder name, ignoring case, spaces and accents. Exactly one project must match, else null.
+ */
+export function projectForTitle(
+  title: string | null,
+  projects: { id: number; path: string; name?: string }[],
+): number | null {
+  if (!title) return null;
+  // Accents fold too: a page titled "TiệmNet" names the folder TiemNet.
+  const key = (s: string) =>
+    s.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, '');
+  const parts = new Set(
+    title
+      // Any lone punctuation between spaces separates (hyphen, dashes, colon), as do | and ·.
+      .split(/\s[^\p{L}\p{N}\s]\s|\s?[|·]\s?/u)
+      .map(key)
+      .filter(Boolean),
+  );
+  const matches = new Set<number>();
+  for (const project of projects) {
+    const folder = normalize(project.path).replace(/\/+$/, '').split('/').pop() ?? '';
+    const names = [project.name ?? '', folder].map(key).filter(Boolean);
+    if (names.some((n) => parts.has(n))) matches.add(project.id);
+  }
+  return matches.size === 1 ? [...matches][0]! : null;
 }
 
 async function listeners(): Promise<Listener[]> {
@@ -331,7 +362,7 @@ let scanning: { key: string; done: Promise<LocalApp[]> } | null = null;
 const processCache = new Map<number, ProcessInfo>();
 
 export async function detectLocalApps(
-  projects: { id: number; path: string }[],
+  projects: { id: number; path: string; name?: string }[],
   blocked: ReadonlySet<number>,
   /** Skip both caches: the Refresh button asks for the state right now. */
   fresh = false,
@@ -340,7 +371,9 @@ export async function detectLocalApps(
     cache = null;
     metaCache.clear();
   }
-  const key = [...blocked].sort().join(',') + projects.map((p) => `${p.id}=${p.path}`).join('|');
+  const key =
+    [...blocked].sort().join(',') +
+    projects.map((p) => `${p.id}=${p.path}=${p.name ?? ''}`).join('|');
   if (cache && cache.key === key && Date.now() - cache.at < CACHE_MS) return cache.apps;
   if (!fresh && scanning?.key === key) return scanning.done;
   const done = scan(projects, blocked, key);
@@ -353,7 +386,7 @@ export async function detectLocalApps(
 }
 
 async function scan(
-  projects: { id: number; path: string }[],
+  projects: { id: number; path: string; name?: string }[],
   blocked: ReadonlySet<number>,
   key: string,
 ): Promise<LocalApp[]> {
@@ -380,7 +413,9 @@ async function scan(
       pid: l.pid,
       name: p?.name ?? '',
       command,
-      projectId: projectForCommand(command, projects),
+      projectId:
+        projectForCommand(command, projects) ??
+        (metas[i]?.web ? projectForTitle(metas[i]?.title ?? null, projects) : null),
       title: metas[i]?.title ?? null,
       icon: metas[i]?.icon ?? null,
       web: metas[i]?.web ?? false,
@@ -412,7 +447,7 @@ export function stopRefusal(
 export async function stopLocalApp(
   port: number,
   pid: number,
-  projects: { id: number; path: string }[],
+  projects: { id: number; path: string; name?: string }[],
   blocked: ReadonlySet<number>,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const apps = await detectLocalApps(projects, blocked, true);

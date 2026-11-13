@@ -8,6 +8,7 @@ import {
   parseLsof,
   parseNetstat,
   projectForCommand,
+  projectForTitle,
   readPageMeta,
   retryDelayMs,
 } from './localPorts.js';
@@ -73,6 +74,29 @@ describe('projectForCommand', () => {
   it('leaves unrelated commands unattributed', () => {
     expect(projectForCommand('node C:\\tools\\other.js', projects)).toBeNull();
     expect(projectForCommand('', projects)).toBeNull();
+  });
+});
+
+describe('projectForTitle (PM-729)', () => {
+  const projects = [
+    { id: 1, path: 'S:\\Vibe Coding\\FrameMotion', name: 'FrameMotion' },
+    { id: 2, path: 'S:\\Vibe Coding\\stepframe', name: 'Stepframe' },
+    { id: 3, path: 'S:\\Vibe Coding\\Trend Relay', name: 'TrendRelay' },
+  ];
+  it('matches a page titled with a project name or folder, whole parts only', () => {
+    expect(projectForTitle('FrameMotion', projects)).toBe(1);
+    expect(projectForTitle('Library · FrameMotion', projects)).toBe(1);
+    expect(projectForTitle('framemotion - Library', projects)).toBe(1);
+    expect(projectForTitle('Trend Relay', projects)).toBe(3);
+    expect(projectForTitle('TiệmNet', [{ id: 9, path: 'S:\\Vibe Coding\\TiemNet' }])).toBe(9);
+    expect(projectForTitle('Stepframe | Editor', projects)).toBe(2);
+    expect(projectForTitle('Stepframe Studio', projects)).toBeNull();
+    expect(projectForTitle('FrameMotionX', projects)).toBeNull();
+    expect(projectForTitle(null, projects)).toBeNull();
+  });
+  it('gives up when two projects share the name', () => {
+    const twins = [...projects, { id: 4, path: 'D:\\old\\FrameMotion', name: 'FrameMotion old' }];
+    expect(projectForTitle('FrameMotion', twins)).toBeNull();
   });
 });
 
