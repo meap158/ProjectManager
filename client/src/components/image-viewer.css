@@ -279,6 +279,7 @@
 }
 .iv-panel-media .files-media-pending {
   width: min(560px, calc(100vw - 144px));
+  padding: 24px;
   color: var(--text);
 }
 /* A phone: the file gets nearly the whole screen and controls are 44px. Nothing sits over the
@@ -301,6 +302,9 @@
   .iv-panel-media .files-media-audio,
   .iv-panel-media .files-media-pending {
     width: calc(100vw - 16px);
+  }
+  .iv-panel-media .files-media-pending {
+    padding: 20px;
   }
   .iv-zoom {
     top: 18px;

@@ -6,6 +6,8 @@
 
 CLI panes keep everyday controls beside Close at the top right when space permits. Session actions holds extra recovery and account-switching controls.
 
+Media preview prompts show file size, loading progress and aligned playback choices, with touch-sized controls on phones.
+
 Project Agents supports the selected-session shortcuts configured in Settings. Alt+1 focuses the project CLI and Alt+Enter toggles its fullscreen view.
 
 **A local-first workspace for running Claude Code, Codex, Grok, Antigravity and OpenCode across all your projects, with a self-updating Kanban board.**<br>

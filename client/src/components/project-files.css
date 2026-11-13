@@ -579,19 +579,85 @@
 .files-media-pending {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 16px;
-  background: var(--surface-2);
+  align-items: stretch;
+  gap: 16px;
+  box-sizing: border-box;
+  padding: 24px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.files-media-heading,
+.files-media-progress-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.files-media-heading strong {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.4;
+}
+.files-media-size {
+  color: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.files-media-description {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.files-media-progress-label {
+  color: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: -8px;
 }
 .files-media-pending progress {
+  display: block;
+  appearance: none;
   width: 100%;
-  max-width: 360px;
+  height: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-2);
   accent-color: var(--accent);
+}
+.files-media-pending progress::-webkit-progress-bar {
+  background: var(--surface-2);
+}
+.files-media-pending progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: var(--radius);
+}
+.files-media-pending progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: var(--radius);
 }
 .files-media-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.files-media-actions .btn {
+  min-height: 36px;
+  padding-inline: 12px;
+}
+@media (max-width: 640px), (pointer: coarse) {
+  .files-media-pending {
+    padding: 20px;
+  }
+  .files-media-actions .btn {
+    min-height: 44px;
+    flex: 1 1 auto;
+    justify-content: center;
+  }
 }

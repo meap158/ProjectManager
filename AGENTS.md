@@ -173,6 +173,9 @@ anything.
 
 ## Gotchas
 
+- PM-728: lightbox media preparation cards keep explicit padding after the generic media padding
+  reset. Preserve opaque loading and explicit streaming choices when editing their layout.
+
 - PM-726: anything the app types into a CLI on its own must also wait while the owner has unsent
   text there (`ownerDrafting` in `server/agents/drafting.ts`, from `lastKeyAt`), or it joins
   their draft and sends it. Owner actions refuse instead. The desktop orchestrator chat has a

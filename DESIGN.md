@@ -1129,4 +1129,8 @@ batches in the background so Project includes recent descendants. Refresh, retur
 reload metadata and image URLs. Browser-renderable images up to the 25 MB preview limit use lazy
 thumbnails; unsupported formats retain a file icon.
 
+Media preparation cards use 24px padding (20px on phones), a preview heading with a file-size label,
+and a right-aligned wrapping action row. Loading shows bytes and percentage above a slim themed
+progress bar. The lightbox preserves the card padding; mobile actions have 44px touch targets.
+
 Grok Accounts keeps saved rows visible when the live login is empty or unreadable, with an inline status explanation above the account controls. Expired login text explains that revoked refresh tokens require sign-in and are skipped by automatic rotation.

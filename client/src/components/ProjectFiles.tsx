@@ -1685,36 +1685,54 @@ function MediaPreview({
   );
   if (!playable)
     return (
-      <div className="files-media files-media-pending">
+      <div
+        className="files-media files-media-pending"
+        role="group"
+        aria-label="Media preview preparation"
+      >
+        <div className="files-media-heading">
+          <strong>
+            {problem
+              ? 'Preview unavailable'
+              : mode === 'load'
+                ? 'Loading preview'
+                : `${kind === 'video' ? 'Video' : 'Audio'} preview`}
+          </strong>
+          <span className="files-media-size">{formatBytes(size)}</span>
+        </div>
         {problem ? (
           <div className="error-banner">{problem}</div>
         ) : mode === 'load' ? (
           <>
+            <div className="files-media-progress-label" role="status" aria-live="off">
+              <span>
+                {formatBytes(loaded)} of {formatBytes(size)}
+              </span>
+              {size > 0 && <span>{Math.min(100, Math.round((loaded / size) * 100))}%</span>}
+            </div>
             <progress
               max={size || undefined}
               value={loaded}
               aria-label={`Loading ${kind} preview`}
             />
-            <span className="faint">
-              Loading {formatBytes(loaded)} of {formatBytes(size)}
-            </span>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                setLoaded(0);
-                setMode('wait');
-              }}
-            >
-              Cancel
-            </button>
+            <div className="files-media-actions">
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => {
+                  setLoaded(0);
+                  setMode('wait');
+                }}
+              >
+                Cancel
+              </button>
+            </div>
           </>
         ) : (
           <>
-            <span className="faint">
-              {kind === 'video' ? 'Video' : 'Audio'} file, {formatBytes(size)}. The preview reads it
-              in full before it plays.
-            </span>
+            <p className="files-media-description">
+              Load the full file before playback, or stream it to start sooner.
+            </p>
             <span className="files-media-actions">
               <button
                 type="button"
