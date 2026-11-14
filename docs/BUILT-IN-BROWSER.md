@@ -61,7 +61,12 @@ is not owned by one project. There are three ways to show an app:
      otherwise, at full scale); Chrome sends the current picture when a screencast starts, and that
      frame is the still. Slow changes (a blinking caret, a clock) stay exact; fast ones, clicks,
      keys and wheel turns go back to motion frames. A page that keeps moving on its own waits
-     longer for its next still (doubling up to 5 s). A frame identical to the one before is never
+     longer for its next still (doubling up to 5 s). Over a slow link a full-size still costs
+     a good part of a second, so the picture must be still for 1 s first, and slow changes in the
+     exact mode go at most every 2 s (the newest waiting): with the still after 300 ms and every
+     caret blink sent exact, a key took about 850 ms to show through 150 ms each way at 500 KB/s,
+     and with these limits about 530 ms. Screencast restarts run one at a time (Chrome refuses a
+     second start while one is active). A frame identical to the one before is never
      sent. The panel decodes each frame off screen before swapping it in, and while one decodes
      only the newest waiting frame is kept, so a slow phone drops frames rather than queueing them.
      `Page.captureScreenshot` is not used for stills: with the screencast scaled down, every

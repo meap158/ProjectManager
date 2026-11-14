@@ -72,6 +72,10 @@ const STILL_BUSY_MS = 1_500;
 const STILL_MAX_MS = 5_000;
 /** A change this long after the frame before is slow (a caret, a clock): the still mode stays. */
 const SLOW_CHANGE_MS = 250;
+/** Over a slow link the picture must be still this long before its still. */
+export const STILL_SLOW_LINK_MS = 1_000;
+/** Over a slow link, slow changes in the exact mode go at most this often. */
+const SLOW_LINK_EXACT_MS = 2_000;
 /**
  * A link counts as fast while frames reach the viewer and come back acknowledged within FAST_MS
  * on average, and slow again past SLOW_MS. Motion frames switch scale at most every SWITCH_MS.
@@ -326,6 +330,9 @@ export class Stream {
   private castChain: Promise<void> = Promise.resolve();
   private castWaiting = false;
   private lastFrameAt = 0;
+  /** A slow change waiting its turn over a slow link (see SLOW_LINK_EXACT_MS). */
+  private heldExact: string | null = null;
+  private heldTimer: ReturnType<typeof setTimeout> | null = null;
   private stillTimer: ReturnType<typeof setTimeout> | null = null;
   private stillWait = STILL_MS;
   private stillAt = 0;
@@ -556,6 +563,7 @@ export class Stream {
     if (this.ended) return;
     this.ended = true;
     if (this.stillTimer) clearTimeout(this.stillTimer);
+    this.dropHeld();
     this.bump();
     this.cdp.close();
   }
@@ -679,9 +687,28 @@ export class Stream {
     this.lastFrameAt = now;
     if (this.stillMode === 'shown' && gap >= SLOW_CHANGE_MS) {
       // A slow change (a blinking caret, a clock) keeps the exact frames: nothing is moving.
+      // Over a slow link they go at most every SLOW_LINK_EXACT_MS (the newest waiting), or a
+      // blinking caret's full-size frames would fill the link and hold back the viewer's typing.
       this.frameIsStill = true;
-      this.stillAt = now;
-      this.show(data);
+      if (this.sharpMotion || now - this.stillAt >= SLOW_LINK_EXACT_MS) {
+        this.stillAt = now;
+        this.show(data);
+      } else {
+        this.heldExact = data;
+        this.heldTimer ??= setTimeout(
+          () => {
+            this.heldTimer = null;
+            const held = this.heldExact;
+            this.heldExact = null;
+            if (held && this.stillMode === 'shown' && !this.ended) {
+              this.stillAt = Date.now();
+              this.show(held);
+            }
+          },
+          this.stillAt + SLOW_LINK_EXACT_MS - now,
+        );
+        this.heldTimer.unref?.();
+      }
       return;
     }
     if (this.stillMode === 'waiting') {
@@ -703,7 +730,10 @@ export class Stream {
     this.frameIsStill = false;
     this.show(data);
     if (this.stillTimer) clearTimeout(this.stillTimer);
-    this.stillTimer = setTimeout(() => void this.still().catch(() => undefined), this.stillWait);
+    // Over a slow link a full-size still costs a good part of a second: short pauses (between
+    // keys, mid-scroll) do not get one, or the next frames would queue behind it.
+    const wait = this.sharpMotion ? this.stillWait : Math.max(this.stillWait, STILL_SLOW_LINK_MS);
+    this.stillTimer = setTimeout(() => void this.still().catch(() => undefined), wait);
     this.stillTimer.unref?.();
   }
 
@@ -721,10 +751,17 @@ export class Stream {
     await this.cast();
   }
 
+  private dropHeld(): void {
+    if (this.heldTimer) clearTimeout(this.heldTimer);
+    this.heldTimer = null;
+    this.heldExact = null;
+  }
+
   /** Back to motion frames (input is coming, or the page changed after its still). */
   private toMotion(): void {
     if (this.stillMode === 'off') return;
     this.stillMode = 'off';
+    this.dropHeld();
     void this.cast().catch(() => undefined);
   }
 

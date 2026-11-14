@@ -5,6 +5,7 @@ import {
   FEED_WINDOW,
   PreviewStreams,
   STILL_MS,
+  STILL_SLOW_LINK_MS,
   Stream,
   feedEvent,
   imageMime,
@@ -129,7 +130,7 @@ describe('picture quality (PM-730)', () => {
       ...fakeStream().state,
     });
     stream.onFrame('UklGRmotion');
-    await vi.advanceTimersByTimeAsync(STILL_MS + 10);
+    await vi.advanceTimersByTimeAsync(STILL_SLOW_LINK_MS + 10);
     // Settled: the screencast restarts in its exact mode, and its first frame is the still.
     expect(starts).toEqual([90]);
     stream.onFrame('UklGRstill');
@@ -163,16 +164,49 @@ describe('picture quality (PM-730)', () => {
       return {};
     });
     stream.onFrame('UklGRmotion');
-    await vi.advanceTimersByTimeAsync(STILL_MS + 1);
+    await vi.advanceTimersByTimeAsync(STILL_SLOW_LINK_MS + 1);
     // The still restart is on its way when a click asks for motion frames again.
     void stream.input(parseInput({ events: [{ type: 'key', kind: 'down', key: 'a' }] }));
     void stream.input(parseInput({ events: [{ type: 'key', kind: 'up', key: 'a' }] }));
     await vi.advanceTimersByTimeAsync(200);
     // The next restart (a still once the page settles again) still sends WebP.
     stream.onFrame('UklGRlater');
-    await vi.advanceTimersByTimeAsync(STILL_MS + 50);
+    await vi.advanceTimersByTimeAsync(STILL_SLOW_LINK_MS + 50);
     expect(calls.length).toBeGreaterThan(1);
     expect(calls.every((f) => f === 'webp')).toBe(true);
+    stream.end();
+  });
+
+  it('over a fast link, the still comes sooner and is PNG', async () => {
+    vi.useFakeTimers();
+    const formats: string[] = [];
+    const stream = fakeStream(async (method, params?: unknown) => {
+      if (method === 'Page.startScreencast') formats.push((params as { format: string }).format);
+      return {};
+    });
+    stream.measure(10, Date.now() + 10_000);
+    await vi.advanceTimersByTimeAsync(0);
+    formats.length = 0;
+    stream.onFrame('UklGRmotion');
+    await vi.advanceTimersByTimeAsync(STILL_MS + 10);
+    expect(formats).toEqual(['png']);
+    stream.end();
+  });
+
+  it('over a slow link, holds slow changes of the still to one every 2 s', async () => {
+    vi.useFakeTimers();
+    const stream = fakeStream();
+    stream.onFrame('UklGRmotion');
+    await vi.advanceTimersByTimeAsync(STILL_SLOW_LINK_MS + 10);
+    stream.onFrame('UklGRstill');
+    await vi.advanceTimersByTimeAsync(400);
+    stream.onFrame('UklGRcaret1');
+    await vi.advanceTimersByTimeAsync(400);
+    stream.onFrame('UklGRcaret2');
+    // Held: the still stays until its 2 s are up, then the newest change shows.
+    expect(stream.frameB64).toBe('UklGRstill');
+    await vi.advanceTimersByTimeAsync(1_300);
+    expect(stream.frameB64).toBe('UklGRcaret2');
     stream.end();
   });
 
@@ -184,7 +218,7 @@ describe('picture quality (PM-730)', () => {
       return {};
     });
     stream.onFrame('UklGRmotion');
-    await vi.advanceTimersByTimeAsync(STILL_MS + 10);
+    await vi.advanceTimersByTimeAsync(STILL_SLOW_LINK_MS + 10);
     stream.onFrame('UklGRstill');
     const move = { type: 'mouse', kind: 'move', x: 1, y: 1 } as const;
     await stream.input(parseInput({ events: [move] }));
