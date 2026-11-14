@@ -283,6 +283,24 @@ export function useShortcut(id: ShortcutId, run: () => boolean): void {
   }, [id]);
 }
 
+/** Handlers that only answer when no page-level handler of the same action is mounted. */
+const fallbacks = new Map<ShortcutId, () => boolean>();
+
+/** Like `useShortcut`, but yields to it: the project list's Ctrl+Up/Down on pages without one. */
+export function useShortcutFallback(id: ShortcutId, run: () => boolean): void {
+  const ref = useRef(run);
+  useEffect(() => {
+    ref.current = run;
+  });
+  useEffect(() => {
+    const call = () => ref.current();
+    fallbacks.set(id, call);
+    return () => {
+      if (fallbacks.get(id) === call) fallbacks.delete(id);
+    };
+  }, [id]);
+}
+
 /** A terminal's keyboard input (xterm types through a hidden textarea of this class). */
 const inTerminalInput = (el: Element | null) =>
   el instanceof Element &&
@@ -331,17 +349,36 @@ export function decide(
       target: target && !(target as HTMLButtonElement).disabled ? target : null,
     };
   }
-  return handlers.has(action.id) ? { id: action.id, target: null } : null;
+  return handlers.has(action.id) || fallbacks.has(action.id)
+    ? { id: action.id, target: null }
+    : null;
 }
 
 function onKeyDown(e: KeyboardEvent) {
   const hit = decide(e);
   if (!hit) return;
   const action = ACTION.get(hit.id)!;
-  if (!action.scope && !handlers.get(hit.id)?.()) return;
+  if (!action.scope && !(handlers.get(hit.id) ?? fallbacks.get(hit.id))?.()) return;
   e.preventDefault();
   e.stopPropagation();
   hit.target?.click();
+}
+
+/**
+ * Ctrl+Up/Down pressed inside a previewed page never reaches this window, so the preview proxy's
+ * script reports it (`pmPicker`, type "key"). Only the two keys count, only from a frame this page
+ * shows, and the answer is the same action the key would have run here (so a rebound combo wins).
+ */
+export function onFrameKey(e: MessageEvent): void {
+  const data = e.data as { pmPicker?: unknown; type?: unknown; key?: unknown } | null;
+  if (!data || data.pmPicker !== true || data.type !== 'key') return;
+  if (data.key !== 'ArrowUp' && data.key !== 'ArrowDown') return;
+  if (!Array.from(document.querySelectorAll('iframe')).some((f) => f.contentWindow === e.source))
+    return;
+  if (document.querySelector('dialog[open]')) return;
+  const action = actionFor(`Ctrl+${data.key}`);
+  if (!action || action.scope) return;
+  (handlers.get(action.id) ?? fallbacks.get(action.id))?.();
 }
 
 let installed = false;
@@ -350,4 +387,5 @@ export function installShortcuts(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   window.addEventListener('keydown', onKeyDown, true);
+  window.addEventListener('message', onFrameKey);
 }

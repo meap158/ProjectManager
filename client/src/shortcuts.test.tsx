@@ -20,6 +20,8 @@ const {
   resetAllShortcuts,
   validCombo,
   useShortcut,
+  useShortcutFallback,
+  onFrameKey,
   SHORTCUT_ACTIONS,
 } = await import('./shortcuts');
 
@@ -154,5 +156,38 @@ describe('Preview Expand (as in the Claude app)', () => {
       metaKey: false,
     });
     expect(combo).toBe(SHORTCUT_ACTIONS.find((a) => a.id === 'preview.expand')!.default);
+  });
+});
+
+describe('Ctrl+Up/Down without an Agents list', () => {
+  const Probe = ({ run }: { run: () => boolean }) => {
+    useShortcutFallback('list.next', run);
+    return null;
+  };
+  const ctrlDown = () => key({ key: 'ArrowDown', code: 'ArrowDown', ctrlKey: true });
+
+  it('is answered by a fallback handler, so the project list can take it', () => {
+    const run = vi.fn(() => true);
+    const { unmount } = render(<Probe run={run} />);
+    expect(decide(ctrlDown())?.id).toBe('list.next');
+    unmount();
+    expect(decide(ctrlDown())).toBeNull();
+  });
+
+  it('runs the action for a key a previewed page hands over, from a frame shown here only', () => {
+    const run = vi.fn(() => true);
+    render(<Probe run={run} />);
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    const message = (data: unknown, source: unknown) =>
+      onFrameKey(new MessageEvent('message', { data, source: source as MessageEventSource }));
+    const good = { pmPicker: true, type: 'key', key: 'ArrowDown' };
+    message(good, frame.contentWindow);
+    expect(run).toHaveBeenCalledTimes(1);
+    message(good, window); // Not a frame shown here.
+    message({ ...good, key: 'ArrowLeft' }, frame.contentWindow);
+    message({ ...good, type: 'picked' }, frame.contentWindow);
+    message({ ...good, pmPicker: false }, frame.contentWindow);
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });

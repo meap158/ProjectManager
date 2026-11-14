@@ -19,6 +19,7 @@ describe('injectPicker (PM-311)', () => {
     expect(PICKER_JS).toContain('window.parent === window');
     expect(PICKER_JS).toContain('e.source !== window.parent');
     expect(PICKER_JS).not.toContain('</script>');
+    expect(PICKER_JS).toContain("send({ type: 'key', key: e.key })");
   });
 
   it('is added inline by the path-mode proxy, to HTML only', async () => {

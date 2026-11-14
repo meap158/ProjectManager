@@ -7,7 +7,8 @@ import { useProjectHref } from '../projectTabs';
 import { sessionActivity } from '../sessionActivity';
 import { applyCustomOrder, mergeVisibleOrder, moveBefore, moveBy } from '../projectOrder';
 import { PlanUsage } from './PlanUsage';
-import { navigateProjectPane } from '../projectPaneNavigation';
+import { navigateProjectPane, stepProjectPane } from '../projectPaneNavigation';
+import { useShortcutFallback } from '../shortcuts';
 import { GlobeIcon } from './icons';
 import { runningAppsLabel, useRunningApps } from '../runningApps';
 
@@ -127,6 +128,14 @@ export function ProjectSidebar({
   onNavigate,
 }: { panelOpen?: boolean; onNavigate?: () => void } = {}) {
   const navigate = useNavigate();
+  // Ctrl+Up/Down switches project from anywhere that has no Agents list of its own (Preview,
+  // Board, Home), including from the previewed page, whose key press is handed over.
+  const step = (delta: 1 | -1) => {
+    const panel = document.getElementById('project-panel');
+    return !!panel && stepProjectPane(panel, delta, navigate);
+  };
+  useShortcutFallback('list.next', () => step(1));
+  useShortcutFallback('list.previous', () => step(-1));
   // The highlighted item: Home's remembered choice (PM-306), except on Board, which shows every
   // project, so All projects is selected there unless the board is filtered to one (PM-307).
   const homeChoice = useHomeHref().split('?')[0];

@@ -186,6 +186,14 @@ port>/` is a different origin from `localhost`. Add those names to the Host allo
 
 ## Element picker (PM-311)
 
+The same script also hands over **Ctrl+Up and Ctrl+Down** (no other modifiers, not while picking):
+a key press inside a framed page never reaches ProjectManager, so the script swallows those two
+keys and posts `{ pmPicker, type: 'key', key }` to the parent. The app (`onFrameKey` in
+`client/src/shortcuts.ts`) accepts it only from an iframe it shows and only for those two keys,
+and runs the action bound to that combo. Pages without an Agents list switch the sidebar project
+(`useShortcutFallback`); the previewed app loses Ctrl+Arrow (for example a word jump in its text
+fields) while it is framed here.
+
 The Preview toolbar's **Select element** button lets you point at something in the page, draw on
 it, and send both to a CLI session. Both proxies add one script to HTML pages for this
 (`server/previewPicker.ts`): inline in the path mode (whose responses carry no page CSP), and as

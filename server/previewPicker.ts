@@ -324,6 +324,15 @@ export const PICKER_JS = String.raw`(() => {
       send({ type: 'state', page: pageOf(picked), snapshot: html, snapshotError: why });
     }
   });
+  // Ctrl+Up/Down never reaches the app window from in here, so it is handed over (it switches
+  // the project there). Only these two keys, only without other modifiers, and never while picking.
+  document.addEventListener('keydown', function (e) {
+    if (active || !e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.repeat) send({ type: 'key', key: e.key });
+  }, true);
   send({ type: 'ready' });
 })();`;
 
