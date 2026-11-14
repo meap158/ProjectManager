@@ -10,6 +10,8 @@ Media preview prompts show file size, loading progress and aligned playback choi
 
 Project Agents supports the selected-session shortcuts configured in Settings. Alt+1 focuses the project CLI and Alt+Enter toggles its fullscreen view.
 
+The orchestrator message box keeps drafts local until Send. Its CLI draft guard recognizes fresh empty prompts so navigation does not leave a false unsent-message warning.
+
 **A local-first workspace for running Claude Code, Codex, Grok, Antigravity and OpenCode across all your projects, with a self-updating Kanban board.**<br>
 Persistent AI coding agent sessions. Every project. Any screen, including your phone.
 Your projects and session data stay on your computer.

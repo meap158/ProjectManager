@@ -61,6 +61,7 @@ import type {
   CodexAccountsState,
 } from '../../shared/types.js';
 import { isTerminalReport, stripTerminalReports } from '../../shared/terminalReports.js';
+import { draftKeyEffect, emptyClaudeInput } from './drafting.js';
 import { sessionLabel as formatSessionLabel } from '../../shared/sessionLabel.js';
 import { boardConnection, boardTaskNote } from '../boardMcp.js';
 import { withAttachments, listAttachments, cardAttachmentsDir } from '../attachments.js';
@@ -409,6 +410,7 @@ export class AgentSupervisor {
   private lastKeystroke = new Map<number, number>();
   /** The last key you pressed that left text unsent in the input box (PM-726). */
   private draftKeystroke = new Map<number, number>();
+  private draftLogSize = new Map<number, number>();
   private closed = false;
   private restarting = new Map<
     number,
@@ -1452,8 +1454,14 @@ export class AgentSupervisor {
     // Keys that leave text in the input box hold automatic messages back (PM-726); sending the
     // line (Enter at the end) empties it again.
     if (manual && !isTerminalReport(data)) {
-      if (/[\r\n]$/.test(data)) this.draftKeystroke.delete(id);
-      else this.draftKeystroke.set(id, Date.now());
+      const effect = draftKeyEffect(data);
+      if (effect === 'clear') {
+        this.draftKeystroke.delete(id);
+        this.draftLogSize.delete(id);
+      } else if (effect === 'hold') {
+        this.draftKeystroke.set(id, Date.now());
+        this.draftLogSize.set(id, this.fileSize(row.log_path));
+      }
     }
     // A message sent (Enter, or a paste ending a line), not each keystroke: the list sorts by it.
     if (manual && !isTerminalReport(data) && /[\r\n]/.test(data)) {
@@ -3912,6 +3920,18 @@ export class AgentSupervisor {
     const quiet =
       tailState === 'idle' ||
       (tailState === null && !!lastOutputAt && Date.now() - Date.parse(lastOutputAt) > 20_000);
+    const draftAt = this.draftKeystroke.get(row.id);
+    if (
+      draftAt &&
+      quiet &&
+      row.provider_id === 'claude' &&
+      Date.now() - draftAt >= 500 &&
+      diskLogBytes > (this.draftLogSize.get(row.id) ?? Infinity) &&
+      emptyClaudeInput(this.sessionScreen(row.id, 4000) ?? '')
+    ) {
+      this.draftKeystroke.delete(row.id);
+      this.draftLogSize.delete(row.id);
+    }
     const question =
       quiet && !row.orchestrator_id
         ? this.questions.get(

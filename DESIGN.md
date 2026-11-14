@@ -79,6 +79,11 @@ Project Agents uses the selected-session shortcuts from Settings, including Cont
 Stop/Start, Delete and Open in workspace. Alt+1 focuses its CLI; Alt+Enter toggles fullscreen while
 focus is in that pane. Editing fields, open dialogs, repeated keys and IME composition keep their keys.
 
+The orchestrator terminal composer is one bordered field with an integrated Send icon and a separate
+keyboard hint. It grows to 160px, uses a 44px mobile Send target and 16px mobile input text, and keeps
+drafts local until submitted. CLI navigation does not count as drafting; only a fresh, settled,
+complete empty Claude input box can clear a stale draft flag from screen evidence.
+
 CLI Close shares the right-aligned icon row, spacing and vertical center with Fullscreen and the
 other actions. Continue, Restart, Stop and Attach image stay visible in panes at least 760px wide,
 including when usage is limited. Account and usage-limit recovery controls open separately from

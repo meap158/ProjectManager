@@ -177,6 +177,10 @@ anything.
 
 ## Gotchas
 
+- PM-731: draft detection ignores non-editing navigation and reconciles Claude's empty bounded
+  input box only after newer output and a redraw grace period. Never infer empty from old output,
+  a partial box or a multiline draft. Keep owner draft protection for uncertain input.
+
 - PM-728: lightbox media preparation cards keep explicit padding after the generic media padding
   reset. Preserve opaque loading and explicit streaming choices when editing their layout.
 
