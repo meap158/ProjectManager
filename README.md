@@ -4,38 +4,9 @@
 
 # ProjectManager
 
-CLI panes keep everyday controls beside Close at the top right when space permits. Session actions holds extra recovery and account-switching controls.
-
-Media preview prompts show file size, loading progress and aligned playback choices, with touch-sized controls on phones.
-
-Project Agents supports the selected-session shortcuts configured in Settings. Alt+1 focuses the project CLI and Alt+Enter toggles its fullscreen view.
-
-The orchestrator message box keeps drafts local until Send. Its CLI draft guard recognizes fresh empty prompts so navigation does not leave a false unsent-message warning.
-
 **A local-first workspace for running Claude Code, Codex, Grok, Antigravity and OpenCode across all your projects, with a self-updating Kanban board.**<br>
 Persistent AI coding agent sessions. Every project. Any screen, including your phone.
 Your projects and session data stay on your computer.
-
-Antigravity chat supports conversations whose newer metadata omits the workspace by verifying the
-exact pinned conversation against the CLI's local history. Unverified conversations show a CLI fallback.
-
-Files plays video and audio with native controls. Previews are read under a type download
-managers such as IDM ignore and play from a blob, so opening one never starts a download; files
-over 64 MB wait for Load preview (with progress), or can be streamed directly on request. Phones and tablets
-stream directly from the start, since download managers are desktop programs. Media
-is independent of the 2 MB text-preview limit. The player has a Download button, which saves the
-copy it already loaded. Videos show a thumbnail in the folder grid and as the player's poster: one
-small JPEG frame per video, made by ffmpeg when it is installed (or `FFMPEG_PATH` points at it),
-at most two at a time, and cached in the data folder by path, size and modified time (the newest
-5,000 frames are kept). Without
-ffmpeg the grid keeps the file icon. Each folder in an open file's path opens that folder. HTML pages
-up to 25 MB render in the existing sandbox; source above 2 MB is available as a download.
-
-Files image previews open fitted to the available window, with actual-size zoom and a bounded
-filmstrip for large image collections.
-
-Project Overview shows the current Git branch, upstream status and an expandable list of local
-and known remote branches with their latest commits. Branch reads never fetch or change checkout.
 
 [![Node 22.13+](https://img.shields.io/badge/node-22.13%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -62,8 +33,6 @@ and known remote branches with their latest commits. Branch reads never fetch or
 <sub>Screenshots use demo projects. The hero image follows your GitHub theme.</sub>
 
 </div>
-
-Grok account recovery and saved-login behavior are documented in [Native Grok accounts](docs/GROK-ACCOUNTS.md). Saved profiles remain visible when Grok clears its active login; automatic rotation skips expired credentials.
 
 **ProjectManager** is an open-source, self-hosted AI coding agent manager and project dashboard.
 Add your project folders, start agent CLI sessions in real terminals, link them to board cards, and
@@ -119,10 +88,11 @@ for you, and switch saved Codex and Claude accounts under **Settings > Agent CLI
 ### Projects and tasks in context
 
 Link sessions to board cards and hand work to an agent. Commits and pull requests move cards
-through **Backlog → To do → In progress → Review → Done**. Code stats, languages, disk usage and
-commit heatmaps sit beside the work. The **Pull requests** tab shows checks, reviews and
-mergeability, and merges, updates or closes PRs as the repo owner's `gh` account. The **Files**
-tab browses the project like VS Code's explorer and previews Markdown, HTML, images and code
+through **Backlog → To do → In progress → Review → Done**. Code stats, languages, disk usage,
+commit heatmaps and local/remote Git branches sit beside the work (branch reads never fetch or
+change checkout). The **Pull requests** tab shows checks, reviews and mergeability, and merges,
+updates or closes PRs as the repo owner's `gh` account. The **Files** tab browses the project like
+VS Code's explorer and previews Markdown, HTML (up to 25 MB), images, video, audio and code
 (previews can't run scripts). Right-click a file for open, reveal in the file manager, copy path and
 rename (on the computer running ProjectManager only).
 
@@ -173,30 +143,33 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
 ### Recently added
 
 - **Preview:** a built-in browser lists the apps running on your `localhost` ports. Pick an
-  element on the page, mark up a screenshot of it and send both to a CLI session.
+  element on the page, mark up a screenshot of it and send both to a CLI session. Over LAN or
+  remote access, a headless browser on the host streams frames and input when Chrome or Edge is
+  installed, falling back to the read-only path proxy.
   Stable remote links can use sharp motion even at higher round-trip times; lost frame acknowledgements
   retry automatically. See [remote Preview performance](docs/REMOTE-PREVIEW-PERFORMANCE.md).
 - **Inbox:** a bell in the top bar lists every session that is asking you something, failed, hit
   a usage limit or finished its reply. Answer from the list. **Notify me** turns on desktop
   notifications for decisions, questions, failed restarts, orchestrator questions and finished or
-  blocked orchestrator goals while the app
-  is in the background.
-- **Account switching:** saved Codex and Claude logins and optional Antigravity accounts, with
-  live usage and reset times. Codex, and Claude Code if you turn it on, switch to the login with
-  the most quota left when one runs out (see [the account audit](docs/ACCOUNT-SWITCHER-AUDIT.md)).
-- **Files:** a VS Code-style explorer with Markdown, HTML, image and code previews. Pins support
-  adding, removing and reordering from signed-in LAN and remote devices, just as on the host
-  computer, and change app metadata only. Every file in a folder opens in the lightbox: pictures
-  with zoom and pan, video and audio in the player, Markdown and HTML rendered, code and other
-  text as source, with the same arrows, filmstrip, Info, Copy path, Download (any size) and Open
-  (the full file view) for each. The lightbox keeps the selected thumbnail visible
-  during navigation and resizing. Very large
-  folders load in batches with a Load more button.
+  blocked orchestrator goals while the app is in the background.
+- **Account switching:** saved Codex and Claude logins and optional Antigravity and Grok accounts,
+  with live usage and reset times. Codex, Claude Code (when enabled) and Grok switch to a saved
+  login with quota left when one runs out (see [the account audit](docs/ACCOUNT-SWITCHER-AUDIT.md)
+  and [Native Grok accounts](docs/GROK-ACCOUNTS.md)).
+- **Files:** a VS Code-style explorer with Markdown, HTML (up to 25 MB, sandboxed), image, video,
+  audio and code previews. Pins support adding, removing and reordering from signed-in LAN and
+  remote devices, just as on the host computer, and change app metadata only. Every file in a
+  folder opens in the lightbox: pictures fitted to the window with actual-size zoom and pan, video
+  and audio with native controls and `ffmpeg` thumbnail posters (up to 5,000 cached frames),
+  Markdown and HTML rendered, and code as source, with arrows, a bounded filmstrip, Info, Copy
+  path, Download (any size) and Open (the full file view). Very large folders load in batches with
+  a Load more button.
 - **SOPs:** **Settings > SOPs** checks every project's agent instructions against a shared
   standard (handover notes, roadmap, safe process cleanup, writing style) and turns a gap into a
   card ([docs/SOPS.md](docs/SOPS.md)).
 - **Orchestrators:** a chat that follows up on tasks and moves cards across all your projects.
-  Optional [card linking](docs/CARD-LINKING.md) adds a per-project warn-only commit hook and
+  Drafts stay in the message box until Send, and automatic messages wait while you are typing in a
+  CLI. Optional [card linking](docs/CARD-LINKING.md) adds a per-project warn-only commit hook and
   short GitHub comments on Review/Done moves. Both require opt-in; comments also require Git on
   its own and the repository owner's login. Configure comments in the project's Pull requests tab.
   Session starts use the project CLI limit (eight saved sessions, including stopped sessions),
@@ -240,6 +213,7 @@ open **Agents → + New** to start a CLI session.
 | An AI coding CLI: `claude`, `codex`, `grok`, `agy` or `opencode` | Persistent terminal sessions and agents that work on cards    |
 | [GitHub CLI](https://cli.github.com) (`gh auth login`)           | Pull requests to review and merge, and cards that follow them |
 | [scc](https://github.com/boyter/scc)                             | Faster, more precise line counts                              |
+| `ffmpeg`                                                         | Video thumbnails in Files (grid and player poster)            |
 
 Missing an agent CLI? **Settings** can install it for you, using each vendor's official method.
 
@@ -251,13 +225,14 @@ Missing an agent CLI? **Settings** can install it for you, using each vendor's o
 
 Copy `.env.example` to `.env` and change what you need:
 
-| Variable   | Default     | What it does                                              |
-| ---------- | ----------- | --------------------------------------------------------- |
-| `PORT`     | `5180`      | The port to try first (the next free one is used if busy) |
-| `HOST`     | `127.0.0.1` | Where the server listens. Keep it local                   |
-| `DATA_DIR` | `./data`    | Where your data (one SQLite file) is kept                 |
-| `BROWSER`  | (unset)     | Set to `none` to stop the browser from opening            |
-| `SCC`      | (unset)     | Set to `off` to ignore an installed `scc`                 |
+| Variable      | Default     | What it does                                              |
+| ------------- | ----------- | --------------------------------------------------------- |
+| `PORT`        | `5180`      | The port to try first (the next free one is used if busy) |
+| `HOST`        | `127.0.0.1` | Where the server listens. Keep it local                   |
+| `DATA_DIR`    | `./data`    | Where your data (one SQLite file) is kept                 |
+| `BROWSER`     | (unset)     | Set to `none` to stop the browser from opening            |
+| `SCC`         | (unset)     | Set to `off` to ignore an installed `scc`                 |
+| `FFMPEG_PATH` | `ffmpeg`    | Path to `ffmpeg` for video thumbnails in Files            |
 
 </details>
 
@@ -350,6 +325,8 @@ session's project and linked card, so you can switch tasks without losing contex
 - **Pick how much it may do:** Read-only, Edit files, or Full access, globally or per agent.
 - **Watch them side by side.** 1 to 4 terminals at once. <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>4</kbd>
   jumps between panes, <kbd>Alt</kbd>+<kbd>Enter</kbd> maximizes one, and you can drag panes to swap them.
+  Each pane keeps everyday controls beside Close when space permits, with recovery and account
+  switching under Session actions.
 - **Stay organized.** Filter by project, agent, activity or task name, and rename sessions.
 - **Plan usage at a glance.** See your 5-hour and weekly limits and when they reset (Claude Code
   and Codex). Near a limit, Settings shows what the next automatic switch will be and why it is
@@ -378,11 +355,13 @@ edited: the tools are passed to each process when it starts.
 <summary><b>Keyboard shortcuts</b></summary>
 <br>
 
-In the Agents list, select a session and act on it from the keyboard, even while its terminal
-has focus: <kbd>Ctrl</kbd>+<kbd>↓</kbd>/<kbd>↑</kbd> moves the selection, and
-<kbd>Alt</kbd>+<kbd>Shift</kbd> with <kbd>P</kbd> shows it in a pane, <kbd>C</kbd> continues it,
-<kbd>R</kbd> restarts it, <kbd>S</kbd> stops or starts it and <kbd>D</kbd> deletes it (after
-asking). Change any of them under **Settings > Keyboard shortcuts**.
+In the Agents list (and a project's **Agents** tab), select a session and act on it from the
+keyboard, even while its terminal has focus: <kbd>Ctrl</kbd>+<kbd>↓</kbd>/<kbd>↑</kbd> moves the
+selection, and <kbd>Alt</kbd>+<kbd>Shift</kbd> with <kbd>P</kbd> shows it in a pane, <kbd>C</kbd>
+continues it, <kbd>R</kbd> restarts it, <kbd>S</kbd> stops or starts it and <kbd>D</kbd> deletes it
+(after asking). Change any of them under **Settings > Keyboard shortcuts**.
+In a project's **Agents** tab, <kbd>Alt</kbd>+<kbd>1</kbd> focuses the CLI and
+<kbd>Alt</kbd>+<kbd>Enter</kbd> toggles fullscreen.
 
 </details>
 
@@ -396,7 +375,8 @@ asking). Change any of them under **Settings > Keyboard shortcuts**.
 
 You can also type the **4-character code** manually. Prefer the computer's `.local` address when
 your phone resolves it: it survives changes to the host's network IP. Mobile chat is available
-for Claude Code, Codex, OpenCode and Grok sessions; CLI view shows the original screen.
+for Claude Code, Codex, OpenCode, Grok and verified Antigravity conversations; CLI view shows the
+original screen.
 The chat composer has a send button, image attachments and CLI keys. It reports queued or
 unconfirmed delivery without offering a blind resend when the transcript is slow.
 
@@ -442,11 +422,11 @@ email allowlist and an authenticator code in front of it: see
 
 **Recently shipped**
 
-- [x] Built-in browser with an element picker that sends a marked-up screenshot to a session (PM-253, PM-311)
+- [x] Built-in browser with an element picker that sends a marked-up screenshot to a session, plus streamed Preview off the host (PM-253, PM-311, PM-693)
 - [x] Inbox for sessions that need you (PM-261)
-- [x] Files tab with previews and a context menu (PM-252, PM-259)
+- [x] Files tab with folder lightbox, media/HTML previews and a context menu (PM-252, PM-259, PM-404, PM-407, PM-652)
 - [x] SOP audits across projects (PM-316)
-- [x] Account switching with live usage for Codex, Claude and Antigravity
+- [x] Account switching with live usage for Codex, Claude, Antigravity and Grok
 - [x] Orchestrator chat across all projects
 - [x] Remote access through Cloudflare Tunnel
 - [x] Pull requests tab with merge, update and branch actions
