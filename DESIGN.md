@@ -1134,6 +1134,11 @@ batches in the background so Project includes recent descendants. Refresh, retur
 reload metadata and image URLs. Browser-renderable images up to the 25 MB preview limit use lazy
 thumbnails; unsupported formats retain a file icon.
 
+Remote Preview probes full-scale motion after stable frame delivery, including longer-distance links.
+Growing queues lower resolution again. Failed frame acknowledgements retry with bounded backoff;
+returning to a tab retries pushed transport rather than retaining long-poll indefinitely. The last
+decoded frame stays visible during recovery. See docs/REMOTE-PREVIEW-PERFORMANCE.md.
+
 Media preparation cards use 24px padding (20px on phones), a preview heading with a file-size label,
 and a right-aligned wrapping action row. Loading shows bytes and percentage above a slim themed
 progress bar. The lightbox preserves the card padding; mobile actions have 44px touch targets.

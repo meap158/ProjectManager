@@ -187,10 +187,37 @@ describe('picture quality (PM-730)', () => {
     });
     stream.measure(10, Date.now() + 10_000);
     await vi.advanceTimersByTimeAsync(0);
+    expect(formats.at(-1)).toBe('jpeg');
     formats.length = 0;
     stream.onFrame('UklGRmotion');
     await vi.advanceTimersByTimeAsync(STILL_MS + 10);
     expect(formats).toEqual(['png']);
+    stream.end();
+  });
+
+  it('keeps a stable high-latency link sharp, but backs off when delivery starts queueing', async () => {
+    vi.useFakeTimers();
+    const starts: { format: string; maxWidth: number }[] = [];
+    const stream = fakeStream(async (method, params) => {
+      if (method === 'Page.startScreencast')
+        starts.push(params as { format: string; maxWidth: number });
+      return {};
+    });
+    await stream.resize({ width: 800, height: 600, scale: 2 });
+    let time = Date.now() + 10_000;
+    for (let i = 0; i < 2; i++) stream.measure(300, (time += 100));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(starts.at(-1)?.maxWidth).toBe(800);
+    for (let i = 0; i < 3; i++) stream.measure(300, (time += 100));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(starts.at(-1)?.maxWidth).toBe(1600);
+    stream.onFrame('UklGRmotion');
+    await vi.advanceTimersByTimeAsync(STILL_MS + 10);
+    expect(starts.at(-1)?.format).toBe('png');
+    stream.measure(1000, time + 4000);
+    await stream.input(parseInput({ events: [{ type: 'key', kind: 'down', key: 'a' }] }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(starts.at(-1)?.maxWidth).toBe(800);
     stream.end();
   });
 

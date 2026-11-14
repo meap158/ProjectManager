@@ -177,6 +177,10 @@ anything.
 
 ## Gotchas
 
+- PM-736: remote Preview quality follows delivery queue growth, not an absolute RTT cutoff.
+  Full-scale probes must back off on congestion. Only successful frame acknowledgements count;
+  retries stay bounded and abort with the feed. Reopening a tab retries pushed transport.
+
 - PM-731: draft detection ignores non-editing navigation and reconciles Claude's empty bounded
   input box only after newer output and a redraw grace period. Never infer empty from old output,
   a partial box or a multiline draft. Keep owner draft protection for uncertain input.

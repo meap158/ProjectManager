@@ -174,6 +174,8 @@ and a mobile chat view. Turn on LAN access and scan a QR code to pair your phone
 
 - **Preview:** a built-in browser lists the apps running on your `localhost` ports. Pick an
   element on the page, mark up a screenshot of it and send both to a CLI session.
+  Stable remote links can use sharp motion even at higher round-trip times; lost frame acknowledgements
+  retry automatically. See [remote Preview performance](docs/REMOTE-PREVIEW-PERFORMANCE.md).
 - **Inbox:** a bell in the top bar lists every session that is asking you something, failed, hit
   a usage limit or finished its reply. Answer from the list. **Notify me** turns on desktop
   notifications for decisions, questions, failed restarts, orchestrator questions and finished or

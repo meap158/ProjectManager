@@ -53,10 +53,12 @@ is not owned by one project. There are three ways to show an app:
      so a high-density screen showed them blurred. The stream browser is launched with
      `--force-device-scale-factor=2`, every tab renders at 2x, and the screencast's size scales
      frames to the viewer's screen (up to 2x). Motion frames come at the viewer's full scale over a
-     link whose frames come back within 120 ms on average (back to 1x past 250 ms; at most one switch
-     every 3 s, and a minute's wait after a switch that failed), else at 1x. They are WebP (about 40%
-     smaller than JPEG at the same rate) up to about a megapixel, where WebP still keeps up (27 fps
-     at 1280x800, 7 at 2560x1600); larger frames over a fast link are JPEG. Once the picture has
+     stable link, including a distant one (PM-736): nearby links below 120 ms can probe at once,
+     otherwise three delivery samples are required. The average must be within 60 ms of the quickest
+     recent delivery to probe full scale, and falls back to 1x above 130 ms of extra delay. Switches
+     remain at least 3 s apart, with a minute's wait after a failed probe. Unproven or congested
+     links use WebP for smaller payloads. Stable links use JPEG motion at every viewport size:
+     WebP encoding measured only 27 fps at 1280x800 and 7 at 2560x1600. Once the picture has
      been still for 300 ms the screencast restarts in its exact mode (PNG over a fast link, WebP 90
      otherwise, at full scale); Chrome sends the current picture when a screencast starts, and that
      frame is the still. Slow changes (a blinking caret, a clock) stay exact; fast ones, clicks,
@@ -75,6 +77,9 @@ is not owned by one project. There are three ways to show an app:
      If no first event arrives within 5 s (something on the way holds the stream back), the panel
      falls back to long-poll, one frame per request
      (`GET .../frame?after=<version>`, at most 20 s, state in a header).
+     A failed acknowledgement retries after 200 ms, doubling to at most 1 s, without counting it
+     as delivered or waiting for another frame. Returning to a tab or retrying its connection gives
+     the pushed feed another chance. See [performance investigation](REMOTE-PREVIEW-PERFORMANCE.md).
      Measured through a proxy that adds 150 ms each way: long-poll gave 3 frames a second, the
      first feed 11 (PM-727) and the adaptive window 23 (PM-730), with the delay flat at about 155 ms
      over 12 s of scrolling; capped to 1 MB/s it stayed flat at about 250 ms. Directly on this
@@ -266,8 +271,8 @@ arbitrary page would mean rewriting its CSS, which the proxy deliberately does n
 - Devtools, extensions, tabs inside the preview, downloads, file uploads.
 - Previewing non-loopback sites (this is not a general web proxy; any external URL opens in a new
   browser tab).
-- Screenshot streaming. If the sandboxed iframe proves too limiting, the fallback is a headless
-  browser that streams frames, which needs a new dependency and is a separate decision.
+- Native remote DOM rendering on a separately isolated origin. The current remote mode streams
+  an isolated host browser; it cannot eliminate the network round trip of an interaction.
 
 ## Test plan
 

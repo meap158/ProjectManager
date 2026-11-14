@@ -77,16 +77,15 @@ export const STILL_SLOW_LINK_MS = 1_000;
 /** Over a slow link, slow changes in the exact mode go at most this often. */
 const SLOW_LINK_EXACT_MS = 2_000;
 /**
- * A link counts as fast while frames reach the viewer and come back acknowledged within FAST_MS
- * on average, and slow again past SLOW_MS. Motion frames switch scale at most every SWITCH_MS.
+ * A nearby link can go sharp immediately; a remote link can after stable delivery samples.
+ * Queue growth above its own baseline, rather than distance alone, lowers quality again.
  */
 const FAST_MS = 120;
-const SLOW_MS = 250;
+const SHARP_QUEUE_MS = 130;
 const SWITCH_MS = 3_000;
 /** Going back to 1x this soon after going sharp means the link cannot carry it: retry much later. */
 const SHARP_FAILED_MS = 10_000;
 const SHARP_RETRY_MS = 60_000;
-const WEBP_MAX_PIXELS = 1_100_000;
 
 /** An encoded image's type, from its first base64 characters. */
 export function imageMime(base64: string): string {
@@ -409,7 +408,7 @@ export class Stream {
   private stillAt = 0;
   /** Average time from sending a frame to its acknowledgement (null: not measured yet). */
   private delivery: number | null = null;
-  /** Whether motion frames come at the viewer's full scale (a proven fast link) or at 1x. */
+  /** Whether full-scale motion is being tried or sustained without growing delivery queues. */
   private sharpMotion = false;
   private switchedAt = 0;
   private sharpBlockedUntil = 0;
@@ -497,8 +496,8 @@ export class Stream {
   }
 
   /**
-   * One frame's delivery time (sent to acknowledged): motion frames go sharp over a link that keeps
-   * up and back to 1x over one that does not, at most once every SWITCH_MS.
+   * One frame's delivery time (sent to acknowledged): stable delivery permits a full-scale probe,
+   * and growing queues send it back to 1x, at most once every SWITCH_MS.
    */
   measure(ms: number, now = Date.now(), frames = 1): void {
     this.deliveries.push({ at: now, ms });
@@ -515,7 +514,11 @@ export class Stream {
     }
     this.delivery = this.delivery === null ? ms : this.delivery * 0.7 + ms * 0.3;
     if (now - this.switchedAt < SWITCH_MS || now < this.sharpBlockedUntil) return;
-    const sharp = this.sharpMotion ? this.delivery <= SLOW_MS : this.delivery <= FAST_MS;
+    const queueDelay = Math.max(0, this.delivery - quickest);
+    const tested = this.delivery <= FAST_MS || this.deliveries.length >= 3;
+    const sharp = this.sharpMotion
+      ? queueDelay <= SHARP_QUEUE_MS
+      : tested && queueDelay <= QUEUE_MS;
     if (sharp === this.sharpMotion) return;
     if (!sharp && now - this.switchedAt < SHARP_FAILED_MS)
       this.sharpBlockedUntil = now + SHARP_RETRY_MS;
@@ -731,13 +734,9 @@ export class Stream {
       await this.send('Page.startScreencast', { format: 'png', ...params });
       return;
     }
-    // WebP keeps up only to about a megapixel (measured: 27 fps at 1280x800, 7 at 2560x1600), but
-    // over a slow link its smaller frames count for more than its rate: JPEG only for large
-    // frames over a fast one.
-    if (
-      this.webp &&
-      (still || !this.sharpMotion || params.maxWidth * params.maxHeight <= WEBP_MAX_PIXELS)
-    ) {
+    // WebP encoding limited even a 1x 1280x800 viewport to about 27 fps. Stable links use JPEG
+    // for motion at every size; unproven or congested links retain WebP's smaller payloads.
+    if (this.webp && (still || !this.sharpMotion)) {
       try {
         await this.send('Page.startScreencast', { format: 'webp', ...params });
         return;

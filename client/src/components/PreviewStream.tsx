@@ -105,6 +105,9 @@ export function parseFeed(buffer: string): { frames: FeedFrame[]; rest: string }
 const FEED_FIRST_EVENT_MS = 5_000;
 /** Acknowledgements are batched this long: the newest shown frame covers the ones before it. */
 const ACK_EVERY_MS = 40;
+/** Retry a lost acknowledgement without waiting for the server's two-second escape frame. */
+const ACK_RETRY_MS = 200;
+const ACK_RETRY_MAX_MS = 1_000;
 /** Input posts are gathered this long, so a burst of keys goes in one post. */
 const INPUT_FLUSH_MS = 8;
 /**
@@ -238,7 +241,7 @@ export function PreviewStream({
   const screenRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  /** Set once this connection held the pushed feed back; long-poll from then on. */
+  /** A buffered connection uses long-poll until the tab reconnects or becomes visible again. */
   const feedBuffered = useRef(false);
   const touch = useRef<{
     x: number;
@@ -308,6 +311,7 @@ export function PreviewStream({
     const box = boxRef.current;
     if (!box) return;
     const abort = new AbortController();
+    feedBuffered.current = false;
     let urlToRevoke: string | null = null;
     let loadedOnce = false;
     const revoke = (url: string) => {
@@ -374,18 +378,32 @@ export function PreviewStream({
        * still measures the link's own delay.
        */
       let acking = false;
+      let ackRetry = ACK_RETRY_MS;
       const sendAck = () => {
         ackTimer = null;
         if (toAck <= acked || local.signal.aborted) return;
         const version = toAck;
         acking = true;
+        let delivered = false;
         void api
           .previewStreamAck(id, version, Math.round(performance.now() - shownAt))
+          .then(() => {
+            delivered = true;
+          })
           .catch(() => undefined)
           .finally(() => {
             acking = false;
-            acked = Math.max(acked, version);
-            if (toAck > acked) sendAck();
+            if (delivered) {
+              acked = Math.max(acked, version);
+              ackRetry = ACK_RETRY_MS;
+            }
+            if (toAck > acked && !local.signal.aborted) {
+              if (delivered) sendAck();
+              else {
+                ackTimer ??= setTimeout(sendAck, ackRetry);
+                ackRetry = Math.min(ACK_RETRY_MAX_MS, ackRetry * 2);
+              }
+            }
           });
       };
       try {
@@ -426,6 +444,7 @@ export function PreviewStream({
         if (abort.signal.aborted) return 'retry';
         return first ? 'retry' : 'buffered';
       } finally {
+        local.abort();
         clearTimeout(firstTimer);
         if (ackTimer) clearTimeout(ackTimer);
         abort.signal.removeEventListener('abort', stop);

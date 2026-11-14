@@ -272,4 +272,103 @@ describe('PreviewStream', () => {
       proto.decode = original;
     }
   });
+
+  it('retries a failed frame acknowledgement without waiting for another frame', async () => {
+    vi.mocked(api.previewStreamAck).mockRejectedValueOnce(new Error('connection lost'));
+    const view = render(
+      <PreviewStream
+        tabId="t1"
+        target={{ port: 3000, path: '/' }}
+        shown
+        title="Preview"
+        control={() => undefined}
+        onState={() => undefined}
+        onLoaded={() => undefined}
+      />,
+    );
+    await waitFor(() => expect(api.previewStreamAck).toHaveBeenCalledTimes(2));
+    expect(
+      vi
+        .mocked(api.previewStreamAck)
+        .mock.calls.every(([id, version]) => id === 's1' && version === 3),
+    ).toBe(true);
+    view.unmount();
+  });
+
+  it('retries the pushed feed after returning to a tab that previously needed long-poll', async () => {
+    const normalFetch = vi.mocked(fetch).getMockImplementation()!;
+    let buffered = false;
+    let polls = 0;
+    vi.mocked(fetch).mockImplementation((url, init) => {
+      if (String(url).endsWith('/feed')) {
+        if (buffered) return normalFetch(url, init);
+        buffered = true;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          body: new ReadableStream({
+            start(controller) {
+              controller.error(new Error('buffered connection'));
+            },
+          }),
+        } as Response);
+      }
+      if (++polls === 1)
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          blob: async () => new Blob(['frame']),
+          headers: new Headers({
+            'x-pm-version': '3',
+            'x-pm-state': encodeURIComponent(JSON.stringify(state)),
+          }),
+        } as Response);
+      return new Promise<Response>((_, reject) =>
+        init?.signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('aborted', 'AbortError')),
+          { once: true },
+        ),
+      );
+    });
+    const props = {
+      tabId: 't1',
+      target: { port: 3000, path: '/' },
+      title: 'Preview',
+      control: () => undefined,
+      onState: () => undefined,
+      onLoaded: () => undefined,
+    };
+    const view = render(<PreviewStream {...props} shown />);
+    await waitFor(() =>
+      expect(view.container.querySelector('img')?.getAttribute('src')).toBe('blob:frame'),
+    );
+    view.rerender(<PreviewStream {...props} shown={false} />);
+    view.rerender(<PreviewStream {...props} shown />);
+    await waitFor(() =>
+      expect(
+        vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/feed')),
+      ).toHaveLength(2),
+    );
+    view.unmount();
+  });
+
+  it('cancels acknowledgement retries when the preview closes', async () => {
+    vi.mocked(api.previewStreamAck).mockRejectedValue(new Error('offline'));
+    const view = render(
+      <PreviewStream
+        tabId="t1"
+        target={{ port: 3000, path: '/' }}
+        shown
+        title="Preview"
+        control={() => undefined}
+        onState={() => undefined}
+        onLoaded={() => undefined}
+      />,
+    );
+    await waitFor(() => expect(api.previewStreamAck).toHaveBeenCalledTimes(1));
+    view.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(api.previewStreamAck).toHaveBeenCalledTimes(1);
+  });
 });
