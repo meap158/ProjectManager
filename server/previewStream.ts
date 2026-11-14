@@ -304,6 +304,77 @@ const IN_PLACE = `(() => {
 
 const EDITABLE = `(() => { const a = document.activeElement; return !!a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); })()`;
 
+/**
+ * The cursor a browser would show at (x, y) (PM-730): the element's own, else a text cursor over
+ * a text field or selectable text, a hand over a link, the arrow otherwise. Read-only.
+ */
+export function cursorAt(x: number, y: number): string {
+  return `((x, y) => {
+  const el = document.elementFromPoint(x, y);
+  if (!el) return 'default';
+  const style = getComputedStyle(el);
+  const own = (style.cursor || 'auto').split(',').pop().trim();
+  if (own !== 'auto') return own;
+  if (el.isContentEditable || el.tagName === 'TEXTAREA') return 'text';
+  if (el.tagName === 'INPUT' && !/^(button|submit|reset|checkbox|radio|range|color|file|image)$/i.test(el.type)) return 'text';
+  if (el.closest('a[href]')) return 'pointer';
+  const at = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
+  if (at && at.startContainer.nodeType === 3 && style.userSelect !== 'none') {
+    const range = document.createRange();
+    range.selectNodeContents(at.startContainer);
+    for (const r of range.getClientRects())
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return 'text';
+  }
+  return 'default';
+})(${Math.round(x)}, ${Math.round(y)})`;
+}
+
+/** CSS cursor keywords the viewer may show; anything else (an image cursor) shows the arrow. */
+const CURSORS = new Set([
+  'default',
+  'pointer',
+  'text',
+  'vertical-text',
+  'move',
+  'grab',
+  'grabbing',
+  'crosshair',
+  'not-allowed',
+  'no-drop',
+  'wait',
+  'progress',
+  'help',
+  'context-menu',
+  'cell',
+  'copy',
+  'alias',
+  'zoom-in',
+  'zoom-out',
+  'all-scroll',
+  'col-resize',
+  'row-resize',
+  'n-resize',
+  'e-resize',
+  's-resize',
+  'w-resize',
+  'ne-resize',
+  'nw-resize',
+  'se-resize',
+  'sw-resize',
+  'ew-resize',
+  'ns-resize',
+  'nesw-resize',
+  'nwse-resize',
+  'none',
+]);
+
+export function streamCursor(raw: unknown): string {
+  return typeof raw === 'string' && CURSORS.has(raw) ? raw : 'default';
+}
+
+/** The cursor is read at most this often while the pointer moves (the last position always). */
+const CURSOR_EVERY_MS = 100;
+
 /** One streamed preview: a browser tab on this computer (exported for tests). */
 export class Stream {
   version = 0;
@@ -563,6 +634,7 @@ export class Stream {
     if (this.ended) return;
     this.ended = true;
     if (this.stillTimer) clearTimeout(this.stillTimer);
+    if (this.cursorTimer) clearTimeout(this.cursorTimer);
     this.dropHeld();
     this.bump();
     this.cdp.close();
@@ -852,6 +924,10 @@ export class Stream {
     wheel: Extract<StreamInput, { type: 'wheel' }> | null;
   } = { move: null, wheel: null };
   private motionRun: Promise<void> | null = null;
+  /** The cursor under the pointer (PM-730): where to read it next, and when it was last read. */
+  private cursorPoint: { x: number; y: number } | null = null;
+  private cursorTimer: ReturnType<typeof setTimeout> | null = null;
+  private cursorReadAt = 0;
 
   private queueMotion(
     e: Extract<StreamInput, { type: 'mouse' }> | Extract<StreamInput, { type: 'wheel' }>,
@@ -864,25 +940,67 @@ export class Stream {
           ? { ...e, deltaX: w.deltaX + e.deltaX, deltaY: w.deltaY + e.deltaY }
           : e;
     }
-    this.motionRun ??= this.drainMotion().finally(() => {
-      this.motionRun = null;
-    });
+    this.motionRun ??= this.drainMotion();
   }
 
   private async drainMotion(): Promise<void> {
-    while (!this.ended && (this.motion.move || this.motion.wheel)) {
-      const { move, wheel } = this.motion;
-      this.motion = { move: null, wheel: null };
-      if (move) await this.dispatchMouse(move);
-      if (wheel)
-        await this.send('Input.dispatchMouseEvent', {
-          type: 'mouseWheel',
-          x: wheel.x,
-          y: wheel.y,
-          deltaX: wheel.deltaX,
-          deltaY: wheel.deltaY,
-          modifiers: wheel.modifiers,
-        });
+    // Runs once motionRun is set, and clears it in the same step as its last check: cleared
+    // later, a move arriving in between found a drain that had already finished, and waited.
+    await Promise.resolve();
+    try {
+      while (!this.ended && (this.motion.move || this.motion.wheel)) {
+        const { move, wheel } = this.motion;
+        this.motion = { move: null, wheel: null };
+        if (move) {
+          await this.dispatchMouse(move);
+          this.noteCursor(move.x, move.y);
+        }
+        if (wheel)
+          await this.send('Input.dispatchMouseEvent', {
+            type: 'mouseWheel',
+            x: wheel.x,
+            y: wheel.y,
+            deltaX: wheel.deltaX,
+            deltaY: wheel.deltaY,
+            modifiers: wheel.modifiers,
+          });
+      }
+    } finally {
+      this.motionRun = null;
+    }
+  }
+
+  /** The pointer moved: read the cursor there, at most every CURSOR_EVERY_MS (the last always). */
+  private noteCursor(x: number, y: number): void {
+    this.cursorPoint = { x, y };
+    if (this.cursorTimer) return;
+    const due = Math.max(0, this.cursorReadAt + CURSOR_EVERY_MS - Date.now());
+    this.cursorTimer = setTimeout(() => void this.readCursor(), due);
+    this.cursorTimer.unref?.();
+  }
+
+  private async readCursor(): Promise<void> {
+    const point = this.cursorPoint;
+    this.cursorPoint = null;
+    this.cursorReadAt = Date.now();
+    try {
+      if (!point || this.ended) return;
+      const result = await this.send('Runtime.evaluate', {
+        expression: cursorAt(point.x, point.y),
+        returnByValue: true,
+      });
+      const cursor = streamCursor((result.result as { value?: unknown } | undefined)?.value);
+      if (cursor !== (this.state.cursor ?? 'default')) {
+        this.state = { ...this.state, cursor };
+        this.bump();
+      }
+    } catch {
+      // The page is navigating: the next move reads it again.
+    } finally {
+      this.cursorTimer = null;
+      // A move during the read: read again once the interval is up.
+      const next = this.cursorPoint as { x: number; y: number } | null;
+      if (next && !this.ended) this.noteCursor(next.x, next.y);
     }
   }
 

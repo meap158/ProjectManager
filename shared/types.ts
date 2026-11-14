@@ -908,6 +908,8 @@ export interface PreviewStreamState {
   /** The viewport in CSS pixels: input coordinates are in this space. */
   width: number;
   height: number;
+  /** The mouse cursor the page shows under the pointer, a CSS keyword (PM-730). */
+  cursor?: string;
 }
 
 /** A pinned file or folder on the Files tab (PM-284). */

@@ -14,6 +14,7 @@ import {
   parseOpen,
   parseSeq,
   parseSize,
+  streamCursor,
   subframeAllowed,
 } from './previewStream.js';
 
@@ -208,6 +209,42 @@ describe('picture quality (PM-730)', () => {
     await vi.advanceTimersByTimeAsync(1_300);
     expect(stream.frameB64).toBe('UklGRcaret2');
     stream.end();
+  });
+
+  it('shows the page cursor under the pointer, read at most every 100 ms', async () => {
+    vi.useFakeTimers();
+    const reads: string[] = [];
+    const stream = fakeStream(async (method, params?: unknown) => {
+      if (method !== 'Runtime.evaluate') return {};
+      const expression = (params as { expression: string }).expression;
+      reads.push(expression.slice(-12));
+      return { result: { value: expression.includes('(500, 20)') ? 'pointer' : 'url(x)' } };
+    });
+    const move = (x: number) =>
+      stream.input(parseInput({ events: [{ type: 'mouse', kind: 'move', x, y: 20 }] }));
+    await move(10);
+    await move(500);
+    await vi.advanceTimersByTimeAsync(150);
+    // At most one read now and one for the last position once the interval is up.
+    expect(reads.length).toBeLessThanOrEqual(2);
+    expect(reads.at(-1)).toContain('(500, 20)');
+    expect(stream.state.cursor).toBe('pointer');
+    const before = reads.length;
+    // Moves within the interval wait; the last position is read once it is up.
+    await move(20);
+    await move(30);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(reads.length).toBeLessThanOrEqual(before + 2);
+    expect(reads.at(-1)).toContain('(30, 20)');
+    // An image cursor (or anything unknown) shows the arrow.
+    expect(stream.state.cursor).toBe('default');
+    stream.end();
+  });
+
+  it('only passes plain cursor keywords on', () => {
+    expect(streamCursor('pointer')).toBe('pointer');
+    expect(streamCursor('url(evil.png)')).toBe('default');
+    expect(streamCursor(42)).toBe('default');
   });
 
   it('goes back to motion frames before a click, not for a hover', async () => {

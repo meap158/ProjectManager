@@ -67,6 +67,11 @@ export interface FeedFrame {
   mime?: string;
 }
 
+/** The page's cursor as the panel shows it: a plain CSS keyword, else the arrow. */
+export function streamCursor(cursor: string | undefined): string {
+  return cursor && /^[a-z-]{1,24}$/.test(cursor) ? cursor : 'default';
+}
+
 /** A frame's data URL; an unexpected type is read as JPEG, never passed through. */
 export function frameUrl(frame: { image: string; mime?: string }): string {
   const mime = /^image\/(webp|png|jpeg)$/.test(frame.mime ?? '') ? frame.mime : 'image/jpeg';
@@ -272,7 +277,13 @@ export function PreviewStream({
     return count;
   };
 
-  const report = (state: PreviewStreamState) => {
+  const report = (full: PreviewStreamState) => {
+    // The page's cursor goes straight onto the panel (PM-730); the workspace never sees it, so
+    // hovering over links does not re-render it.
+    const { cursor, ...state } = full;
+    const box = boxRef.current;
+    const shown = streamCursor(cursor);
+    if (box && box.style.cursor !== shown) box.style.cursor = shown;
     // Every frame carries the state; only a change reaches the workspace (and re-renders it).
     const before = stateRef.current;
     if (before && JSON.stringify(before) === JSON.stringify(state)) return;
