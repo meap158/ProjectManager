@@ -4,8 +4,10 @@ import { PreviewError } from './preview.js';
 import {
   FEED_WINDOW,
   PreviewStreams,
+  STILL_MS,
   Stream,
   feedEvent,
+  imageMime,
   keyEvent,
   parseInput,
   parseOpen,
@@ -16,8 +18,8 @@ import {
 
 const blocked = new Set([5180, 5181]);
 
-function fakeStream(): Stream {
-  const cdp = { on() {}, send: async () => ({}), close() {} } as unknown as Cdp;
+function fakeStream(send: (method: string) => Promise<unknown> = async () => ({})): Stream {
+  const cdp = { on() {}, send, close() {} } as unknown as Cdp;
   const open = { port: 3000, path: '/', width: 800, height: 600, scale: 1, dark: false };
   const state = {
     url: 'http://127.0.0.1:3000/',
@@ -32,8 +34,8 @@ function fakeStream(): Stream {
 }
 
 /** A new picture, the way the screencast handler stores one. */
-function paint(stream: Stream, jpeg: string): void {
-  stream.frameB64 = jpeg;
+function paint(stream: Stream, image: string): void {
+  stream.frameB64 = image;
   stream.bump();
   stream.frameAt = stream.version;
 }
@@ -42,7 +44,9 @@ async function nextEvent(reader: ReadableStreamDefaultReader<Uint8Array>) {
   const { value } = await reader.read();
   const text = new TextDecoder().decode(value);
   const data = text.split('\n').find((l) => l.startsWith('data: '));
-  return data ? (JSON.parse(data.slice(6)) as { v: number; jpeg: string | null }) : text;
+  return data
+    ? (JSON.parse(data.slice(6)) as { v: number; image: string | null; mime?: string })
+    : text;
 }
 
 describe('pushed feed (PM-727)', () => {
@@ -50,13 +54,13 @@ describe('pushed feed (PM-727)', () => {
     const stream = fakeStream();
     paint(stream, 'A');
     const reader = stream.feed().getReader();
-    expect(await nextEvent(reader)).toMatchObject({ jpeg: 'A' });
+    expect(await nextEvent(reader)).toMatchObject({ image: 'A' });
     // A state change alone sends no picture.
     stream.bump();
-    expect(await nextEvent(reader)).toMatchObject({ jpeg: null });
+    expect(await nextEvent(reader)).toMatchObject({ image: null });
     for (let i = 0; i < FEED_WINDOW; i++) {
       paint(stream, `F${i}`);
-      expect(await nextEvent(reader)).toMatchObject({ jpeg: `F${i}` });
+      expect(await nextEvent(reader)).toMatchObject({ image: `F${i}` });
     }
     // The window is full: a new picture waits for an acknowledgement.
     paint(stream, 'late');
@@ -67,7 +71,7 @@ describe('pushed feed (PM-727)', () => {
     ]);
     expect(raced).toBe('waiting');
     stream.ack(stream.version);
-    expect(await pending).toMatchObject({ jpeg: 'late' });
+    expect(await pending).toMatchObject({ image: 'late' });
     await reader.cancel();
   });
 
@@ -82,8 +86,101 @@ describe('pushed feed (PM-727)', () => {
 
   it('writes server-sent events', () => {
     expect(feedEvent(7, fakeStream().state, 'QQ')).toMatch(
-      /^event: frame\ndata: \{"v":7,"t":\d+,"state":\{.*\},"jpeg":"QQ"\}\n\n$/,
+      /^event: frame\ndata: \{"v":7,"t":\d+,"state":\{.*\},"image":"QQ","mime":"image\/jpeg"\}\n\n$/,
     );
+  });
+});
+
+describe('picture quality (PM-730)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('tells the image type from its first bytes', () => {
+    expect(imageMime('UklGRlYAAABXRUJQ')).toBe('image/webp');
+    expect(imageMime('iVBORw0KGgo')).toBe('image/png');
+    expect(imageMime('/9j/4AAQ')).toBe('image/jpeg');
+  });
+
+  it('drops a frame identical to the one before', () => {
+    const stream = fakeStream();
+    stream.onFrame('A');
+    const version = stream.version;
+    stream.onFrame('A');
+    expect(stream.version).toBe(version);
+    stream.onFrame('B');
+    expect(stream.version).toBe(version + 1);
+    stream.end();
+  });
+
+  it('restarts the screencast exact once the picture settles, and for motion when it moves', async () => {
+    vi.useFakeTimers();
+    const starts: number[] = [];
+    const cdp = {
+      on() {},
+      send: async (method: string, params?: { quality?: number }) => {
+        if (method === 'Page.startScreencast') starts.push(params?.quality ?? 0);
+        return {};
+      },
+      close() {},
+    } as unknown as Cdp;
+    const open = { port: 3000, path: '/', width: 800, height: 600, scale: 1, dark: false };
+    const stream = new Stream('s1', 3000, cdp, 't1', 'http://127.0.0.1:9', () => blocked, open, {
+      ...fakeStream().state,
+    });
+    stream.onFrame('UklGRmotion');
+    await vi.advanceTimersByTimeAsync(STILL_MS + 10);
+    // Settled: the screencast restarts in its exact mode, and its first frame is the still.
+    expect(starts).toEqual([90]);
+    stream.onFrame('UklGRstill');
+    expect(stream.frameB64).toBe('UklGRstill');
+    expect(stream.frame?.length).toBeGreaterThan(0);
+    // A slow change (a blinking caret) keeps the exact mode.
+    await vi.advanceTimersByTimeAsync(400);
+    stream.onFrame('UklGRcaret');
+    expect(starts).toEqual([90]);
+    // A fast one means the page moves: motion frames again.
+    await vi.advanceTimersByTimeAsync(50);
+    stream.onFrame('UklGRmoving');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(starts).toEqual([90, 70]);
+    expect(stream.frameB64).toBe('UklGRmoving');
+    stream.end();
+  });
+
+  it('goes back to motion frames before a click, not for a hover', async () => {
+    vi.useFakeTimers();
+    const starts: number[] = [];
+    const stream = fakeStream(async (method) => {
+      if (method === 'Page.startScreencast') starts.push(starts.length);
+      return {};
+    });
+    stream.onFrame('UklGRmotion');
+    await vi.advanceTimersByTimeAsync(STILL_MS + 10);
+    stream.onFrame('UklGRstill');
+    const move = { type: 'mouse', kind: 'move', x: 1, y: 1 } as const;
+    await stream.input(parseInput({ events: [move] }));
+    expect(starts).toHaveLength(1);
+    await stream.input(
+      parseInput({
+        events: [
+          { ...move, kind: 'down' },
+          { ...move, kind: 'up' },
+        ],
+      }),
+    );
+    expect(starts).toHaveLength(2);
+    stream.end();
+  });
+
+  it('widens the window while frames arrive on time and narrows it when they queue', () => {
+    const stream = fakeStream();
+    let t = 1_000_000;
+    for (let i = 0; i < 60; i++) stream.measure(300, (t += 40));
+    const wide = stream.window;
+    expect(wide).toBeGreaterThan(FEED_WINDOW + 3);
+    stream.measure(600, (t += 400));
+    expect(stream.window).toBeLessThan(wide);
+    for (let i = 0; i < 20; i++) stream.measure(900, (t += 400));
+    expect(stream.window).toBe(2);
   });
 });
 

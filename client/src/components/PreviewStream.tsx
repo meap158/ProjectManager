@@ -5,9 +5,10 @@ import type { PreviewTarget } from './previewTabs';
 
 // Streamed preview (PM-693, docs/BUILT-IN-BROWSER.md). Off this computer the Preview shows a
 // headless browser on this computer (server/previewStream.ts) instead of the read-only path mode,
-// which cannot load most apps there. Frames arrive as JPEG images pushed on one event stream
-// (PM-727), each acknowledged once shown so the server never sends faster than this page can take
-// them; a connection that holds the stream back falls back to long-poll, one frame per request.
+// which cannot load most apps there. Frames arrive as images pushed on one event stream (PM-727),
+// each decoded off screen, swapped in, then acknowledged (PM-730), so the server never sends faster
+// than this page can show them; while one decodes only the newest waiting frame is kept. A
+// connection that holds the stream back falls back to long-poll, one frame per request.
 // Pointer, wheel and keyboard input go back as small numbered JSON batches, sent without waiting
 // for the previous one. Nothing of the app runs in this page: it is an image, so the app can never
 // reach ProjectManager's origin.
@@ -60,8 +61,16 @@ export function streamPath(url: string): string | null {
 export interface FeedFrame {
   v: number;
   state: PreviewStreamState;
-  /** The picture (base64 JPEG), or null when only the state changed. */
-  jpeg: string | null;
+  /** The picture (base64), or null when only the state changed. */
+  image: string | null;
+  /** Its type: WebP or JPEG while the page moves, PNG or WebP for the still once it settles. */
+  mime?: string;
+}
+
+/** A frame's data URL; an unexpected type is read as JPEG, never passed through. */
+export function frameUrl(frame: { image: string; mime?: string }): string {
+  const mime = /^image\/(webp|png|jpeg)$/.test(frame.mime ?? '') ? frame.mime : 'image/jpeg';
+  return `data:${mime};base64,${frame.image}`;
 }
 
 /** Splits server-sent events off the front of `buffer`: the frames found and what is left. */
@@ -93,8 +102,22 @@ const FEED_FIRST_EVENT_MS = 5_000;
 const ACK_EVERY_MS = 40;
 /** Input posts are gathered this long, so a burst of keys goes in one post. */
 const INPUT_FLUSH_MS = 8;
-/** Input posts on their way at once; more wait (and merge) until one answers. */
-const INPUT_IN_FLIGHT = 6;
+/**
+ * Input posts on their way at once; more wait (and merge) until one answers. With the feed and
+ * one acknowledgement, this leaves a connection spare of the 6 a browser keeps over HTTP/1.1.
+ */
+const INPUT_IN_FLIGHT = 3;
+/** Over HTTP/2 or 3 (Cloudflare serves those) requests share one connection: more may travel. */
+const INPUT_IN_FLIGHT_MULTIPLEXED = 8;
+
+/** How many input posts may travel at once, by the protocol this page came over. */
+export function inputInFlight(
+  protocol: string = (
+    performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined
+  )?.nextHopProtocol ?? '',
+): number {
+  return /^h[23]/.test(protocol) ? INPUT_IN_FLIGHT_MULTIPLEXED : INPUT_IN_FLIGHT;
+}
 
 const BUTTONS = ['left', 'middle', 'right'] as const;
 /** A touch that moves this far is a scroll, not a tap. */
@@ -116,6 +139,7 @@ export class InputQueue {
   private seq = 0;
   private seqFor: string | null = null;
   private editableSeq = 0;
+  private limit: number | null = null;
   constructor(
     private id: () => string | null,
     private onEditable: (editable: boolean) => void,
@@ -150,7 +174,8 @@ export class InputQueue {
 
   private flush(): void {
     const id = this.id();
-    if (!id || this.pending.length === 0 || this.inFlight >= INPUT_IN_FLIGHT) return;
+    this.limit ??= inputInFlight();
+    if (!id || this.pending.length === 0 || this.inFlight >= this.limit) return;
     // A reopened stream is a new browser tab here, numbered from 1 again.
     if (id !== this.seqFor) {
       this.seqFor = id;
@@ -204,7 +229,8 @@ export function PreviewStream({
   const stateRef = useRef<PreviewStreamState | null>(null);
   /** The page to reopen on: where the stream last was, else the tab's own address. */
   const pathRef = useRef(target.path);
-  const [image, setImage] = useState<string | null>(null);
+  /** Holds the shown frame's <img>, swapped in by hand once decoded (no re-render per frame). */
+  const screenRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   /** Set once this connection held the pushed feed back; long-poll from then on. */
@@ -273,14 +299,45 @@ export function PreviewStream({
     const abort = new AbortController();
     let urlToRevoke: string | null = null;
     let loadedOnce = false;
-    const show = (url: string) => {
-      setImage(url);
-      if (urlToRevoke) URL.revokeObjectURL(urlToRevoke);
-      urlToRevoke = url.startsWith('blob:') ? url : null;
-      if (!loadedOnce) {
-        loadedOnce = true;
-        onLoaded(tabId);
+    const revoke = (url: string) => {
+      if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+    };
+    /** One frame decoding at a time; frames arriving meanwhile replace each other here. */
+    let decoding = false;
+    let waiting: { url: string; shown?: () => void } | null = null;
+    const swap = (img: HTMLImageElement, url: string, shown?: () => void) => {
+      const screen = screenRef.current;
+      if (!abort.signal.aborted && screen) {
+        screen.replaceChildren(img);
+        if (urlToRevoke) revoke(urlToRevoke);
+        urlToRevoke = url;
+        shown?.();
+        if (!loadedOnce) {
+          loadedOnce = true;
+          onLoaded(tabId);
+        }
+      } else revoke(url);
+      decoding = false;
+      const next = waiting;
+      waiting = null;
+      if (next) show(next.url, next.shown);
+    };
+    const show = (url: string, shown?: () => void) => {
+      if (decoding) {
+        if (waiting) revoke(waiting.url);
+        waiting = { url, shown };
+        return;
       }
+      decoding = true;
+      const img = new Image();
+      img.className = 'preview-stream-image';
+      img.alt = '';
+      img.draggable = false;
+      img.src = url;
+      // Decoded before it is shown, so showing it never stalls the page (and never flashes).
+      const done = () => swap(img, url, shown);
+      if (typeof img.decode === 'function') img.decode().then(done, done);
+      else done();
     };
     /**
      * Reads the pushed feed until it ends: 'gone' (the stream closed), 'buffered' (no first event:
@@ -297,6 +354,29 @@ export function PreviewStream({
       }, FEED_FIRST_EVENT_MS);
       let ackTimer: ReturnType<typeof setTimeout> | null = null;
       let toAck = 0;
+      let acked = 0;
+      let shownAt = 0;
+      /**
+       * One acknowledgement on its way at a time (PM-730): a browser keeps 6 connections to a host
+       * over HTTP/1.1, and over a slow link a post every 40 ms took them all, so acknowledgements
+       * and input waited behind each other. Each says how long it was held back, so the server
+       * still measures the link's own delay.
+       */
+      let acking = false;
+      const sendAck = () => {
+        ackTimer = null;
+        if (toAck <= acked || local.signal.aborted) return;
+        const version = toAck;
+        acking = true;
+        void api
+          .previewStreamAck(id, version, Math.round(performance.now() - shownAt))
+          .catch(() => undefined)
+          .finally(() => {
+            acking = false;
+            acked = Math.max(acked, version);
+            if (toAck > acked) sendAck();
+          });
+      };
       try {
         const res = await fetch(`/api/preview-stream/${id}/feed`, {
           signal: local.signal,
@@ -319,14 +399,15 @@ export function PreviewStream({
           for (const frame of parsed.frames) {
             first = true;
             report(frame.state);
-            if (!frame.jpeg) continue;
-            show(`data:image/jpeg;base64,${frame.jpeg}`);
-            // Shown: the server may send the next one. One post covers every frame since.
-            toAck = frame.v;
-            ackTimer ??= setTimeout(() => {
-              ackTimer = null;
-              void api.previewStreamAck(id, toAck).catch(() => undefined);
-            }, ACK_EVERY_MS);
+            if (!frame.image) continue;
+            const v = frame.v;
+            show(frameUrl({ image: frame.image, mime: frame.mime }), () => {
+              // Shown: the server may send the next one. One post covers every frame since.
+              if (v <= toAck || local.signal.aborted) return;
+              toAck = v;
+              shownAt = performance.now();
+              if (!acking) ackTimer ??= setTimeout(sendAck, ACK_EVERY_MS);
+            });
           }
         }
       } catch (e) {
@@ -640,7 +721,8 @@ export function PreviewStream({
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {image && <img className="preview-stream-image" src={image} alt="" draggable={false} />}
+      <div ref={screenRef} className="preview-stream-screen" />
+
       <textarea
         ref={keysRef}
         className="preview-stream-keys"

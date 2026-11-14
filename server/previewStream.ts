@@ -23,6 +23,13 @@ import type { PreviewStreamState } from '../shared/types.js';
 //    open, dialogs are answered at once, and links that would open a window open in place.
 //  - At most MAX_STREAMS at once (each is a browser tab on this computer); one left unpolled for
 //    IDLE_MS is closed.
+//  - Picture quality (PM-730): streams have a browser of their own launched at a fixed 2x device
+//    scale (without it, Chrome sends 1x frames whatever scale a tab asks for, and a high-density
+//    screen shows them blurred). Frames are WebP where Chrome can encode it (about 40% smaller than
+//    JPEG at the same rate). While the picture moves, frames come at the viewer's full scale only
+//    over a link that has shown it keeps up, else at 1x; once the picture has been still for
+//    STILL_MS, one exact still at full scale replaces the last frame (PNG over a fast link, WebP
+//    90 otherwise). A frame identical to the one before is never sent.
 
 export const MAX_STREAMS = 4;
 const IDLE_MS = 45_000;
@@ -32,14 +39,57 @@ export const POLL_WAIT_MS = 20_000;
 const MAX_EVENTS = 64;
 const MAX_TEXT = 10_000;
 /** The pushed feed's limits (PM-727): frames a second, unacknowledged frames, heartbeat. */
-export const FEED_FPS = 24;
+export const FEED_FPS = 60;
 export const FEED_WINDOW = 4;
+/**
+ * The window adapts to delay (PM-730): it grows while frames arrive about as fast as the quickest
+ * recently seen (nothing queues), and shrinks once they take QUEUE_MS longer (a queue is forming).
+ * A slow link keeps its picture current; a fast one far away is not held to 4 frames a round trip.
+ */
+const WINDOW_MIN = 2;
+const WINDOW_MAX = 30;
+const QUEUE_MS = 60;
+const MIN_DELIVERY_SPAN_MS = 10_000;
 /** With no acknowledgement for this long, one more frame goes out (a lost ack never stalls it). */
 const FEED_ACK_WAIT_MS = 2_000;
 const FEED_HEARTBEAT_MS = 15_000;
+/** Timers on Windows fire up to ~15 ms late: a frame this early counts as on time. */
+const FEED_SLACK_MS = 4;
 /** An input post whose predecessor never arrives runs after this long anyway. */
 const INPUT_GAP_MS = 1_000;
+/**
+ * The stream browser's switches (PM-730): render at 2x, so frames can match the viewer's screen,
+ * and scroll without animation. Wheel turns arrive merged, and Chrome animated each merged jump
+ * for up to 2 s after the hand stopped; the viewer's own device already smooths its wheel.
+ */
+export const STREAM_BROWSER_ARGS = ['--force-device-scale-factor=2', '--disable-smooth-scrolling'];
+const RENDER_SCALE = 2;
+const MOTION_QUALITY = 70;
+/** The picture counts as settled after this long without a new frame, and gets an exact still. */
+export const STILL_MS = 300;
+/** A still replaced this soon by a new frame doubles the wait before the next (up to the max). */
+const STILL_BUSY_MS = 1_500;
+const STILL_MAX_MS = 5_000;
+/** A change this long after the frame before is slow (a caret, a clock): the still mode stays. */
+const SLOW_CHANGE_MS = 250;
+/**
+ * A link counts as fast while frames reach the viewer and come back acknowledged within FAST_MS
+ * on average, and slow again past SLOW_MS. Motion frames switch scale at most every SWITCH_MS.
+ */
+const FAST_MS = 120;
+const SLOW_MS = 250;
+const SWITCH_MS = 3_000;
+/** Going back to 1x this soon after going sharp means the link cannot carry it: retry much later. */
+const SHARP_FAILED_MS = 10_000;
+const SHARP_RETRY_MS = 60_000;
+const WEBP_MAX_PIXELS = 1_100_000;
 
+/** An encoded image's type, from its first base64 characters. */
+export function imageMime(base64: string): string {
+  if (base64.startsWith('UklGR')) return 'image/webp';
+  if (base64.startsWith('iVBOR')) return 'image/png';
+  return 'image/jpeg';
+}
 export type StreamState = PreviewStreamState;
 
 export interface StreamOpen {
@@ -114,9 +164,12 @@ export function parseSeq(body: unknown): number | null {
   return typeof seq === 'number' && Number.isSafeInteger(seq) && seq > 0 ? seq : null;
 }
 
-/** One frame of the pushed feed, as a server-sent event. */
-export function feedEvent(version: number, state: StreamState, jpeg: string | null): string {
-  return `event: frame\ndata: ${JSON.stringify({ v: version, t: Date.now(), state, jpeg })}\n\n`;
+/** One frame of the pushed feed, as a server-sent event (`image` is base64, null: state only). */
+export function feedEvent(version: number, state: StreamState, image: string | null): string {
+  const data = image
+    ? { v: version, t: Date.now(), state, image, mime: imageMime(image) }
+    : { v: version, t: Date.now(), state, image: null };
+  return `event: frame\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
 /** The input events of one post, validated; anything malformed refuses the whole batch. */
@@ -250,7 +303,6 @@ const EDITABLE = `(() => { const a = document.activeElement; return !!a && (a.is
 /** One streamed preview: a browser tab on this computer (exported for tests). */
 export class Stream {
   version = 0;
-  frame: Buffer | null = null;
   /** The newest frame as Chrome sent it (base64), for the pushed feed. */
   frameB64: string | null = null;
   /** The version at which the frame last changed (a state change alone keeps the picture). */
@@ -260,9 +312,32 @@ export class Stream {
   private waiters = new Set<() => void>();
   /** The pushed feed (PM-727): which one is current, what it sent and what the viewer has shown. */
   private feedGen = 0;
-  private sent: number[] = [];
+  private sent: { v: number; at: number; still: boolean }[] = [];
+  /** Whether the current frame is a still (stills are not timed: they are larger by design). */
+  private frameIsStill = false;
   private acked = 0;
   private ackAt = 0;
+  /** Long-poll's copy of the frame as bytes, made only when it asks (PM-730). */
+  private bytes: { of: string; buffer: Buffer } | null = null;
+  /** The last screencast frame, to drop an identical one (a still makes Chrome send one). */
+  private lastCast: string | null = null;
+  /** The still (PM-730): asked for ('waiting' its first frame) or on screen ('shown'). */
+  private stillMode: 'off' | 'waiting' | 'shown' = 'off';
+  private lastFrameAt = 0;
+  private stillTimer: ReturnType<typeof setTimeout> | null = null;
+  private stillWait = STILL_MS;
+  private stillAt = 0;
+  /** Average time from sending a frame to its acknowledgement (null: not measured yet). */
+  private delivery: number | null = null;
+  /** Whether motion frames come at the viewer's full scale (a proven fast link) or at 1x. */
+  private sharpMotion = false;
+  private switchedAt = 0;
+  private sharpBlockedUntil = 0;
+  /** The feed's window in frames, and recent delivery times to find the quickest. */
+  window = FEED_WINDOW;
+  private deliveries: { at: number; ms: number }[] = [];
+  private shrunkAt = 0;
+  private webp = true;
   /** Input posts in order: the next sequence number to run and the posts waiting for their turn. */
   private inputNext = 1;
   private inputTurns = new Map<number, () => void>();
@@ -311,12 +386,62 @@ export class Stream {
   }
 
   /** The viewer has shown frame `version`; frames up to it no longer count against the window. */
-  ack(version: number): void {
+  ack(version: number, held = 0): void {
     if (version <= this.acked) return;
+    const now = Date.now();
+    const shown = this.sent.find((s) => s.v === version);
+    // `held`: how long the viewer kept the acknowledgement before sending it (it sends one at a
+    // time), which is not the link's delay.
+    if (shown && !shown.still) {
+      // The window grows only while it is what holds frames back, never untested.
+      const full = this.sent.length >= Math.floor(this.window) - 1;
+      const frames = full ? this.sent.filter((s) => s.v <= version).length : 0;
+      this.measure(Math.max(0, now - shown.at - held), now, frames);
+    }
     this.acked = version;
-    this.ackAt = Date.now();
-    this.sent = this.sent.filter((v) => v > version);
+    this.ackAt = now;
+    this.sent = this.sent.filter((s) => s.v > version);
     this.wake();
+  }
+
+  /** The newest frame as bytes, for long-poll. */
+  get frame(): Buffer | null {
+    if (!this.frameB64) return null;
+    if (this.bytes?.of !== this.frameB64)
+      this.bytes = { of: this.frameB64, buffer: Buffer.from(this.frameB64, 'base64') };
+    return this.bytes.buffer;
+  }
+
+  get frameMime(): string {
+    return this.frameB64 ? imageMime(this.frameB64) : 'image/jpeg';
+  }
+
+  /**
+   * One frame's delivery time (sent to acknowledged): motion frames go sharp over a link that keeps
+   * up and back to 1x over one that does not, at most once every SWITCH_MS.
+   */
+  measure(ms: number, now = Date.now(), frames = 1): void {
+    this.deliveries.push({ at: now, ms });
+    while (this.deliveries.length && now - this.deliveries[0]!.at > MIN_DELIVERY_SPAN_MS)
+      this.deliveries.shift();
+    const quickest = Math.min(...this.deliveries.map((d) => d.ms));
+    if (ms <= quickest + QUEUE_MS) {
+      // One frame more per window's worth delivered on time (an acknowledgement covers `frames`).
+      this.window = Math.min(WINDOW_MAX, this.window + frames / this.window);
+    } else if (now - this.shrunkAt >= quickest) {
+      // At most once a round trip: the frames already on their way were sent under the old window.
+      this.window = Math.max(WINDOW_MIN, this.window * 0.7);
+      this.shrunkAt = now;
+    }
+    this.delivery = this.delivery === null ? ms : this.delivery * 0.7 + ms * 0.3;
+    if (now - this.switchedAt < SWITCH_MS || now < this.sharpBlockedUntil) return;
+    const sharp = this.sharpMotion ? this.delivery <= SLOW_MS : this.delivery <= FAST_MS;
+    if (sharp === this.sharpMotion) return;
+    if (!sharp && now - this.switchedAt < SHARP_FAILED_MS)
+      this.sharpBlockedUntil = now + SHARP_RETRY_MS;
+    this.sharpMotion = sharp;
+    this.switchedAt = now;
+    void this.cast().catch(() => undefined);
   }
 
   /**
@@ -349,16 +474,17 @@ export class Stream {
         const now = Date.now();
         this.lastSeen = now;
         const inFlight = this.sent.length;
-        const windowOpen = inFlight < FEED_WINDOW || now - this.ackAt >= FEED_ACK_WAIT_MS;
-        if (this.version > after && windowOpen && now - lastSent >= gap) {
+        const limit = Math.floor(this.window);
+        const windowOpen = inFlight < limit || now - this.ackAt >= FEED_ACK_WAIT_MS;
+        if (this.version > after && windowOpen && now - lastSent >= gap - FEED_SLACK_MS) {
           // The picture goes only when it changed; a state change alone sends just the state.
           const jpeg = this.frameAt > after ? this.frameB64 : null;
           after = this.version;
           lastSent = lastWrite = now;
           if (jpeg) {
-            this.sent.push(after);
+            this.sent.push({ v: after, at: now, still: this.frameIsStill });
             // A frame sent past a full window restarts the wait for an acknowledgement.
-            if (inFlight >= FEED_WINDOW) this.ackAt = now;
+            if (inFlight >= limit) this.ackAt = now;
           }
           return feedEvent(after, this.state, jpeg);
         }
@@ -427,6 +553,7 @@ export class Stream {
   end(): void {
     if (this.ended) return;
     this.ended = true;
+    if (this.stillTimer) clearTimeout(this.stillTimer);
     this.bump();
     this.cdp.close();
   }
@@ -477,22 +604,111 @@ export class Stream {
 
   async resize(size: { width: number; height: number; scale: number }): Promise<void> {
     this.size = size;
+    // The page always renders at 2x (the stream browser's switch makes that real pixels); the
+    // screencast and stills scale it down to what the viewer's screen shows.
     await this.send('Emulation.setDeviceMetricsOverride', {
       width: size.width,
       height: size.height,
-      deviceScaleFactor: size.scale,
+      deviceScaleFactor: RENDER_SCALE,
       mobile: size.width < 600,
     });
-    await this.send('Page.stopScreencast').catch(() => undefined);
-    await this.send('Page.startScreencast', {
-      format: 'jpeg',
-      quality: 70,
-      maxWidth: Math.round(size.width * size.scale),
-      maxHeight: Math.round(size.height * size.scale),
-      everyNthFrame: 1,
-    });
+    await this.cast();
     this.state = { ...this.state, width: size.width, height: size.height };
     this.bump();
+  }
+
+  /**
+   * (Re)starts the screencast. For motion: at the viewer's own scale over a fast link, else 1x.
+   * For a still: exact (PNG) over a fast link, else WebP 90, always at the viewer's full scale.
+   * Chrome sends the current picture as soon as a screencast starts, which is the still.
+   */
+  private async cast(): Promise<void> {
+    const still = this.stillMode !== 'off';
+    const scale = this.sharpMotion || still ? this.size.scale : 1;
+    const params = {
+      quality: still ? 90 : MOTION_QUALITY,
+      maxWidth: Math.round(this.size.width * scale),
+      maxHeight: Math.round(this.size.height * scale),
+      everyNthFrame: 1,
+    };
+    await this.send('Page.stopScreencast').catch(() => undefined);
+    if (still && this.sharpMotion) {
+      await this.send('Page.startScreencast', { format: 'png', ...params });
+      return;
+    }
+    // WebP keeps up only to about a megapixel (measured: 27 fps at 1280x800, 7 at 2560x1600), but
+    // over a slow link its smaller frames count for more than its rate: JPEG only for large
+    // frames over a fast one.
+    if (
+      this.webp &&
+      (still || !this.sharpMotion || params.maxWidth * params.maxHeight <= WEBP_MAX_PIXELS)
+    ) {
+      try {
+        await this.send('Page.startScreencast', { format: 'webp', ...params });
+        return;
+      } catch {
+        this.webp = false; // An older browser without WebP frames.
+      }
+    }
+    await this.send('Page.startScreencast', { format: 'jpeg', ...params });
+  }
+
+  /** A new screencast frame: identical ones are dropped, and a still is planned for when it settles. */
+  onFrame(data: string): void {
+    if (data === this.lastCast) return;
+    this.lastCast = data;
+    const now = Date.now();
+    const gap = now - this.lastFrameAt;
+    this.lastFrameAt = now;
+    if (this.stillMode === 'shown' && gap >= SLOW_CHANGE_MS) {
+      // A slow change (a blinking caret, a clock) keeps the exact frames: nothing is moving.
+      this.frameIsStill = true;
+      this.stillAt = now;
+      this.show(data);
+      return;
+    }
+    if (this.stillMode === 'waiting') {
+      // The first frame of the still screencast: the settled picture, exact.
+      this.stillMode = 'shown';
+      this.frameIsStill = true;
+      this.stillAt = Date.now();
+      this.show(data);
+      return;
+    }
+    if (this.stillMode === 'shown') {
+      // The page started moving after its still: back to motion frames. A still replaced this
+      // soon means the page keeps moving on its own (an animation): wait longer next time. One
+      // that lasted resets the wait.
+      this.stillWait =
+        now - this.stillAt < STILL_BUSY_MS ? Math.min(STILL_MAX_MS, this.stillWait * 2) : STILL_MS;
+      this.toMotion();
+    }
+    this.frameIsStill = false;
+    this.show(data);
+    if (this.stillTimer) clearTimeout(this.stillTimer);
+    this.stillTimer = setTimeout(() => void this.still().catch(() => undefined), this.stillWait);
+    this.stillTimer.unref?.();
+  }
+
+  private show(data: string): void {
+    this.frameB64 = data;
+    this.bump();
+    this.frameAt = this.version;
+  }
+
+  /** The picture has settled: the screencast restarts in its exact mode for one frame. */
+  async still(): Promise<void> {
+    this.stillTimer = null;
+    if (this.ended || this.stillMode !== 'off') return;
+    this.stillMode = 'waiting';
+    await this.cast();
+  }
+
+  /** Back to motion frames (input is coming, or the page changed after its still). */
+  private toMotion(): void {
+    if (this.stillMode === 'off') return;
+    this.stillMode = 'off';
+    void this.cast().catch(() => undefined);
   }
 
   private async onEvent(method: string, params: Record<string, unknown>): Promise<void> {
@@ -514,10 +730,7 @@ export class Stream {
         void this.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(
           () => undefined,
         );
-        this.frameB64 = String(params.data);
-        this.frame = Buffer.from(this.frameB64, 'base64');
-        this.bump();
-        this.frameAt = this.version;
+        this.onFrame(String(params.data));
       } else if (method === 'Page.javascriptDialogOpening') {
         // Nobody can see a dialog here: alerts are dismissed, confirms and prompts declined.
         const type = String(params.type);
@@ -574,30 +787,84 @@ export class Stream {
   }
 
   /** Replays a batch in order; says whether a text field has focus after a click. */
-  async input(events: StreamInput[]): Promise<{ editable: boolean | null }> {
-    let clicked = false;
-    for (const e of events) {
-      if (e.type === 'mouse') {
-        await this.send('Input.dispatchMouseEvent', {
-          type:
-            e.kind === 'down' ? 'mousePressed' : e.kind === 'up' ? 'mouseReleased' : 'mouseMoved',
-          x: e.x,
-          y: e.y,
-          button: e.button,
-          buttons: e.buttons,
-          clickCount: e.clickCount,
-          modifiers: e.modifiers,
-        });
-        if (e.kind === 'up') clicked = true;
-      } else if (e.type === 'wheel') {
+  /**
+   * Wheel turns and pointer moves waiting to go (PM-730). Chrome takes ~25 ms to answer each one
+   * and the viewer sends one every few ms, so replaying them one by one built a queue: the page
+   * kept scrolling after the hand stopped. While one is on its way, the next ones merge here
+   * (wheel deltas add up, the newest position wins) and go as one when it answers.
+   */
+  private motion: {
+    move: Extract<StreamInput, { type: 'mouse' }> | null;
+    wheel: Extract<StreamInput, { type: 'wheel' }> | null;
+  } = { move: null, wheel: null };
+  private motionRun: Promise<void> | null = null;
+
+  private queueMotion(
+    e: Extract<StreamInput, { type: 'mouse' }> | Extract<StreamInput, { type: 'wheel' }>,
+  ): void {
+    if (e.type === 'mouse') this.motion.move = e;
+    else {
+      const w = this.motion.wheel;
+      this.motion.wheel =
+        w && w.modifiers === e.modifiers
+          ? { ...e, deltaX: w.deltaX + e.deltaX, deltaY: w.deltaY + e.deltaY }
+          : e;
+    }
+    this.motionRun ??= this.drainMotion().finally(() => {
+      this.motionRun = null;
+    });
+  }
+
+  private async drainMotion(): Promise<void> {
+    while (!this.ended && (this.motion.move || this.motion.wheel)) {
+      const { move, wheel } = this.motion;
+      this.motion = { move: null, wheel: null };
+      if (move) await this.dispatchMouse(move);
+      if (wheel)
         await this.send('Input.dispatchMouseEvent', {
           type: 'mouseWheel',
-          x: e.x,
-          y: e.y,
-          deltaX: e.deltaX,
-          deltaY: e.deltaY,
-          modifiers: e.modifiers,
+          x: wheel.x,
+          y: wheel.y,
+          deltaX: wheel.deltaX,
+          deltaY: wheel.deltaY,
+          modifiers: wheel.modifiers,
         });
+    }
+  }
+
+  /** Waits until every merged move and wheel turn has gone (before a click or key, in order). */
+  async settleMotion(): Promise<void> {
+    while (this.motionRun) await this.motionRun.catch(() => undefined);
+  }
+
+  private dispatchMouse(e: Extract<StreamInput, { type: 'mouse' }>) {
+    return this.send('Input.dispatchMouseEvent', {
+      type: e.kind === 'down' ? 'mousePressed' : e.kind === 'up' ? 'mouseReleased' : 'mouseMoved',
+      x: e.x,
+      y: e.y,
+      button: e.button,
+      buttons: e.buttons,
+      clickCount: e.clickCount,
+      modifiers: e.modifiers,
+    });
+  }
+
+  async input(events: StreamInput[]): Promise<{ editable: boolean | null }> {
+    let clicked = false;
+    // Changes the viewer makes are not the page changing on its own: the still comes promptly.
+    // Clicks, keys and wheel turns switch the screencast back to motion frames first (the browser
+    // runs commands in order); a hover alone keeps the still until the page really changes.
+    this.stillWait = STILL_MS;
+    if (events.some((e) => !(e.type === 'mouse' && e.kind === 'move'))) this.toMotion();
+    for (const e of events) {
+      if ((e.type === 'mouse' && e.kind === 'move') || e.type === 'wheel') {
+        this.queueMotion(e);
+        continue;
+      }
+      await this.settleMotion();
+      if (e.type === 'mouse') {
+        await this.dispatchMouse(e);
+        if (e.kind === 'up') clicked = true;
       } else if (e.type === 'key') {
         await this.send('Input.dispatchKeyEvent', keyEvent(e));
       } else {
@@ -700,12 +967,22 @@ export class PreviewStreams {
     after: number,
     signal?: AbortSignal,
     waitMs = POLL_WAIT_MS,
-  ): Promise<{ version: number; frame: Buffer | null; state: StreamState } | null> {
+  ): Promise<{
+    version: number;
+    frame: Buffer | null;
+    mime: string;
+    state: StreamState;
+  } | null> {
     const stream = this.get(id);
     await stream.wait(after, waitMs, signal);
     if (stream.ended) throw new PreviewError(404, 'This preview has closed; open it again');
     if (stream.version <= after) return null;
-    return { version: stream.version, frame: stream.frame, state: stream.state };
+    return {
+      version: stream.version,
+      frame: stream.frame,
+      mime: stream.frameMime,
+      state: stream.state,
+    };
   }
 
   /** The pushed feed of one stream (PM-727). */
@@ -714,10 +991,11 @@ export class PreviewStreams {
   }
 
   ack(id: string, body: unknown): void {
-    const v = (body as { version?: unknown } | null)?.version;
+    const b = body as { version?: unknown; held?: unknown } | null;
+    const v = b?.version;
     if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0)
       throw new PreviewError(400, 'Expected a frame version');
-    this.get(id).ack(v);
+    this.get(id).ack(v, num(b?.held, 0, 10_000, 0));
   }
 
   async input(id: string, body: unknown) {

@@ -472,8 +472,8 @@ export const api = {
   previewStreamInput: (id: string, events: unknown[], seq?: number) =>
     request<{ editable: boolean | null }>('POST', `/preview-stream/${id}/input`, { events, seq }),
   /** The newest frame shown, so the pushed feed (PM-727) may send more. */
-  previewStreamAck: (id: string, version: number) =>
-    request<void>('POST', `/preview-stream/${id}/ack`, { version }),
+  previewStreamAck: (id: string, version: number, held = 0) =>
+    request<void>('POST', `/preview-stream/${id}/ack`, { version, held }),
   previewStreamNavigate: (
     id: string,
     body: { action: 'back' | 'forward' | 'reload' } | { action: 'go'; path: string },

@@ -829,6 +829,12 @@
   cursor: default;
   background: var(--surface);
 }
+/* Holds the shown frame, swapped in by hand once decoded (PM-730). */
+.preview-stream-screen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .preview-stream-image {
   display: block;
   width: 100%;

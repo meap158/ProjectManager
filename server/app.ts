@@ -45,7 +45,7 @@ import {
 } from './projectFiles.js';
 import { PreviewError, parsePreviewPort, proxyPreview } from './preview.js';
 import { PreviewCapture, normaliseCapture, type CaptureRequest } from './previewCapture.js';
-import { PreviewStreams } from './previewStream.js';
+import { PreviewStreams, STREAM_BROWSER_ARGS } from './previewStream.js';
 import { SopFileError, SopStore, checkProject, sopCardText, sopInfo, sopReport } from './sops.js';
 import { config } from './config.js';
 import { detectLocalApps, stopLocalApp } from './localPorts.js';
@@ -348,7 +348,18 @@ export function createApp(
   // Streamed preview (PM-693): off this computer the Preview shows a headless browser on this
   // computer instead of the path mode, which cannot load most apps there (see previewStream.ts).
   // Every listener may use it: the gates have already signed the viewer in.
-  const streams = new PreviewStreams(capture, ownPorts);
+  // A browser of its own (PM-730): it renders at 2x for sharp frames on high-density screens.
+  const streams = new PreviewStreams(
+    new PreviewCapture(
+      options.dataDir ?? path.join(os.tmpdir(), 'projectmanager-capture'),
+      undefined,
+      {
+        folder: 'stream-browser',
+        args: STREAM_BROWSER_ARGS,
+      },
+    ),
+    ownPorts,
+  );
   app.get('/preview-stream', (c) => c.json({ available: streams.available }));
   app.post('/preview-stream', async (c) =>
     c.json(await streams.open(await c.req.json().catch(() => null))),
@@ -370,7 +381,7 @@ export function createApp(
         : {}),
     };
     if (!next || !next.frame) return c.body(null, 204, headers);
-    return c.body(new Uint8Array(next.frame), 200, { ...headers, 'content-type': 'image/jpeg' });
+    return c.body(new Uint8Array(next.frame), 200, { ...headers, 'content-type': next.mime });
   });
   // The pushed feed (PM-727): one event stream instead of a request per frame. `no-transform`
   // and `x-accel-buffering` keep proxies (Cloudflare among them) from holding it back.

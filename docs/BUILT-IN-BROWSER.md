@@ -35,26 +35,55 @@ is not owned by one project. There are three ways to show an app:
    opaque-origin frame, so the LAN and remote gates (and Cloudflare Access) refuse every script,
    style and image. It is now only the fallback for a computer without Chrome or Edge.
 3. **Streamed (phones on the LAN, the remote listener; PM-693).** A headless Chrome or Edge on this
-   computer (the element picker's capture browser, `server/previewCapture.ts`) opens the app at
-   `http://127.0.0.1:<port>`, where it works exactly as it does locally, and the viewer sees its
-   screen (`server/previewStream.ts`, `client/src/components/PreviewStream.tsx`):
-   - Frames come from `Page.startScreencast` as JPEG and are pushed on one event stream
+   computer (a browser of its own, launched by `server/previewCapture.ts` with the stream switches)
+   opens the app at `http://127.0.0.1:<port>`, where it works exactly as it does locally, and the
+   viewer sees its screen (`server/previewStream.ts`, `client/src/components/PreviewStream.tsx`):
+   - Frames come from `Page.startScreencast` and are pushed on one event stream
      (`GET /api/preview-stream/<id>/feed`, server-sent events, PM-727), so the gates' session checks
      apply and no WebSocket crosses the tunnel. Each event carries the page state (address, title,
-     back and forward) and the picture when it changed. Only the newest frame is sent, at most 24 a
-     second, and at most 4 the viewer has not acknowledged (`POST .../ack`, sent once a frame is
-     shown); with no acknowledgement for 2 s one more goes out. So a slow link drops frames instead
-     of falling behind. A comment every 15 s keeps the connection open through Cloudflare.
+     back and forward) and the picture when it changed, with its image type. Only the newest frame
+     is sent, at most 60 a second, and only as many as the window allows that the viewer has not
+     acknowledged (`POST .../ack`, sent once a frame is decoded and on screen, one at a time, with
+     how long it was held back). The window starts at 4 and adapts to delay (PM-730): it grows
+     while frames arrive about as fast as the quickest of the last 10 s, and shrinks once they take
+     60 ms longer, between 2 and 30. With no acknowledgement for 2 s one more goes out. So a slow
+     link drops frames instead of falling behind, and a fast one far away is not held to 4 frames a
+     round trip. A comment every 15 s keeps the connection open through Cloudflare.
+   - Picture quality (PM-730). Without help, Chrome sends 1x frames whatever scale a tab asks for,
+     so a high-density screen showed them blurred. The stream browser is launched with
+     `--force-device-scale-factor=2`, every tab renders at 2x, and the screencast's size scales
+     frames to the viewer's screen (up to 2x). Motion frames come at the viewer's full scale over a
+     link whose frames come back within 120 ms on average (back to 1x past 250 ms; at most one switch
+     every 3 s, and a minute's wait after a switch that failed), else at 1x. They are WebP (about 40%
+     smaller than JPEG at the same rate) up to about a megapixel, where WebP still keeps up (27 fps
+     at 1280x800, 7 at 2560x1600); larger frames over a fast link are JPEG. Once the picture has
+     been still for 300 ms the screencast restarts in its exact mode (PNG over a fast link, WebP 90
+     otherwise, at full scale); Chrome sends the current picture when a screencast starts, and that
+     frame is the still. Slow changes (a blinking caret, a clock) stay exact; fast ones, clicks,
+     keys and wheel turns go back to motion frames. A page that keeps moving on its own waits
+     longer for its next still (doubling up to 5 s). A frame identical to the one before is never
+     sent. The panel decodes each frame off screen before swapping it in, and while one decodes
+     only the newest waiting frame is kept, so a slow phone drops frames rather than queueing them.
+     `Page.captureScreenshot` is not used for stills: with the screencast scaled down, every
+     screenshot made Chrome send a few slightly different frames, so the still always looked out
+     of date.
      If no first event arrives within 5 s (something on the way holds the stream back), the panel
      falls back to long-poll, one frame per request
      (`GET .../frame?after=<version>`, at most 20 s, state in a header).
      Measured through a proxy that adds 150 ms each way: long-poll gave 3 frames a second, the
-     feed 11, with the delay flat at about 160 ms over 8 s of scrolling; capped to 100 KB/s it stayed
-     flat at about 330 ms.
+     first feed 11 (PM-727) and the adaptive window 23 (PM-730), with the delay flat at about 155 ms
+     over 12 s of scrolling; capped to 1 MB/s it stayed flat at about 250 ms. Directly on this
+     computer a scroll runs at 25 to 47 frames a second (it was 15 to 20 behind the old 24 cap).
    - Mouse, touch, wheel and keys go back as JSON batches (`POST .../input`, at most 64 events) and
      are replayed with `Input.dispatch*`. Batches go out without waiting for the previous one (up
-     to 6 on their way), numbered; the server runs them in that order, and one whose predecessor
-     never arrives runs after 1 s. A tap clicks, a finger drag scrolls, and when a tap lands in a
+     to 3 on their way over HTTP/1.1, where a browser keeps 6 connections to a host and the feed and
+     acknowledgements need theirs; 8 over HTTP/2 or 3), numbered; the server runs them in that
+     order, and one whose predecessor never arrives runs after 1 s. Chrome takes about 25 ms to
+     answer each pointer move or wheel turn, so while one is on its way the next ones merge (wheel
+     deltas add up, the newest position wins); one by one, they had queued and the page kept
+     scrolling after the hand stopped. Clicks and keys wait for merged motion, so the order holds.
+     Smooth scrolling is off in the stream browser (`--disable-smooth-scrolling`): merged turns are
+     larger jumps, and Chrome animated each for up to 2 s. A tap clicks, a finger drag scrolls, and when a tap lands in a
      text field a Keyboard button appears (phones open their keyboard only from a focus inside the
      tap itself, and the answer comes after it). Double and triple clicks are counted in the panel,
      since a pointer event carries no click count. A preview in a background browser tab stops

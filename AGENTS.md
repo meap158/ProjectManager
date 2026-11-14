@@ -90,7 +90,9 @@ anything.
   denies downloads and file pickers, answers dialogs itself, caps streams at 4 and input batches at
   64 events, and serves frames and input only under `/api/` so the gates check every request.
   Frames are pushed as server-sent events (PM-727): keep the acknowledgement window, or a slow
-  link queues frames and the picture falls further behind the longer it runs.
+  link queues frames and the picture falls further behind the longer it runs. Streams run in a
+  browser of their own at a fixed 2x scale (PM-730), never the element picker's capture browser:
+  the switch changes how every tab's size is read.
 - **Never modify or delete files inside tracked projects** from ProjectManager itself. Only agent runs
   the user explicitly starts may change project files. The one other exception is a pull request
   action the user confirms in the Pull requests tab: it may delete the PR's _local_ branch, and only

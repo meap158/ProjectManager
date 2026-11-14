@@ -6,6 +6,8 @@ import { api } from '../api';
 import {
   InputQueue,
   PreviewStream,
+  frameUrl,
+  inputInFlight,
   modifiersOf,
   parseFeed,
   streamPath,
@@ -47,14 +49,27 @@ describe('streamed preview helpers', () => {
 
   it('splits frames off the pushed feed and keeps a partial event for later (PM-727)', () => {
     const state = { url: 'http://127.0.0.1:3000/' } as PreviewStreamState;
-    const one = `event: frame\ndata: ${JSON.stringify({ v: 1, state, jpeg: 'AA' })}\n\n`;
-    const two = `event: frame\r\ndata: ${JSON.stringify({ v: 2, state, jpeg: null })}\r\n\r\n`;
+    const one = `event: frame\ndata: ${JSON.stringify({ v: 1, state, image: 'AA', mime: 'image/webp' })}\n\n`;
+    const two = `event: frame\r\ndata: ${JSON.stringify({ v: 2, state, image: null })}\r\n\r\n`;
     const { frames, rest } = parseFeed(`${one}: still here\n\n${two}event: frame\ndata: {"v"`);
-    expect(frames.map((f) => [f.v, f.jpeg])).toEqual([
+    expect(frames.map((f) => [f.v, f.image])).toEqual([
       [1, 'AA'],
       [2, null],
     ]);
     expect(rest).toBe('event: frame\ndata: {"v"');
+  });
+
+  it('lets more input posts travel over HTTP/2 or 3 than over HTTP/1.1 (PM-730)', () => {
+    expect(inputInFlight('http/1.1')).toBe(3);
+    expect(inputInFlight('')).toBe(3);
+    expect(inputInFlight('h2')).toBe(8);
+    expect(inputInFlight('h3')).toBe(8);
+  });
+
+  it('builds a frame address of a known image type only (PM-730)', () => {
+    expect(frameUrl({ image: 'AA', mime: 'image/png' })).toBe('data:image/png;base64,AA');
+    expect(frameUrl({ image: 'AA' })).toBe('data:image/jpeg;base64,AA');
+    expect(frameUrl({ image: 'AA', mime: 'text/html' })).toBe('data:image/jpeg;base64,AA');
   });
 });
 
@@ -153,7 +168,7 @@ describe('PreviewStream', () => {
           start(controller) {
             controller.enqueue(
               new TextEncoder().encode(
-                `event: frame\ndata: ${JSON.stringify({ v: 3, t: 0, state, jpeg: 'AAAA' })}\n\n`,
+                `event: frame\ndata: ${JSON.stringify({ v: 3, t: 0, state, image: 'AAAA', mime: 'image/webp' })}\n\n`,
               ),
             );
             init.signal?.addEventListener('abort', () =>
@@ -188,12 +203,14 @@ describe('PreviewStream', () => {
     );
     await waitFor(() => expect(view.container.querySelector('img')).not.toBeNull());
     expect(view.container.querySelector('img')?.getAttribute('src')).toBe(
-      'data:image/jpeg;base64,AAAA',
+      'data:image/webp;base64,AAAA',
     );
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe('/api/preview-stream/s1/feed');
     expect(onLoaded).toHaveBeenCalledWith('t1');
     // Shown, so acknowledged: the server may send the next frame.
-    await waitFor(() => expect(api.previewStreamAck).toHaveBeenCalledWith('s1', 3));
+    await waitFor(() =>
+      expect(api.previewStreamAck).toHaveBeenCalledWith('s1', 3, expect.any(Number)),
+    );
     expect(api.openPreviewStream).toHaveBeenCalledWith(
       expect.objectContaining({ port: 3000, path: '/' }),
     );
@@ -214,5 +231,45 @@ describe('PreviewStream', () => {
 
     view.unmount();
     expect(api.closePreviewStream).toHaveBeenCalledWith('s1');
+  });
+
+  it('shows and acknowledges a frame only once it is decoded (PM-730)', async () => {
+    const proto = HTMLImageElement.prototype as { decode?: () => Promise<void> };
+    const original = proto.decode;
+    let finish: () => void = () => undefined;
+    const decode = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    proto.decode = decode;
+    try {
+      const view = render(
+        <PreviewStream
+          tabId="t1"
+          target={{ port: 3000, path: '/' }}
+          shown
+          title="Preview of localhost:3000"
+          control={() => undefined}
+          onState={() => undefined}
+          onLoaded={() => undefined}
+        />,
+      );
+      await waitFor(() => expect(decode).toHaveBeenCalled());
+      await new Promise((r) => setTimeout(r, 100));
+      expect(view.container.querySelector('img')).toBeNull();
+      expect(api.previewStreamAck).not.toHaveBeenCalled();
+      finish();
+      await waitFor(() =>
+        expect(api.previewStreamAck).toHaveBeenCalledWith('s1', 3, expect.any(Number)),
+      );
+      expect(view.container.querySelector('img')?.getAttribute('src')).toBe(
+        'data:image/webp;base64,AAAA',
+      );
+      view.unmount();
+    } finally {
+      proto.decode = original;
+    }
   });
 });

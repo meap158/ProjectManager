@@ -190,6 +190,11 @@ export class PreviewCapture {
   constructor(
     private dataDir: string,
     private browserPath: string | null = findBrowser(),
+    /**
+     * A browser of its own: its profile folder and extra switches. Streamed previews (PM-730) run
+     * at a fixed 2x device scale, which would change the element picker's screenshots.
+     */
+    private launchOptions: { folder?: string; args?: string[] } = {},
   ) {
     open.add(this);
     if (!exitHook) {
@@ -277,7 +282,7 @@ export class PreviewCapture {
     // A profile per server process: a restart that ended this process without cleanup (the dev
     // watcher does) leaves its browser holding its own folder, and a shared one made the next
     // browser exit at once ("The browser exited"). Folders of processes that are gone go.
-    const root = path.join(this.dataDir, 'capture-browser');
+    const root = path.join(this.dataDir, this.launchOptions.folder ?? 'capture-browser');
     const profile = path.join(root, `p${process.pid}`);
     mkdirSync(profile, { recursive: true });
     for (const name of readdirSync(root)) {
@@ -299,6 +304,7 @@ export class PreviewCapture {
         '--no-default-browser-check',
         '--disable-extensions',
         '--hide-scrollbars',
+        ...(this.launchOptions.args ?? []),
         'about:blank',
       ],
       { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true },
