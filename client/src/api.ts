@@ -82,6 +82,10 @@ async function performRequest<T>(method: string, url: string, body?: unknown): P
     // Always JSON: the server rejects non-JSON writes as a CSRF guard.
     headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
     body: method === 'GET' || method === 'DELETE' ? undefined : JSON.stringify(body ?? {}),
+    // The app list skips Chrome's HTTP cache: one request that never finished left its cache
+    // entry locked, and every later read of that URL then waited about 20 s behind it while
+    // the server answered in milliseconds (the Preview list said "Looking for local apps…").
+    cache: method === 'GET' && url.startsWith('/local-apps') ? 'no-store' : undefined,
   });
   if (!res.ok) {
     if (res.status === 401) handleSignedOut();
