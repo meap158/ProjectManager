@@ -323,6 +323,8 @@ export class Stream {
   private lastCast: string | null = null;
   /** The still (PM-730): asked for ('waiting' its first frame) or on screen ('shown'). */
   private stillMode: 'off' | 'waiting' | 'shown' = 'off';
+  private castChain: Promise<void> = Promise.resolve();
+  private castWaiting = false;
   private lastFrameAt = 0;
   private stillTimer: ReturnType<typeof setTimeout> | null = null;
   private stillWait = STILL_MS;
@@ -621,8 +623,21 @@ export class Stream {
    * (Re)starts the screencast. For motion: at the viewer's own scale over a fast link, else 1x.
    * For a still: exact (PNG) over a fast link, else WebP 90, always at the viewer's full scale.
    * Chrome sends the current picture as soon as a screencast starts, which is the still.
+   * Restarts run one at a time ("Screencast is already active" otherwise), and one already
+   * waiting covers later asks: it reads the settings when it runs.
    */
-  private async cast(): Promise<void> {
+  private cast(): Promise<void> {
+    if (this.castWaiting) return this.castChain;
+    this.castWaiting = true;
+    const run = this.castChain.then(() => {
+      this.castWaiting = false;
+      return this.restartCast();
+    });
+    this.castChain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async restartCast(): Promise<void> {
     const still = this.stillMode !== 'off';
     const scale = this.sharpMotion || still ? this.size.scale : 1;
     const params = {
@@ -646,8 +661,10 @@ export class Stream {
       try {
         await this.send('Page.startScreencast', { format: 'webp', ...params });
         return;
-      } catch {
-        this.webp = false; // An older browser without WebP frames.
+      } catch (e) {
+        // An older browser without WebP frames; any other failure is not about the format.
+        if (/already active/i.test((e as Error).message)) throw e;
+        this.webp = false;
       }
     }
     await this.send('Page.startScreencast', { format: 'jpeg', ...params });

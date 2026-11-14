@@ -18,7 +18,9 @@ import {
 
 const blocked = new Set([5180, 5181]);
 
-function fakeStream(send: (method: string) => Promise<unknown> = async () => ({})): Stream {
+function fakeStream(
+  send: (method: string, params?: unknown) => Promise<unknown> = async () => ({}),
+): Stream {
   const cdp = { on() {}, send, close() {} } as unknown as Cdp;
   const open = { port: 3000, path: '/', width: 800, height: 600, scale: 1, dark: false };
   const state = {
@@ -143,6 +145,34 @@ describe('picture quality (PM-730)', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(starts).toEqual([90, 70]);
     expect(stream.frameB64).toBe('UklGRmoving');
+    stream.end();
+  });
+
+  it('never overlaps two screencast restarts, and keeps WebP when Chrome says one is active', async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    let active = false;
+    const stream = fakeStream(async (method, params?: unknown) => {
+      await new Promise((r) => setTimeout(r, 5));
+      if (method === 'Page.stopScreencast') active = false;
+      if (method === 'Page.startScreencast') {
+        if (active) throw new Error('Screencast is already active');
+        active = true;
+        calls.push((params as { format: string }).format);
+      }
+      return {};
+    });
+    stream.onFrame('UklGRmotion');
+    await vi.advanceTimersByTimeAsync(STILL_MS + 1);
+    // The still restart is on its way when a click asks for motion frames again.
+    void stream.input(parseInput({ events: [{ type: 'key', kind: 'down', key: 'a' }] }));
+    void stream.input(parseInput({ events: [{ type: 'key', kind: 'up', key: 'a' }] }));
+    await vi.advanceTimersByTimeAsync(200);
+    // The next restart (a still once the page settles again) still sends WebP.
+    stream.onFrame('UklGRlater');
+    await vi.advanceTimersByTimeAsync(STILL_MS + 50);
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.every((f) => f === 'webp')).toBe(true);
     stream.end();
   });
 
