@@ -78,6 +78,7 @@ name. Rename and terminal controls remain available, with full names exposed in 
 Project Agents uses the selected-session shortcuts from Settings, including Continue, Restart,
 Stop/Start, Delete and Open in workspace. Alt+1 focuses its CLI; Alt+Enter toggles fullscreen while
 focus is in that pane. Editing fields, open dialogs, repeated keys and IME composition keep their keys.
+The visible orchestrator chat also uses the configured Continue shortcut through its Continue button.
 
 The orchestrator terminal composer is one bordered field with an integrated Send icon and a separate
 keyboard hint. It grows to 160px, uses a 44px mobile Send target and 16px mobile input text, and keeps

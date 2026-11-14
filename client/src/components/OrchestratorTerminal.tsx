@@ -157,7 +157,7 @@ export function OrchestratorTerminal({
         </span>
         <SessionRestartStatus session={session} />
         <fieldset disabled={busy} className="orchestrator-terminal-controls">
-          <SessionContinue session={session} onError={setError} />
+          <SessionContinue session={session} onError={setError} shortcut="session.continue" />
           <SessionToggle
             session={session}
             onStart={() => void change(() => api.startSession(session.id))}

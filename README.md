@@ -360,6 +360,7 @@ keyboard, even while its terminal has focus: <kbd>Ctrl</kbd>+<kbd>↓</kbd>/<kbd
 selection, and <kbd>Alt</kbd>+<kbd>Shift</kbd> with <kbd>P</kbd> shows it in a pane, <kbd>C</kbd>
 continues it, <kbd>R</kbd> restarts it, <kbd>S</kbd> stops or starts it and <kbd>D</kbd> deletes it
 (after asking). Change any of them under **Settings > Keyboard shortcuts**.
+The Continue shortcut also targets the visible orchestrator chat, in CLI or Chat view.
 In a project's **Agents** tab, <kbd>Alt</kbd>+<kbd>1</kbd> focuses the CLI and
 <kbd>Alt</kbd>+<kbd>Enter</kbd> toggles fullscreen.
 

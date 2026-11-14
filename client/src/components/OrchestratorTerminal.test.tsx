@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { AgentSession } from '../../../shared/types';
 import { OrchestratorTerminal } from './OrchestratorTerminal';
 import { api } from '../api';
+import { getBindings, installShortcuts } from '../shortcuts';
 vi.mock('../api', () => ({
   api: {
     stopSession: vi.fn(),
@@ -60,6 +61,23 @@ it('sends “continue” with one tap while the chat is running', async () => {
 it('hides Continue while the chat is stopped', () => {
   render(<OrchestratorTerminal session={{ ...session, status: 'exited' }} onChanged={vi.fn()} />);
   expect(screen.queryByRole('button', { name: 'Continue Master' })).toBeNull();
+});
+it('routes the configured Continue shortcut through the orchestrator chat button', async () => {
+  render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);
+  const button = screen.getByRole('button', { name: 'Continue Master' });
+  expect(button.getAttribute('aria-keyshortcuts')).toBe(getBindings()['session.continue']);
+  installShortcuts();
+  const event = new KeyboardEvent('keydown', {
+    key: 'C',
+    code: 'KeyC',
+    altKey: true,
+    shiftKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  document.body.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+  await waitFor(() => expect(api.sendSessionInput).toHaveBeenCalledWith(41, '\r'));
 });
 it('toggles full screen from the header and restores it with Escape (PM-138)', () => {
   render(<OrchestratorTerminal session={session} onChanged={vi.fn()} />);

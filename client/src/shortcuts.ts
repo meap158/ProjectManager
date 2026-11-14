@@ -55,7 +55,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     label: 'Continue the selected session',
     group: 'Selected session',
     default: 'Alt+Shift+C',
-    scope: SELECTED_WORK,
+    scope: `${SELECTED_WORK}, .orchestrator-terminal`,
   },
   {
     id: 'session.restart',
@@ -346,7 +346,7 @@ export function decide(
     const target = scope.querySelector<HTMLElement>(`[data-shortcut="${action.id}"]`);
     return {
       id: action.id,
-      target: target && !(target as HTMLButtonElement).disabled ? target : null,
+      target: target && !target.matches(':disabled') ? target : null,
     };
   }
   return handlers.has(action.id) || fallbacks.has(action.id)

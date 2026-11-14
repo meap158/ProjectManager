@@ -134,6 +134,23 @@ describe('handler', () => {
     setRecording(true);
     expect(press(document.body, continueKey)).toBeNull();
   });
+  it('uses saved Continue bindings for orchestrator chat and respects busy fieldsets', async () => {
+    document.body.innerHTML = `<section class="orchestrator-terminal">
+      <fieldset><button data-shortcut="session.continue">Continue</button></fieldset>
+      <div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div>
+      <textarea id="composer"></textarea></section>`;
+    await setShortcut('session.continue', 'Alt+K');
+    const combo = { key: 'k', code: 'KeyK', altKey: true };
+    const button = document.querySelector('button')!;
+    expect(press(document.querySelector('.xterm textarea')!, combo)?.target).toBe(button);
+    expect(press(document.querySelector('#composer')!, combo)).toBeNull();
+    document.querySelector('fieldset')!.disabled = true;
+    expect(press(document.body, combo)).toEqual({ id: 'session.continue', target: null });
+    button.remove();
+    expect(press(document.body, combo)).toEqual({ id: 'session.continue', target: null });
+    expect(press(document.body, { ...combo, repeat: true })).toBeNull();
+    expect(press(document.body, { ...combo, isComposing: true })).toBeNull();
+  });
 
   it('keeps only changed keys, and a cleared action has none', async () => {
     await setShortcut('session.restart', 'Alt+Shift+X');

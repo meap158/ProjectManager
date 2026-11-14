@@ -177,6 +177,9 @@ anything.
 
 ## Gotchas
 
+- PM-771: the visible orchestrator terminal shares the configured Continue shortcut. Route it
+  through SessionContinue and preserve text-field, dialog, repeat, IME and disabled-fieldset guards.
+
 - PM-736: remote Preview quality follows delivery queue growth, not an absolute RTT cutoff.
   Full-scale probes must back off on congestion. Only successful frame acknowledgements count;
   retries stay bounded and abort with the feed. Reopening a tab retries pushed transport.
