@@ -88,7 +88,10 @@ is not owned by one project. There are three ways to show an app:
      deltas add up, the newest position wins); one by one, they had queued and the page kept
      scrolling after the hand stopped. Clicks and keys wait for merged motion, so the order holds.
      Smooth scrolling is off in the stream browser (`--disable-smooth-scrolling`): merged turns are
-     larger jumps, and Chrome animated each for up to 2 s. A tap clicks, a finger drag scrolls, and when a tap lands in a
+     larger jumps, and Chrome animated each for up to 2 s. The panel shows the page's own cursor
+     (a hand over links, a text cursor over fields and text): after pointer moves the server reads
+     it at the pointer, at most every 100 ms and always for the last position, and sends it with the
+     page state; only plain CSS keywords pass, so an image cursor shows the arrow. A tap clicks, a finger drag scrolls, and when a tap lands in a
      text field a Keyboard button appears (phones open their keyboard only from a focus inside the
      tap itself, and the answer comes after it). Double and triple clicks are counted in the panel,
      since a pointer event carries no click count. A preview in a background browser tab stops
