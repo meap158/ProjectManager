@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -99,6 +99,51 @@ function siblingScript(name: string): string {
   return file.includes(`${path.sep}dist${path.sep}`)
     ? path.resolve(path.dirname(file), `../../scripts/${name}`)
     : file;
+}
+
+/** Write Antigravity's add-dir MCP config inside dataDir so tracked repos stay clean. */
+function ensureAntigravityMcpConfig(dataDir: string, args: string[]): string {
+  const mcpDir = path.join(dataDir, 'antigravity-mcp');
+  const configDir = path.join(mcpDir, '.agents');
+  const configPath = path.join(configDir, 'mcp_config.json');
+  // The server inherits PM_BOARD_TOKEN from agy's process env, so keep secrets out of this file.
+  const desired = `${JSON.stringify(
+    {
+      mcpServers: {
+        projectmanager: {
+          command: process.execPath,
+          args,
+        },
+      },
+    },
+    null,
+    2,
+  )}\n`;
+  let current: string | null = null;
+  try {
+    current = readFileSync(configPath, 'utf8');
+  } catch {
+    /* First launch or removed config. */
+  }
+  if (current !== desired) {
+    mkdirSync(configDir, { recursive: true });
+    const tmpPath = path.join(
+      configDir,
+      `.mcp_config.${process.pid}.${randomBytes(4).toString('hex')}.tmp`,
+    );
+    try {
+      writeFileSync(tmpPath, desired, 'utf8');
+      renameSync(tmpPath, configPath);
+    } catch (err) {
+      try {
+        unlinkSync(tmpPath);
+      } catch {
+        /* Best-effort cleanup of temp file. */
+      }
+      throw err;
+    }
+  }
+  return mcpDir;
 }
 
 /** Inject per-process stdio configuration, without changing a project's/global CLI config. */
@@ -229,6 +274,24 @@ export function boardConnection(
         'mcp_servers.projectmanager.env_vars=["PM_BOARD_TOKEN"]',
         ...command.slice(1),
       ],
+      env: nextEnv,
+    };
+  }
+  if (providerId === 'antigravity') {
+    // agy has no --mcp-config and rejects mcpServers in --settings, so point --add-dir at a
+    // ProjectManager-owned folder holding .agents/mcp_config.json without touching tracked repos or
+    // ~/.gemini. Like Claude runs (PM-419), headless agy -p runs auto-deny MCP tools unless allowed.
+    const mcpDir = ensureAntigravityMcpConfig(dataDir, args);
+    // Lowercase the Windows drive letter in --add-dir so agy sorts it after uppercase project
+    // workspaces when picking Command Working Directory.
+    const addDir = mcpDir.replace(/^([A-Z]):/, (_, drive: string) => `${drive.toLowerCase()}:`);
+    const hasSettings = command.some((a) => a === '--settings' || a.startsWith('--settings='));
+    const allow =
+      owner.kind === 'run' && !hasSettings
+        ? ['--settings', JSON.stringify({ permissions: { allow: ['mcp(projectmanager/*)'] } })]
+        : [];
+    return {
+      command: [command[0]!, '--add-dir', addDir, ...allow, ...command.slice(1)],
       env: nextEnv,
     };
   }

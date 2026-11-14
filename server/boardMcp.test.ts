@@ -1,4 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -112,14 +114,31 @@ describe('card-scoped board MCP', () => {
     const previous = process.env.CLAUDE_CONFIG_DIR;
     process.env.CLAUDE_CONFIG_DIR = path.join(dataDir, 'claude-home');
     try {
-      for (const provider of ['claude', 'codex', 'opencode']) {
-        const result = boardConnection(db, dataDir, owner, provider, [provider, 'hello'], {
+      for (const provider of ['claude', 'codex', 'opencode', 'antigravity']) {
+        const bin = provider === 'antigravity' ? 'agy' : provider;
+        const result = boardConnection(db, dataDir, owner, provider, [bin, 'hello'], {
           OPENCODE_CONFIG_CONTENT: '{"model":"existing"}',
         });
         expect(result.env.PM_BOARD_TOKEN).toHaveLength(64);
         expect(result.command.join(' ')).not.toContain(result.env.PM_BOARD_TOKEN);
         if (provider === 'opencode')
           expect(JSON.parse(result.env.OPENCODE_CONFIG_CONTENT!).model).toBe('existing');
+        if (provider === 'antigravity') {
+          const mcpDir = path.join(dataDir, 'antigravity-mcp');
+          const addDir = mcpDir.replace(/^([A-Z]):/, (_, d: string) => `${d.toLowerCase()}:`);
+          expect(result.command).toEqual(['agy', '--add-dir', addDir, 'hello']);
+          if (/^[A-Za-z]:/.test(dataDir)) expect(result.command[2]).toMatch(/^[a-z]:/);
+          const rawConfig = readFileSync(path.join(mcpDir, '.agents', 'mcp_config.json'), 'utf8');
+          expect(rawConfig).not.toContain(result.env.PM_BOARD_TOKEN);
+          const parsed = JSON.parse(rawConfig) as {
+            mcpServers: { projectmanager: { command: string; args: string[]; env?: unknown } };
+          };
+          expect(parsed.mcpServers.projectmanager.command).toBe(process.execPath);
+          expect(parsed.mcpServers.projectmanager.args[0]).toMatch(/board-mcp\.mjs$/);
+          expect(parsed.mcpServers.projectmanager.args[1]).toBe(dataDir);
+          expect(parsed.mcpServers.projectmanager.env).toBeUndefined();
+          expect(readdirSync(path.join(mcpDir, '.agents'))).toEqual(['mcp_config.json']);
+        }
       }
     } finally {
       db.close();
@@ -149,6 +168,192 @@ describe('card-scoped board MCP', () => {
       db.close();
       if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
       else process.env.CLAUDE_CONFIG_DIR = previous;
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('allows projectmanager MCP tools for one-shot Antigravity runs without altering existing settings', () => {
+    const { db } = setup();
+    const dataDir = mkdtempSync(path.join(os.tmpdir(), 'pm-board-agy-allow-'));
+    try {
+      const mcpDir = path.join(dataDir, 'antigravity-mcp');
+      const addDir = mcpDir.replace(/^([A-Z]):/, (_, d: string) => `${d.toLowerCase()}:`);
+      const run = boardConnection(
+        db,
+        dataDir,
+        { kind: 'run', id: 1, logPath: 'log-run' },
+        'antigravity',
+        ['agy', '-p', 'task'],
+        {},
+      ).command;
+      expect(run.slice(0, 3)).toEqual(['agy', '--add-dir', addDir]);
+      expect(JSON.parse(run[run.indexOf('--settings') + 1]!)).toEqual({
+        permissions: { allow: ['mcp(projectmanager/*)'] },
+      });
+      expect(run.slice(-2)).toEqual(['-p', 'task']);
+
+      const session = boardConnection(
+        db,
+        dataDir,
+        { kind: 'session', id: 1, logPath: 'log-session' },
+        'antigravity',
+        ['agy', '-i', 'hello'],
+        {},
+      ).command;
+      expect(session).toEqual(['agy', '--add-dir', addDir, '-i', 'hello']);
+      expect(session).not.toContain('--settings');
+
+      const custom = boardConnection(
+        db,
+        dataDir,
+        { kind: 'run', id: 1, logPath: 'log-custom' },
+        'antigravity',
+        ['agy', '--settings', '{"custom":true}', '-p', 'task'],
+        {},
+      ).command;
+      expect(custom).toEqual([
+        'agy',
+        '--add-dir',
+        addDir,
+        '--settings',
+        '{"custom":true}',
+        '-p',
+        'task',
+      ]);
+    } finally {
+      db.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('spawns a working board-mcp stdio bridge from the generated Antigravity config', async () => {
+    const { db, card } = setup();
+    const dataDir = mkdtempSync(path.join(os.tmpdir(), 'pm-board-agy-bridge-'));
+    const bridgeApp = new Hono();
+    registerBoardMcp(bridgeApp, db, dataDir, undefined, new SopStore(null));
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      req.on('end', () => {
+        void bridgeApp
+          .request((req.url || '/api/board-mcp').replace(/^\/api/, ''), {
+            method: req.method || 'POST',
+            headers: Object.fromEntries(
+              Object.entries(req.headers).map(([k, v]) => [
+                k,
+                Array.isArray(v) ? v.join(', ') : v || '',
+              ]),
+            ),
+            body: Buffer.concat(chunks),
+          })
+          .then(async (response) => {
+            res.statusCode = response.status;
+            res.setHeader(
+              'content-type',
+              response.headers.get('content-type') || 'application/json',
+            );
+            res.end(await response.text());
+          })
+          .catch((err) => {
+            res.statusCode = 500;
+            res.end(String(err));
+          });
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('expected TCP port');
+    writeFileSync(
+      path.join(dataDir, 'server.json'),
+      JSON.stringify({ url: `http://127.0.0.1:${address.port}` }),
+      'utf8',
+    );
+    try {
+      const connection = boardConnection(
+        db,
+        dataDir,
+        { kind: 'session', id: 1, logPath: 'test-log' },
+        'antigravity',
+        ['agy', '-i', 'hello'],
+        {},
+      );
+      const cfg = JSON.parse(
+        readFileSync(path.join(dataDir, 'antigravity-mcp', '.agents', 'mcp_config.json'), 'utf8'),
+      ) as { mcpServers: { projectmanager: { command: string; args: string[] } } };
+      const child = spawn(
+        cfg.mcpServers.projectmanager.command,
+        cfg.mcpServers.projectmanager.args,
+        {
+          env: { ...process.env, ...connection.env },
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      );
+      try {
+        const responses = new Map<number, { result?: unknown; error?: unknown }>();
+        let buffer = '';
+        child.stdout.setEncoding('utf8');
+        child.stdout.on('data', (chunk: string) => {
+          buffer += chunk;
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const msg = JSON.parse(line) as { id?: number; result?: unknown; error?: unknown };
+            if (typeof msg.id === 'number') responses.set(msg.id, msg);
+          }
+        });
+        const waitForId = (id: number) =>
+          new Promise<{ result?: unknown; error?: unknown }>((resolve, reject) => {
+            const timer = setTimeout(
+              () => reject(new Error(`Timed out waiting for response ${id}`)),
+              5000,
+            );
+            const check = setInterval(() => {
+              const hit = responses.get(id);
+              if (hit) {
+                clearInterval(check);
+                clearTimeout(timer);
+                resolve(hit);
+              }
+            }, 20);
+          });
+        child.stdin.write(
+          `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })}\n`,
+        );
+        await waitForId(1);
+        child.stdin.write(
+          `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,
+        );
+        child.stdin.write(
+          `${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })}\n`,
+        );
+        const listReply = await waitForId(2);
+        expect(listReply.error).toBeUndefined();
+        const listed = (listReply.result as { tools: Array<{ name: string }> }).tools.map(
+          (t) => t.name,
+        );
+        expect(listed).toContain('add_note');
+        child.stdin.write(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            id: 3,
+            method: 'tools/call',
+            params: { name: 'add_note', arguments: { note: 'Via Antigravity bridge' } },
+          })}\n`,
+        );
+        const reply = await waitForId(3);
+        expect(reply.error).toBeUndefined();
+        const result = reply.result as { isError?: boolean; content: Array<{ text: string }> };
+        expect(result.isError).toBeUndefined();
+        expect(getCard(db, card.id)?.description).toContain('Via Antigravity bridge');
+        child.stdin.end();
+        await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+      } finally {
+        if (child.exitCode === null) child.kill();
+      }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      db.close();
       rmSync(dataDir, { recursive: true, force: true });
     }
   });
