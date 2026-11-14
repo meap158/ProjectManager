@@ -349,6 +349,13 @@ export function createApp(
   // computer instead of the path mode, which cannot load most apps there (see previewStream.ts).
   // Every listener may use it: the gates have already signed the viewer in.
   // A browser of its own (PM-730): it renders at 2x for sharp frames on high-density screens.
+  // Streams refuse the element picker's browser's DevTools port as well as their own.
+  const streamBlocked = () => {
+    const blocked = ownPorts();
+    const picker = capture.devtoolsPort;
+    if (picker) blocked.add(picker);
+    return blocked;
+  };
   const streams = new PreviewStreams(
     new PreviewCapture(
       options.dataDir ?? path.join(os.tmpdir(), 'projectmanager-capture'),
@@ -358,7 +365,7 @@ export function createApp(
         args: STREAM_BROWSER_ARGS,
       },
     ),
-    ownPorts,
+    streamBlocked,
   );
   app.get('/preview-stream', (c) => c.json({ available: streams.available }));
   app.post('/preview-stream', async (c) =>

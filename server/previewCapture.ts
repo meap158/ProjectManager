@@ -17,6 +17,17 @@ const IDLE_MS = 3 * 60_000;
 const CAPTURE_TIMEOUT_MS = 25_000;
 
 /** The browser to drive: Chrome, else Edge (every Windows has it), else Chromium on Linux. */
+/** The port of a DevTools address ("http://127.0.0.1:9222"), or null. */
+export function devtoolsPortOf(http: string | null): number | null {
+  if (!http) return null;
+  try {
+    const port = Number(new URL(http).port);
+    return Number.isInteger(port) && port > 0 ? port : null;
+  } catch {
+    return null;
+  }
+}
+
 export function findBrowser(env: NodeJS.ProcessEnv = process.env): string | null {
   const candidates =
     process.platform === 'win32'
@@ -207,6 +218,11 @@ export class PreviewCapture {
 
   get available(): boolean {
     return this.browserPath !== null;
+  }
+
+  /** The DevTools port of this browser while it runs (streams must never reach another's). */
+  get devtoolsPort(): number | null {
+    return devtoolsPortOf(this.http);
   }
 
   /** One capture at a time: later ones wait their turn. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normaliseCapture, onTheApp } from './previewCapture.js';
+import { devtoolsPortOf, normaliseCapture, onTheApp } from './previewCapture.js';
 
 describe('preview capture (PM-311)', () => {
   it("keeps a request on the app: clamped sizes, a path on it, never this app's ports", () => {
@@ -65,5 +65,14 @@ describe('preview capture (PM-311)', () => {
     expect(onTheApp('https://evil.example/', 3000)).toBe(false);
     expect(onTheApp('http://10.0.0.5:3000/', 3000)).toBe(false);
     expect(onTheApp('file:///C:/secret.txt', 3000)).toBe(false);
+  });
+});
+
+describe('devtoolsPortOf (PM-730)', () => {
+  // Streams block the element picker's browser's DevTools port (it runs separately since PM-730).
+  it('reads the port of a DevTools address', () => {
+    expect(devtoolsPortOf('http://127.0.0.1:53211')).toBe(53211);
+    expect(devtoolsPortOf(null)).toBeNull();
+    expect(devtoolsPortOf('not a url')).toBeNull();
   });
 });
