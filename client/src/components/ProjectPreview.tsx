@@ -223,6 +223,28 @@ function readSort(): PreviewSort {
   return 'port';
 }
 
+const APPS_KEY = 'pm.preview.apps';
+
+/** The last list this browser saw: shown at once while the first scan answers, so a slow link
+ * (LAN, remote) shows apps instead of "Looking for local apps…". The scan replaces it. */
+function readApps(): LocalApp[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(APPS_KEY) ?? 'null');
+    if (Array.isArray(saved)) return saved.slice(0, 100) as LocalApp[];
+  } catch {
+    // Storage unavailable or damaged: start empty.
+  }
+  return [];
+}
+
+function saveApps(apps: LocalApp[]): void {
+  try {
+    localStorage.setItem(APPS_KEY, JSON.stringify(apps));
+  } catch {
+    // Storage unavailable: nothing is remembered.
+  }
+}
+
 function readOpen(): Partial<Record<GroupKey, boolean>> {
   try {
     const saved = JSON.parse(localStorage.getItem(OPEN_KEY) ?? 'null') as Record<
@@ -373,7 +395,7 @@ export function PreviewWorkspace() {
    * shows the page again. Desktop always shows both, so this never applies there.
    */
   const [listing, setListing] = useState(false);
-  const [apps, setApps] = useState<LocalApp[]>([]);
+  const [apps, setApps] = useState<LocalApp[]>(readApps);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [launches, setLaunches] = useState<PreviewLaunch[]>([]);
@@ -402,7 +424,10 @@ export function PreviewWorkspace() {
     setRefreshing(true);
     return api
       .localApps(fresh)
-      .then((r) => setApps(r.apps))
+      .then((r) => {
+        setApps(r.apps);
+        saveApps(r.apps);
+      })
       .catch(() => undefined)
       .finally(() => {
         setLoaded(true);
