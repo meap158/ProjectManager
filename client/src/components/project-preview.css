@@ -18,6 +18,11 @@
   overflow-x: hidden;
   padding: 6px;
 }
+/* The sort menu opens over the panel: while it is open the panel stops clipping, or a short list
+   (or an empty one, as on a phone) cuts the menu down to its first row. */
+.preview-list-panel:has(.dropdown-trigger.is-open) {
+  overflow: visible;
+}
 .preview-group + .preview-group {
   margin-top: 8px;
 }
