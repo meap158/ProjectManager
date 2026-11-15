@@ -271,6 +271,43 @@
     min-width: 0;
     margin: 0;
   }
+  /* A badge (usage limit) plus the Chat/CLI switch and three buttons left the name 26px wide and
+     pushed Close off the edge. The name and Close are the controls that must always show, so with
+     a badge present they share the first row and the rest moves to a second one (the empty
+     ::after is the line break). Without a badge everything fits on one row as before. */
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge) {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge) > .pane-identity {
+    order: 1;
+    flex: 1 1 7rem;
+    min-width: 7rem;
+  }
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge) > .project-terminal-close {
+    order: 2;
+  }
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge)::after {
+    content: '';
+    order: 3;
+    flex: 0 0 100%;
+    height: 0;
+  }
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge) > .badge,
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge) > .session-restart-status {
+    order: 4;
+  }
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge) > .view-switch,
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge) > .session-view-switch {
+    order: 5;
+  }
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge) > .project-actions-toggle {
+    order: 6;
+    margin-left: auto;
+  }
+  .project-cli-dock > .pane .project-terminal-head:has(> .badge) > .project-terminal-max {
+    order: 7;
+  }
   /* The name gets the room the controls leave (the desktop cap at half the width left "Co…"). */
   .project-terminal-head > .pane-identity > .inline-rename {
     max-width: none;
