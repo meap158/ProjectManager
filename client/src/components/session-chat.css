@@ -134,9 +134,13 @@
   background: var(--danger);
 }
 .chat-tool-name {
-  flex: none;
+  /* A long name (an MCP tool) shrinks and wraps; it never pushes the row past the screen. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   font-weight: 600;
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 .chat-tool-summary {
   min-width: 0;

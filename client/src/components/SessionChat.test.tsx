@@ -937,3 +937,15 @@ describe('live panel for OpenCode, Grok and Antigravity (PM-190)', () => {
     expect(screenInfo('Build · passed in 3s', 'claude').model).toBeNull();
   });
 });
+
+describe('toolLabel (PM-802)', () => {
+  it('shows an MCP tool as server › tool so a narrow row can wrap it, and leaves other names alone', async () => {
+    const { toolLabel } = await import('./SessionChat');
+    expect(toolLabel('mcp__claude-in-chrome__tabs_context_mcp')).toBe(
+      'claude-in-chrome › tabs_context_mcp',
+    );
+    expect(toolLabel('mcp__projectmanager__get_card')).toBe('projectmanager › get_card');
+    expect(toolLabel('Bash')).toBe('Bash');
+    expect(toolLabel('mcp__broken')).toBe('mcp__broken');
+  });
+});

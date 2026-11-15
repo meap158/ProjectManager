@@ -364,6 +364,14 @@ function SubagentSteps({ toolId }: { toolId: string }) {
   );
 }
 
+/** A tool's name as shown (PM-802): an MCP tool "mcp__claude-in-chrome__tabs_context_mcp" reads
+ * "claude-in-chrome › tabs_context_mcp", which can wrap at the separator on a narrow screen. */
+export function toolLabel(name: string | undefined): string {
+  if (!name) return '';
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
+  return mcp ? `${mcp[1]} › ${mcp[2]}` : name;
+}
+
 const ToolCall = memo(function ToolCall({ entry }: { entry: Entry }) {
   const { item, result } = entry;
   const state = !result ? 'running' : result.isError ? 'error' : 'done';
@@ -373,7 +381,9 @@ const ToolCall = memo(function ToolCall({ entry }: { entry: Entry }) {
     <details className={`chat-tool is-${state}`}>
       <summary>
         <span className="chat-tool-state" aria-label={state} />
-        <span className="chat-tool-name">{item.name}</span>
+        <span className="chat-tool-name" title={item.name}>
+          {toolLabel(item.name)}
+        </span>
         <span className="chat-tool-summary">{item.summary}</span>
       </summary>
       {diff ? (
@@ -604,7 +614,7 @@ const Steps = memo(function Steps({ steps }: { steps: Entry[] }) {
   const latest = steps.at(-1)!;
   const running = steps.some((s) => !s.result);
   const failed = steps.some((s) => s.result?.isError);
-  const tools = [...new Set(steps.map((s) => s.item.name))].slice(0, 4).join(', ');
+  const tools = [...new Set(steps.map((s) => toolLabel(s.item.name)))].slice(0, 4).join(', ');
   return (
     <details className={`chat-steps is-${running ? 'running' : failed ? 'error' : 'done'}`}>
       <summary>
