@@ -197,6 +197,88 @@
   border-radius: 10px;
   background: var(--accent-soft);
 }
+/* The question as text (PM-801): proportional type at reading size, each option a row with its
+   number, label and description stacked, not a monospace screen dump in a scrolling box. */
+.chat-ask-header {
+  display: inline-block;
+  margin: 4px 0 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.chat-ask-question {
+  margin: 6px 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.chat-ask-options {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chat-ask-options li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 1px 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.chat-ask-options li.is-current {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.chat-ask-number {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.chat-ask-label {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.chat-ask-desc {
+  grid-column: 2;
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.chat-ask-hint {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.chat-ask-raw {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.chat-ask-raw summary {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
 
 .chat-new {
   position: absolute;
@@ -864,5 +946,14 @@
 .chat-live,
 .chat-prompt-screen {
   max-width: 100%;
+  overflow-wrap: anywhere;
+}
+/* A question already asked (PM-801): the same readable rows, a little space between questions. */
+.chat-question > div + div {
+  margin-top: 12px;
+}
+.chat-question .chat-card-title {
+  font-size: 15px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }

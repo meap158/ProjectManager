@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type MutableRefObject,
@@ -12,6 +13,7 @@ import {
 } from 'react';
 import type { AgentSession, ChatItem, SlashCommand } from '../../../shared/types';
 import { api } from '../api';
+import { parseAsk } from '../askScreen';
 import { serialPoll } from '../lib/serialPoll';
 import { prepareImage, type PasteTarget } from '../sessionImages';
 import './session-chat.css';
@@ -482,6 +484,41 @@ export function questions(input: string | undefined): Question[] | null {
   }
 }
 
+/** What the CLI is asking, as readable text: the question, then each option with its description
+ * (PM-801). A screen that is not a numbered menu stays as it was drawn. */
+function AskBody({ screen }: { screen: string }) {
+  const parsed = useMemo(() => parseAsk(screen), [screen]);
+  // The drawn screen is only in the page while it is open (the text would otherwise appear twice).
+  const [raw, setRaw] = useState(false);
+  if (!screen) return <pre className="chat-code">Reading the screen…</pre>;
+  if (!parsed) return <pre className="chat-code">{screen}</pre>;
+  return (
+    <>
+      {parsed.header && <span className="chat-ask-header">{parsed.header}</span>}
+      {parsed.question && <p className="chat-ask-question">{parsed.question}</p>}
+      <ol className="chat-ask-options">
+        {parsed.options.map((op) => (
+          <li key={op.number} className={op.current ? 'is-current' : undefined}>
+            <span className="chat-ask-number" aria-hidden="true">
+              {op.number}
+            </span>
+            <span className="chat-ask-label">
+              {op.label}
+              {op.current && <span className="sr-only"> (highlighted)</span>}
+            </span>
+            {op.description && <span className="chat-ask-desc">{op.description}</span>}
+          </li>
+        ))}
+      </ol>
+      {parsed.hint && <p className="chat-ask-hint">{parsed.hint}</p>}
+      <details className="chat-ask-raw" onToggle={(e) => setRaw(e.currentTarget.open)}>
+        <summary>Show the screen as drawn</summary>
+        {raw && <pre className="chat-code">{screen}</pre>}
+      </details>
+    </>
+  );
+}
+
 const SpeakingTool = memo(function SpeakingTool({ entry }: { entry: Entry }) {
   const { item, result } = entry;
   if (item.name === 'AskUserQuestion') {
@@ -492,11 +529,14 @@ const SpeakingTool = memo(function SpeakingTool({ entry }: { entry: Entry }) {
         {asked.map((q, i) => (
           <div key={i}>
             <div className="chat-card-title">{q.question}</div>
-            <ol className="chat-question-options">
+            <ol className="chat-ask-options">
               {q.options.map((op, j) => (
                 <li key={j}>
-                  <span className="chat-question-label">{op.label}</span>
-                  {op.description && <span className="faint"> · {op.description}</span>}
+                  <span className="chat-ask-number" aria-hidden="true">
+                    {j + 1}
+                  </span>
+                  <span className="chat-ask-label">{op.label}</span>
+                  {op.description && <span className="chat-ask-desc">{op.description}</span>}
                 </li>
               ))}
             </ol>
@@ -1412,7 +1452,7 @@ export function SessionChat({
           {asking && (
             <div className="chat-asking" role="status">
               <div className="chat-tool-label">The CLI is asking:</div>
-              <pre className="chat-code">{screen || 'Reading the screen…'}</pre>
+              <AskBody screen={screen} />
             </div>
           )}
         </div>
