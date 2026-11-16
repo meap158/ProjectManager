@@ -15,7 +15,7 @@ import type { AgentSession, ChatItem, SlashCommand } from '../../../shared/types
 import { api } from '../api';
 import { parseAsk } from '../askScreen';
 import { serialPoll } from '../lib/serialPoll';
-import { prepareImage, type PasteTarget } from '../sessionImages';
+import { droppedFiles, isImageFile, prepareImage, type PasteTarget } from '../sessionImages';
 import './session-chat.css';
 
 // Chat view of an agent session (mobile). A terminal UI is heavy on a phone: xterm redraws a
@@ -837,23 +837,8 @@ export function rankCommands(commands: SlashCommand[], query: string, limit = 8)
     .map((x) => x.c);
 }
 
-/**
- * Image files on a paste or drop (PM-130): from `files`, or from `items` when that's all there
- * is (iPhone Safari often puts a pasted image only in `items`).
- */
-export function droppedFiles(data: DataTransfer | null): File[] {
-  if (!data) return [];
-  const files = [...data.files];
-  if (files.length) return files;
-  return [...data.items]
-    .filter((item) => item.kind === 'file')
-    .map((item) => item.getAsFile())
-    .filter((f): f is File => !!f);
-}
-
-/** An image by its type, or by its name when the type is missing (iOS sometimes sends none). */
-export const isImageFile = (f: File) =>
-  f.type.startsWith('image/') || (!f.type && /\.(png|jpe?g|gif|webp|heic|heif)$/i.test(f.name));
+// Both moved to sessionImages.ts so the orchestrator's message box can use them too (PM-929).
+export { droppedFiles, isImageFile };
 
 /**
  * An image waiting in the composer, its path pasted into the CLI when sent. It shows the moment

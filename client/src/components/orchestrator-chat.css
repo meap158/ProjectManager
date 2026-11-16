@@ -821,3 +821,31 @@ dialog.confirm-dialog.goal-dialog {
 .orchestrator-goal-achieve:hover:not(:disabled) {
   background: color-mix(in srgb, var(--good) 14%, var(--surface));
 }
+/* Images in the message box (PM-929): the tray spans the box, the buttons sit side by side. */
+.terminal-composer-images {
+  grid-column: 1 / -1;
+  padding: 0;
+}
+.terminal-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.terminal-composer-actions .terminal-composer-send {
+  margin-bottom: 4px;
+}
+.terminal-composer-image {
+  color: var(--text-2);
+}
+.terminal-composer.is-dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.terminal-composer-hint.is-error {
+  color: var(--danger);
+}
+@media (max-width: 640px), (pointer: coarse) {
+  .terminal-composer-actions .terminal-composer-send {
+    margin-bottom: 0;
+  }
+}

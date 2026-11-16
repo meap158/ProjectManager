@@ -5,6 +5,24 @@ import { api } from './api';
 // browser, uploaded to ProjectManager's data folder, and its path pasted into the session, which
 // Claude Code and Codex attach as an image.
 
+/**
+ * Image files on a paste or drop (PM-130): from `files`, or from `items` when that's all there
+ * is (iPhone Safari often puts a pasted image only in `items`).
+ */
+export function droppedFiles(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const files = [...data.files];
+  if (files.length) return files;
+  return [...data.items]
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.getAsFile())
+    .filter((f): f is File => !!f);
+}
+
+/** An image by its type, or by its name when the type is missing (iOS sometimes sends none). */
+export const isImageFile = (f: File) =>
+  f.type.startsWith('image/') || (!f.type && /\.(png|jpe?g|gif|webp|heic|heif)$/i.test(f.name));
+
 const SENDABLE = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 /** Larger photos are re-encoded: smaller uploads over Wi-Fi, and CLIs downscale anyway. */
 const KEEP_BYTES = 2.5 * 1024 * 1024;
