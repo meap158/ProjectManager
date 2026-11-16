@@ -76,7 +76,9 @@ export function TerminalComposer({
   const files = useRef(new Map<number, File>());
   const uploads = useRef<Promise<void>>(Promise.resolve());
   const latest = useRef<Attachment[]>([]);
-  latest.current = attachments;
+  useEffect(() => {
+    latest.current = attachments;
+  }, [attachments]);
   useEffect(() => saveDraft(sessionId, text), [sessionId, text]);
   // Previews are object URLs: give the memory back when the box goes away.
   useEffect(
