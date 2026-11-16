@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { api } from '../api';
 import { droppedFiles, isImageFile, prepareImage } from '../sessionImages';
+import { Lightbox } from './Lightbox';
 import './session-chat.css';
 
 // A message box under a CLI terminal (PM-726). What you write here stays in this page until you
@@ -70,6 +71,8 @@ export function TerminalComposer({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [imageError, setImageError] = useState('');
   const [dragging, setDragging] = useState(false);
+  /** The thumbnail open in the lightbox (PM-929), by attachment id. */
+  const [viewing, setViewing] = useState<number | null>(null);
   const sendLock = useRef(false);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -96,6 +99,8 @@ export function TerminalComposer({
     box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
   }, [text]);
 
+  const viewIndex = attachments.findIndex((a) => a.id === viewing);
+  const shown = viewIndex >= 0 ? attachments[viewIndex] : undefined;
   const uploading = attachments.some((a) => a.status === 'uploading');
   const ready = attachments.filter((a) => a.status === 'ready');
 
@@ -149,6 +154,7 @@ export function TerminalComposer({
 
   const remove = (key: number) => {
     files.current.delete(key);
+    setViewing((current) => (current === key ? null : current));
     setAttachments((prev) => {
       const gone = prev.find((a) => a.id === key);
       if (gone) URL.revokeObjectURL(gone.preview);
@@ -225,7 +231,15 @@ export function TerminalComposer({
               title={a.name}
               aria-busy={a.status === 'uploading'}
             >
-              <img src={a.preview} alt={a.name} />
+              <button
+                type="button"
+                className="chat-attachment-open"
+                aria-label={`View ${a.name} larger`}
+                title="View larger"
+                onClick={() => setViewing(a.id)}
+              >
+                <img src={a.preview} alt={a.name} />
+              </button>
               {a.status === 'uploading' && (
                 <span className="chat-attachment-state" role="status">
                   <span className="spinner" aria-hidden="true" />
@@ -328,6 +342,15 @@ export function TerminalComposer({
           )}
         </button>
       </span>
+      <Lightbox
+        src={shown?.preview ?? null}
+        alt={shown?.name ?? ''}
+        onClose={() => setViewing(null)}
+        {...(viewIndex > 0 ? { onPrevious: () => setViewing(attachments[viewIndex - 1]!.id) } : {})}
+        {...(viewIndex >= 0 && viewIndex < attachments.length - 1
+          ? { onNext: () => setViewing(attachments[viewIndex + 1]!.id) }
+          : {})}
+      />
       {imageError && (
         <span className="terminal-composer-hint is-error" role="alert">
           {imageError}

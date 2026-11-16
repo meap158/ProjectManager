@@ -971,3 +971,18 @@
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
+
+/* A thumbnail opens larger in the lightbox (PM-929): a real button around the picture. */
+.chat-attachment-open {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.chat-attachment-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}

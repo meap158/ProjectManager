@@ -14,6 +14,7 @@ import {
 import type { AgentSession, ChatItem, SlashCommand } from '../../../shared/types';
 import { api } from '../api';
 import { parseAsk } from '../askScreen';
+import { Lightbox } from './Lightbox';
 import { serialPoll } from '../lib/serialPoll';
 import { droppedFiles, isImageFile, prepareImage, type PasteTarget } from '../sessionImages';
 import './session-chat.css';
@@ -1001,6 +1002,8 @@ export function SessionChat({
   /** The upload queue: images are prepared and sent in order, one at a time. */
   const uploads = useRef<Promise<void>>(Promise.resolve());
   const picker = useRef<HTMLInputElement>(null);
+  /** The thumbnail open in the lightbox (PM-929), by attachment id. */
+  const [viewing, setViewing] = useState<number | null>(null);
   /** Why the last image couldn't be added, shown beside the composer (PM-130). */
   const [imageError, setImageError] = useState('');
   const upload = async (key: number, file: File) => {
@@ -1091,6 +1094,7 @@ export function SessionChat({
   }, [pasteRef]);
   const removeAttachment = (key: number) => {
     pickedFiles.current.delete(key);
+    setViewing((current) => (current === key ? null : current));
     setAttachments((prev) => {
       const gone = prev.find((a) => a.id === key);
       if (gone?.preview) URL.revokeObjectURL(gone.preview);
@@ -1505,6 +1509,13 @@ export function SessionChat({
             </button>
           </p>
         )}
+        {viewing !== null && (
+          <Lightbox
+            src={attachments.find((a) => a.id === viewing)?.preview ?? null}
+            alt={attachments.find((a) => a.id === viewing)?.name ?? ''}
+            onClose={() => setViewing(null)}
+          />
+        )}
         {attachments.length > 0 && (
           <div className="chat-attachments" aria-label="Images to send">
             {attachments.map((a) => (
@@ -1514,7 +1525,19 @@ export function SessionChat({
                 title={a.name}
                 aria-busy={a.status === 'uploading'}
               >
-                {a.preview ? <img src={a.preview} alt={a.name} /> : <span>{a.name}</span>}
+                {a.preview ? (
+                  <button
+                    type="button"
+                    className="chat-attachment-open"
+                    aria-label={`View ${a.name} larger`}
+                    title="View larger"
+                    onClick={() => setViewing(a.id)}
+                  >
+                    <img src={a.preview} alt={a.name} />
+                  </button>
+                ) : (
+                  <span>{a.name}</span>
+                )}
                 {a.status === 'uploading' && (
                   <span className="chat-attachment-state" role="status">
                     <span className="spinner" aria-hidden="true" />

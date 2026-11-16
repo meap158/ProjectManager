@@ -112,3 +112,26 @@ describe('TerminalComposer images (PM-929)', () => {
     expect(api.uploadSessionImage).not.toHaveBeenCalled();
   });
 });
+
+describe('TerminalComposer lightbox (PM-929)', () => {
+  it('opens a thumbnail larger in a lightbox and closes it again', async () => {
+    HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+      this.removeAttribute('open');
+      this.dispatchEvent(new Event('close'));
+    };
+    vi.mocked(api.uploadSessionImage).mockResolvedValue({ path: 'D:/data/shot.png' } as never);
+    render(<TerminalComposer sessionId={4} disabled={false} onError={() => undefined} />);
+    const box = screen.getByLabelText('Message to the chat');
+    const file = new File([new Uint8Array([137, 80, 78, 71])], 'shot.png', { type: 'image/png' });
+    fireEvent.paste(box, { clipboardData: { files: [file], items: [] } });
+    fireEvent.click(await screen.findByRole('button', { name: 'View shot.png larger' }));
+    const dialog = document.querySelector('dialog.lightbox') as HTMLDialogElement;
+    await waitFor(() => expect(dialog.hasAttribute('open')).toBe(true));
+    expect(dialog.querySelector('img')?.getAttribute('alt')).toBe('shot.png');
+    fireEvent.click(dialog);
+    await waitFor(() => expect(dialog.hasAttribute('open')).toBe(false));
+  });
+});
