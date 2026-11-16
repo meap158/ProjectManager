@@ -3046,12 +3046,17 @@ kbd {
 
 /* Lightbox (after TrendRelay's): a chrome-less dark stage, picture fitted to the window. */
 dialog.lightbox {
+  box-sizing: border-box;
   width: 100vw;
   height: 100dvh;
   max-width: none;
   max-height: none;
   margin: 0;
   padding: 24px;
+  /* The picture is fitted below, never scrolled: a tall screenshot used to push the stage past
+     the window and show a scrollbar (PM-929). */
+  overflow: hidden;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -3067,10 +3072,29 @@ dialog.lightbox::backdrop {
   background: rgb(10 10 10 / 0.92);
 }
 dialog.lightbox img {
-  max-width: 100%;
-  max-height: 100%;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100dvh - 48px);
+  min-width: 0;
+  min-height: 0;
   object-fit: contain;
   cursor: default;
+}
+/* "2 of 3 · name" under the picture when there are several. */
+.lightbox-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  translate: -50% 0;
+  max-width: calc(100vw - 120px);
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgb(244 244 241 / 0.12);
+  color: #f4f4f1;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 .lightbox-close,
 .lightbox-step {

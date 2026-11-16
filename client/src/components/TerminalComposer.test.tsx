@@ -135,3 +135,28 @@ describe('TerminalComposer lightbox (PM-929)', () => {
     await waitFor(() => expect(dialog.hasAttribute('open')).toBe(false));
   });
 });
+
+describe('TerminalComposer lightbox with several images (PM-929)', () => {
+  it('names the picture, steps between them and stops at the ends', async () => {
+    HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+      this.removeAttribute('open');
+    };
+    vi.mocked(api.uploadSessionImage).mockResolvedValue({ path: 'D:/data/x.png' } as never);
+    render(<TerminalComposer sessionId={4} disabled={false} onError={() => undefined} />);
+    const png = (name: string) =>
+      new File([new Uint8Array([137, 80, 78, 71])], name, { type: 'image/png' });
+    fireEvent.paste(screen.getByLabelText('Message to the chat'), {
+      clipboardData: { files: [png('first.png'), png('second.png')], items: [] },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'View first.png larger' }));
+    const dialog = document.querySelector('dialog.lightbox') as HTMLDialogElement;
+    expect(dialog.querySelector('.lightbox-caption')?.textContent).toBe('1 of 2 · first.png');
+    expect(dialog.querySelector('.lightbox-previous')).toBeNull();
+    fireEvent.click(dialog.querySelector('.lightbox-next')!);
+    expect(dialog.querySelector('.lightbox-caption')?.textContent).toBe('2 of 2 · second.png');
+    expect(dialog.querySelector('.lightbox-next')).toBeNull();
+  });
+});

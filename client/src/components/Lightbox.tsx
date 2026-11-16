@@ -13,6 +13,7 @@ export function Lightbox({
   onClose,
   onPrevious,
   onNext,
+  caption,
 }: {
   /** null keeps it closed. */
   src: string | null;
@@ -20,6 +21,8 @@ export function Lightbox({
   onClose: () => void;
   onPrevious?: () => void;
   onNext?: () => void;
+  /** A line under the picture, such as "2 of 3 · shot.png". */
+  caption?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const open = src !== null;
@@ -84,6 +87,7 @@ export function Lightbox({
           ›
         </button>
       )}
+      {src && caption && <div className="lightbox-caption">{caption}</div>}
       <button type="button" className="lightbox-close" aria-label="Close" onClick={onClose}>
         ✕
       </button>

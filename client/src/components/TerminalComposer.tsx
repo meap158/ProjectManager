@@ -345,6 +345,9 @@ export function TerminalComposer({
       <Lightbox
         src={shown?.preview ?? null}
         alt={shown?.name ?? ''}
+        {...(attachments.length > 1 && shown
+          ? { caption: `${viewIndex + 1} of ${attachments.length} · ${shown.name}` }
+          : {})}
         onClose={() => setViewing(null)}
         {...(viewIndex > 0 ? { onPrevious: () => setViewing(attachments[viewIndex - 1]!.id) } : {})}
         {...(viewIndex >= 0 && viewIndex < attachments.length - 1

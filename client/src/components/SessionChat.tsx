@@ -1004,6 +1004,7 @@ export function SessionChat({
   const picker = useRef<HTMLInputElement>(null);
   /** The thumbnail open in the lightbox (PM-929), by attachment id. */
   const [viewing, setViewing] = useState<number | null>(null);
+  const viewIndex = attachments.findIndex((a) => a.id === viewing);
   /** Why the last image couldn't be added, shown beside the composer (PM-130). */
   const [imageError, setImageError] = useState('');
   const upload = async (key: number, file: File) => {
@@ -1509,11 +1510,22 @@ export function SessionChat({
             </button>
           </p>
         )}
-        {viewing !== null && (
+        {viewing !== null && viewIndex >= 0 && (
           <Lightbox
-            src={attachments.find((a) => a.id === viewing)?.preview ?? null}
-            alt={attachments.find((a) => a.id === viewing)?.name ?? ''}
+            src={attachments[viewIndex]!.preview}
+            alt={attachments[viewIndex]!.name}
             onClose={() => setViewing(null)}
+            {...(attachments.length > 1
+              ? {
+                  caption: `${viewIndex + 1} of ${attachments.length} · ${attachments[viewIndex]!.name}`,
+                }
+              : {})}
+            {...(viewIndex > 0
+              ? { onPrevious: () => setViewing(attachments[viewIndex - 1]!.id) }
+              : {})}
+            {...(viewIndex < attachments.length - 1
+              ? { onNext: () => setViewing(attachments[viewIndex + 1]!.id) }
+              : {})}
           />
         )}
         {attachments.length > 0 && (
