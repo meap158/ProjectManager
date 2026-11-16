@@ -115,6 +115,16 @@
 .chat-tool[open] {
   padding-bottom: 6px;
 }
+/* Phones: an open tool (Bash command and output) keeps clear space under its last line, so the
+   text does not sit against the bottom border. */
+@media (max-width: 768px) {
+  .chat-tool[open] {
+    padding-bottom: 12px;
+  }
+  .chat-tool[open] > :last-child {
+    margin-bottom: 4px;
+  }
+}
 .chat-tool[open] > :not(summary) {
   margin-left: 10px;
   margin-right: 10px;
